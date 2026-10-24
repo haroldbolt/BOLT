@@ -1,0 +1,860 @@
+BUILD BOLT PETS — CUSTOMER WEB APP, OPERATIONS, AND SHARED BACKEND
+
+Build Bolt Pets as a working full-stack application in Google AI Studio.
+
+This project is the WEB project. Build the customer shopping application, the protected operations dashboard, and their shared backend.
+
+Include Farmacia veterinaria in this release.
+
+A separate Android application called “Bolt Conductor” will connect to this backend. Implement its backend services and integration contract in this project, but do not build the Android application inside this Web project.
+
+The driver application is part of the required operating system, not a future feature.
+
+Implement the application. Do not stop at a description, a plan, a wireframe, or a summary of these instructions.
+
+
+1. LANGUAGE, WORKING RULES, AND AUTHORIZATION
+
+This specification is written in English, but:
+
+- Build every interface in Colombian Spanish.
+- Write every message, notification, error, label, and instruction in Spanish.
+- Explain your work and any configuration steps to me in Spanish.
+- Assume that I do not know how to code.
+- Use locale es-CO, currency COP, and timezone America/Bogota.
+- Format prices for Colombia, such as $138.000.
+- Preserve official brand names, product names, SKUs, and technical identifiers where appropriate.
+
+Do not add future-feature sections, roadmaps, unrelated modules, or decorative buttons that do nothing.
+
+Make reasonable implementation decisions and keep operational settings editable.
+
+Do not publish the application publicly, activate billing, purchase credits, make real charges, send messages to real customers, or overwrite production business data without my explicit authorization.
+
+Begin with a private preview and a clearly identified test environment.
+
+Never present demonstration products, stock, payments, integrations, GPS positions, or test results as verified production data.
+
+When an external service needs credentials or manual activation, implement the connection structure and show its real status. Explain the exact configuration step in Spanish.
+
+Do not request private credentials in the chat or embed them in client code. Use secure server-side secret configuration.
+
+Do not ask me to make routine technical decisions that you can reasonably resolve yourself. Ask only when a missing authorization, account connection, or essential business decision prevents safe progress.
+
+
+2. APPLICATION STRUCTURE
+
+Use React and TypeScript for the web interface, a Node.js backend, Firebase Authentication, Cloud Firestore, and Google Maps Platform.
+
+Create:
+
+- Customer application at /.
+- Protected operations application at /operacion.
+- Customer order tracking at /pedido/:orderId.
+- Authenticated backend operations under /api/v1.
+- Shared services for the separate Bolt Conductor Android application.
+
+Make the customer application mobile-first and installable as a PWA, with a responsive desktop experience.
+
+Use one persistent backend and one authoritative order system.
+
+Browser storage may cache preferences and interface state, but it must not be the authoritative source for orders, payments, inventory, prescriptions, or tracking.
+
+Use one Firebase project. Record its projectId and the exact Firestore databaseId, including a named database if one is used.
+
+The separate driver application must connect to this same project and database.
+
+If creating or connecting a resource requires my authorization, identify that dependency and continue implementing the parts that do not require it.
+
+Keep the following operations on the server:
+
+- Payment verification.
+- Inventory reservations.
+- Prescription approval enforcement.
+- Order state transitions.
+- Dispatch and assignment decisions.
+- Delivery confirmation.
+- Refunds.
+- Role and ownership validation.
+
+Restrict database access by user, role, location, and order ownership. Protect uploaded documents with private storage and controlled access.
+
+Restrict Maps keys according to their client type and permitted APIs. Keep private service credentials out of browser bundles, logs, and downloadable documentation.
+
+
+3. USE THE ATTACHED LOGO AND SCREENSHOTS
+
+The attached Bolt Pets logo is the official brand asset. Use it without redesigning its symbols, typography, or colors.
+
+The identity consists of:
+
+- Red background.
+- White dog and cat silhouettes.
+- Yellow lightning bolt.
+- White Bolt Pets lettering.
+
+Preserve its proportions. If the original file is unavailable, use a temporary text wordmark and clearly identify the missing asset.
+
+Use the four attached Rappi Turbo screenshots as the main references for layout, navigation, product cards, and scrolling behavior:
+
+- IMG_2741.jpeg: expanded header, delivery-time capsule, search field, horizontal categories, promotional banner, benefit progress bar, campaign cards, and floating navigation.
+- IMG_2742.jpeg: favorites rail, large product images, favorite hearts, category cards, and bottom navigation.
+- IMG_2743.png: category cards with a four-image product collage, product count, and “Recomendados para ti”.
+- IMG_2744.png: compact sticky header, quick-add buttons, crossed-out previous prices, yellow discount labels, and offer rails.
+
+If attachment filenames differ, identify the screenshots by their visible content.
+
+Match their visual hierarchy, spacing, rounded controls, product-card proportions, content density, and navigation placement.
+
+Adapt the experience to Bolt Pets:
+
+- Replace the green header with Bolt red.
+- Use white surfaces and dark text.
+- Use yellow for offer highlights.
+- Use red favorite hearts.
+- Use circular red quick-add buttons with white plus signs.
+- Use actual pet-product photographs.
+- Do not include Rappi branding or unrelated grocery and beauty products.
+
+Do not create a generic corporate landing page, a large marketing hero, or a desktop dashboard as the customer home.
+
+The first customer screen must immediately feel like a rapid-delivery shopping application.
+
+
+4. EXACT CUSTOMER NAVIGATION
+
+Reproduce the floating white rounded bottom menu with exactly these four destinations, in this order:
+
+1. Turbo — lightning icon.
+2. Favoritos — heart icon.
+3. Ofertas — discount icon.
+4. Categorías — four-square icon.
+
+Place a separate circular search button to the right, following the screenshots.
+
+Do not replace this menu with “Inicio, Carrito, Pedidos, Perfil”.
+
+Make all destinations functional, show the selected tab, and preserve scroll position when returning.
+
+Place these options in the top-right account or overflow menu:
+
+- Mis pedidos.
+- Direcciones.
+- Mi cuenta.
+- Métodos de pago.
+- Ayuda.
+
+When an order is active, provide a visible tracking shortcut.
+
+When the cart contains products, show a compact “Ver carrito” bar with quantity and total above the bottom menu.
+
+Prevent overlap between the cart, tracking shortcut, content, keyboard, and device safe area.
+
+Farmacia must be a main shopping category, not a fifth bottom-navigation tab.
+
+
+5. TURBO HOME SCREEN
+
+Build an expanded header containing:
+
+- Bolt Pets logo.
+- Account and overflow controls.
+- Back button where appropriate.
+- Editable delivery address.
+- Delivery estimate capsule.
+- Large rounded search field with “Busca en Bolt Pets”.
+- Horizontally scrollable category shortcuts.
+
+Use these category labels:
+
+“Todo”, “Perros”, “Gatos”, “Alimentos”, “Arenas”, “Snacks”, “Farmacia”, “Antipulgas”, “Higiene”, “Accesorios”.
+
+The delivery capsule may show “Entrega estimada en 15 min” only when the calculated operational conditions support it.
+
+When the customer scrolls, collapse the large header while keeping search and category access available, following the compact reference.
+
+Build the home content with:
+
+- Pet campaign banner.
+- Benefit progress bar for an actual configured promotion.
+- Horizontal campaign cards.
+- “Favoritos”.
+- “Encuentra todo en Bolt Pets”.
+- “Recomendados para ti”.
+- “Ofertas relámpago”.
+- “Compra de nuevo”.
+- “Novedades”.
+
+The benefit progress bar must show the amount remaining to reach the applicable threshold. Recalculate it when the cart changes and hide it when there is no eligible campaign.
+
+Each product rail must have a working “Ver más” action.
+
+On narrow screens, use product-card widths that leave part of the next card visible to indicate horizontal scrolling, without making text unreadable.
+
+Category cards must use a rounded light border, title, product-photo collage, and current eligible-product count.
+
+Include a prominent Farmacia category card.
+
+Store favorites per customer. Recommendations may use purchase history, favorites, species, and availability, with featured products as the fallback.
+
+Show “Compra de nuevo” only when the customer has actual previous purchases.
+
+
+6. PRODUCTS, SEARCH, CATEGORIES, AND OFFERS
+
+Product cards must include:
+
+- Large, correctly contained product photograph.
+- Exact name and presentation.
+- Bold current price.
+- Previous price and discount only when a real promotion applies.
+- Package weight, volume, or quantity.
+- Correctly calculated unit price where relevant.
+- Favorite heart.
+- Circular “+” button.
+- Quantity stepper after adding the product.
+- Current availability.
+
+Updating a product quantity must update the cart and every visible instance of that product consistently.
+
+Product details must include images, brand, exact variant, description, authorized product information, quantity, availability, estimated delivery, and relevant related products.
+
+Never silently replace one formulation, concentration, weight, or presentation with another.
+
+Maintain a separate SKU field, barcode where available, category, species, brand, price, tax configuration, shipment weight, and dimensions.
+
+Implement search by:
+
+- Product name.
+- Brand.
+- SKU.
+- Synonyms and common spelling variations.
+- Presentation.
+- Species.
+- Relevant verified product attributes.
+
+Support natural-language searches such as “comida para gato adulto de 7 kg”, returning only real catalog items.
+
+If Gemini interprets a query, call it server-side and validate the resulting product IDs and filters. It must not invent stock, prices, products, or medical advice.
+
+Include relevant filters for species, brand, category, life stage, size, price, pharmaceutical form, prescription requirement, availability, and promotions.
+
+Provide loading, empty, unavailable, no-results, and error states.
+
+The Ofertas screen must show actual campaigns, validity, eligible items, participating locations, coupon conditions, and restrictions.
+
+Discounts, bundles, and threshold benefits must reconcile with the final checkout total.
+
+Use real campaign expiration timestamps. Do not create misleading countdowns.
+
+Import products from CSV or Excel with a validation preview. Detect duplicates without merging different sizes or formulations.
+
+If real catalog data is missing, provide a separately labeled demonstration catalog, never fabricated production inventory.
+
+
+7. FARMACIA VETERINARIA — REQUIRED NOW
+
+Build Farmacia veterinaria as a complete shopping and operations module in this release.
+
+Make it accessible through:
+
+- The horizontal “Farmacia” shortcut.
+- The main category grid.
+- Search suggestions and results.
+- Appropriate product navigation.
+
+Preserve the four-item bottom menu.
+
+Create these pharmacy subcategories:
+
+- Antipulgas y garrapatas.
+- Desparasitación.
+- Dermatología.
+- Oídos y ojos.
+- Cuidado digestivo.
+- Vitaminas y suplementos.
+- Curación y primeros auxilios.
+- Medicamentos veterinarios.
+
+Populate them from the actual authorized catalog.
+
+A product may appear in multiple categories, but it must retain a single SKU identity and shared inventory.
+
+Product information must use verified source data:
+
+- Actual photograph.
+- Commercial name.
+- Brand and manufacturer.
+- Species.
+- Pharmaceutical form.
+- Concentration where applicable.
+- Active ingredient when documented.
+- Package quantity.
+- SKU.
+- Price.
+- Availability by location.
+- Authorized label information.
+- ICA registration information where applicable.
+
+Do not invent treatment claims, doses, contraindications, equivalence, registration numbers, or free-sale status.
+
+Maintain server-controlled pharmacy fields for classification, prescription requirement, registration verification, batch, expiration, storage, shipping eligibility, restrictions, and staff-review requirements.
+
+Only authorized staff may change regulatory fields, with an audit record.
+
+PRESCRIPTION FLOW
+
+For a product requiring a veterinary prescription:
+
+- Display “Requiere fórmula veterinaria”.
+- Allow secure prescription submission.
+- Validate upload type and size.
+- Store documents privately.
+- Limit access to authorized reviewers.
+- Use an appropriate retention policy.
+- Link the review to the relevant order and items.
+
+Use the review states:
+
+“Fórmula pendiente de revisión”, “Aprobada”, “Rechazada”.
+
+Uploading a document is not approval.
+
+Authorized personnel must verify eligibility before dispensing and dispatch. Use a payment flow that does not charge an unapproved restricted purchase without an explicitly configured and appropriate review policy.
+
+Enforce these checks on the server, including guest checkout, WhatsApp, reordering, favorites, quantity changes, promotions, and direct API requests.
+
+Keep restricted items unavailable when required authorizations, verification procedures, sales channels, or transport conditions are not in place.
+
+For pending prescriptions, clearly show the review stage. Do not present an unconditional 15-minute delivery promise before the order is eligible.
+
+LOT, EXPIRATION, AND STORAGE
+
+Track batch and expiration for relevant products.
+
+Use first-expiring, first-out picking when appropriate.
+
+Block expired, recalled, quarantined, and non-saleable units.
+
+Show lot, expiry, seal, and packaging checks to the picker.
+
+Support recall flags and immediate blocking of affected stock.
+
+Use product-specific storage and transport conditions.
+
+Only offer temperature-sensitive products for delivery when the location, packaging, courier, vehicle, and actual process meet the verified requirements.
+
+Otherwise show “No disponible para domicilio”.
+
+Do not assume an ordinary motorcycle delivery provides a validated cold chain.
+
+OPERATIONS AND DRIVER PRIVACY
+
+Add a prescription-review queue, restricted-product controls, expiry alerts, lot selection, recall blocks, and handling checks to operations.
+
+Keep payment, prescription approval, and fulfillment states separate.
+
+Do not dispatch until all applicable gates pass.
+
+Allow partial fulfillment only with explicit customer consent and correct payment reconciliation.
+
+The driver may see necessary handling instructions, package information, and seal checks, but not prescriptions or medical history.
+
+WHATSAPP AND ASSISTANCE
+
+The assistant may locate products, provide verified label information, show availability, and help submit a prescription for human review.
+
+It must not diagnose, prescribe, calculate individualized doses, or claim that another medicine is an equivalent treatment.
+
+Route medical questions to qualified veterinary assistance.
+
+This module is veterinary pharmacy, not human pharmacy.
+
+Require the responsible business operator to verify applicable Colombian requirements, actual registration, label conditions, permitted channels, and prescription restrictions before enabling restricted products.
+
+
+8. ADDRESS, COVERAGE, STORES, AND INVENTORY
+
+Configure the known locations:
+
+- Kennedy: Carrera 79A #2-05, Bogotá.
+- Álamos / Engativá: Calle 72 #97A-18, Bogotá.
+- Suba: Carrera 107 #143-31, Bogotá.
+- Centro: Calle 11 #15-53, Bogotá, with Turbo disabled by default.
+
+Keep Usaquén excluded.
+
+Allow other location details to be completed without inventing addresses.
+
+Separate physical-store activity, online inventory availability, and Turbo eligibility.
+
+Support a controlled Kennedy-first launch. Other hubs require verified inventory and operations before activation.
+
+Disabling online sales must not delete or zero physical stock.
+
+Use 07:00–23:00 as an editable initial planning schedule. Support closures, shifts, preparation capacity, and temporary saturation.
+
+Geocode and verify store entrances rather than inventing coordinates.
+
+Ask for the customer’s address early.
+
+Support address autocomplete, optional geolocation with permission, map-pin adjustment, manual entry, saved addresses, building details, and delivery instructions.
+
+Calculate eligibility using:
+
+- Complete-basket stock.
+- Preparation queue.
+- Picking and packing time.
+- Courier availability.
+- Vehicle suitability.
+- Packaged weight and dimensions.
+- Actual road route.
+- Traffic when available.
+- Delivery handoff.
+- An operational buffer.
+
+Do not use a straight-line radius as proof that a delivery time is achievable.
+
+Use a supported routing mode and disclose significant routing-data limitations.
+
+Offer the 15-minute estimate only where feasible. Otherwise show the actual available estimate or explain why the service is unavailable.
+
+Before acceptance, explain when the delivery clock starts. Preserve the original promised window in the order history.
+
+Revalidate when the address, cart, stock, capacity, or courier situation changes.
+
+Maintain independent stock by SKU and location, including physical, reserved, unavailable, safety-stock, and available-to-sell quantities.
+
+Apply the configurable rule that normal online selling stops when only two unreserved sellable units remain, unless an authorized product-specific exception exists.
+
+Reserve stock transactionally, handle concurrent purchases, release expired reservations, and prevent stale synchronization from overwriting newer transactions.
+
+Track stock freshness and pause affected sales when inventory cannot be trusted.
+
+Respect registered vehicle capacity.
+
+The previously discussed external 10 kg and own-fleet up-to-50 kg limits are planning assumptions requiring verification, not automatic operator guarantees.
+
+Never assign a 17 kg shipment to a service configured for 10 kg.
+
+Apply pharmacy storage and transport eligibility in addition to weight limits.
+
+
+9. CART, PAYMENTS, AND ORDER MANAGEMENT
+
+Support guest shopping, secure guest order access, account sign-in, saved addresses, favorites, order history, and reordering at current prices and availability.
+
+Checkout must include:
+
+- Delivery address and contact details.
+- Building and entrance instructions.
+- Applicable portería delivery policy.
+- Exact items and quantities.
+- Discounts and validated coupons.
+- Taxes.
+- Delivery charge.
+- Any configured service fee.
+- Optional tip, initially zero.
+- Final COP total.
+- Total packaged weight.
+- Delivery estimate.
+- Payment method.
+- Applicable pharmacy review status.
+
+Integrate Wompi using the methods actually enabled on the connected account.
+
+Allow cash on delivery only when the selected location, service, and driver support it.
+
+Verify payments on the server using the provider’s supported verification mechanism.
+
+A screenshot, customer message, or browser redirect is not payment confirmation.
+
+Handle pending, rejected, expired, late-approved, refunded, and partially refunded payments.
+
+Use idempotency to prevent repeated events or retries from duplicating orders or charges.
+
+Revalidate stock if approval arrives after reservation expiration.
+
+Maintain independent states for:
+
+- Payment.
+- Prescription review.
+- Fulfillment.
+- Driver assignment.
+- Invoice.
+- Cash reconciliation.
+
+Use Spanish fulfillment states such as:
+
+“Pendiente de confirmación”, “Confirmado”, “En alistamiento”, “Listo para despacho”, “Repartidor asignado”, “En camino”, “Entregado”, “Con incidencia”, “Cancelado”.
+
+Enforce valid transitions on the server.
+
+Record acceptance, preparation start, preparation completion, assignment, pickup, and delivery timestamps.
+
+Allow cancellation according to actual order state. Explain any configured charge and refund before confirmation.
+
+Route cancellations after preparation begins through support.
+
+Require customer approval for substitutions and any price difference. Pharmacy substitutions require appropriate authorized review as well.
+
+Restore inventory only when the physical product situation justifies it.
+
+Create order support with issue type, messages, optional photo evidence, status, and resolution.
+
+Support partial/full refunds, missing or damaged items, order chat, verified delivery notifications, and post-delivery ratings.
+
+For cash orders, distinguish the amount expected, cash collected by the driver, and cash settled with the business.
+
+
+10. REAL-TIME CUSTOMER MAP — MANDATORY
+
+Create /pedido/:orderId as an interactive tracking screen with a real Google Map and a draggable bottom sheet.
+
+Display on the map:
+
+- Fulfillment hub.
+- Customer destination.
+- Assigned driver’s actual position when available.
+- Road route for the current phase.
+- Recenter and fit-route controls.
+
+Display in the bottom sheet:
+
+- Current order state.
+- Updated ETA.
+- Original accepted delivery window.
+- Order number and items.
+- Driver name and photo where available.
+- Appropriate vehicle details.
+- Contact, chat, and support actions.
+- Last valid location update.
+- Customer delivery-confirmation code when applicable.
+
+Before dispatch, show preparation progress.
+
+If the driver is heading to the hub, identify that stage correctly.
+
+Show the parcel traveling to the customer only after verified pickup.
+
+Implement this actual pipeline:
+
+Bolt Conductor Android GPS
+→ authenticated backend
+→ current tracking record
+→ customer and operations real-time listeners
+→ map marker.
+
+A map embed alone does not satisfy this requirement.
+
+Do not animate a fictional courier along a prerecorded route.
+
+You may smooth movement between real received positions, but stop moving the marker when updates stop.
+
+Render with Google Maps and obtain road routes and ETA through authorized server-side routing calls.
+
+Throttle routing requests independently from GPS updates. Recalculate on meaningful route deviation or trip-phase changes.
+
+Use configurable engineering starting values:
+
+- Approximately one transmitted position every 5 seconds while moving.
+- Lower frequency while stationary.
+- Stale indication after approximately 30 seconds without a valid update.
+- Lost-signal indication after approximately 60 seconds.
+
+These are Bolt design defaults, not Rappi implementation details or guaranteed device performance.
+
+Record:
+
+- Latitude and longitude.
+- Accuracy.
+- Heading and speed when available.
+- Device capture time.
+- Server receipt time.
+- Sequence number.
+- orderId.
+- assignmentId.
+- tripId.
+- Authenticated driver identity.
+
+Keep current tracking separate from the main order document.
+
+Reject unauthorized, out-of-order, implausible, or invalid updates.
+
+Identify inaccurate fixes and stale data.
+
+During connection loss, freeze the last known position and show “Última ubicación recibida hace...”.
+
+On reconnection, display the latest valid position. Do not replay old positions as current movement.
+
+Customers may access only their own active delivery tracking.
+
+Use secure access for guest orders; an order identifier alone must not grant access.
+
+Reassignment must revoke the previous driver’s authority to publish for that order.
+
+Completion or cancellation ends customer access to continuing driver movement.
+
+Keep dispatch-only fleet presence separate from customer-visible trip tracking. Track only during an authorized active shift or delivery, and stop off-duty collection.
+
+If Maps credentials or a real driver feed are missing, show an explicit setup or unavailable state rather than fabricated live tracking.
+
+
+11. OPERATIONS DASHBOARD
+
+Build /operacion as a protected staff application.
+
+Provide roles for administrator, operations coordinator, picker, dispatcher, customer support, finance, and authorized pharmacy reviewer.
+
+Apply permissions on the server, including location restrictions.
+
+Implement:
+
+- Live order board.
+- Preparation queue prioritized by accepted delivery promise.
+- Preparation timers.
+- Exact product images and presentations.
+- Barcode/SKU and quantity verification.
+- Packing confirmation.
+- Missing-item and approved-substitution workflows.
+- Prescription-review queue.
+- Lot, expiry, recall, and transport checks.
+- Pickup verification.
+- Live own-fleet map.
+- Driver availability, capacity, last update, and active task.
+- Manual assignment.
+- Automatic suggestion of an eligible driver.
+- Atomic assignment acceptance.
+- Rejection, expiry, reassignment, and incident handling.
+- Shift status and handover notes.
+- Cash collection and settlement.
+- Products and location inventory.
+- Prices and tax settings.
+- Categories, banners, campaigns, and coupons.
+- CSV/Excel import and export.
+- Support tickets and authorized refunds.
+- Users, permissions, and audit history.
+
+Only one driver may hold an active assignment for an order. Expired or revoked assignments cannot be accepted.
+
+Do not allow a driver to mark pickup or delivery solely because GPS indicates proximity.
+
+Verify pickup using the configured order/package confirmation process.
+
+Verify customer delivery codes on the server. Never include the secret customer code in driver-readable order data.
+
+Provide an audited support exception process.
+
+Reports must include sales, order value, product performance, preparation time, courier wait, travel time, accepted-to-delivered time, original-promise compliance, cancellations, fill rate, stockouts, delivery cost, payment fees, refunds, and outstanding cash.
+
+Show contribution after product, payment, and delivery costs only when reliable inputs exist.
+
+Separate actual reports from demo data.
+
+
+12. BUSINESS INTEGRATIONS AND WHATSAPP
+
+Implement adapters for:
+
+- Shopify and the existing Olfato integration where suitable.
+- Siigo Nube.
+- WhatsApp.
+- Wompi.
+- Verified external delivery providers.
+
+Define the authoritative source for products, prices, inventory, customers, orders, and invoices.
+
+Map external IDs, SKUs, and location identifiers.
+
+Avoid conflicting synchronization loops or duplicated stock.
+
+Use verified, supported integration methods. Do not invent endpoints, credentials, provider capabilities, or successful connections.
+
+Provide connection status, last successful synchronization, retries, error queues, reconciliation, and controlled manual fallback.
+
+Use clear statuses such as:
+
+“Sin configurar”, “En pruebas”, “Conectada”, “Con error”.
+
+Do not describe a connection as production-ready until it has been tested.
+
+WhatsApp must use the same catalog, prices, stock, coverage, orders, prescription gates, and secure tracking links.
+
+The assistant must help customers find products, choose presentations, check availability, create a cart, receive a secure payment link, track an order, and reach human support.
+
+Require a final summary and customer confirmation before committing a purchase.
+
+Do not let the assistant bypass payment, inventory, prescription, cancellation, or refund permissions.
+
+External couriers may appear on the live map only when an actual authorized location feed is available. Otherwise show verified status updates without a fictional moving marker.
+
+The own-fleet GPS pipeline remains mandatory.
+
+
+13. BOLT CONDUCTOR SHARED BACKEND CONTRACT
+
+Do not build the Android UI in this Web project.
+
+Implement and document the backend that the separate native Android application will use.
+
+Create:
+
+- docs/driver-integration-contract.md.
+- docs/openapi.yaml.
+
+Record the actual Firebase projectId, exact databaseId, authentication configuration, collection paths, role requirements, event values, payload schemas, and backend URL when available.
+
+Keep unknown connection values explicitly unset. Do not invent a deployed URL.
+
+Do not publish or activate paid infrastructure merely to populate these fields.
+
+Define authenticated /api/v1 operations for:
+
+- Driver profile.
+- Shift status and availability.
+- Offered and current assignments.
+- Accepting or rejecting an assignment.
+- Hub arrival.
+- Verified pickup.
+- GPS upload.
+- Tracking-session heartbeat.
+- Customer arrival.
+- Delivery verification.
+- Incident reporting.
+- Order messages.
+- Driver delivery history.
+- Cash collection and settlement.
+
+Use the same orderId, assignmentId, and tripId throughout.
+
+Derive driver identity from a verified authentication token, not a client-supplied identity.
+
+Validate assignment ownership on every relevant request.
+
+Make state-changing requests safe to retry.
+
+Document offline pending actions, confirmed events, errors, reconnection, assignment revocation, and GPS-session expiration.
+
+For pharmacy packages, expose necessary transport instructions and seal checks, but not prescription files or medical histories.
+
+The companion Android application must be designed for real GPS during an active delivery, including when navigation is opened or the screen is locked. Do not substitute a browser-only driver page and claim background tracking has been verified.
+
+Provide the two integration documents as downloadable files in a protected administrator setup area. Include no private keys or secrets.
+
+
+14. RELIABILITY AND EXCEPTIONS
+
+Implement recovery for:
+
+- Stock disappearing during checkout.
+- Items missing during picking.
+- Expired reservations.
+- Late payment approval.
+- Duplicate payment events.
+- Prescription rejection.
+- Expired or recalled lots.
+- Incompatible temperature or handling requirements.
+- Courier rejection, cancellation, or timeout.
+- No suitable vehicle.
+- Hub saturation.
+- Incorrect or inaccessible addresses.
+- Customer unavailability.
+- Provider, routing, or internet failures.
+- Stale GPS.
+- Delivery delays.
+- Failed delivery.
+- Damaged or incorrect items.
+- Refunds and inventory reconciliation.
+
+Each incident needs an owner, visible status, next action, and recorded resolution.
+
+Preserve the same order identity throughout recovery.
+
+Use secure authentication, server-side validation, rate limits where appropriate, audit logs, monitored errors, and backup/recovery instructions.
+
+Clearly label cached or stale data. Offline screens must not falsely confirm payment, inventory reservation, pickup, or delivery.
+
+Show understandable Spanish errors while retaining useful protected technical diagnostics.
+
+
+15. IMPLEMENTATION ORDER, TESTING, AND HANDOVER
+
+Start implementing now in this order:
+
+A. Establish the project structure, branding, and screenshot-matched customer interface.
+
+B. Make navigation, categories, Farmacia, search, favorites, product details, and cart functional.
+
+C. Connect persistent records, authentication, inventory reservations, checkout, and the protected operations dashboard.
+
+D. Implement pharmacy review, dispatch, tracking services, and the driver integration contract.
+
+E. Connect external services when credentials and authorization are available.
+
+F. Run available tests, fix errors, and clearly identify remaining external or physical-device verification.
+
+This is an implementation sequence within the requested release, not a list of future features.
+
+Do not stop after a decorative prototype.
+
+Keep demonstration data isolated and visibly labeled.
+
+Verify at minimum:
+
+- All four bottom-menu destinations work.
+- The separate search button works.
+- Farmacia appears in the horizontal strip and category grid.
+- Product “+”, quantity controls, favorites, and “Ver más” work.
+- Cart totals and promotions reconcile.
+- An order persists after refreshing.
+- The authorized operations user sees that same order.
+- Unauthorized users cannot read it.
+- Concurrent purchases do not oversell the same reserved stock.
+- Duplicate payment events do not duplicate orders.
+- Prescription-required items cannot bypass review.
+- Expired and recalled lots cannot be sold.
+- Ineligible vehicles cannot receive restricted shipments.
+- Reassignment revokes the previous driver.
+- Stale GPS is shown as stale, not live.
+- Delivery completion ends customer access to later movement.
+- Cancellation and refunds preserve correct records.
+
+Where the environment supports automated tests, run them and report their actual results.
+
+Separate automated tests, simulated integration tests, and physical-device tests.
+
+Do not claim to have verified a physical Android phone, screen-locked GPS, actual payments, or a real external integration unless that test genuinely occurred.
+
+Explain the physical end-to-end test I must perform with:
+
+- A customer session.
+- An operations session.
+- A real Android phone running Bolt Conductor.
+
+The target flow is:
+
+Purchase
+→ authorized pharmacy review when required
+→ preparation
+→ own-driver assignment
+→ verified pickup
+→ actual GPS updates
+→ customer live map
+→ verified delivery
+→ reconciliation.
+
+When the first preview is ready, explain in Spanish:
+
+1. What is implemented.
+2. What was actually tested.
+3. What still uses demonstration data.
+4. Which external connections are missing.
+5. The next exact action I must perform.
+
+Give beginner-friendly instructions tied to the actual project, not a generic tutorial.
+
+Deliver the working preview, source files, database structure, security rules, required indexes, secure configuration template, driver integration documents, and concise operating instructions in Spanish.
+
+Keep the application unpublished and real payments disabled until I authorize activation.
+
+Begin building the actual Bolt Pets Web application now.

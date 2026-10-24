@@ -1,0 +1,8 @@
+{
+  "name": "Bolt Pets Colombia",
+  "description": "Entrega ultra-rápida de alimentos, farmacia veterinaria y accesorios para mascotas en Bogotá. App de clientes y operaciones.",
+  "requestFramePermissions": [
+    "geolocation"
+  ],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}

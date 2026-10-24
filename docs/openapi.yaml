@@ -1,0 +1,214 @@
+openapi: 3.0.3
+info:
+  title: Bolt Pets API & Bolt Conductor Shared Backend
+  version: 1.0.0
+  description: >
+    API unificada de comercio electrónico para mascotas, operaciones de despacho,
+    farmacia veterinaria y contrato para la app nativa Android Bolt Conductor en Bogotá, Colombia.
+servers:
+  - url: /api/v1
+    description: Servidor de Aplicación Bolt Pets
+
+paths:
+  /health:
+    get:
+      summary: Verificación de estado del servidor y base de datos
+      responses:
+        '200':
+          description: Servicio saludable
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  status: { type: string, example: "ok" }
+                  timestamp: { type: string }
+                  version: { type: string, example: "1.0.0" }
+                  timezone: { type: string, example: "America/Bogota" }
+
+  /stores:
+    get:
+      summary: Listado de sedes logísticas en Bogotá
+      responses:
+        '200':
+          description: Sedes registradas
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/Store'
+
+  /catalog:
+    get:
+      summary: Catálogo completo de productos, farmacia y stock por sede
+      parameters:
+        - name: category
+          in: query
+          schema: { type: string }
+        - name: species
+          in: query
+          schema: { type: string }
+        - name: storeId
+          in: query
+          schema: { type: string }
+        - name: q
+          in: query
+          schema: { type: string }
+      responses:
+        '200':
+          description: Productos disponibles
+
+  /orders:
+    post:
+      summary: Crear pedido con reserva transaccional de inventario
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CreateOrderRequest'
+      responses:
+        '201':
+          description: Pedido creado exitosamente
+        '400':
+          description: Inventario insuficiente o validación fallida
+
+  /orders/{orderId}:
+    get:
+      summary: Obtener detalle autorizado del pedido
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Datos del pedido
+
+  /orders/{orderId}/prescription:
+    post:
+      summary: Adjuntar fórmula veterinaria para revisión farmacéutica
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                documentUrl: { type: string }
+                documentName: { type: string }
+                vetName: { type: string }
+                vetLicense: { type: string }
+      responses:
+        '200':
+          description: Fórmula subida, en estado Pendiente de revisión
+
+  /orders/{orderId}/tracking:
+    get:
+      summary: Consulta de telemetría de ruta y posición para el cliente
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Telemetría segura para cliente
+
+  /driver/gps:
+    post:
+      summary: Recepción de coordenadas en tiempo real desde Bolt Conductor Android
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/GPSTelemetry'
+      responses:
+        '200':
+          description: Coordenadas registradas exitosamente
+
+  /driver/assignments/{assignmentId}/delivered:
+    post:
+      summary: Validación de código secreto y confirmación de entrega
+      parameters:
+        - name: assignmentId
+          in: path
+          required: true
+          schema: { type: string }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [deliveryCode]
+              properties:
+                deliveryCode: { type: string, example: "4892" }
+                recipientNotes: { type: string }
+      responses:
+        '200':
+          description: Entrega confirmada y liquidada
+        '403':
+          description: Código de seguridad incorrecto
+
+components:
+  schemas:
+    Store:
+      type: object
+      properties:
+        id: { type: string }
+        name: { type: string }
+        address: { type: string }
+        coordinates:
+          type: object
+          properties:
+            lat: { type: number }
+            lng: { type: number }
+        turboEnabled: { type: boolean }
+        schedule: { type: string }
+
+    CreateOrderRequest:
+      type: object
+      required: [storeId, items, customer, deliveryAddress, paymentMethod]
+      properties:
+        storeId: { type: string }
+        items:
+          type: array
+          items:
+            type: object
+            properties:
+              productId: { type: string }
+              quantity: { type: integer }
+        deliveryAddress:
+          type: object
+          properties:
+            address: { type: string }
+            details: { type: string }
+            lat: { type: number }
+            lng: { type: number }
+        paymentMethod:
+          type: string
+          enum: [WOMPI_CARD, WOMPI_PSE, WOMPI_BANCOLOMBIA, CASH_ON_DELIVERY]
+
+    GPSTelemetry:
+      type: object
+      required: [orderId, assignmentId, latitude, longitude, timestamp]
+      properties:
+        orderId: { type: string }
+        assignmentId: { type: string }
+        tripId: { type: string }
+        latitude: { type: number }
+        longitude: { type: number }
+        accuracy: { type: number }
+        heading: { type: number }
+        speed: { type: number }
+        batteryLevel: { type: integer }
+        timestamp: { type: integer }
+        sequenceNumber: { type: integer }
