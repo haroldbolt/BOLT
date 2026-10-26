@@ -5,6 +5,8 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_DRIVERS, INITIAL_ORDERS } from './src/data/seedData';
 import { Order, Product, Store, DriverProfile, GPSTelemetry } from './src/types';
+import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking } from './src/lib/deliveryService';
+import { shopifyService } from './src/lib/shopifyService';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -88,29 +90,108 @@ async function startServer() {
     res.json(filtered);
   });
 
-  // Create Order with transactional stock reservation
+  // Authoritative Delivery Quote Endpoint
+  app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
+    return deliveryQuoteEndpoint(req, res, stores, products);
+  });
+
+  // Create Order with transactional stock reservation & delivery policy validation
   app.post('/api/v1/orders', (req: Request, res: Response) => {
     try {
-      const { storeId, items, customer, deliveryAddress, paymentMethod, tip = 0 } = req.body;
+      const {
+        storeId,
+        items,
+        customer,
+        deliveryAddress,
+        paymentMethod,
+        tip = 0,
+        deliveryMode: requestedDeliveryMode,
+        scheduledWindow,
+      } = req.body;
 
-      if (!storeId || !items || !items.length || !customer || !deliveryAddress || !paymentMethod) {
+      if (!items || !items.length || !customer || !deliveryAddress || !paymentMethod) {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
       }
 
-      // Check stock availability and reserve
+      // Validar cobertura y límite de tiempo con el motor autoritativo si hay coordenadas
+      let assignedStoreId = storeId;
+      let evaluatedQuote: any = null;
+
+      if (deliveryAddress.coordinates && !isNaN(deliveryAddress.coordinates.lat) && !isNaN(deliveryAddress.coordinates.lng)) {
+        evaluatedQuote = evaluateDeliveryQuote({
+          destination: {
+            address: deliveryAddress.address,
+            details: deliveryAddress.details,
+            coordinates: deliveryAddress.coordinates,
+          },
+          items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
+        }, stores, products);
+
+        // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
+        if (requestedDeliveryMode === 'PROGRAMADO') {
+          if (!evaluatedQuote.scheduledEligible) {
+            return res.status(400).json({
+              error: evaluatedQuote.message || 'Dirección fuera de la zona de cobertura metropolitana de entrega programada.',
+              eligibilityStatus: evaluatedQuote.eligibilityStatus,
+            });
+          }
+
+          if (scheduledWindow) {
+            const bookingVal = validateScheduledBooking(scheduledWindow);
+            if (!bookingVal.valid) {
+              return res.status(400).json({
+                error: bookingVal.reason || 'La franja de entrega programada seleccionada ya no está disponible.',
+                code: 'CUTOFF_EXPIRED',
+              });
+            }
+
+            // Validar capacidad de la franja (máximo 10 pedidos por franja)
+            const currentSlotOrders = orders.filter(
+              o => o.deliveryMode === 'PROGRAMADO' &&
+              o.scheduledWindow &&
+              o.scheduledWindow.date === scheduledWindow.date &&
+              (o.scheduledWindow.slotId === scheduledWindow.slotId || o.scheduledWindow.startTime === scheduledWindow.startTime)
+            );
+            if (currentSlotOrders.length >= 10) {
+              return res.status(400).json({
+                error: 'La franja seleccionada ha alcanzado su capacidad máxima. Por favor selecciona otro horario.',
+                code: 'SLOT_CAPACITY_EXCEEDED',
+              });
+            }
+          }
+        } else {
+          // Si es Turbo o Turbo Dividido, debe ser ELIGIBLE
+          if (evaluatedQuote.eligibilityStatus !== 'ELIGIBLE') {
+            return res.status(400).json({
+              error: evaluatedQuote.message,
+              eligibilityStatus: evaluatedQuote.eligibilityStatus,
+              geographicDistanceMeters: evaluatedQuote.geographicDistanceMeters,
+              roadDistanceMeters: evaluatedQuote.roadDistanceMeters,
+            });
+          }
+        }
+
+        // Asignación automática de bodega autoritativa
+        assignedStoreId = evaluatedQuote.assignedStoreId || storeId || 'HUB_KENNEDY';
+      }
+
+      const assignedStore = stores.find(s => s.id === assignedStoreId) || stores[0];
+      assignedStoreId = assignedStore.id;
+
+      // Check stock availability in assigned warehouse and reserve
       for (const item of items) {
         const prod = products.find(p => p.id === item.productId);
         if (!prod) {
           return res.status(400).json({ error: `Producto no encontrado: ${item.productId}` });
         }
-        const currentStock = prod.stockByStore[storeId] || 0;
-        const currentReserved = prod.reservedStockByStore[storeId] || 0;
+        const currentStock = prod.stockByStore[assignedStoreId] || 0;
+        const currentReserved = prod.reservedStockByStore[assignedStoreId] || 0;
         const availableToSell = currentStock - currentReserved;
 
         // Regla operativa: venta normal se pausa cuando quedan <= 2 unidades para evitar roturas
         if (availableToSell - item.quantity < 0) {
           return res.status(400).json({
-            error: `Inventario insuficiente para ${prod.name}. Disponibles para venta: ${Math.max(0, availableToSell)}`,
+            error: `Inventario insuficiente para ${prod.name} en ${assignedStore.name}. Disponibles para venta: ${Math.max(0, availableToSell)}`,
           });
         }
       }
@@ -118,12 +199,13 @@ async function startServer() {
       // Apply reservation
       for (const item of items) {
         const prod = products.find(p => p.id === item.productId)!;
-        prod.reservedStockByStore[storeId] = (prod.reservedStockByStore[storeId] || 0) + item.quantity;
+        prod.reservedStockByStore[assignedStoreId] = (prod.reservedStockByStore[assignedStoreId] || 0) + item.quantity;
       }
 
       const hasPrescriptionItem = items.some((i: any) => i.requiresPrescription);
       const subtotal = items.reduce((acc: number, curr: any) => acc + (curr.price * curr.quantity), 0);
       const totalWeightKg = items.reduce((acc: number, curr: any) => acc + ((curr.weightKg || 0.2) * curr.quantity), 0);
+      const totalWeightGrams = Math.round(totalWeightKg * 1000);
       const shipping = subtotal >= 70000 ? 0 : 4900;
       const serviceFee = 1500;
       const total = subtotal + shipping + serviceFee + tip;
@@ -131,12 +213,108 @@ async function startServer() {
       const random4DigitCode = Math.floor(1000 + Math.random() * 9000).toString();
       const newOrderNum = `#BP-${Math.floor(1000 + Math.random() * 9000)}`;
 
+      // Determinar modo de entrega efectivo
+      let effectiveDeliveryMode = requestedDeliveryMode;
+      if (!effectiveDeliveryMode) {
+        if (totalWeightGrams > 60000 && evaluatedQuote?.turboDividido?.feasible) {
+          effectiveDeliveryMode = 'TURBO_DIVIDIDO';
+        } else if (evaluatedQuote?.availableModes?.turbo) {
+          effectiveDeliveryMode = 'TURBO';
+        } else {
+          effectiveDeliveryMode = 'PROGRAMADO';
+        }
+      }
+
+      const isSplitOrder = effectiveDeliveryMode === 'TURBO_DIVIDIDO';
+
+      // ETA calculado dinámicamente según la cotización
+      const estimatedMinutes = evaluatedQuote?.estimatedMinutes || (effectiveDeliveryMode === 'PROGRAMADO' ? 180 : 25);
+      const promiseEnd = effectiveDeliveryMode === 'PROGRAMADO' && scheduledWindow
+        ? `${scheduledWindow.date}T${scheduledWindow.endTime}:00.000Z`
+        : new Date(Date.now() + estimatedMinutes * 60 * 1000).toISOString();
+
+      const newOrderId = `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+
+      // Generar envíos hijos si es Turbo Dividido
+      let childShipments: any[] | undefined = undefined;
+      if (isSplitOrder && evaluatedQuote?.turboDividido?.shipments) {
+        let accumulatedCash = 0;
+        childShipments = evaluatedQuote.turboDividido.shipments.map((plan: any, idx: number) => {
+          // Asignar conductor inicial de la flota disponible en bodega
+          const assignedDriver = drivers[idx % drivers.length];
+          const isLast = idx === evaluatedQuote.turboDividido.shipments.length - 1;
+          
+          // Asignación proporcional de efectivo contra entrega
+          let shipmentCash = 0;
+          if (paymentMethod === 'CASH_ON_DELIVERY') {
+            if (isLast) {
+              shipmentCash = Math.max(0, total - accumulatedCash);
+            } else {
+              const proportion = subtotal > 0 ? plan.subtotal / subtotal : 1 / evaluatedQuote.turboDividido.shipments.length;
+              shipmentCash = Math.round(total * proportion);
+              accumulatedCash += shipmentCash;
+            }
+          }
+
+          // Convertir ítems del plan a OrderItem completo
+          const shipmentItems = plan.items.map((pi: any) => {
+            const catalogItem = items.find((it: any) => it.productId === pi.productId);
+            return {
+              productId: pi.productId,
+              sku: catalogItem?.sku || `SKU-${pi.productId}`,
+              name: pi.name,
+              brand: catalogItem?.brand || 'Bolt Pets',
+              presentation: catalogItem?.presentation || '',
+              price: pi.price,
+              quantity: pi.quantity,
+              image: catalogItem?.image || 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800',
+              weightKg: pi.unitWeightKg,
+              requiresPrescription: !!catalogItem?.requiresPrescription,
+              picked: false,
+            };
+          });
+
+          return {
+            shipmentId: `SHP-${newOrderId.slice(-4)}-${idx + 1}`,
+            shipmentIndex: idx + 1,
+            shipmentCount: evaluatedQuote.turboDividido.shipments.length,
+            parentOrderId: newOrderId,
+            childOrderId: `${newOrderId}-${String.fromCharCode(65 + idx)}`,
+            items: shipmentItems,
+            weightKg: plan.weightKg,
+            weightGrams: plan.weightGrams,
+            subtotal: plan.subtotal,
+            cashToCollect: shipmentCash,
+            fulfillmentStatus: 'CONFIRMADO',
+            secretDeliveryCode: Math.floor(1000 + Math.random() * 9000).toString(),
+            estimatedDeliveryMinutes: estimatedMinutes,
+            driver: assignedDriver ? {
+              id: assignedDriver.id,
+              name: assignedDriver.name,
+              phone: assignedDriver.phone,
+              vehiclePlate: assignedDriver.vehiclePlate,
+              vehicleType: assignedDriver.vehicleType,
+              rating: assignedDriver.rating,
+              photo: assignedDriver.photo,
+            } : undefined,
+            timestamps: {
+              confirmedAt: new Date().toISOString(),
+            },
+          };
+        });
+      }
+
       const newOrder: Order = {
-        id: `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`,
+        id: newOrderId,
         orderNumber: newOrderNum,
         createdAt: new Date().toISOString(),
-        storeId,
-        storeName: stores.find(s => s.id === storeId)?.name || 'Sede Kennedy',
+        storeId: assignedStoreId,
+        storeName: assignedStore.name,
+        deliveryMode: effectiveDeliveryMode,
+        scheduledWindow: effectiveDeliveryMode === 'PROGRAMADO' ? (scheduledWindow || evaluatedQuote?.scheduledSlots?.[0]) : undefined,
+        isSplitOrder,
+        shipmentCount: childShipments ? childShipments.length : undefined,
+        childShipments,
         customer,
         deliveryAddress,
         items,
@@ -161,11 +339,20 @@ async function startServer() {
         },
         fulfillmentStatus: 'CONFIRMADO',
         secretDeliveryCode: random4DigitCode,
-        estimatedDeliveryMinutes: 15,
+        estimatedDeliveryMinutes: estimatedMinutes,
         originalPromiseWindow: {
           start: new Date().toISOString(),
-          end: new Date(Date.now() + 15 * 60 * 1000).toISOString(),
+          end: promiseEnd,
         },
+        deliveryQuoteSnapshot: evaluatedQuote ? {
+          quoteId: evaluatedQuote.quoteId,
+          geographicDistanceMeters: evaluatedQuote.geographicDistanceMeters,
+          roadDistanceMeters: evaluatedQuote.roadDistanceMeters,
+          totalSeconds: evaluatedQuote.etaComponents?.totalSeconds || (estimatedMinutes * 60),
+          estimatedMinutes,
+          configVersion: evaluatedQuote.configVersion || DELIVERY_CONFIG.configVersion,
+          assignedStoreId,
+        } : undefined,
         timestamps: {
           confirmedAt: new Date().toISOString(),
         },
@@ -225,6 +412,11 @@ async function startServer() {
       orderId: order.id,
       orderNumber: order.orderNumber,
       status: order.fulfillmentStatus,
+      deliveryMode: order.deliveryMode || 'TURBO',
+      scheduledWindow: order.scheduledWindow,
+      isSplitOrder: !!order.isSplitOrder,
+      shipmentCount: order.shipmentCount || (order.childShipments ? order.childShipments.length : 1),
+      childShipments: order.childShipments,
       estimatedMinutes: order.estimatedDeliveryMinutes,
       secretDeliveryCode: order.secretDeliveryCode,
       driver: order.driver ? {
@@ -249,18 +441,70 @@ async function startServer() {
     });
   });
 
-  // Verify delivery with customer secret code
+  // Verify delivery with customer secret code (supports entire order or individual child shipment)
   app.post('/api/v1/orders/:orderId/verify-delivery', (req: Request, res: Response) => {
     const order = orders.find(o => o.id === req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const { deliveryCode } = req.body;
-    if (order.secretDeliveryCode !== String(deliveryCode).trim()) {
+    const { deliveryCode, shipmentId } = req.body;
+    const inputCode = String(deliveryCode).trim();
+
+    // Caso A: Verificación de un envío hijo específico en pedido dividido
+    if (order.isSplitOrder && order.childShipments && shipmentId) {
+      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
+      if (!child) {
+        return res.status(404).json({ error: `Envío hijo no encontrado: ${shipmentId}` });
+      }
+
+      if (child.secretDeliveryCode !== inputCode && order.secretDeliveryCode !== inputCode) {
+        return res.status(403).json({
+          error: `Código de entrega inválido para el envío ${child.shipmentIndex} de ${child.shipmentCount}.`,
+        });
+      }
+
+      child.fulfillmentStatus = 'ENTREGADO';
+      child.timestamps.deliveredAt = new Date().toISOString();
+
+      // Deduct physical stock for items in this shipment
+      for (const item of child.items) {
+        const prod = products.find(p => p.id === item.productId);
+        if (prod) {
+          prod.stockByStore[order.storeId] = Math.max(0, (prod.stockByStore[order.storeId] || 0) - item.quantity);
+          prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
+        }
+      }
+
+      // Comprobar si todos los envíos hijos han sido entregados
+      const allDelivered = order.childShipments.every(s => s.fulfillmentStatus === 'ENTREGADO');
+      if (allDelivered) {
+        order.fulfillmentStatus = 'ENTREGADO';
+        order.timestamps.deliveredAt = new Date().toISOString();
+        if (order.payment.method === 'CASH_ON_DELIVERY') {
+          order.payment.cashSettled = true;
+          order.payment.status = 'APROBADO';
+        }
+      }
+
+      return res.json({
+        message: `Envío ${child.shipmentIndex} de ${child.shipmentCount} verificado y entregado exitosamente`,
+        childShipment: child,
+        order,
+      });
+    }
+
+    // Caso B: Verificación general del pedido
+    if (order.secretDeliveryCode !== inputCode) {
       return res.status(403).json({ error: 'Código de entrega inválido. Verifique el número de 4 dígitos con el cliente.' });
     }
 
     order.fulfillmentStatus = 'ENTREGADO';
     order.timestamps.deliveredAt = new Date().toISOString();
+    if (order.childShipments) {
+      order.childShipments.forEach(s => {
+        s.fulfillmentStatus = 'ENTREGADO';
+        s.timestamps.deliveredAt = new Date().toISOString();
+      });
+    }
 
     // Deduct physical stock permanently
     for (const item of order.items) {
@@ -334,7 +578,36 @@ async function startServer() {
     const order = orders.find(o => o.id === req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const { status } = req.body;
+    const { status, shipmentId } = req.body;
+
+    if (order.isSplitOrder && order.childShipments && shipmentId) {
+      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
+      if (child) {
+        child.fulfillmentStatus = status;
+        const nowIso = new Date().toISOString();
+        if (status === 'EN_ALISTAMIENTO' && !child.timestamps.prepStartedAt) child.timestamps.prepStartedAt = nowIso;
+        if (status === 'LISTO_PARA_DESPACHO' && !child.timestamps.prepCompletedAt) child.timestamps.prepCompletedAt = nowIso;
+        if (status === 'EN_CAMINO' && !child.timestamps.pickedUpAt) child.timestamps.pickedUpAt = nowIso;
+        if (status === 'ENTREGADO' && !child.timestamps.deliveredAt) child.timestamps.deliveredAt = nowIso;
+
+        // Sincronizar estado del pedido padre
+        if (order.childShipments.every(s => s.fulfillmentStatus === 'ENTREGADO')) {
+          order.fulfillmentStatus = 'ENTREGADO';
+          order.timestamps.deliveredAt = nowIso;
+        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'EN_CAMINO')) {
+          order.fulfillmentStatus = 'EN_CAMINO';
+        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')) {
+          order.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
+        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'LISTO_PARA_DESPACHO')) {
+          order.fulfillmentStatus = 'LISTO_PARA_DESPACHO';
+        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'EN_ALISTAMIENTO')) {
+          order.fulfillmentStatus = 'EN_ALISTAMIENTO';
+        }
+
+        return res.json({ message: `Estado del envío ${child.shipmentIndex} actualizado a ${status}`, child, order });
+      }
+    }
+
     order.fulfillmentStatus = status;
 
     if (status === 'EN_ALISTAMIENTO' && !order.timestamps.prepStartedAt) {
@@ -370,10 +643,9 @@ async function startServer() {
     const order = orders.find(o => o.id === req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const { driverId } = req.body;
+    const { driverId, shipmentId } = req.body;
     const driver = drivers.find(d => d.id === driverId) || drivers[0];
-
-    order.driver = {
+    const driverPayload = {
       id: driver.id,
       name: driver.name,
       phone: driver.phone,
@@ -382,6 +654,24 @@ async function startServer() {
       rating: driver.rating,
       photo: driver.photo,
     };
+
+    if (order.isSplitOrder && order.childShipments && shipmentId) {
+      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
+      if (child) {
+        child.driver = driverPayload;
+        child.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
+        child.timestamps.assignedAt = new Date().toISOString();
+
+        if (order.childShipments.every(s => !!s.driver)) {
+          order.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
+          order.timestamps.assignedAt = new Date().toISOString();
+        }
+
+        return res.json({ message: `Conductor asignado al envío ${child.shipmentIndex}`, child, order });
+      }
+    }
+
+    order.driver = driverPayload;
     order.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
     order.timestamps.assignedAt = new Date().toISOString();
 
@@ -413,6 +703,81 @@ async function startServer() {
         status: 'Conectada (Simulador Activo)',
         activeConversations: 3,
       },
+    });
+  });
+
+  // Verify and calibrate warehouse dispatch entrance
+  app.post('/api/v1/stores/:id/verify-entrance', (req: Request, res: Response) => {
+    const store = stores.find(s => s.id === req.params.id);
+    if (!store) return res.status(404).json({ error: 'Bodega no encontrada' });
+
+    const { coordinates, verifiedBy = 'Administrador Logística Bolt' } = req.body;
+    if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lng !== 'number') {
+      return res.status(400).json({ error: 'Coordenadas de entrada inválidas' });
+    }
+
+    const verifiedCoords = {
+      lat: Number(coordinates.lat.toFixed(6)),
+      lng: Number(coordinates.lng.toFixed(6)),
+    };
+
+    store.verifiedEntrance = verifiedCoords;
+    store.coordinates = verifiedCoords; // Actualizar origen operacional de rutas
+    store.verificationStatus = 'VERIFIED';
+    store.verifiedAt = new Date().toISOString();
+    store.verifiedBy = verifiedBy;
+
+    res.json({
+      message: `Entrada física de cargue verificada para ${store.name}`,
+      store,
+    });
+  });
+
+  // Shopify sync state & triggers
+  app.get('/api/v1/shopify/status', (_req: Request, res: Response) => {
+    res.json(shopifyService.getState());
+  });
+
+  app.post('/api/v1/shopify/sync', async (_req: Request, res: Response) => {
+    try {
+      const state = await shopifyService.triggerReconciliation();
+      res.json({
+        message: 'Conciliación de inventario con Shopify (Agrocentro Pets) completada exitosamente',
+        state,
+      });
+    } catch (e: any) {
+      res.status(500).json({ error: e.message || 'Error en conciliación de inventario con Shopify' });
+    }
+  });
+
+  app.post('/api/v1/shopify/webhook', (req: Request, res: Response) => {
+    const topic = req.headers['x-shopify-topic'] || 'inventory_levels/update';
+    console.log(`[Shopify Webhook] Evento recibido: ${topic}`);
+    res.status(200).json({ received: true });
+  });
+
+  // Simulador de webhook de Shopify (inventory_levels/update) para pruebas operativas seguras
+  app.post('/api/v1/shopify/simulate-webhook', (req: Request, res: Response) => {
+    const { storeId, sku, newOnHand, committed = 0 } = req.body;
+    if (!storeId || !sku || typeof newOnHand !== 'number') {
+      return res.status(400).json({ error: 'Faltan parámetros requeridos (storeId, sku, newOnHand)' });
+    }
+
+    const result = shopifyService.updateLocationStock(storeId, sku, newOnHand, committed);
+    if (!result.success) {
+      return res.status(404).json({ error: result.error || 'No se pudo actualizar el inventario' });
+    }
+
+    // Actualizar también el catálogo en memoria de la sede para consistencia
+    const prod = products.find(p => p.sku === sku);
+    if (prod) {
+      prod.stockByStore[storeId] = Math.max(0, newOnHand - committed);
+    }
+
+    res.json({
+      message: `Webhook simulado exitosamente: Stock actualizado en ${storeId} para SKU ${sku}`,
+      item: result.item,
+      state: shopifyService.getState(),
     });
   });
 

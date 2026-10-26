@@ -2,12 +2,15 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
   Settings, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, UserCheck, 
-  Search, RefreshCw, Key, Download, Sparkles, Phone, MapPin 
+  Search, RefreshCw, Key, Download, Sparkles, Phone, MapPin, Calendar,
+  Building2, ShoppingBag
 } from 'lucide-react';
 import { Order, Product, Store, DriverProfile, OperationRole, FulfillmentStatus } from '../../types';
 import { formatCOP, formatTimeBogota, formatDateBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
 import { pushService } from '../../lib/notifications';
+import { WarehouseManagerTab } from './WarehouseManagerTab';
+import { ShopifySyncTab } from './ShopifySyncTab';
 
 interface OperationsDashboardProps {
   onBackToCustomer: () => void;
@@ -19,7 +22,8 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   onViewOrderTracking,
 }) => {
   const [currentRole, setCurrentRole] = useState<OperationRole>('ADMINISTRADOR');
-  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR'>('PEDIDOS');
+  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR'>('PEDIDOS');
+  const [deliveryModeFilter, setDeliveryModeFilter] = useState<'TODOS' | 'TURBO' | 'TURBO_DIVIDIDO' | 'PROGRAMADO'>('TODOS');
   
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -62,12 +66,21 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
   // Filtered orders
   const storeOrders = orders.filter(o => o.storeId === selectedStoreId);
+  const scheduledOrders = orders.filter(o => o.deliveryMode === 'PROGRAMADO');
   const pendingPrescriptionOrders = orders.filter(o => o.prescriptionReview?.status === 'PENDIENTE_REVISION');
 
+  const filteredStoreOrders = storeOrders.filter(o => {
+    if (deliveryModeFilter === 'TODOS') return true;
+    if (deliveryModeFilter === 'TURBO') return (!o.deliveryMode || o.deliveryMode === 'TURBO') && !o.isSplitOrder;
+    if (deliveryModeFilter === 'TURBO_DIVIDIDO') return o.isSplitOrder || o.deliveryMode === 'TURBO_DIVIDIDO';
+    if (deliveryModeFilter === 'PROGRAMADO') return o.deliveryMode === 'PROGRAMADO';
+    return true;
+  });
+
   // Handle stage change
-  const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus) => {
+  const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus, shipmentId?: string) => {
     const targetOrder = orders.find(o => o.id === orderId);
-    await api.updateOrderStatus(orderId, status);
+    await api.updateOrderStatus(orderId, status, shipmentId);
     await loadData();
     if (selectedOrder && selectedOrder.id === orderId) {
       setSelectedOrder(prev => prev ? { ...prev, fulfillmentStatus: status } : null);
@@ -79,6 +92,21 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         status,
         targetOrder.driver?.name,
         targetOrder.secretDeliveryCode
+      );
+    }
+  };
+
+  // Handle driver assign (supports whole order or specific child shipment)
+  const handleAssignDriver = async (orderId: string, shipmentId?: string) => {
+    const targetOrder = orders.find(o => o.id === orderId);
+    await api.assignDriver(orderId, 'DRV-CARLOS-01', shipmentId);
+    await loadData();
+    if (targetOrder) {
+      pushService.simulateOrderTransition(
+        targetOrder.orderNumber,
+        targetOrder.id,
+        'REPARTIDOR_ASIGNADO',
+        'Carlos Rodríguez'
       );
     }
   };
@@ -97,21 +125,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         targetOrder.orderNumber,
         targetOrder.id,
         'PRESCRIPTION_APPROVED'
-      );
-    }
-  };
-
-  // Handle driver assign
-  const handleAssignDriver = async (orderId: string) => {
-    const targetOrder = orders.find(o => o.id === orderId);
-    await api.assignDriver(orderId, 'DRV-CARLOS-01');
-    await loadData();
-    if (targetOrder) {
-      pushService.simulateOrderTransition(
-        targetOrder.orderNumber,
-        targetOrder.id,
-        'REPARTIDOR_ASIGNADO',
-        'Carlos Rodríguez'
       );
     }
   };
@@ -198,6 +211,9 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         <div className="max-w-7xl mx-auto flex items-center gap-1 overflow-x-auto no-scrollbar text-xs font-bold">
           {[
             { id: 'PEDIDOS', label: 'Tablero de Pedidos', count: storeOrders.length, icon: Boxes },
+            { id: 'PROGRAMADAS', label: 'Entregas Programadas', count: scheduledOrders.length, icon: Calendar },
+            { id: 'BODEGAS', label: 'Bodegas y Mapas', count: stores.filter(s => s.turboEnabled).length, icon: Building2 },
+            { id: 'SHOPIFY', label: 'Shopify Agrocentro', icon: ShoppingBag },
             { id: 'FARMACIA', label: 'Fórmulas Veterinarias', count: pendingPrescriptionOrders.length, icon: FileText, alert: pendingPrescriptionOrders.length > 0 },
             { id: 'FLOTA', label: 'Flota & Repartidores', icon: Bike },
             { id: 'INVENTARIO', label: 'Inventario & Lotes', count: products.length, icon: Settings },
@@ -241,20 +257,52 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         {/* ============================================================== */}
         {activeTab === 'PEDIDOS' && (
           <div className="space-y-4">
-            <div className="flex items-center justify-between">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
               <div>
                 <h2 className="text-xl font-black text-slate-900">Cola de Alistamiento & Despacho</h2>
                 <p className="text-xs text-slate-500">
-                  Priorizado por promesa de entrega aceptada (SLA 15 min Turbo)
+                  Priorizado por promesa de entrega aceptada (SLA Turbo hasta 25 min • Programados)
                 </p>
               </div>
-              <button
-                onClick={loadData}
-                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xs transition"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Actualizar</span>
-              </button>
+              
+              <div className="flex items-center gap-2">
+                <button
+                  onClick={loadData}
+                  className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xs transition"
+                >
+                  <RefreshCw className="w-3.5 h-3.5" />
+                  <span>Actualizar</span>
+                </button>
+              </div>
+            </div>
+
+            {/* Delivery Mode Filter Chips */}
+            <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs font-bold">
+              <span className="text-slate-400 text-[11px] uppercase mr-1">Filtrar por modo:</span>
+              {[
+                { id: 'TODOS', label: 'Todos', count: storeOrders.length },
+                { id: 'TURBO', label: '⚡ Turbo (25 min)', count: storeOrders.filter(o => (!o.deliveryMode || o.deliveryMode === 'TURBO') && !o.isSplitOrder).length },
+                { id: 'TURBO_DIVIDIDO', label: '⚡ Turbo Dividido (>60kg)', count: storeOrders.filter(o => o.isSplitOrder || o.deliveryMode === 'TURBO_DIVIDIDO').length },
+                { id: 'PROGRAMADO', label: '📅 Envío Programado', count: storeOrders.filter(o => o.deliveryMode === 'PROGRAMADO').length },
+              ].map(f => {
+                const isSelected = deliveryModeFilter === f.id;
+                return (
+                  <button
+                    key={f.id}
+                    onClick={() => setDeliveryModeFilter(f.id as any)}
+                    className={`px-3 py-1.5 rounded-xl border text-xs font-extrabold transition flex items-center gap-1.5 shrink-0 ${
+                      isSelected
+                        ? 'bg-slate-900 text-white border-slate-900 shadow-xs'
+                        : 'bg-white text-slate-600 border-slate-200 hover:bg-slate-50'
+                    }`}
+                  >
+                    <span>{f.label}</span>
+                    <span className={`text-[10px] px-1.5 py-0.2 rounded-full ${isSelected ? 'bg-slate-700 text-white' : 'bg-slate-100 text-slate-700'}`}>
+                      {f.count}
+                    </span>
+                  </button>
+                );
+              })}
             </div>
 
             {/* Kanban Columns */}
@@ -264,12 +312,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>1. EN ALISTAMIENTO</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {storeOrders.filter(o => o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO').length}
+                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {storeOrders
+                  {filteredStoreOrders
                     .filter(o => o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO')
                     .map(order => (
                       <div
@@ -278,7 +326,19 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       >
                         <div className="flex items-start justify-between">
                           <div>
-                            <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                              {order.isSplitOrder && (
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded">
+                                  ⚡ Split {order.shipmentCount} envíos
+                                </span>
+                              )}
+                              {order.deliveryMode === 'PROGRAMADO' && (
+                                <span className="text-[9px] font-black bg-blue-100 text-blue-900 px-1.5 py-0.2 rounded">
+                                  📅 {order.scheduledWindow?.startTime} - {order.scheduledWindow?.endTime}
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-500">{order.customer.name}</p>
                           </div>
                           <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
@@ -325,12 +385,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>2. LISTO PARA DESPACHO</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {storeOrders.filter(o => o.fulfillmentStatus === 'LISTO_PARA_DESPACHO').length}
+                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'LISTO_PARA_DESPACHO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {storeOrders
+                  {filteredStoreOrders
                     .filter(o => o.fulfillmentStatus === 'LISTO_PARA_DESPACHO')
                     .map(order => (
                       <div
@@ -339,7 +399,19 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       >
                         <div className="flex justify-between items-start">
                           <div>
-                            <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                              {order.isSplitOrder && (
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded">
+                                  ⚡ Split {order.shipmentCount} motos
+                                </span>
+                              )}
+                              {order.deliveryMode === 'PROGRAMADO' && (
+                                <span className="text-[9px] font-black bg-blue-100 text-blue-900 px-1.5 py-0.2 rounded">
+                                  📅 Camioneta Cargo
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-500">{order.deliveryAddress.address}</p>
                           </div>
                           <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-md">
@@ -347,13 +419,42 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                           </span>
                         </div>
 
-                        <button
-                          onClick={() => handleAssignDriver(order.id)}
-                          className="w-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition"
-                        >
-                          <Bike className="w-3.5 h-3.5" />
-                          <span>Asignar Conductor Propio</span>
-                        </button>
+                        {/* Split Child Shipments Assignment */}
+                        {order.isSplitOrder && order.childShipments && order.childShipments.length > 0 ? (
+                          <div className="space-y-1.5 pt-1">
+                            <p className="text-[10px] font-extrabold text-amber-900 uppercase">
+                              Asignación de Repartidores por Envío ({order.childShipments.length} motos):
+                            </p>
+                            {order.childShipments.map(child => (
+                              <div
+                                key={child.shipmentId}
+                                className="bg-amber-50/60 p-2 rounded-xl border border-amber-200 flex items-center justify-between text-[11px]"
+                              >
+                                <div>
+                                  <span className="font-bold text-slate-800">Envío {child.shipmentIndex}</span>
+                                  <span className="text-slate-500 ml-1">({child.weightKg} kg)</span>
+                                  {child.driver && (
+                                    <p className="text-[10px] text-slate-600 font-semibold">{child.driver.name}</p>
+                                  )}
+                                </div>
+                                <button
+                                  onClick={() => handleAssignDriver(order.id, child.shipmentId)}
+                                  className="bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] px-2.5 py-1 rounded-lg transition"
+                                >
+                                  {child.driver ? 'Reasignar' : 'Asignar Moto'}
+                                </button>
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <button
+                            onClick={() => handleAssignDriver(order.id)}
+                            className="w-full bg-red-600 hover:bg-red-700 text-white font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 shadow-sm transition"
+                          >
+                            <Bike className="w-3.5 h-3.5" />
+                            <span>{order.deliveryMode === 'PROGRAMADO' ? 'Asignar Camioneta' : 'Asignar Conductor Propio'}</span>
+                          </button>
+                        )}
                       </div>
                     ))}
                 </div>
@@ -364,12 +465,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>3. EN CAMINO (GPS ACTIVO)</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {storeOrders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length}
+                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {storeOrders
+                  {filteredStoreOrders
                     .filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')
                     .map(order => (
                       <div
@@ -379,22 +480,66 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                         <div className="absolute top-0 right-0 w-2 h-full bg-yellow-400"></div>
                         <div className="flex justify-between items-start">
                           <div>
-                            <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
-                            <p className="text-[11px] text-slate-500">Conductor: {order.driver?.name}</p>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                              {order.isSplitOrder && (
+                                <span className="text-[9px] font-black bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded">
+                                  ⚡ Split {order.childShipments?.filter(s => s.fulfillmentStatus === 'ENTREGADO').length || 0}/{order.shipmentCount} entregados
+                                </span>
+                              )}
+                            </div>
+                            <p className="text-[11px] text-slate-500">Conductor: {order.driver?.name || 'Asignado'}</p>
                           </div>
                           <span className="text-[10px] font-black bg-yellow-400 text-red-950 px-2 py-0.5 rounded-md">
                             ⚡ En ruta
                           </span>
                         </div>
 
-                        <div className="p-2 bg-slate-50 rounded-xl text-xs space-y-1">
-                          <p className="text-slate-600 text-[11px]">
-                            Vehículo: <strong className="text-slate-800">{order.driver?.vehiclePlate}</strong>
-                          </p>
-                          <p className="text-slate-600 text-[11px]">
-                            Código Secreto: <strong className="text-red-600 font-black">{order.secretDeliveryCode}</strong>
-                          </p>
-                        </div>
+                        {/* If Split Order: Show Individual Child Shipments Status & Controls */}
+                        {order.isSplitOrder && order.childShipments && order.childShipments.length > 0 ? (
+                          <div className="space-y-1.5 pt-1">
+                            {order.childShipments.map(child => (
+                              <div
+                                key={child.shipmentId}
+                                className="bg-slate-50 p-2 rounded-xl border border-slate-200 text-[11px] space-y-1"
+                              >
+                                <div className="flex justify-between items-center">
+                                  <span className="font-bold text-slate-800">
+                                    Envío {child.shipmentIndex} ({child.weightKg} kg):
+                                  </span>
+                                  <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
+                                    child.fulfillmentStatus === 'ENTREGADO'
+                                      ? 'bg-emerald-100 text-emerald-800'
+                                      : 'bg-yellow-100 text-yellow-900'
+                                  }`}>
+                                    {child.fulfillmentStatus}
+                                  </span>
+                                </div>
+                                <div className="flex justify-between items-center text-[10px] text-slate-500">
+                                  <span>PIN: <strong className="text-red-600 font-mono">{child.secretDeliveryCode}</strong></span>
+                                  <span>{child.driver?.name?.split(' ')[0]} ({child.driver?.vehiclePlate})</span>
+                                </div>
+                                {child.fulfillmentStatus !== 'ENTREGADO' && (
+                                  <button
+                                    onClick={() => handleUpdateStatus(order.id, 'ENTREGADO', child.shipmentId)}
+                                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition"
+                                  >
+                                    Confirmar Entrega Envío {child.shipmentIndex} ✓
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                          </div>
+                        ) : (
+                          <div className="p-2 bg-slate-50 rounded-xl text-xs space-y-1">
+                            <p className="text-slate-600 text-[11px]">
+                              Vehículo: <strong className="text-slate-800">{order.driver?.vehiclePlate}</strong>
+                            </p>
+                            <p className="text-slate-600 text-[11px]">
+                              Código Secreto: <strong className="text-red-600 font-black">{order.secretDeliveryCode}</strong>
+                            </p>
+                          </div>
+                        )}
 
                         <div className="flex gap-2">
                           <button
@@ -406,7 +551,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                           <button
                             onClick={() => handleUpdateStatus(order.id, 'ENTREGADO')}
                             className="bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-xs px-3 py-2 rounded-xl transition"
-                            title="Confirmar entrega"
+                            title="Confirmar entrega total"
                           >
                             ✓
                           </button>
@@ -421,12 +566,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>4. ENTREGADOS HOY</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {storeOrders.filter(o => o.fulfillmentStatus === 'ENTREGADO').length}
+                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'ENTREGADO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {storeOrders
+                  {filteredStoreOrders
                     .filter(o => o.fulfillmentStatus === 'ENTREGADO')
                     .map(order => (
                       <div
@@ -435,7 +580,14 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       >
                         <div className="flex justify-between items-start">
                           <div>
-                            <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                            <div className="flex items-center gap-1.5 flex-wrap">
+                              <span className="text-xs font-black text-slate-900">{order.orderNumber}</span>
+                              {order.isSplitOrder && (
+                                <span className="text-[9px] font-black bg-emerald-100 text-emerald-900 px-1.5 py-0.2 rounded">
+                                  ✓ Split ({order.shipmentCount} envíos entregados)
+                                </span>
+                              )}
+                            </div>
                             <p className="text-[11px] text-slate-500">{order.customer.name}</p>
                           </div>
                           <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-md">
@@ -451,6 +603,123 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               </div>
             </div>
           </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB 1.5: SCHEDULED DELIVERIES CALENDAR & CAPACITY QUEUE */}
+        {/* ============================================================== */}
+        {activeTab === 'PROGRAMADAS' && (
+          <div className="space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                  <Calendar className="w-5 h-5 text-blue-600" />
+                  <span>Programación de Entregas y Capacidad por Franja</span>
+                </h2>
+                <p className="text-xs text-slate-500">
+                  Despachos programados en camioneta y furgón metropolitano de Bogotá
+                </p>
+              </div>
+              <button
+                onClick={loadData}
+                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xs transition"
+              >
+                <RefreshCw className="w-3.5 h-3.5" />
+                <span>Actualizar</span>
+              </button>
+            </div>
+
+            {/* Scheduled slots grid: Tres horarios oficiales */}
+            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+              {[
+                { label: 'Hoy', name: 'Horario 1', window: '09:00–14:00', cutoff: '10:00 a. m.', maxCap: 10, windowId: 'HORARIO_1' },
+                { label: 'Hoy', name: 'Horario 2', window: '14:00–18:00', cutoff: '12:00 m.', maxCap: 10, windowId: 'HORARIO_2' },
+                { label: 'Hoy', name: 'Horario 3', window: '18:00–22:00', cutoff: '4:00 p. m.', maxCap: 10, windowId: 'HORARIO_3' },
+                { label: 'Mañana', name: 'Horario 1', window: '09:00–14:00', cutoff: '10:00 a. m.', maxCap: 12, windowId: 'HORARIO_1' },
+                { label: 'Mañana', name: 'Horario 2', window: '14:00–18:00', cutoff: '12:00 m.', maxCap: 12, windowId: 'HORARIO_2' },
+                { label: 'Mañana', name: 'Horario 3', window: '18:00–22:00', cutoff: '4:00 p. m.', maxCap: 12, windowId: 'HORARIO_3' },
+              ].map((slot, idx) => {
+                const assigned = orders.filter(
+                  o => o.deliveryMode === 'PROGRAMADO' && 
+                  o.scheduledWindow &&
+                  (o.scheduledWindow.dateLabel?.includes(slot.label) || o.scheduledWindow.date?.includes(slot.label === 'Hoy' ? new Date().toISOString().split('T')[0] : '')) &&
+                  (o.scheduledWindow.windowId === slot.windowId || o.scheduledWindow.displayWindow?.includes(slot.window.split('–')[0]) || o.scheduledWindow.startTime === slot.window.split('–')[0])
+                );
+
+                return (
+                  <div
+                    key={idx}
+                    className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs space-y-3"
+                  >
+                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
+                      <div>
+                        <div className="flex items-center gap-1.5">
+                          <span className="text-xs font-black text-blue-900">{slot.label}</span>
+                          <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded">{slot.name}</span>
+                        </div>
+                        <h4 className="text-sm font-extrabold text-slate-900">{slot.window}</h4>
+                        <p className="text-[10px] text-slate-400">Corte reserva: {slot.cutoff}</p>
+                      </div>
+                      <div className="text-right">
+                        <span className="text-[10px] font-bold text-slate-400">Capacidad</span>
+                        <p className="text-xs font-black text-slate-800">
+                          {assigned.length} / {slot.maxCap} pedidos
+                        </p>
+                      </div>
+                    </div>
+
+                    {assigned.length === 0 ? (
+                      <div className="py-4 text-center text-xs text-slate-400 italic">
+                        Sin pedidos programados en esta franja
+                      </div>
+                    ) : (
+                      <div className="space-y-2">
+                        {assigned.map(ord => (
+                          <div
+                            key={ord.id}
+                            className="p-2.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1"
+                          >
+                            <div className="flex justify-between items-center">
+                              <span className="font-extrabold text-slate-900">{ord.orderNumber}</span>
+                              <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
+                                {ord.fulfillmentStatus}
+                              </span>
+                            </div>
+                            <p className="text-[11px] text-slate-600 font-medium truncate">{ord.customer.name} • {ord.deliveryAddress.address}</p>
+                            <div className="flex justify-between items-center pt-1 text-[11px] text-slate-500 border-t border-slate-200/50">
+                              <span>Peso: {ord.totals.totalWeightKg} kg</span>
+                              <span className="font-bold text-slate-900">{formatCOP(ord.totals.total)}</span>
+                            </div>
+                          </div>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB: BODEGAS INDEPENDIENTES Y CALIBRACIÓN DE ENTRADAS EN MAPA */}
+        {/* ============================================================== */}
+        {activeTab === 'BODEGAS' && (
+          <WarehouseManagerTab
+            stores={stores}
+            products={products}
+            orders={orders}
+            onRefreshStores={loadData}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB: SINCRONIZACIÓN SHOPIFY AGROCENTRO PETS */}
+        {/* ============================================================== */}
+        {activeTab === 'SHOPIFY' && (
+          <ShopifySyncTab
+            onRefreshData={loadData}
+          />
         )}
 
         {/* ============================================================== */}
@@ -814,7 +1083,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <p className="text-xl font-black text-slate-900 mt-1">9.2 min</p>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-xs text-slate-500 font-bold">Cumplimiento Promesa (&lt;15m):</span>
+                <span className="text-xs text-slate-500 font-bold">Cumplimiento Promesa (&lt;25m):</span>
                 <p className="text-xl font-black text-emerald-600 mt-1">96.8%</p>
               </div>
               <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">

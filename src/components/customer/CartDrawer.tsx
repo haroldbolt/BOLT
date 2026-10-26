@@ -62,7 +62,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
               <p className="font-bold text-slate-700 text-sm">Tu carrito está vacío</p>
               <p className="text-xs max-w-xs text-slate-500">
-                Explora alimentos, farmacia veterinaria y snacks con entrega en 15 minutos.
+                Explora alimentos, farmacia veterinaria y snacks con entrega ultra-rápida (hasta 25 min).
               </p>
             </div>
           ) : (

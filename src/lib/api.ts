@@ -1,9 +1,27 @@
 import { Product, Store, Order, GPSTelemetry, DriverProfile } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
+import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
 
 const BASE_URL = '/api/v1';
 
 export const api = {
+  async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[]): Promise<DeliveryQuote> {
+    try {
+      const res = await fetch(`${BASE_URL}/delivery/quote`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(req),
+      });
+      if (!res.ok) {
+        throw new Error('Error del servidor en cotización');
+      }
+      return await res.json();
+    } catch {
+      // Fallback local autoritativo
+      return evaluateDeliveryQuote(req, localStores || INITIAL_STORES, localProducts || INITIAL_PRODUCTS);
+    }
+  },
+
   async getStores(): Promise<Store[]> {
     try {
       const res = await fetch(`${BASE_URL}/stores`);
@@ -78,11 +96,11 @@ export const api = {
     return await res.json();
   },
 
-  async verifyDelivery(orderId: string, deliveryCode: string): Promise<any> {
+  async verifyDelivery(orderId: string, deliveryCode: string, shipmentId?: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/orders/${orderId}/verify-delivery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ deliveryCode }),
+      body: JSON.stringify({ deliveryCode, shipmentId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -100,11 +118,11 @@ export const api = {
     return await res.json();
   },
 
-  async updateOrderStatus(orderId: string, status: string): Promise<any> {
+  async updateOrderStatus(orderId: string, status: string, shipmentId?: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/status`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status }),
+      body: JSON.stringify({ status, shipmentId }),
     });
     return await res.json();
   },
@@ -118,11 +136,11 @@ export const api = {
     return await res.json();
   },
 
-  async assignDriver(orderId: string, driverId: string): Promise<any> {
+  async assignDriver(orderId: string, driverId: string, shipmentId?: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/assign-driver`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ driverId }),
+      body: JSON.stringify({ driverId, shipmentId }),
     });
     return await res.json();
   },
@@ -138,6 +156,40 @@ export const api = {
         wompi: { name: 'Wompi Colombia', status: 'Conectada (Sandbox)', lastTransaction: new Date().toISOString() },
         whatsappBot: { name: 'WhatsApp Bot', status: 'Conectada (Simulador)', activeConversations: 2 },
       };
+    }
+  },
+
+  async verifyStoreEntrance(storeId: string, coordinates: { lat: number; lng: number }, verifiedBy?: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/stores/${storeId}/verify-entrance`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ coordinates, verifiedBy }),
+    });
+    if (!res.ok) throw new Error('Error al guardar verificación de entrada de bodega');
+    return await res.json();
+  },
+
+  async getShopifyStatus(): Promise<any> {
+    try {
+      const res = await fetch(`${BASE_URL}/shopify/status`);
+      if (!res.ok) throw new Error('Error al consultar estado de Shopify');
+      return await res.json();
+    } catch {
+      // Fallback a servicio cliente
+      const { shopifyService } = await import('./shopifyService');
+      return shopifyService.getState();
+    }
+  },
+
+  async syncShopifyInventory(): Promise<any> {
+    try {
+      const res = await fetch(`${BASE_URL}/shopify/sync`, { method: 'POST' });
+      if (!res.ok) throw new Error('Error al sincronizar inventario con Shopify');
+      return await res.json();
+    } catch {
+      const { shopifyService } = await import('./shopifyService');
+      const state = await shopifyService.triggerReconciliation();
+      return { message: 'Sincronización simulada exitosa', state };
     }
   },
 };

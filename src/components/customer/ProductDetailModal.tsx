@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2 } from 'lucide-react';
+import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -12,6 +12,8 @@ interface ProductDetailModalProps {
   isFavorite: boolean;
   onToggleFavorite: (p: Product) => void;
   selectedStoreId: string;
+  isCompared?: boolean;
+  onToggleCompare?: (p: Product) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -23,6 +25,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isFavorite,
   onToggleFavorite,
   selectedStoreId,
+  isCompared = false,
+  onToggleCompare,
 }) => {
   if (!product) return null;
 
@@ -36,22 +40,43 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
       <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
         {/* Sticky close and favorite header */}
         <div className="sticky top-0 z-20 flex items-center justify-between p-4 bg-white/90 backdrop-blur-md border-b border-slate-100">
-          <button
-            onClick={() => onToggleFavorite(product)}
-            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition"
-          >
-            <Heart
-              className={`w-5 h-5 ${
-                isFavorite ? 'fill-red-600 text-red-600' : 'text-slate-500'
-              }`}
-            />
-          </button>
-          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">
+          <div className="flex items-center gap-2">
+            <button
+              onClick={() => onToggleFavorite(product)}
+              className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center transition cursor-pointer"
+              title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+            >
+              <Heart
+                className={`w-5 h-5 ${
+                  isFavorite ? 'fill-red-600 text-red-600' : 'text-slate-500'
+                }`}
+              />
+            </button>
+
+            {onToggleCompare && (
+              <button
+                type="button"
+                onClick={() => onToggleCompare(product)}
+                className={`h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-bold transition cursor-pointer ${
+                  isCompared
+                    ? 'bg-amber-400 text-slate-900 shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title={isCompared ? 'Quitar del comparador' : 'Comparar con otros productos (hasta 3)'}
+              >
+                <Scale className="w-4 h-4" />
+                <span>{isCompared ? 'En comparador' : 'Comparar'}</span>
+              </button>
+            )}
+          </div>
+
+          <span className="text-xs font-bold text-slate-500 uppercase tracking-wider truncate max-w-[140px]">
             {product.brand}
           </span>
+
           <button
             onClick={onClose}
-            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition"
+            className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
           </button>

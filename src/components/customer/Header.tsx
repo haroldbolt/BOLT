@@ -1,6 +1,7 @@
 import React, { useState } from 'react';
-import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell } from 'lucide-react';
-import { MainCategory, Store } from '../../types';
+import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar } from 'lucide-react';
+import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
+import { DeliveryQuote } from '../../lib/deliveryService';
 
 interface HeaderProps {
   currentStore: Store;
@@ -19,6 +20,12 @@ interface HeaderProps {
   unreadNotificationsCount?: number;
   totalOrdersCount?: number;
   isCompact?: boolean;
+  customerAddress?: string;
+  customerAddressDetails?: string;
+  deliveryQuote?: DeliveryQuote | null;
+  onOpenAddressModal?: () => void;
+  selectedDeliveryMode?: DeliveryMode;
+  selectedScheduledWindow?: ScheduledDeliveryWindow | null;
 }
 
 const CATEGORIES: MainCategory[] = [
@@ -51,9 +58,39 @@ export const Header: React.FC<HeaderProps> = ({
   unreadNotificationsCount = 0,
   totalOrdersCount = 0,
   isCompact = false,
+  customerAddress,
+  customerAddressDetails,
+  deliveryQuote,
+  onOpenAddressModal,
+  selectedDeliveryMode,
+  selectedScheduledWindow,
 }) => {
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+
+  // Determinar si aplica la modalidad de Envío Programado
+  const isScheduledDelivery =
+    selectedDeliveryMode === 'PROGRAMADO' ||
+    (!!deliveryQuote && !deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && !!deliveryQuote.availableModes.scheduled);
+
+  const formatHeaderWindow = (win: ScheduledDeliveryWindow): string => {
+    let day = 'Hoy';
+    if (win.dateLabel?.includes('Mañana')) {
+      day = 'Mañana';
+    } else if (win.dateLabel && !win.dateLabel.includes('Hoy')) {
+      day = win.dateLabel.split(',')[0].trim();
+    }
+
+    let interval = win.displayWindowShort;
+    if (!interval) {
+      if (win.startTime === '09:00' && win.endTime === '14:00') interval = '9:00–2:00 p. m.';
+      else if (win.startTime === '14:00' && win.endTime === '18:00') interval = '2:00–6:00 p. m.';
+      else if (win.startTime === '18:00' && win.endTime === '22:00') interval = '6:00–10:00 p. m.';
+      else interval = `${win.startTime}–${win.endTime}`;
+    }
+
+    return `${day}, ${interval}`;
+  };
 
   return (
     <>
@@ -81,27 +118,60 @@ export const Header: React.FC<HeaderProps> = ({
               )}
             </div>
 
-            {/* Address & Store Selector */}
+            {/* Address-First Starting Point: ¿Dónde entregamos tu pedido? */}
             <button
-              onClick={() => setShowStoreModal(true)}
-              className="flex-1 max-w-sm flex items-center justify-between bg-red-700/80 hover:bg-red-700 text-white rounded-full px-3.5 py-1.5 text-left border border-red-500/50 shadow-inner transition"
+              onClick={() => (onOpenAddressModal ? onOpenAddressModal() : setShowStoreModal(true))}
+              className="flex-1 max-w-sm flex items-center justify-between bg-red-700/80 hover:bg-red-700 text-white rounded-full px-3.5 py-1.5 text-left border border-red-500/50 shadow-inner transition group"
             >
               <div className="flex items-center gap-1.5 overflow-hidden">
                 <MapPin className="w-3.5 h-3.5 text-yellow-300 shrink-0" />
                 <div className="truncate text-xs">
-                  <span className="font-semibold">{currentStore.name.replace('Sede ', '')}: </span>
-                  <span className="text-red-100">{currentStore.address}</span>
+                  {customerAddress ? (
+                    <>
+                      <span className="font-bold">{customerAddress}</span>
+                      <span className="text-red-200 text-[10px] ml-1">
+                        ({currentStore.name.replace('Sede ', '')})
+                      </span>
+                    </>
+                  ) : (
+                    <span className="font-extrabold text-white">¿Dónde entregamos tu pedido?</span>
+                  )}
                 </div>
               </div>
-              <ChevronDown className="w-3.5 h-3.5 text-red-200 shrink-0 ml-1" />
+              <ChevronDown className="w-3.5 h-3.5 text-red-200 shrink-0 ml-1 group-hover:translate-y-0.5 transition" />
             </button>
 
             {/* Delivery capsule & Quick Actions */}
             <div className="flex items-center gap-2">
-              {currentStore.turboEnabled && !isCompact && (
-                <div className="hidden sm:flex items-center gap-1.5 bg-yellow-400 text-red-950 font-bold text-xs px-2.5 py-1 rounded-full shadow-sm">
-                  <span className="animate-pulse">⚡</span>
-                  <span>15 min</span>
+              {!isCompact && (
+                <div 
+                  onClick={() => onOpenAddressModal && onOpenAddressModal()}
+                  className={`hidden sm:flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-full shadow-sm cursor-pointer transition ${
+                    isScheduledDelivery
+                      ? 'bg-blue-100 hover:bg-blue-200 text-blue-950 border border-blue-300/80'
+                      : 'bg-yellow-400 text-red-950 font-black hover:bg-yellow-300'
+                  }`}
+                  title={isScheduledDelivery ? 'Modalidad: Envío Programado en camioneta' : 'Tiempo estimado dinámico según tu dirección'}
+                >
+                  {isScheduledDelivery ? (
+                    <>
+                      <Calendar className="w-3.5 h-3.5 text-blue-700 shrink-0" />
+                      <span>
+                        {selectedScheduledWindow ? (
+                          `Envío programado · ${formatHeaderWindow(selectedScheduledWindow)}`
+                        ) : (
+                          `Envío programado · Elige día y horario`
+                        )}
+                      </span>
+                    </>
+                  ) : (
+                    <>
+                      <span className="animate-pulse">⚡</span>
+                      <span>
+                        {`⚡ Entrega estimada en ${deliveryQuote?.estimatedMinutes || 25} min`}
+                      </span>
+                    </>
+                  )}
                 </div>
               )}
 

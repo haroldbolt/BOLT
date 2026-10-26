@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Plus, Minus, FileText } from 'lucide-react';
+import { Heart, Plus, Minus, FileText, Scale, Check } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -12,6 +12,8 @@ interface ProductCardProps {
   onToggleFavorite: (product: Product) => void;
   onOpenDetails: (product: Product) => void;
   selectedStoreId: string;
+  isCompared?: boolean;
+  onToggleCompare?: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -23,6 +25,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onToggleFavorite,
   onOpenDetails,
   selectedStoreId,
+  isCompared = false,
+  onToggleCompare,
 }) => {
   const stock = product.stockByStore[selectedStoreId] || 0;
   const reserved = product.reservedStockByStore[selectedStoreId] || 0;
@@ -32,7 +36,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
   return (
     <div className="bg-white rounded-3xl p-3 shadow-xs border border-slate-100 flex flex-col justify-between relative group hover:shadow-md transition">
-      {/* Top badges & Favorite Heart */}
+      {/* Top badges & Actions (Compare & Heart) */}
       <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10 pointer-events-none">
         <div className="flex flex-col gap-1 items-start">
           {product.discountPercent && product.discountPercent > 0 && (
@@ -48,20 +52,41 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           )}
         </div>
 
-        <button
-          onClick={(e) => {
-            e.stopPropagation();
-            onToggleFavorite(product);
-          }}
-          className="w-8 h-8 rounded-full bg-white/90 backdrop-blur-xs shadow-xs flex items-center justify-center pointer-events-auto hover:scale-110 active:scale-95 transition"
-          title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
-        >
-          <Heart
-            className={`w-4 h-4 transition ${
-              isFavorite ? 'fill-red-600 text-red-600' : 'text-slate-400 hover:text-red-500'
-            }`}
-          />
-        </button>
+        <div className="flex items-center gap-1.5 pointer-events-auto">
+          {onToggleCompare && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onToggleCompare(product);
+              }}
+              className={`w-7 h-7 rounded-full backdrop-blur-xs shadow-xs flex items-center justify-center transition-all cursor-pointer ${
+                isCompared
+                  ? 'bg-amber-400 text-slate-900 ring-2 ring-amber-500 scale-105'
+                  : 'bg-white/90 text-slate-400 hover:text-slate-800'
+              }`}
+              title={isCompared ? 'Quitar del comparador' : 'Comparar producto (hasta 3)'}
+            >
+              <Scale className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleFavorite(product);
+            }}
+            className="w-7 h-7 sm:w-8 sm:h-8 rounded-full bg-white/90 backdrop-blur-xs shadow-xs flex items-center justify-center hover:scale-110 active:scale-95 transition cursor-pointer"
+            title={isFavorite ? 'Quitar de favoritos' : 'Agregar a favoritos'}
+          >
+            <Heart
+              className={`w-4 h-4 transition ${
+                isFavorite ? 'fill-red-600 text-red-600' : 'text-slate-400 hover:text-red-500'
+              }`}
+            />
+          </button>
+        </div>
       </div>
 
       {/* Product Image */}
@@ -160,6 +185,28 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           )}
         </div>
+
+        {/* Compare row */}
+        {onToggleCompare && (
+          <div
+            onClick={(e) => {
+              e.stopPropagation();
+              onToggleCompare(product);
+            }}
+            className="mt-2 pt-2 border-t border-slate-100 flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-900 cursor-pointer select-none"
+          >
+            <div
+              className={`w-3.5 h-3.5 rounded border flex items-center justify-center transition-colors ${
+                isCompared ? 'bg-amber-400 border-amber-500 text-slate-900' : 'border-slate-300 bg-white'
+              }`}
+            >
+              {isCompared && <Check className="w-2.5 h-2.5 stroke-[3]" />}
+            </div>
+            <span className={isCompared ? 'font-bold text-slate-900' : 'font-medium'}>
+              {isCompared ? 'En comparador' : 'Comparar'}
+            </span>
+          </div>
+        )}
       </div>
     </div>
   );

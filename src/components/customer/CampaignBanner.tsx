@@ -18,7 +18,7 @@ export const CampaignBanner: React.FC<CampaignBannerProps> = ({ onSelectCategory
             Hasta 15% OFF en alimentos y farmacia
           </h2>
           <p className="text-xs text-red-100 font-medium">
-            Entrega ultra-rápida en 15 minutos en Kennedy, Álamos y Suba.
+            Entrega ultra-rápida (hasta 25 min) según tu dirección en Bogotá.
           </p>
           <div className="pt-2 flex items-center gap-2">
             <button

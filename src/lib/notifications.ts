@@ -129,6 +129,16 @@ class PushNotificationService {
     return fullNotification;
   }
 
+  triggerNotification(title: string, message: string): void {
+    this.send({
+      orderId: 'SYS',
+      orderNumber: 'BOLT',
+      title,
+      message,
+      type: 'ORDER_CONFIRMED',
+    });
+  }
+
   // Quick helper to simulate order state notifications
   simulateOrderTransition(orderNumber: string, orderId: string, status: string, driverName?: string, code?: string): void {
     switch (status) {

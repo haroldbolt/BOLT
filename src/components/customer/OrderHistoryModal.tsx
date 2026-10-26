@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react';
+import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, ShoppingBag, Clock, ArrowRight, RotateCcw, 
   MapPin, CheckCircle2, ChevronRight, User, Phone, 
@@ -34,7 +34,11 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
   const [searchQuery, setSearchQuery] = useState('');
   const [reorderedOrderId, setReorderedOrderId] = useState<string | null>(null);
 
-  if (!isOpen) return null;
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   // Counts for filters
   const pendingOrdersCount = orders.filter(
@@ -146,6 +150,8 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
     setSearchQuery('');
     setStatusFilter('ALL');
   };
+
+  if (!isOpen) return null;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto animate-in fade-in">

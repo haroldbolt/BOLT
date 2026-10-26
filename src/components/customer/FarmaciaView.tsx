@@ -13,6 +13,8 @@ interface FarmaciaViewProps {
   onToggleFavorite: (p: Product) => void;
   onOpenDetails: (p: Product) => void;
   onBackToHome: () => void;
+  compareProducts?: Product[];
+  onToggleCompare?: (p: Product) => void;
 }
 
 const PHARMACY_SUBCATEGORIES: PharmacySubcategory[] = [
@@ -36,6 +38,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
   onToggleFavorite,
   onOpenDetails,
   onBackToHome,
+  compareProducts = [],
+  onToggleCompare,
 }) => {
   const [activeSubcat, setActiveSubcat] = useState<PharmacySubcategory | 'TODAS'>('TODAS');
   const [filterPrescriptionOnly, setFilterPrescriptionOnly] = useState(false);
@@ -148,6 +152,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
             onToggleFavorite={onToggleFavorite}
             onOpenDetails={onOpenDetails}
             selectedStoreId={selectedStoreId}
+            isCompared={compareProducts.some(p => p.id === prod.id)}
+            onToggleCompare={onToggleCompare}
           />
         ))}
       </div>

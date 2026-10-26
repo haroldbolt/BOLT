@@ -14,8 +14,13 @@ import { OperationsDashboard } from './components/operations/OperationsDashboard
 import { OrderHistoryModal } from './components/customer/OrderHistoryModal';
 import { PushNotificationBanner } from './components/notifications/PushNotificationBanner';
 import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
+import { AddressConfirmationModal } from './components/customer/AddressConfirmationModal';
+import { SearchFilters, ActiveFilterChips, INITIAL_FILTER_STATE } from './components/catalog/SearchFilters';
+import { ProductCompareBar } from './components/customer/ProductCompareBar';
+import { ProductCompareModal } from './components/customer/ProductCompareModal';
 
-import { Product, Store, CartItem, MainCategory, Order } from './types';
+import { Product, Store, CartItem, MainCategory, Order, DeliveryMode, ScheduledDeliveryWindow, ProductFilterState } from './types';
+import { DeliveryQuote, LatLng } from './lib/deliveryService';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS } from './data/seedData';
 import { api } from './lib/api';
 import { pushService } from './lib/notifications';
@@ -41,10 +46,17 @@ export default function App() {
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('Todo');
   const [currentTab, setCurrentTab] = useState<CustomerNavTab>('turbo');
   const [searchQuery, setSearchQuery] = useState('');
+  const [productFilters, setProductFilters] = useState<ProductFilterState>(INITIAL_FILTER_STATE);
+  const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [favorites, setFavorites] = useState<Record<string, boolean>>({
     'prod-nexgard-spectra-m': true,
     'prod-rc-maxi-15k': true,
   });
+
+  // Product comparison state (max 3 products)
+  const [compareProducts, setCompareProducts] = useState<Product[]>([]);
+  const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
+  const [compareLimitWarning, setCompareLimitWarning] = useState<string | null>(null);
 
   // Cart state
   const [cartItems, setCartItems] = useState<CartItem[]>([
@@ -57,6 +69,26 @@ export default function App() {
   const [orderHistoryInitialTab, setOrderHistoryInitialTab] = useState<'history' | 'profile'>('history');
   const [isNotificationCenterOpen, setIsNotificationCenterOpen] = useState(false);
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(() => pushService.getUnreadCount());
+
+  // Delivery Address & Authoritative Delivery Quote context
+  const [customerAddress, setCustomerAddress] = useState<string>('Calle 3 #78-20, Kennedy Central, Bogotá');
+  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('Apto 502, Torre 2');
+  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.6365, lng: -74.1448 });
+  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
+  const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
+  const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+
+  // Sincronizar modalidad con cotización cuando solo hay envío programado disponible
+  useEffect(() => {
+    if (deliveryQuote) {
+      if (!deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && deliveryQuote.availableModes.scheduled) {
+        setSelectedDeliveryMode('PROGRAMADO');
+      } else if (deliveryQuote.recommendedMode) {
+        setSelectedDeliveryMode(deliveryQuote.recommendedMode);
+      }
+    }
+  }, [deliveryQuote]);
 
   // Selected product detail modal
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
@@ -113,6 +145,59 @@ export default function App() {
     fetchInitial();
   }, []);
 
+  // Re-evaluate delivery quote and update automatically assigned warehouse
+  useEffect(() => {
+    const fetchQuote = async () => {
+      try {
+        const q = await api.getDeliveryQuote(
+          {
+            destination: {
+              address: customerAddress,
+              details: customerAddressDetails,
+              coordinates: customerCoordinates,
+            },
+            items: cartItems.map(i => ({ productId: i.product.id, quantity: i.quantity })),
+          },
+          stores,
+          products
+        );
+        setDeliveryQuote(q);
+        if (q.assignedStoreId) {
+          const matchStore = stores.find(s => s.id === q.assignedStoreId);
+          if (matchStore) setCurrentStore(matchStore);
+        }
+      } catch (e) {
+        console.error('Error fetching delivery quote:', e);
+      }
+    };
+    fetchQuote();
+  }, [customerCoordinates, stores]);
+
+  const handleConfirmAddress = (
+    newAddress: string,
+    newDetails: string,
+    newCoords: LatLng,
+    newQuote: DeliveryQuote
+  ) => {
+    setCustomerAddress(newAddress);
+    setCustomerAddressDetails(newDetails);
+    setCustomerCoordinates(newCoords);
+    setDeliveryQuote(newQuote);
+
+    // Automatic store assignment based on quote
+    if (newQuote.assignedStoreId) {
+      const targetStore = stores.find(s => s.id === newQuote.assignedStoreId);
+      if (targetStore) {
+        setCurrentStore(targetStore);
+      }
+    }
+
+    pushService.triggerNotification(
+      'Ubicación y Sede Confirmadas',
+      `Entregaremos en ${newAddress}. Atendido desde ${newQuote.assignedStoreName || 'sede cercana'}. ETA aprox: ${newQuote.estimatedMinutes || 25} min.`
+    );
+  };
+
   // Cart operations
   const cartQuantities = useMemo(() => {
     const map: Record<string, number> = {};
@@ -155,6 +240,29 @@ export default function App() {
     }));
   };
 
+  const handleToggleCompare = (product: Product) => {
+    setCompareProducts(prev => {
+      const exists = prev.some(p => p.id === product.id);
+      if (exists) {
+        return prev.filter(p => p.id !== product.id);
+      }
+      if (prev.length >= 3) {
+        setCompareLimitWarning('Puedes comparar hasta un máximo de 3 productos simultáneamente');
+        setTimeout(() => setCompareLimitWarning(null), 3500);
+        return prev;
+      }
+      return [...prev, product];
+    });
+  };
+
+  const handleRemoveCompare = (productId: string) => {
+    setCompareProducts(prev => prev.filter(p => p.id !== productId));
+  };
+
+  const handleClearCompare = () => {
+    setCompareProducts([]);
+  };
+
   const handleReorder = (order: Order) => {
     for (const item of order.items) {
       const prod = products.find(p => p.id === item.productId) || {
@@ -195,8 +303,8 @@ export default function App() {
     return orders.filter(o => o.fulfillmentStatus !== 'ENTREGADO' && o.fulfillmentStatus !== 'CANCELADO');
   }, [orders]);
 
-  // Filter products by search and tab
-  const filteredProducts = useMemo(() => {
+  // Base products matching search query or selected tab/category
+  const baseCategoryOrSearchProducts = useMemo(() => {
     let list = [...products];
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -215,6 +323,35 @@ export default function App() {
     }
     return list;
   }, [products, searchQuery, currentTab, selectedCategory, favorites]);
+
+  // Apply advanced filters: price range, brands, weight range
+  const filteredProducts = useMemo(() => {
+    let list = baseCategoryOrSearchProducts;
+
+    // Filter by price range (COP)
+    if (productFilters.minPrice !== null) {
+      list = list.filter(p => p.price >= (productFilters.minPrice as number));
+    }
+    if (productFilters.maxPrice !== null) {
+      list = list.filter(p => p.price <= (productFilters.maxPrice as number));
+    }
+
+    // Filter by specific brands (multi-select)
+    if (productFilters.brands.length > 0) {
+      const brandSet = new Set(productFilters.brands);
+      list = list.filter(p => brandSet.has(p.brand));
+    }
+
+    // Filter by weight range (kg)
+    if (productFilters.minWeightKg !== null) {
+      list = list.filter(p => (p.weightKg || 0) >= (productFilters.minWeightKg as number));
+    }
+    if (productFilters.maxWeightKg !== null) {
+      list = list.filter(p => (p.weightKg || 0) <= (productFilters.maxWeightKg as number));
+    }
+
+    return list;
+  }, [baseCategoryOrSearchProducts, productFilters]);
 
   // Rails data
   const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [products]);
@@ -306,6 +443,12 @@ export default function App() {
         onOpenNotifications={() => setIsNotificationCenterOpen(true)}
         unreadNotificationsCount={unreadNotificationsCount}
         totalOrdersCount={orders.length}
+        customerAddress={customerAddress}
+        customerAddressDetails={customerAddressDetails}
+        deliveryQuote={deliveryQuote}
+        onOpenAddressModal={() => setIsAddressModalOpen(true)}
+        selectedDeliveryMode={selectedDeliveryMode}
+        selectedScheduledWindow={selectedScheduledWindow}
       />
 
       {/* Main Content Container */}
@@ -325,6 +468,8 @@ export default function App() {
             onToggleFavorite={handleToggleFavorite}
             onOpenDetails={(p) => setDetailProduct(p)}
             onBackToHome={() => setSelectedCategory('Todo')}
+            compareProducts={compareProducts}
+            onToggleCompare={handleToggleCompare}
           />
         ) : searchQuery.trim() || currentTab === 'favoritos' || currentTab === 'ofertas' || selectedCategory !== 'Todo' ? (
           /* Filtered Results / Search Results View */
@@ -339,33 +484,66 @@ export default function App() {
                   ? 'Ofertas Relámpago y Promociones'
                   : `Categoría: ${selectedCategory}`}
               </h2>
-              <span className="text-xs text-slate-500 font-semibold">
-                {filteredProducts.length} productos
+              <span className="text-xs text-slate-500 font-semibold tabular-nums">
+                {filteredProducts.length} {filteredProducts.length === 1 ? 'producto' : 'productos'}
               </span>
             </div>
 
-            {filteredProducts.length === 0 ? (
-              <div className="bg-white rounded-3xl p-8 text-center text-slate-500 border border-slate-100 space-y-2">
-                <p className="font-bold text-sm text-slate-700">No encontramos productos coincidentes</p>
-                <p className="text-xs text-slate-400">Intenta buscar por marca, especie o categoría.</p>
+            {/* Barra de chips de filtros activos y disparador móvil */}
+            <ActiveFilterChips
+              filters={productFilters}
+              onChange={setProductFilters}
+              onReset={() => setProductFilters(INITIAL_FILTER_STATE)}
+              onOpenMobileFilters={() => setIsMobileFiltersOpen(true)}
+              totalFilteredCount={filteredProducts.length}
+            />
+
+            {/* Distribución responsive: Barra lateral izquierda en escritorio + Cuadrícula de productos */}
+            <div className="flex items-start gap-5">
+              <SearchFilters
+                filters={productFilters}
+                onChange={setProductFilters}
+                onReset={() => setProductFilters(INITIAL_FILTER_STATE)}
+                products={baseCategoryOrSearchProducts}
+                totalFilteredCount={filteredProducts.length}
+                isMobileModalOpen={isMobileFiltersOpen}
+                onCloseMobileModal={() => setIsMobileFiltersOpen(false)}
+              />
+
+              <div className="flex-1 min-w-0">
+                {filteredProducts.length === 0 ? (
+                  <div className="bg-white rounded-3xl p-8 text-center text-slate-500 border border-slate-100 space-y-3">
+                    <p className="font-bold text-sm text-slate-700">No encontramos productos coincidentes con los filtros seleccionados</p>
+                    <p className="text-xs text-slate-400">Prueba ajustando el rango de precio, deseleccionando alguna marca o ampliando el rango de peso.</p>
+                    <button
+                      type="button"
+                      onClick={() => setProductFilters(INITIAL_FILTER_STATE)}
+                      className="inline-flex items-center gap-1.5 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-xl shadow-xs transition-colors cursor-pointer"
+                    >
+                      Restablecer filtros
+                    </button>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
+                    {filteredProducts.map(prod => (
+                      <ProductCard
+                        key={prod.id}
+                        product={prod}
+                        quantityInCart={cartQuantities[prod.id] || 0}
+                        onAddToCart={handleAddToCart}
+                        onUpdateQuantity={handleUpdateQuantity}
+                        isFavorite={!!favorites[prod.id]}
+                        onToggleFavorite={handleToggleFavorite}
+                        onOpenDetails={(p) => setDetailProduct(p)}
+                        selectedStoreId={currentStore.id}
+                        isCompared={compareProducts.some(p => p.id === prod.id)}
+                        onToggleCompare={handleToggleCompare}
+                      />
+                    ))}
+                  </div>
+                )}
               </div>
-            ) : (
-              <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-                {filteredProducts.map(prod => (
-                  <ProductCard
-                    key={prod.id}
-                    product={prod}
-                    quantityInCart={cartQuantities[prod.id] || 0}
-                    onAddToCart={handleAddToCart}
-                    onUpdateQuantity={handleUpdateQuantity}
-                    isFavorite={!!favorites[prod.id]}
-                    onToggleFavorite={handleToggleFavorite}
-                    onOpenDetails={(p) => setDetailProduct(p)}
-                    selectedStoreId={currentStore.id}
-                  />
-                ))}
-              </div>
-            )}
+            </div>
           </div>
         ) : currentTab === 'categorias' ? (
           /* Categorías Tab View */
@@ -499,6 +677,8 @@ export default function App() {
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
                       selectedStoreId={currentStore.id}
+                      isCompared={compareProducts.some(p => p.id === prod.id)}
+                      onToggleCompare={handleToggleCompare}
                     />
                   </div>
                 ))}
@@ -535,6 +715,8 @@ export default function App() {
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
                         selectedStoreId={currentStore.id}
+                        isCompared={compareProducts.some(p => p.id === prod.id)}
+                        onToggleCompare={handleToggleCompare}
                       />
                     </div>
                   ))}
@@ -576,6 +758,8 @@ export default function App() {
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
                         selectedStoreId={currentStore.id}
+                        isCompared={compareProducts.some(p => p.id === prod.id)}
+                        onToggleCompare={handleToggleCompare}
                       />
                     </div>
                   ))}
@@ -609,6 +793,8 @@ export default function App() {
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
                       selectedStoreId={currentStore.id}
+                      isCompared={compareProducts.some(p => p.id === prod.id)}
+                      onToggleCompare={handleToggleCompare}
                     />
                   </div>
                 ))}
@@ -641,6 +827,8 @@ export default function App() {
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
                       selectedStoreId={currentStore.id}
+                      isCompared={compareProducts.some(p => p.id === prod.id)}
+                      onToggleCompare={handleToggleCompare}
                     />
                   </div>
                 ))}
@@ -660,7 +848,37 @@ export default function App() {
         isFavorite={detailProduct ? !!favorites[detailProduct.id] : false}
         onToggleFavorite={handleToggleFavorite}
         selectedStoreId={currentStore.id}
+        isCompared={detailProduct ? compareProducts.some(p => p.id === detailProduct.id) : false}
+        onToggleCompare={handleToggleCompare}
       />
+
+      {/* Product Compare Floating Dock */}
+      <ProductCompareBar
+        compareProducts={compareProducts}
+        onRemoveProduct={handleRemoveCompare}
+        onClearAll={handleClearCompare}
+        onOpenModal={() => setIsCompareModalOpen(true)}
+      />
+
+      {/* Product Compare Matrix Modal */}
+      <ProductCompareModal
+        isOpen={isCompareModalOpen}
+        onClose={() => setIsCompareModalOpen(false)}
+        compareProducts={compareProducts}
+        onRemoveProduct={handleRemoveCompare}
+        onClearAll={handleClearCompare}
+        cartQuantities={cartQuantities}
+        onAddToCart={handleAddToCart}
+        onUpdateQuantity={handleUpdateQuantity}
+        selectedStoreId={currentStore.id}
+      />
+
+      {/* Compare Limit Toast Notification */}
+      {compareLimitWarning && (
+        <div className="fixed top-20 left-1/2 -translate-x-1/2 z-50 bg-slate-900 text-white text-xs font-bold px-4 py-2.5 rounded-2xl shadow-xl border border-slate-700 animate-in fade-in duration-200">
+          ⚠️ {compareLimitWarning}
+        </div>
+      )}
 
       {/* Cart Drawer */}
       <CartDrawer
@@ -682,12 +900,37 @@ export default function App() {
         onClose={() => setIsCheckoutOpen(false)}
         cartItems={cartItems}
         currentStore={currentStore}
+        customerAddress={customerAddress}
+        customerAddressDetails={customerAddressDetails}
+        customerCoordinates={customerCoordinates}
+        deliveryQuote={deliveryQuote}
+        selectedMode={selectedDeliveryMode}
+        onSelectMode={setSelectedDeliveryMode}
+        selectedScheduledWindow={selectedScheduledWindow}
+        onSelectScheduledWindow={setSelectedScheduledWindow}
+        onChangeAddress={() => {
+          setIsCheckoutOpen(false);
+          setIsAddressModalOpen(true);
+        }}
         onOrderSuccess={(orderId) => {
           setIsCheckoutOpen(false);
           setCartItems([]);
           pushService.simulateOrderTransition('#BP-NUEVO', orderId, 'CONFIRMADO');
           navigateTo(`/pedido/${orderId}`);
         }}
+      />
+
+      {/* Address Confirmation & Coverage Modal */}
+      <AddressConfirmationModal
+        isOpen={isAddressModalOpen}
+        onClose={() => setIsAddressModalOpen(false)}
+        currentAddress={customerAddress}
+        currentDetails={customerAddressDetails}
+        currentCoordinates={customerCoordinates}
+        onConfirmAddress={handleConfirmAddress}
+        stores={stores}
+        cartItems={cartItems}
+        products={products}
       />
 
       {/* Order History & Profile Modal */}
