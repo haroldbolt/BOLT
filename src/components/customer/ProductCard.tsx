@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Plus, Minus, FileText, Scale, Check } from 'lucide-react';
+import { Heart, Plus, Minus, FileText, Scale, Check, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -14,6 +14,8 @@ interface ProductCardProps {
   selectedStoreId: string;
   isCompared?: boolean;
   onToggleCompare?: (product: Product) => void;
+  isInWishlist?: boolean;
+  onOpenSaveToWishlist?: (product: Product) => void;
 }
 
 export const ProductCard: React.FC<ProductCardProps> = ({
@@ -27,6 +29,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   selectedStoreId,
   isCompared = false,
   onToggleCompare,
+  isInWishlist = false,
+  onOpenSaveToWishlist,
 }) => {
   const stock = product.stockByStore[selectedStoreId] || 0;
   const reserved = product.reservedStockByStore[selectedStoreId] || 0;
@@ -68,6 +72,24 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               title={isCompared ? 'Quitar del comparador' : 'Comparar producto (hasta 3)'}
             >
               <Scale className="w-3.5 h-3.5" />
+            </button>
+          )}
+
+          {onOpenSaveToWishlist && (
+            <button
+              type="button"
+              onClick={(e) => {
+                e.stopPropagation();
+                onOpenSaveToWishlist(product);
+              }}
+              className={`w-7 h-7 sm:w-8 sm:h-8 rounded-full backdrop-blur-xs shadow-xs flex items-center justify-center hover:scale-110 active:scale-95 transition cursor-pointer ${
+                isInWishlist
+                  ? 'bg-amber-500 text-white shadow-xs ring-1 ring-amber-600/30'
+                  : 'bg-white/90 text-slate-400 hover:text-amber-600'
+              }`}
+              title={isInWishlist ? 'En tu lista de deseos (organizar)' : 'Guardar en Lista de Deseos'}
+            >
+              <Bookmark className={`w-3.5 h-3.5 ${isInWishlist ? 'fill-white' : ''}`} />
             </button>
           )}
 

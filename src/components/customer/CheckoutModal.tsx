@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, MapPin, CreditCard, DollarSign, FileText, CheckCircle2, 
   ShieldCheck, ArrowRight, Upload, Phone, User, Building, Clock, 
@@ -63,8 +63,37 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const defaultMode: DeliveryMode = selectedModeProp || deliveryQuote?.recommendedMode || 'TURBO';
   const [selectedMode, setSelectedMode] = useState<DeliveryMode>(defaultMode);
 
-  // Scheduled delivery slot state: nunca mostrar franjas expiradas
-  const availableSlots: ScheduledSlot[] = (deliveryQuote?.scheduledSlots || []).filter(s => !s.cutoffPassed);
+  // Scheduled delivery slot state: solo mostrar franjas vigentes
+  const availableSlots: ScheduledSlot[] = useMemo(() => {
+    return (deliveryQuote?.scheduledSlots || []).filter(s => !s.cutoffPassed);
+  }, [deliveryQuote?.scheduledSlots]);
+
+  // Agrupar franjas por fecha para visualización limpia
+  const slotsByDate = useMemo(() => {
+    const map = new Map<string, { date: string; dateLabel: string; slots: ScheduledSlot[] }>();
+    availableSlots.forEach(slot => {
+      if (!map.has(slot.date)) {
+        map.set(slot.date, {
+          date: slot.date,
+          dateLabel: slot.dateLabel,
+          slots: [],
+        });
+      }
+      map.get(slot.date)!.slots.push(slot);
+    });
+    return Array.from(map.values());
+  }, [availableSlots]);
+
+  const [checkoutActiveDate, setCheckoutActiveDate] = useState<string>('');
+
+  useEffect(() => {
+    if (slotsByDate.length > 0) {
+      if (!checkoutActiveDate || !slotsByDate.some(d => d.date === checkoutActiveDate)) {
+        setCheckoutActiveDate(slotsByDate[0].date);
+      }
+    }
+  }, [slotsByDate, checkoutActiveDate]);
+
   const [selectedSlotId, setSelectedSlotId] = useState<string>(() => {
     if (selectedScheduledWindowProp?.slotId && availableSlots.some(s => s.slotId === selectedScheduledWindowProp.slotId)) {
       return selectedScheduledWindowProp.slotId;
@@ -210,7 +239,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-3 sm:p-4 overflow-y-auto">
-      <div className="bg-white rounded-3xl max-w-xl w-full max-h-[94vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 border border-slate-100">
+      <div className="bg-white rounded-3xl max-w-xl min-[669px]:max-w-4xl w-full max-h-[94vh] overflow-y-auto shadow-2xl animate-in zoom-in-95 border border-slate-100">
         
         {/* Header */}
         <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-xs z-10">
@@ -250,22 +279,26 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           )}
 
-          {/* Delivery Mode Selector (Turbo, Turbo Dividido, Programado) */}
-          <div className="space-y-2">
-            <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-              <Truck className="w-3.5 h-3.5 text-red-600" />
-              Modo de Entrega
-            </h4>
+          <div className="grid grid-cols-1 min-[669px]:grid-cols-2 gap-5 items-start">
+            {/* Columna Izquierda: Modalidad de entrega y dirección */}
+            <div className="space-y-4">
+              {/* Delivery Mode Selector (Turbo, Turbo Dividido, Programado) */}
+              <div className="space-y-2">
+                <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
+                  <Truck className="w-3.5 h-3.5 text-red-600" />
+                  Modo de Entrega
+                </h4>
 
-            {/* Outside Turbo coverage banner if applicable */}
-            {deliveryQuote && !deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && deliveryQuote.availableModes.scheduled && (
-              <div className="p-3 bg-blue-50/80 border border-blue-200 rounded-2xl text-xs text-blue-900">
-                <p className="font-bold flex items-center gap-1.5">
-                  <Calendar className="w-4 h-4 text-blue-600" />
-                  Envío Programado en Bogotá
+            {/* Outside Turbo coverage banner or auto-switch notification */}
+            {(deliveryQuote?.autoSwitchedToScheduled || selectedMode === 'PROGRAMADO' || (!deliveryQuote?.availableModes.turbo && !deliveryQuote?.availableModes.turboDividido && deliveryQuote?.availableModes.scheduled)) && (
+              <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl text-xs text-blue-950 space-y-1">
+                <p className="font-extrabold flex items-center gap-1.5 text-blue-900">
+                  <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
+                  Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido
                 </p>
-                <p className="text-[11px] text-blue-800 mt-0.5">
-                  {deliveryQuote.scheduledExplanation || deliveryQuote.message}
+                <p className="text-[11px] text-blue-800">
+                  {deliveryQuote?.detectedLocalityName ? `Localidad: ${deliveryQuote.detectedLocalityName}. ` : ''}
+                  {deliveryQuote?.message || 'Selecciona a continuación la fecha y franja horaria para recibir tu compra.'}
                 </p>
               </div>
             )}
@@ -348,7 +381,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Recibe tu compra en fecha y franja horaria preferida.
+                    Recibe tu compra en fecha y franja horaria preferida en Bogotá.
                   </p>
                 </div>
               )}
@@ -389,54 +422,79 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   <span className="text-[10px] text-slate-500 font-semibold">Hora de Bogotá (COT)</span>
                 </div>
 
+                {/* Selector de días disponibles */}
+                {slotsByDate.length > 1 && (
+                  <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
+                    {slotsByDate.map(d => {
+                      const isCurrent = checkoutActiveDate === d.date;
+                      return (
+                        <button
+                          key={d.date}
+                          type="button"
+                          onClick={() => setCheckoutActiveDate(d.date)}
+                          className={`px-3 py-1 rounded-xl text-xs font-bold transition border ${
+                            isCurrent
+                              ? 'bg-blue-600 text-white border-blue-600 shadow-xs'
+                              : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-100'
+                          }`}
+                        >
+                          {d.dateLabel.split(',')[0]}
+                        </button>
+                      );
+                    })}
+                  </div>
+                )}
+
                 {availableSlots.length === 0 ? (
                   <div className="p-3 bg-amber-50 rounded-xl border border-amber-200 text-xs text-amber-900">
                     Las franjas de entrega para hoy ya cerraron su horario de corte. Por favor consulta las opciones disponibles para mañana.
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 gap-2">
-                    {availableSlots.map(slot => {
-                      const isSelected = selectedSlotId === slot.slotId;
-                      return (
-                        <div
-                          key={slot.slotId}
-                          onClick={() => {
-                            setSelectedSlotId(slot.slotId);
-                            onSelectScheduledWindow?.(slot);
-                          }}
-                          className={`p-3 rounded-2xl border-2 text-left cursor-pointer transition ${
-                            isSelected
-                              ? 'border-blue-600 bg-blue-50/90 text-blue-950 font-bold shadow-xs'
-                              : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
-                          }`}
-                        >
-                          <div className="flex items-start justify-between gap-2">
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <span className="font-extrabold text-xs text-slate-900">
-                                  {slot.windowName} ({slot.displayWindow})
-                                </span>
-                                <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-md">
-                                  {slot.dateLabel}
-                                </span>
+                    {availableSlots
+                      .filter(slot => !checkoutActiveDate || slot.date === checkoutActiveDate)
+                      .map(slot => {
+                        const isSelected = selectedSlotId === slot.slotId;
+                        return (
+                          <div
+                            key={slot.slotId}
+                            onClick={() => {
+                              setSelectedSlotId(slot.slotId);
+                              onSelectScheduledWindow?.(slot);
+                            }}
+                            className={`p-3 rounded-2xl border-2 text-left cursor-pointer transition ${
+                              isSelected
+                                ? 'border-blue-600 bg-blue-50/90 text-blue-950 font-bold shadow-xs'
+                                : 'border-slate-200 bg-white hover:border-slate-300 text-slate-700'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between gap-2">
+                              <div>
+                                <div className="flex items-center gap-2">
+                                  <span className="font-extrabold text-xs text-slate-900">
+                                    {slot.windowName} ({slot.displayWindow})
+                                  </span>
+                                  <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-1.5 py-0.2 rounded-md">
+                                    {slot.dateLabel}
+                                  </span>
+                                </div>
+                                <p className="text-[11px] text-blue-950/80 font-medium mt-1">
+                                  {slot.commercialHook}
+                                </p>
                               </div>
-                              <p className="text-[11px] text-blue-950/80 font-medium mt-1">
-                                {slot.commercialHook}
-                              </p>
+                              <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
+                                {slot.availableCapacity} cupos
+                              </span>
                             </div>
-                            <span className="text-[10px] font-bold text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 shrink-0">
-                              {slot.availableCapacity} cupos
-                            </span>
-                          </div>
 
-                          {slot.countdownNotice && (
-                            <div className="mt-2 text-[10px] font-extrabold text-amber-900 bg-amber-100/90 border border-amber-300 px-2.5 py-1 rounded-xl inline-flex items-center gap-1.5 animate-pulse">
-                              <span>{slot.countdownNotice}</span>
-                            </div>
-                          )}
-                        </div>
-                      );
-                    })}
+                            {slot.countdownNotice && (
+                              <div className="mt-2 text-[10px] font-extrabold text-amber-900 bg-amber-100/90 border border-amber-300 px-2.5 py-1 rounded-xl inline-flex items-center gap-1.5 animate-pulse">
+                                <span>{slot.countdownNotice}</span>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
                   </div>
                 )}
 
@@ -447,32 +505,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 )}
               </div>
             )}
-          </div>
-
-          {/* Customer Contact Info */}
-          <div className="space-y-2">
-            <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-              <User className="w-3.5 h-3.5 text-red-600" />
-              Datos de Contacto
-            </h4>
-            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
-              <input
-                type="text"
-                placeholder="Nombre completo"
-                value={customerName}
-                onChange={e => setCustomerName(e.target.value)}
-                required
-                className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-              <input
-                type="tel"
-                placeholder="Teléfono móvil"
-                value={customerPhone}
-                onChange={e => setCustomerPhone(e.target.value)}
-                required
-                className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
-              />
-            </div>
           </div>
 
           {/* Delivery Address & Portería Policy */}
@@ -566,6 +598,35 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               />
             </div>
           )}
+        </div>
+
+        {/* Columna Derecha: Contacto, Pago, Propina y Resumen */}
+        <div className="space-y-4">
+          {/* Customer Contact Info */}
+          <div className="space-y-2">
+            <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
+              <User className="w-3.5 h-3.5 text-red-600" />
+              Datos de Contacto
+            </h4>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5">
+              <input
+                type="text"
+                placeholder="Nombre completo"
+                value={customerName}
+                onChange={e => setCustomerName(e.target.value)}
+                required
+                className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+              <input
+                type="tel"
+                placeholder="Teléfono móvil"
+                value={customerPhone}
+                onChange={e => setCustomerPhone(e.target.value)}
+                required
+                className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+            </div>
+          </div>
 
           {/* Payment Method Selector */}
           <div className="space-y-2">
@@ -687,7 +748,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </>
             )}
           </button>
-        </form>
+        </div>
+      </div>
+    </form>
       </div>
     </div>
   );

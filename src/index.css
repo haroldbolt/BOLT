@@ -1,1 +1,53 @@
 @import "tailwindcss";
+
+:root {
+  --safe-top: env(safe-area-inset-top, 0px);
+  --safe-bottom: env(safe-area-inset-bottom, 0px);
+  --safe-left: env(safe-area-inset-left, 0px);
+  --safe-right: env(safe-area-inset-right, 0px);
+  --fold-seam-width: 0px;
+}
+
+/* Safari 27.1 / Dual-screen Viewport Segments API support */
+@media (horizontal-viewport-segments: 2) {
+  :root {
+    --fold-seam-width: calc(env(viewport-segment-left 1 0, 50vw) - env(viewport-segment-right 0 0, 50vw));
+  }
+}
+
+@media (screen-spanning: single-fold-vertical) {
+  :root {
+    --fold-seam-width: 16px;
+  }
+}
+
+/* Clases utilitarias de soporte safe-area y plegable */
+.pb-safe {
+  padding-bottom: max(1rem, env(safe-area-inset-bottom, 1rem));
+}
+
+.pt-safe {
+  padding-top: max(0.5rem, env(safe-area-inset-top, 0.5rem));
+}
+
+.pl-safe {
+  padding-left: max(0.75rem, env(safe-area-inset-left, 0.75rem));
+}
+
+.pr-safe {
+  padding-right: max(0.75rem, env(safe-area-inset-right, 0.75rem));
+}
+
+/* Protección de bisagra para evitar que botones o textos queden cortados */
+.fold-seam-gutter {
+  column-gap: clamp(1rem, 2.5vw, 2rem);
+}
+
+/* Soporte para que los modales en pantalla completa no colapsen en el pliegue */
+@media (min-width: 800px) {
+  .fold-split-container {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: clamp(1.25rem, 2.5vw, 2.25rem);
+  }
+}

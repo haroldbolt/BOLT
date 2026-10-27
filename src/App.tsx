@@ -17,12 +17,53 @@ import { AddressConfirmationModal } from './components/customer/AddressConfirmat
 import { SearchFilters, ActiveFilterChips, INITIAL_FILTER_STATE } from './components/catalog/SearchFilters';
 import { ProductCompareBar } from './components/customer/ProductCompareBar';
 import { ProductCompareModal } from './components/customer/ProductCompareModal';
+import { CoachMarkTour } from './components/customer/CoachMarkTour';
+import { WishlistView } from './components/customer/WishlistView';
+import { SaveToWishlistModal } from './components/customer/SaveToWishlistModal';
+import { ScheduledDeliveryModal } from './components/customer/ScheduledDeliveryModal';
 
-import { Product, Store, CartItem, MainCategory, Order, DeliveryMode, ScheduledDeliveryWindow, ProductFilterState } from './types';
+import { Product, Store, CartItem, MainCategory, Order, DeliveryMode, ScheduledDeliveryWindow, ProductFilterState, WishlistCollection, WishlistItem } from './types';
 import { DeliveryQuote, LatLng } from './lib/deliveryService';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS } from './data/seedData';
 import { api } from './lib/api';
 import { pushService } from './lib/notifications';
+const INITIAL_WISHLIST_COLLECTIONS: WishlistCollection[] = [
+  {
+    id: 'col-comida-mensual',
+    name: 'Alimento Mensual Max',
+    description: 'Dieta regular y concentrado mensual para entrega Turbo',
+    icon: '🐶',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    items: [
+      { productId: 'prod-rc-maxi-15k', addedAt: new Date().toISOString(), notes: 'Comprar bulto de 15 kg antes del día 25' },
+      { productId: 'prod-proplan-adult-15k', addedAt: new Date().toISOString(), notes: 'Alternativa si no hay Royal Canin' },
+    ],
+  },
+  {
+    id: 'col-farmacia-cuidado',
+    name: 'Farmacia & Prevención',
+    description: 'Antipulgas y desparasitantes trimestrales',
+    icon: '💊',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    items: [
+      { productId: 'prod-nexgard-spectra-m', addedAt: new Date().toISOString(), notes: 'Dosis para Max (10 a 20 kg)' },
+      { productId: 'prod-bravecto-10-20k', addedAt: new Date().toISOString(), notes: 'Protección para 12 semanas' },
+    ],
+  },
+  {
+    id: 'col-snacks-premios',
+    name: 'Snacks & Premios',
+    description: 'Premios de entrenamiento y golosinas húmedas',
+    icon: '🍖',
+    createdAt: new Date().toISOString(),
+    updatedAt: new Date().toISOString(),
+    items: [
+      { productId: 'prod-churu-pollo-4u', addedAt: new Date().toISOString(), notes: 'Churu favorito para consentir a Luna' },
+    ],
+  },
+];
 
 export default function App() {
   // Navigation / Routing
@@ -57,6 +98,139 @@ export default function App() {
   const [isCompareModalOpen, setIsCompareModalOpen] = useState(false);
   const [compareLimitWarning, setCompareLimitWarning] = useState<string | null>(null);
 
+  // Wishlist & Custom Collections state
+  const [wishlistCollections, setWishlistCollections] = useState<WishlistCollection[]>(() => {
+    try {
+      const stored = localStorage.getItem('bolt_pets_wishlist_collections');
+      if (stored) {
+        return JSON.parse(stored);
+      }
+    } catch (e) {
+      console.warn('Error reading stored wishlist collections:', e);
+    }
+    return INITIAL_WISHLIST_COLLECTIONS;
+  });
+
+  const [saveModalProduct, setSaveModalProduct] = useState<Product | null>(null);
+  const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
+
+  // Sync collections to localStorage
+  useEffect(() => {
+    try {
+      localStorage.setItem('bolt_pets_wishlist_collections', JSON.stringify(wishlistCollections));
+    } catch (e) {
+      console.warn('Error saving wishlist collections:', e);
+    }
+  }, [wishlistCollections]);
+
+  // Set of all product IDs currently present in at least one wishlist collection
+  const wishlistProductIds = useMemo(() => {
+    const set = new Set<string>();
+    wishlistCollections.forEach(c => {
+      c.items.forEach(i => set.add(i.productId));
+    });
+    return set;
+  }, [wishlistCollections]);
+
+  const totalWishlistItemsCount = useMemo(() => {
+    return wishlistProductIds.size;
+  }, [wishlistProductIds]);
+
+  const handleOpenSaveToWishlist = (product: Product) => {
+    setSaveModalProduct(product);
+    setIsSaveModalOpen(true);
+  };
+
+  const handleToggleProductInCollection = (collectionId: string, productId: string) => {
+    setWishlistCollections(prev => {
+      return prev.map(col => {
+        if (col.id !== collectionId) return col;
+        const exists = col.items.some(i => i.productId === productId);
+        let updatedItems: WishlistItem[];
+        if (exists) {
+          updatedItems = col.items.filter(i => i.productId !== productId);
+        } else {
+          updatedItems = [...col.items, { productId, addedAt: new Date().toISOString() }];
+          const targetProd = products.find(p => p.id === productId);
+          pushService.triggerNotification(
+            'Guardado en Lista de Deseos',
+            `"${targetProd?.name || 'Producto'}" guardado en "${col.name}".`
+          );
+        }
+        return {
+          ...col,
+          items: updatedItems,
+          updatedAt: new Date().toISOString(),
+        };
+      });
+    });
+  };
+
+  const handleCreateCollection = (name: string, icon?: string, initialProductId?: string) => {
+    const newId = `col-${Date.now().toString(36)}`;
+    const newCol: WishlistCollection = {
+      id: newId,
+      name,
+      icon: icon || '📦',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString(),
+      items: initialProductId ? [{ productId: initialProductId, addedAt: new Date().toISOString() }] : [],
+    };
+
+    setWishlistCollections(prev => [newCol, ...prev]);
+
+    pushService.triggerNotification(
+      'Colección Creada',
+      `Has creado la lista "${name}".`
+    );
+  };
+
+  const handleDeleteCollection = (collectionId: string) => {
+    const target = wishlistCollections.find(c => c.id === collectionId);
+    if (!target) return;
+    setWishlistCollections(prev => prev.filter(c => c.id !== collectionId));
+    pushService.triggerNotification(
+      'Colección Eliminada',
+      `Se eliminó la lista "${target.name}".`
+    );
+  };
+
+  const handleUpdateItemNote = (collectionId: string, productId: string, notes: string) => {
+    setWishlistCollections(prev => {
+      return prev.map(col => {
+        if (col.id !== collectionId) return col;
+        return {
+          ...col,
+          items: col.items.map(item => {
+            if (item.productId !== productId) return item;
+            return { ...item, notes };
+          }),
+          updatedAt: new Date().toISOString(),
+        };
+      });
+    });
+  };
+
+  const handleMoveCollectionToCart = (collectionId: string) => {
+    const col = wishlistCollections.find(c => c.id === collectionId);
+    if (!col || col.items.length === 0) return;
+
+    let addedCount = 0;
+    col.items.forEach(item => {
+      const prod = products.find(p => p.id === item.productId);
+      if (prod) {
+        handleAddToCart(prod);
+        addedCount++;
+      }
+    });
+
+    pushService.triggerNotification(
+      'Colección añadida al Carrito',
+      `Se agregaron ${addedCount} productos de "${col.name}" a tu carrito.`
+    );
+    setIsCartOpen(true);
+  };
+
   // Cart state
   const [cartItems, setCartItems] = useState<CartItem[]>([
     { product: INITIAL_PRODUCTS[4], quantity: 1 }, // NexGard
@@ -77,12 +251,46 @@ export default function App() {
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
 
-  // Sincronizar modalidad con cotización cuando solo hay envío programado disponible
+  // Guided Onboarding Coach Mark Tour state (activates on first visit)
+  const [isTourOpen, setIsTourOpen] = useState(false);
+
+  useEffect(() => {
+    const tourDone = localStorage.getItem('bolt_pets_tour_completed');
+    if (!tourDone) {
+      const timer = setTimeout(() => {
+        setIsTourOpen(true);
+      }, 700);
+      return () => clearTimeout(timer);
+    }
+  }, []);
+
+  const handleDismissTour = () => {
+    localStorage.setItem('bolt_pets_tour_completed', 'true');
+    setIsTourOpen(false);
+  };
+
+  const handleRestartTour = () => {
+    setIsTourOpen(true);
+  };
+
+  // Sincronizar modalidad con cotización cuando aplica cambio automático a envío programado
   useEffect(() => {
     if (deliveryQuote) {
-      if (!deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && deliveryQuote.availableModes.scheduled) {
+      const shouldBeScheduled =
+        deliveryQuote.autoSwitchedToScheduled ||
+        deliveryQuote.recommendedMode === 'PROGRAMADO' ||
+        (!deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && deliveryQuote.availableModes.scheduled);
+
+      if (shouldBeScheduled) {
         setSelectedDeliveryMode('PROGRAMADO');
+        if (!selectedScheduledWindow && deliveryQuote.scheduledSlots?.length) {
+          const firstValid = deliveryQuote.scheduledSlots.find(s => !s.cutoffPassed);
+          if (firstValid) {
+            setSelectedScheduledWindow(firstValid);
+          }
+        }
       } else if (deliveryQuote.recommendedMode) {
         setSelectedDeliveryMode(deliveryQuote.recommendedMode);
       }
@@ -191,10 +399,29 @@ export default function App() {
       }
     }
 
-    pushService.triggerNotification(
-      'Ubicación y Sede Confirmadas',
-      `Entregaremos en ${newAddress}. Atendido desde ${newQuote.assignedStoreName || 'sede cercana'}. ETA aprox: ${newQuote.estimatedMinutes || 25} min.`
-    );
+    const shouldAutoSwitchToScheduled =
+      newQuote.autoSwitchedToScheduled ||
+      newQuote.recommendedMode === 'PROGRAMADO' ||
+      (!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && newQuote.availableModes.scheduled);
+
+    if (shouldAutoSwitchToScheduled) {
+      setSelectedDeliveryMode('PROGRAMADO');
+      if (newQuote.scheduledSlots && newQuote.scheduledSlots.length > 0) {
+        const firstValid = newQuote.scheduledSlots.find(s => !s.cutoffPassed) || newQuote.scheduledSlots[0];
+        setSelectedScheduledWindow(firstValid);
+      }
+      setIsScheduledModalOpen(true);
+      pushService.triggerNotification(
+        'Envío Programado Seleccionado',
+        'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido'
+      );
+    } else {
+      setSelectedDeliveryMode(newQuote.recommendedMode || 'TURBO');
+      pushService.triggerNotification(
+        'Ubicación y Sede Confirmadas',
+        `Entregaremos en ${newAddress}. Atendido desde ${newQuote.assignedStoreName || 'sede cercana'}. ETA aprox: ${newQuote.estimatedMinutes || 25} min.`
+      );
+    }
   };
 
   // Cart operations
@@ -448,12 +675,37 @@ export default function App() {
         onOpenAddressModal={() => setIsAddressModalOpen(true)}
         selectedDeliveryMode={selectedDeliveryMode}
         selectedScheduledWindow={selectedScheduledWindow}
+        onOpenScheduledModal={() => setIsScheduledModalOpen(true)}
+        onOpenTour={handleRestartTour}
+        onOpenWishlist={() => {
+          setCurrentTab('deseos');
+          window.scrollTo({ top: 0, behavior: 'smooth' });
+        }}
+        wishlistCollectionsCount={wishlistCollections.length}
       />
 
       {/* Main Content Container */}
-      <main className="max-w-7xl mx-auto px-4 pt-3 space-y-4">
-        {/* If user selected Farmacia category or clicked pharmacy view */}
-        {selectedCategory === 'Farmacia' ? (
+      <main className="max-w-7xl mx-auto px-3 sm:px-4 pl-safe pr-safe pt-3 space-y-4 pb-28 sm:pb-32">
+        {/* If user selected Listas de Deseos tab */}
+        {currentTab === 'deseos' ? (
+          <WishlistView
+            collections={wishlistCollections}
+            products={products}
+            selectedStoreId={currentStore.id}
+            cartQuantities={cartQuantities}
+            onAddToCart={handleAddToCart}
+            onAddCollectionToCart={handleMoveCollectionToCart}
+            onRemoveItemFromCollection={handleToggleProductInCollection}
+            onUpdateItemNote={handleUpdateItemNote}
+            onCreateCollection={handleCreateCollection}
+            onDeleteCollection={handleDeleteCollection}
+            onOpenProductDetails={(p) => setDetailProduct(p)}
+            onNavigateToCatalog={() => {
+              setCurrentTab('turbo');
+              setSelectedCategory('Todo');
+            }}
+          />
+        ) : selectedCategory === 'Farmacia' ? (
           <FarmaciaView
             products={products}
             selectedStoreId={currentStore.id}
@@ -466,6 +718,8 @@ export default function App() {
             onBackToHome={() => setSelectedCategory('Todo')}
             compareProducts={compareProducts}
             onToggleCompare={handleToggleCompare}
+            wishlistProductIds={wishlistProductIds}
+            onOpenSaveToWishlist={handleOpenSaveToWishlist}
           />
         ) : searchQuery.trim() || currentTab === 'favoritos' || currentTab === 'ofertas' || selectedCategory !== 'Todo' ? (
           /* Filtered Results / Search Results View */
@@ -534,6 +788,8 @@ export default function App() {
                         selectedStoreId={currentStore.id}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
+                        isInWishlist={wishlistProductIds.has(prod.id)}
+                        onOpenSaveToWishlist={handleOpenSaveToWishlist}
                       />
                     ))}
                   </div>
@@ -593,9 +849,64 @@ export default function App() {
           </div>
         ) : (
           /* Turbo Home Default Feed with Horizontal Rails */
-          <>
-            {/* Promotional Campaign Banner */}
-            <CampaignBanner onSelectCategory={(cat) => setSelectedCategory(cat)} />
+          <div className="min-[669px]:flex min-[669px]:items-start gap-5">
+            {/* Panel izquierdo en iPhone Duo desplegado (>= 669px / 951px) */}
+            <aside className="hidden min-[669px]:block w-60 lg:w-72 shrink-0 self-start sticky top-24 space-y-3.5">
+              {/* Selector Rápido de Categorías */}
+              <div className="bg-white rounded-2xl border border-slate-200 p-4 shadow-xs space-y-2.5">
+                <div className="flex items-center justify-between pb-2 border-b border-slate-100">
+                  <h3 className="font-extrabold text-xs text-slate-900 uppercase tracking-wider">
+                    Categorías
+                  </h3>
+                  <button
+                    onClick={() => setCurrentTab('categorias')}
+                    className="text-[11px] text-red-600 font-bold hover:underline cursor-pointer"
+                  >
+                    Ver todas
+                  </button>
+                </div>
+                <div className="space-y-1">
+                  {[
+                    { cat: 'Farmacia', label: 'Farmacia Veterinaria', icon: '💊', count: products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas').length },
+                    { cat: 'Alimentos', label: 'Alimentos Premium', icon: '🍖', count: products.filter(p => p.category === 'Alimentos').length },
+                    { cat: 'Arenas', label: 'Arenas Sanitarias', icon: '📦', count: products.filter(p => p.category === 'Arenas').length },
+                    { cat: 'Snacks', label: 'Snacks & Churu', icon: '🦴', count: products.filter(p => p.category === 'Snacks').length },
+                    { cat: 'Higiene', label: 'Higiene & Cuidado', icon: '🛁', count: products.filter(p => p.category === 'Higiene').length },
+                    { cat: 'Accesorios', label: 'Accesorios & Paseo', icon: '🦮', count: products.filter(p => p.category === 'Accesorios').length },
+                  ].map(item => (
+                    <button
+                      key={item.cat}
+                      onClick={() => setSelectedCategory(item.cat as MainCategory)}
+                      className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-red-50 hover:text-red-700 transition cursor-pointer text-left"
+                    >
+                      <span className="flex items-center gap-2 truncate">
+                        <span>{item.icon}</span>
+                        <span className="truncate">{item.label}</span>
+                      </span>
+                      <span className="text-[10px] bg-slate-100 text-slate-500 font-bold px-1.5 py-0.5 rounded-md shrink-0">
+                        {item.count}
+                      </span>
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              {/* Filtros avanzados en barra lateral */}
+              <SearchFilters
+                filters={productFilters}
+                onChange={setProductFilters}
+                onReset={() => setProductFilters(INITIAL_FILTER_STATE)}
+                products={products}
+                totalFilteredCount={filteredProducts.length}
+                isMobileModalOpen={isMobileFiltersOpen}
+                onCloseMobileModal={() => setIsMobileFiltersOpen(false)}
+              />
+            </aside>
+
+            {/* Panel derecho: Banner, categorías en tarjetas y rails de productos */}
+            <div className="flex-1 min-w-0 space-y-4">
+              {/* Promotional Campaign Banner */}
+              <CampaignBanner onSelectCategory={(cat) => setSelectedCategory(cat)} />
 
             {/* Category Cards Collage Grid matching Rappi Turbo IMG_2743 */}
             <div className="space-y-2.5 pt-2">
@@ -675,6 +986,8 @@ export default function App() {
                       selectedStoreId={currentStore.id}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
+                      isInWishlist={wishlistProductIds.has(prod.id)}
+                      onOpenSaveToWishlist={handleOpenSaveToWishlist}
                     />
                   </div>
                 ))}
@@ -713,6 +1026,8 @@ export default function App() {
                         selectedStoreId={currentStore.id}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
+                        isInWishlist={wishlistProductIds.has(prod.id)}
+                        onOpenSaveToWishlist={handleOpenSaveToWishlist}
                       />
                     </div>
                   ))}
@@ -756,6 +1071,8 @@ export default function App() {
                         selectedStoreId={currentStore.id}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
+                        isInWishlist={wishlistProductIds.has(prod.id)}
+                        onOpenSaveToWishlist={handleOpenSaveToWishlist}
                       />
                     </div>
                   ))}
@@ -791,6 +1108,8 @@ export default function App() {
                       selectedStoreId={currentStore.id}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
+                      isInWishlist={wishlistProductIds.has(prod.id)}
+                      onOpenSaveToWishlist={handleOpenSaveToWishlist}
                     />
                   </div>
                 ))}
@@ -825,13 +1144,16 @@ export default function App() {
                       selectedStoreId={currentStore.id}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
+                      isInWishlist={wishlistProductIds.has(prod.id)}
+                      onOpenSaveToWishlist={handleOpenSaveToWishlist}
                     />
                   </div>
                 ))}
               </div>
             </div>
-          </>
-        )}
+          </div>
+        </div>
+      )}
       </main>
 
       {/* Product Detail Modal */}
@@ -846,6 +1168,8 @@ export default function App() {
         selectedStoreId={currentStore.id}
         isCompared={detailProduct ? compareProducts.some(p => p.id === detailProduct.id) : false}
         onToggleCompare={handleToggleCompare}
+        isInWishlist={detailProduct ? wishlistProductIds.has(detailProduct.id) : false}
+        onOpenSaveToWishlist={handleOpenSaveToWishlist}
       />
 
       {/* Product Compare Floating Dock */}
@@ -929,6 +1253,25 @@ export default function App() {
         products={products}
       />
 
+      {/* Scheduled Delivery Date and Slot Selection Modal */}
+      <ScheduledDeliveryModal
+        isOpen={isScheduledModalOpen}
+        onClose={() => setIsScheduledModalOpen(false)}
+        scheduledSlots={deliveryQuote?.scheduledSlots || []}
+        selectedSlotId={selectedScheduledWindow?.slotId}
+        onSelectSlot={(slot) => {
+          setSelectedScheduledWindow(slot);
+          setSelectedDeliveryMode('PROGRAMADO');
+          pushService.triggerNotification(
+            'Franja de Entrega Confirmada',
+            `Tu pedido llegará ${slot.dateLabel}, horario ${slot.displayWindowShort || slot.displayWindow}.`
+          );
+        }}
+        localityName={deliveryQuote?.detectedLocalityName || 'Bogotá'}
+        isAutoSwitched={deliveryQuote?.autoSwitchedToScheduled}
+        address={customerAddress}
+      />
+
       {/* Order History & Profile Modal */}
       <OrderHistoryModal
         isOpen={isOrderHistoryOpen}
@@ -952,7 +1295,7 @@ export default function App() {
         onNavigateToOrder={(orderId) => navigateTo(`/pedido/${orderId}`)}
       />
 
-      {/* Floating 4-Destination Bottom Navigation Bar + Circular Search */}
+      {/* Floating 5-Destination Bottom Navigation Bar + Circular Search */}
       <FloatingNav
         currentTab={currentTab}
         onSelectTab={(tab) => {
@@ -968,6 +1311,24 @@ export default function App() {
         cartCount={cartCount}
         cartTotal={cartTotal}
         onOpenCart={() => setIsCartOpen(true)}
+        wishlistCount={totalWishlistItemsCount}
+      />
+
+      {/* Save to Wishlist Modal */}
+      <SaveToWishlistModal
+        isOpen={isSaveModalOpen}
+        onClose={() => setIsSaveModalOpen(false)}
+        product={saveModalProduct}
+        collections={wishlistCollections}
+        onToggleProductInCollection={handleToggleProductInCollection}
+        onCreateCollection={handleCreateCollection}
+      />
+
+      {/* Guided Onboarding Coach Mark Tour */}
+      <CoachMarkTour
+        isOpen={isTourOpen}
+        onClose={handleDismissTour}
+        onComplete={handleDismissTour}
       />
     </div>
   );

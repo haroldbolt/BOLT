@@ -335,9 +335,9 @@ export const SearchFilters: React.FC<SearchFiltersProps> = ({
   return (
     <>
       {/* ------------------------------------------------------------- */}
-      {/* BARRA LATERAL EN ESCRITORIO (md:block)                        */}
+      {/* BARRA LATERAL EN ESCRITORIO / IPHONE DUO ABIERTO              */}
       {/* ------------------------------------------------------------- */}
-      <aside className="hidden md:block w-64 lg:w-72 shrink-0 self-start sticky top-24 bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
+      <aside className="hidden min-[669px]:block w-60 lg:w-72 shrink-0 self-start sticky top-24 bg-white rounded-2xl border border-slate-200 p-4 shadow-xs">
         <div className="flex items-center justify-between pb-3 mb-3 border-b border-slate-100">
           <div className="flex items-center gap-2">
             <SlidersHorizontal className="w-4 h-4 text-slate-700" />
@@ -512,7 +512,7 @@ export const ActiveFilterChips: React.FC<ActiveFilterChipsProps> = ({
         <button
           type="button"
           onClick={onOpenMobileFilters}
-          className={`md:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
+          className={`min-[669px]:hidden inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold border transition-colors cursor-pointer ${
             activeCount > 0
               ? 'bg-amber-400 text-slate-900 border-amber-500'
               : 'bg-white text-slate-700 border-slate-200 hover:bg-slate-50'

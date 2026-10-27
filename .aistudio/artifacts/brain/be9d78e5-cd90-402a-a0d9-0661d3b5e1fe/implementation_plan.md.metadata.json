@@ -1,6 +1,6 @@
 {
-  "summary":  "Plan de implementación integral para bodegas independientes (Kennedy, Álamos, Suba), calibración de entrada en Google Maps con recálculo dinámico de rutas, integración de solo lectura con Shopify (Agrocentro Pets) y simulador interactivo de webhooks para pruebas operativas seguras.",
-  "updatedAt":  "2026-10-26T05:31:31.972539099Z",
+  "summary":  "Plan de implementación para el cambio automático entre Turbo y Envío Programado en Bolt Pets, con validación estricta de localidades (Kennedy, Suba, Engativá), apertura inmediata del selector de franjas con mensaje amigable, sincronización en tiempo real de encabezado y checkout, y reglas espejo cliente-servidor.",
+  "updatedAt":  "2026-10-27T19:35:27.677028516Z",
   "requestFeedback":  true,
   "userFacing":  true
 }

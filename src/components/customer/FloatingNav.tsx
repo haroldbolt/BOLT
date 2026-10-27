@@ -1,8 +1,8 @@
 import React from 'react';
-import { Zap, Heart, Tag, LayoutGrid, Search, ShoppingBag } from 'lucide-react';
+import { Zap, Heart, Tag, LayoutGrid, Search, ShoppingBag, Bookmark } from 'lucide-react';
 import { formatCOP } from '../../lib/formatters';
 
-export type CustomerNavTab = 'turbo' | 'favoritos' | 'ofertas' | 'categorias';
+export type CustomerNavTab = 'turbo' | 'favoritos' | 'deseos' | 'ofertas' | 'categorias';
 
 interface FloatingNavProps {
   currentTab: CustomerNavTab;
@@ -11,6 +11,7 @@ interface FloatingNavProps {
   cartCount: number;
   cartTotal: number;
   onOpenCart: () => void;
+  wishlistCount?: number;
 }
 
 export const FloatingNav: React.FC<FloatingNavProps> = ({
@@ -20,10 +21,11 @@ export const FloatingNav: React.FC<FloatingNavProps> = ({
   cartCount,
   cartTotal,
   onOpenCart,
+  wishlistCount = 0,
 }) => {
   return (
-    <div className="fixed bottom-0 left-0 right-0 z-40 px-4 pb-4 pointer-events-none">
-      <div className="max-w-md mx-auto flex flex-col gap-2.5">
+    <div className="fixed bottom-0 left-0 right-0 z-40 px-3 sm:px-6 pointer-events-none pb-safe">
+      <div className="max-w-md sm:max-w-lg mx-auto flex flex-col gap-2.5">
         {/* Floating "Ver Carrito" bar above menu when cart has items */}
         {cartCount > 0 && (
           <div
@@ -43,67 +45,83 @@ export const FloatingNav: React.FC<FloatingNavProps> = ({
           </div>
         )}
 
-        {/* Floating 4-item Navigation bar + circular search button */}
-        <div className="flex items-center gap-2.5">
-          {/* Main 4-destination pill */}
-          <nav className="pointer-events-auto flex-1 bg-white/95 backdrop-blur-md rounded-full px-3 py-2 shadow-2xl border border-slate-200/80 flex items-center justify-around">
+        {/* Floating 5-item Navigation bar + circular search button */}
+        <div className="flex items-center gap-2" id="tour-bottom-nav">
+          {/* Main 5-destination pill */}
+          <nav className="pointer-events-auto flex-1 bg-white/95 backdrop-blur-md rounded-full px-2 sm:px-3 py-1.5 sm:py-2 shadow-2xl border border-slate-200/80 flex items-center justify-around">
             {/* 1. Turbo */}
             <button
               onClick={() => onSelectTab('turbo')}
-              className={`flex flex-col items-center gap-0.5 transition px-2 py-1 rounded-xl ${
+              className={`flex flex-col items-center gap-0.5 transition px-1.5 sm:px-2 py-1 rounded-xl ${
                 currentTab === 'turbo'
                   ? 'text-red-600 font-extrabold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Zap className={`w-5 h-5 ${currentTab === 'turbo' ? 'fill-red-600' : ''}`} />
-              <span className="text-[10px] tracking-tight">Turbo</span>
+              <Zap className={`w-4 h-4 sm:w-5 sm:h-5 ${currentTab === 'turbo' ? 'fill-red-600' : ''}`} />
+              <span className="text-[9px] sm:text-[10px] tracking-tight">Turbo</span>
             </button>
 
             {/* 2. Favoritos */}
             <button
               onClick={() => onSelectTab('favoritos')}
-              className={`flex flex-col items-center gap-0.5 transition px-2 py-1 rounded-xl ${
+              className={`flex flex-col items-center gap-0.5 transition px-1.5 sm:px-2 py-1 rounded-xl ${
                 currentTab === 'favoritos'
                   ? 'text-red-600 font-extrabold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Heart className={`w-5 h-5 ${currentTab === 'favoritos' ? 'fill-red-600' : ''}`} />
-              <span className="text-[10px] tracking-tight">Favoritos</span>
+              <Heart className={`w-4 h-4 sm:w-5 sm:h-5 ${currentTab === 'favoritos' ? 'fill-red-600' : ''}`} />
+              <span className="text-[9px] sm:text-[10px] tracking-tight">Favoritos</span>
             </button>
 
-            {/* 3. Ofertas */}
+            {/* 3. Listas de Deseos */}
+            <button
+              onClick={() => onSelectTab('deseos')}
+              className={`flex flex-col items-center gap-0.5 transition px-1.5 sm:px-2 py-1 rounded-xl relative ${
+                currentTab === 'deseos'
+                  ? 'text-amber-600 font-extrabold'
+                  : 'text-slate-500 hover:text-slate-800'
+              }`}
+            >
+              <Bookmark className={`w-4 h-4 sm:w-5 sm:h-5 ${currentTab === 'deseos' ? 'fill-amber-500' : ''}`} />
+              <span className="text-[9px] sm:text-[10px] tracking-tight">Listas</span>
+              {wishlistCount > 0 && (
+                <span className="absolute top-0 right-1 w-2 h-2 rounded-full bg-amber-500 ring-2 ring-white" />
+              )}
+            </button>
+
+            {/* 4. Ofertas */}
             <button
               onClick={() => onSelectTab('ofertas')}
-              className={`flex flex-col items-center gap-0.5 transition px-2 py-1 rounded-xl ${
+              className={`flex flex-col items-center gap-0.5 transition px-1.5 sm:px-2 py-1 rounded-xl ${
                 currentTab === 'ofertas'
                   ? 'text-red-600 font-extrabold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <Tag className={`w-5 h-5 ${currentTab === 'ofertas' ? 'fill-red-600' : ''}`} />
-              <span className="text-[10px] tracking-tight">Ofertas</span>
+              <Tag className={`w-4 h-4 sm:w-5 sm:h-5 ${currentTab === 'ofertas' ? 'fill-red-600' : ''}`} />
+              <span className="text-[9px] sm:text-[10px] tracking-tight">Ofertas</span>
             </button>
 
-            {/* 4. Categorías */}
+            {/* 5. Categorías */}
             <button
               onClick={() => onSelectTab('categorias')}
-              className={`flex flex-col items-center gap-0.5 transition px-2 py-1 rounded-xl ${
+              className={`flex flex-col items-center gap-0.5 transition px-1.5 sm:px-2 py-1 rounded-xl ${
                 currentTab === 'categorias'
                   ? 'text-red-600 font-extrabold'
                   : 'text-slate-500 hover:text-slate-800'
               }`}
             >
-              <LayoutGrid className={`w-5 h-5 ${currentTab === 'categorias' ? 'fill-red-600' : ''}`} />
-              <span className="text-[10px] tracking-tight">Categorías</span>
+              <LayoutGrid className={`w-4 h-4 sm:w-5 sm:h-5 ${currentTab === 'categorias' ? 'fill-red-600' : ''}`} />
+              <span className="text-[9px] sm:text-[10px] tracking-tight">Categorías</span>
             </button>
           </nav>
 
           {/* Separate circular search button to the right matching screenshots */}
           <button
             onClick={onTriggerSearch}
-            className="pointer-events-auto w-12 h-12 rounded-full bg-white hover:bg-slate-50 active:scale-95 text-slate-800 shadow-2xl border border-slate-200/80 flex items-center justify-center shrink-0 transition"
+            className="pointer-events-auto w-11 h-11 sm:w-12 sm:h-12 rounded-full bg-white hover:bg-slate-50 active:scale-95 text-slate-800 shadow-2xl border border-slate-200/80 flex items-center justify-center shrink-0 transition"
             title="Buscar en Bolt Pets"
           >
             <Search className="w-5 h-5 text-slate-700" />

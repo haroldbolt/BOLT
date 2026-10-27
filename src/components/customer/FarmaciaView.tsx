@@ -15,6 +15,8 @@ interface FarmaciaViewProps {
   onBackToHome: () => void;
   compareProducts?: Product[];
   onToggleCompare?: (p: Product) => void;
+  onOpenSaveToWishlist?: (p: Product) => void;
+  wishlistProductIds?: Set<string>;
 }
 
 const PHARMACY_SUBCATEGORIES: PharmacySubcategory[] = [
@@ -40,6 +42,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
   onBackToHome,
   compareProducts = [],
   onToggleCompare,
+  onOpenSaveToWishlist,
+  wishlistProductIds,
 }) => {
   const [activeSubcat, setActiveSubcat] = useState<PharmacySubcategory | 'TODAS'>('TODAS');
   const [filterPrescriptionOnly, setFilterPrescriptionOnly] = useState(false);
@@ -154,6 +158,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
             selectedStoreId={selectedStoreId}
             isCompared={compareProducts.some(p => p.id === prod.id)}
             onToggleCompare={onToggleCompare}
+            isInWishlist={wishlistProductIds?.has(prod.id)}
+            onOpenSaveToWishlist={onOpenSaveToWishlist}
           />
         ))}
       </div>

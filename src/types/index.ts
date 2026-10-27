@@ -479,3 +479,24 @@ export const SCHEDULED_DELIVERY_CONFIG: ScheduledDeliveryConfig = {
     },
   ],
 };
+
+// ============================================================================
+// LISTAS DE DESEOS Y COLECCIONES PERSONALIZADAS
+// ============================================================================
+
+export interface WishlistItem {
+  productId: string;
+  addedAt: string;
+  notes?: string;
+  desiredQuantity?: number;
+}
+
+export interface WishlistCollection {
+  id: string;
+  name: string;
+  description?: string;
+  icon?: string;
+  createdAt: string;
+  updatedAt: string;
+  items: WishlistItem[];
+}

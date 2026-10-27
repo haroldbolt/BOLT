@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar } from 'lucide-react';
+import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark } from 'lucide-react';
 import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
 import { DeliveryQuote } from '../../lib/deliveryService';
 
@@ -26,6 +26,10 @@ interface HeaderProps {
   onOpenAddressModal?: () => void;
   selectedDeliveryMode?: DeliveryMode;
   selectedScheduledWindow?: ScheduledDeliveryWindow | null;
+  onOpenScheduledModal?: () => void;
+  onOpenTour?: () => void;
+  onOpenWishlist?: () => void;
+  wishlistCollectionsCount?: number;
 }
 
 const CATEGORIES: MainCategory[] = [
@@ -64,6 +68,10 @@ export const Header: React.FC<HeaderProps> = ({
   onOpenAddressModal,
   selectedDeliveryMode,
   selectedScheduledWindow,
+  onOpenScheduledModal,
+  onOpenTour,
+  onOpenWishlist,
+  wishlistCollectionsCount = 0,
 }) => {
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
@@ -94,7 +102,7 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className={`bg-[#DC2626] text-white transition-all duration-200 z-40 sticky top-0 shadow-md ${isCompact ? 'py-2 px-3' : 'pt-3 pb-2.5 px-3 sm:px-4'}`}>
+      <header className={`bg-[#DC2626] text-white transition-all duration-200 z-40 sticky top-0 shadow-md pt-safe pl-safe pr-safe ${isCompact ? 'py-2 px-3' : 'pt-3 pb-2.5 px-3 sm:px-4'}`}>
         <div className="max-w-7xl mx-auto space-y-2.5">
           {/* ROW 1: TOP BAR WITH CENTERED BOLT PETS LOGO & ACTIONS */}
           <div className="relative flex items-center justify-between">
@@ -225,6 +233,33 @@ export const Header: React.FC<HeaderProps> = ({
                       <span>Mis Favoritos</span>
                     </button>
 
+                    {onOpenWishlist && (
+                      <button
+                        onClick={() => { setShowAccountMenu(false); onOpenWishlist(); }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center justify-between text-slate-700 font-semibold transition"
+                      >
+                        <div className="flex items-center gap-2.5">
+                          <Bookmark className="w-4 h-4 text-amber-500 fill-amber-500" />
+                          <span>Mis Listas de Deseos</span>
+                        </div>
+                        {wishlistCollectionsCount > 0 && (
+                          <span className="text-[11px] bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full font-bold">
+                            {wishlistCollectionsCount} {wishlistCollectionsCount === 1 ? 'lista' : 'listas'}
+                          </span>
+                        )}
+                      </button>
+                    )}
+
+                    {onOpenTour && (
+                      <button
+                        onClick={() => { setShowAccountMenu(false); onOpenTour(); }}
+                        className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-semibold transition"
+                      >
+                        <Compass className="w-4 h-4 text-red-600" />
+                        <span>Ver tour de bienvenida</span>
+                      </button>
+                    )}
+
                     <div className="border-t border-slate-100 my-1"></div>
 
                     <button
@@ -243,13 +278,21 @@ export const Header: React.FC<HeaderProps> = ({
           {/* ROW 2: PROMINENT DELIVERY-TIME CAPSULE (INSPIRED BY RAPPI TURBO) */}
           <div className="flex justify-center">
             <button
-              onClick={() => onOpenAddressModal ? onOpenAddressModal() : setShowStoreModal(true)}
+              onClick={() => {
+                if (isScheduledDelivery && onOpenScheduledModal) {
+                  onOpenScheduledModal();
+                } else if (onOpenAddressModal) {
+                  onOpenAddressModal();
+                } else {
+                  setShowStoreModal(true);
+                }
+              }}
               className={`inline-flex items-center gap-2 px-5 py-1.5 rounded-full font-black text-xs sm:text-sm shadow-md transition-transform hover:scale-[1.02] active:scale-95 border ${
                 isScheduledDelivery
                   ? 'bg-blue-900/95 hover:bg-blue-900 text-blue-100 border-blue-400/50 shadow-blue-950/20'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/25'
               }`}
-              title={isScheduledDelivery ? 'Modalidad: Envío Programado' : 'Entrega ultra-rápida Turbo en Bogotá'}
+              title={isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Entrega ultra-rápida Turbo en Bogotá'}
             >
               {isScheduledDelivery ? (
                 <>
@@ -261,6 +304,11 @@ export const Header: React.FC<HeaderProps> = ({
                       'Envío programado · Elige día y horario'
                     )}
                   </span>
+                  {deliveryQuote?.detectedLocalityName && (
+                    <span className="text-[10px] bg-yellow-400 text-blue-950 font-black px-1.5 py-0.5 rounded-full ml-0.5">
+                      {deliveryQuote.detectedLocalityName}
+                    </span>
+                  )}
                 </>
               ) : (
                 <>
@@ -268,8 +316,13 @@ export const Header: React.FC<HeaderProps> = ({
                     ⚡
                   </span>
                   <span className="tracking-wide">
-                    Entrega en <span className="font-black text-white text-sm sm:text-base">{deliveryQuote?.estimatedMinutes || 25} min</span>
+                    Turbo <span className="font-black text-white text-sm sm:text-base">{deliveryQuote?.estimatedMinutes || 25} min</span>
                   </span>
+                  {deliveryQuote?.detectedLocalityName && (
+                    <span className="text-[10px] bg-emerald-800 text-emerald-100 font-bold px-1.5 py-0.5 rounded-full ml-0.5">
+                      {deliveryQuote.detectedLocalityName}
+                    </span>
+                  )}
                 </>
               )}
             </button>
@@ -286,7 +339,14 @@ export const Header: React.FC<HeaderProps> = ({
                 <MapPin className="w-4 h-4 text-yellow-300 shrink-0" />
                 <div className="truncate text-xs sm:text-sm font-semibold flex-1">
                   {customerAddress ? (
-                    <span className="font-bold text-white tracking-wide">{customerAddress}</span>
+                    <span className="font-bold text-white tracking-wide">
+                      {customerAddress}
+                      {deliveryQuote?.detectedLocalityName && (
+                        <span className="text-red-200 text-xs font-normal ml-1">
+                          · {deliveryQuote.detectedLocalityName}
+                        </span>
+                      )}
+                    </span>
                   ) : (
                     <span className="font-extrabold text-white/95">¿Dónde entregamos tu pedido? Ingresa tu dirección</span>
                   )}
@@ -297,7 +357,7 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* ROW 4: SEARCH BAR */}
-          <div className="relative">
+          <div className="relative" id="tour-search-bar">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
             <input
               type="text"

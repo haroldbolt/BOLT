@@ -95,6 +95,80 @@ async function startServer() {
     return deliveryQuoteEndpoint(req, res, stores, products);
   });
 
+  // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
+  app.get('/api/v1/geocode/reverse', async (req: Request, res: Response) => {
+    const { lat, lng } = req.query;
+    if (!lat || !lng) {
+      return res.status(400).json({ error: 'Faltan parámetros lat y lng' });
+    }
+
+    const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+    try {
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}&language=es&region=co`
+      );
+      const data: any = await response.json();
+
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        const raw = data.results[0].formatted_address;
+        let address = raw
+          .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+          .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+          .replace(/,\s*Cundinamarca/gi, '')
+          .trim();
+        return res.json({
+          address,
+          formattedAddress: address,
+          rawAddress: raw,
+          status: 'OK',
+        });
+      } else {
+        return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
+      }
+    } catch (err: any) {
+      console.error('Error en geocodificación inversa:', err);
+      return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
+    }
+  });
+
+  // Forward Geocoding Proxy (Google Maps Platform Geocoding API)
+  app.get('/api/v1/geocode/forward', async (req: Request, res: Response) => {
+    const { address } = req.query;
+    if (!address) {
+      return res.status(400).json({ error: 'Parámetro address requerido' });
+    }
+
+    const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+    try {
+      const searchTarget = String(address).toLowerCase().includes('bogot') ? String(address) : `${address}, Bogotá, Colombia`;
+      const response = await fetch(
+        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchTarget)}&key=${apiKey}&components=country:CO&language=es&region=co`
+      );
+      const data: any = await response.json();
+
+      if (data.status === 'OK' && data.results && data.results.length > 0) {
+        const first = data.results[0];
+        const location = first.geometry?.location;
+        const raw = first.formatted_address;
+        let formatted = raw
+          .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+          .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+          .replace(/,\s*Cundinamarca/gi, '')
+          .trim();
+        return res.json({
+          coordinates: location ? { lat: Number(location.lat.toFixed(6)), lng: Number(location.lng.toFixed(6)) } : null,
+          formattedAddress: formatted,
+          status: 'OK',
+        });
+      } else {
+        return res.status(404).json({ error: 'Dirección no encontrada', status: data.status });
+      }
+    } catch (err: any) {
+      console.error('Error en geocodificación directa:', err);
+      return res.status(500).json({ error: 'Error al consultar geocodificación directa' });
+    }
+  });
+
   // Create Order with transactional stock reservation & delivery policy validation
   app.post('/api/v1/orders', (req: Request, res: Response) => {
     try {

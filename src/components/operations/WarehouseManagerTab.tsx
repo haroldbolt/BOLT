@@ -120,10 +120,13 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
           </div>
 
           {/* Selector de Bodega */}
-          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl">
+          <div className="flex items-center gap-1.5 p-1 bg-slate-100 rounded-xl flex-wrap">
             {stores.map(store => {
               const isSelected = store.id === selectedStoreId;
               const isTurbo = store.turboEnabled;
+              const isInactive = !store.isActive;
+              const isCentro = store.id === 'HUB_CENTRO' || store.name.toLowerCase().includes('centro');
+
               return (
                 <button
                   key={store.id}
@@ -131,21 +134,45 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
                   className={`px-3 py-2 text-xs md:text-sm font-bold rounded-lg transition flex items-center gap-1.5 ${
                     isSelected
                       ? 'bg-white text-slate-900 shadow-sm'
+                      : isInactive
+                      ? 'text-slate-400 hover:text-slate-700'
                       : 'text-slate-600 hover:text-slate-900'
                   }`}
                 >
-                  <Building2 className={`w-3.5 h-3.5 ${isTurbo ? 'text-red-600' : 'text-slate-400'}`} />
+                  <Building2 className={`w-3.5 h-3.5 ${isInactive ? 'text-slate-400' : isTurbo ? 'text-red-600' : 'text-amber-500'}`} />
                   <span>{store.name.replace('Bolt Pets ', '')}</span>
-                  {!isTurbo && (
-                    <span className="text-[10px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded font-mono">
-                      No Turbo
+                  {isInactive ? (
+                    <span className="text-[10px] bg-slate-200 text-slate-600 px-1 py-0.5 rounded font-mono font-bold">
+                      Inactiva
                     </span>
-                  )}
+                  ) : isCentro ? (
+                    <span className="text-[10px] bg-amber-100 text-amber-800 px-1 py-0.5 rounded font-mono font-bold">
+                      Excluida
+                    </span>
+                  ) : null}
                 </button>
               );
             })}
           </div>
         </div>
+
+        {/* Banner de estado para bodega inactiva o Centro */}
+        {!currentStore?.isActive && (
+          <div className="mt-4 bg-amber-50 border border-amber-200 text-amber-900 p-3 rounded-xl flex items-center gap-2 text-xs font-medium">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <span>
+              <strong>Ubicación Inactiva:</strong> Esta bodega no está habilitada para despachos en vivo. Coordenadas y registros en modo auditoría.
+            </span>
+          </div>
+        )}
+        {currentStore?.id === 'HUB_CENTRO' && (
+          <div className="mt-4 bg-slate-100 border border-slate-200 text-slate-800 p-3 rounded-xl flex items-center gap-2 text-xs font-medium">
+            <Info className="w-4 h-4 text-slate-600 shrink-0" />
+            <span>
+              <strong>Sede Centro Histórico:</strong> Excluida de la vista consolidada por defecto. Opera exclusivamente para funciones administrativas o entregas especiales fuera de la red Turbo.
+            </span>
+          </div>
+        )}
 
         {/* Ficha Resumen de la Bodega Seleccionada */}
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mt-6 pt-6 border-t border-slate-100">

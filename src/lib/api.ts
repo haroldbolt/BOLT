@@ -22,6 +22,28 @@ export const api = {
     }
   },
 
+  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string } | null> {
+    try {
+      const res = await fetch(`${BASE_URL}/geocode/reverse?lat=${lat}&lng=${lng}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.warn('api.reverseGeocode request failed:', e);
+      return null;
+    }
+  },
+
+  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string } | null> {
+    try {
+      const res = await fetch(`${BASE_URL}/geocode/forward?address=${encodeURIComponent(address)}`);
+      if (!res.ok) return null;
+      return await res.json();
+    } catch (e) {
+      console.warn('api.forwardGeocode request failed:', e);
+      return null;
+    }
+  },
+
   async getStores(): Promise<Store[]> {
     try {
       const res = await fetch(`${BASE_URL}/stores`);

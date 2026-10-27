@@ -144,7 +144,9 @@ async function runTests() {
     INITIAL_STORES,
     INITIAL_PRODUCTS
   );
-  assert(quoteFar.eligibilityStatus === 'OUT_OF_COVERAGE', 'Destino > 6.000m retorna OUT_OF_COVERAGE');
+  assert(quoteFar.availableModes.turbo === false, 'Destino > 6.000m o fuera de Kennedy/Suba/Engativá deshabilita Turbo');
+  assert(quoteFar.autoSwitchedToScheduled === true, 'Conmuta automáticamente a Envío Programado');
+  assert(quoteFar.message === 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido', 'Mensaje de transición obligatorio presente');
   assert(quoteFar.geographicDistanceMeters > 6000, `Distancia reportada > 6000m: ${quoteFar.geographicDistanceMeters}m`);
 
   // Test 10: Strict 1,500s Time Boundary Test
@@ -170,8 +172,8 @@ async function runTests() {
   const geoDist = calculateHaversineDistanceMeters(customStore.coordinates, edgeCoords);
   if (geoDist <= 6000) {
     assert(
-      quoteTimeExceeded.eligibilityStatus === 'OVER_TIME_LIMIT',
-      `Destino <= 6000m (${geoDist}m) pero ETA > 1500s retorna OVER_TIME_LIMIT`
+      quoteTimeExceeded.availableModes.turbo === false && quoteTimeExceeded.autoSwitchedToScheduled === true,
+      `Destino <= 6000m (${geoDist}m) pero ETA > 1500s conmuta a Programado sin pantalla de rechazo`
     );
   }
 
@@ -476,7 +478,7 @@ async function runTests() {
     zeroStockKennedyCatalog
   );
   assert(quoteOutOfStock.availableModes.turbo === false, 'No permite compra Turbo si el producto está agotado en la sede asignada');
-  assert(quoteOutOfStock.eligibilityStatus === 'OUT_OF_STOCK', 'Retorna estado OUT_OF_STOCK sin tomar existencias de Suba');
+  assert(quoteOutOfStock.autoSwitchedToScheduled === true && quoteOutOfStock.availableModes.scheduled === true, 'Conmuta a Envío Programado sin tomar existencias de Suba');
 
   // Test 41: Advanced Search Filters (Price range, Specific brand, Weight range)
   const allProds = INITIAL_PRODUCTS;

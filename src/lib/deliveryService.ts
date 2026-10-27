@@ -39,6 +39,152 @@ export const MAX_VEHICLE_WEIGHT_GRAMS = 25000;        // 25 kg capacidad de carg
 export const SCHEDULED_COVERAGE_RADIUS_METERS = 25000; // 25 km cobertura metropolitana Bogotá
 export const MAX_SCHEDULED_WEIGHT_GRAMS = 300000;     // 300 kg capacidad de camioneta programada
 
+// Localidades autorizadas para Turbo y Turbo Dividido exclusivamente
+export const TURBO_ALLOWED_LOCALITIES = ['KENNEDY', 'SUBA', 'ENGATIVA'] as const;
+export type TurboLocality = typeof TURBO_ALLOWED_LOCALITIES[number];
+
+/**
+ * Detecta la localidad de Bogotá mediante análisis de texto de dirección y coordenadas geográficas.
+ */
+export function detectBogotaLocality(coords?: { lat: number; lng: number } | null, addressText?: string): string {
+  const clean = (addressText || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+
+  // 1. Detección por texto y barrios conocidos con precedencia
+  if (
+    clean.includes('kennedy') || clean.includes('castilla') || clean.includes('timiza') || 
+    clean.includes('tintal') || clean.includes('patio bonito') || clean.includes('carvajal') || 
+    clean.includes('mandalay') || clean.includes('bavaria') || clean.includes('villa alsacia')
+  ) {
+    return 'KENNEDY';
+  }
+  if (
+    clean.includes('suba') || clean.includes('rincon') || clean.includes('tibabuyes') || 
+    clean.includes('pinar') || clean.includes('lombardia') || clean.includes('niza') || 
+    clean.includes('colina campestre') || clean.includes('colina') || clean.includes('mazuren') || 
+    clean.includes('prado veraniego') || clean.includes('san jose de baviera')
+  ) {
+    return 'SUBA';
+  }
+  if (
+    clean.includes('engativa') || clean.includes('alamos') || clean.includes('villas') || 
+    clean.includes('minuto de dios') || clean.includes('quirigua') || clean.includes('normandia') || 
+    clean.includes('boyaca real') || clean.includes('santa cecilia') || clean.includes('garces navas') ||
+    clean.includes('calle 72')
+  ) {
+    return 'ENGATIVA';
+  }
+  if (
+    clean.includes('usaquen') || clean.includes('cedritos') || clean.includes('santa barbara') || 
+    clean.includes('san patricio') || clean.includes('calle 140') || clean.includes('calle 116') || 
+    clean.includes('calle 127') || clean.includes('unicentro') || clean.includes('torca') ||
+    clean.includes('santa ana') || clean.includes('la carolina')
+  ) {
+    return 'USAQUEN';
+  }
+  if (
+    clean.includes('chapinero') || clean.includes('lourdes') || clean.includes('rosales') || 
+    clean.includes('chico') || clean.includes('antiguo country') || clean.includes('marly') || 
+    clean.includes('javeriana') || clean.includes('el retiro')
+  ) {
+    return 'CHAPINERO';
+  }
+  if (
+    clean.includes('teusaquillo') || clean.includes('salitre') || clean.includes('palermo') || 
+    clean.includes('la soledad') || clean.includes('quinta paredes') || clean.includes('ciudad salitre')
+  ) {
+    return 'TEUSAQUILLO';
+  }
+  if (
+    clean.includes('fontibon') || clean.includes('modelia') || clean.includes('hayuelos') || 
+    clean.includes('capellania') || clean.includes('aeropuerto') || clean.includes('zona franca')
+  ) {
+    return 'FONTIBON';
+  }
+  if (
+    clean.includes('candelaria') || clean.includes('centro') || clean.includes('santa fe') || 
+    clean.includes('martires') || clean.includes('las cruces') || clean.includes('plaza de bolivar')
+  ) {
+    return 'CENTRO_HISTORICO';
+  }
+  if (clean.includes('bosa') || clean.includes('el recreo') || clean.includes('san pablo')) {
+    return 'BOSA';
+  }
+  if (clean.includes('barrios unidos') || clean.includes('castellana') || clean.includes('alcazares') || clean.includes('polo')) {
+    return 'BARRIOS_UNIDOS';
+  }
+  if (clean.includes('puente aranda') || clean.includes('ciudad montes')) {
+    return 'PUENTE_ARANDA';
+  }
+
+  // 2. Detección por polígonos/cuadrícula de coordenadas geográficas
+  if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number' && !isNaN(coords.lat) && !isNaN(coords.lng)) {
+    const { lat, lng } = coords;
+
+    // Kennedy: lat ~4.590 - 4.665, lng ~ -74.195 - -74.135
+    if (lat >= 4.590 && lat <= 4.665 && lng >= -74.195 && lng <= -74.135) {
+      return 'KENNEDY';
+    }
+    // Suba: lat ~4.710 - 4.825, lng ~ -74.135 - -74.045
+    if (lat >= 4.710 && lat <= 4.825 && lng >= -74.135 && lng <= -74.045) {
+      return 'SUBA';
+    }
+    // Engativá: lat ~4.670 - 4.730, lng ~ -74.148 - -74.085
+    if (lat >= 4.670 && lat <= 4.730 && lng >= -74.148 && lng <= -74.085) {
+      return 'ENGATIVA';
+    }
+    // Fontibón: lat ~4.640 - 4.685, lng ~ -74.165 - -74.110
+    if (lat >= 4.640 && lat <= 4.685 && lng >= -74.165 && lng <= -74.110) {
+      return 'FONTIBON';
+    }
+    // Usaquén: lat ~4.680 - 4.800, lng >= -74.055 && lng <= -74.010
+    if (lat >= 4.680 && lat <= 4.800 && lng >= -74.055 && lng <= -74.010) {
+      return 'USAQUEN';
+    }
+    // Chapinero: lat ~4.625 - 4.685, lng >= -74.070 && lng <= -74.030
+    if (lat >= 4.625 && lat <= 4.685 && lng >= -74.070 && lng <= -74.030) {
+      return 'CHAPINERO';
+    }
+    // Teusaquillo: lat ~4.620 - 4.665, lng >= -74.095 && lng <= -74.065
+    if (lat >= 4.620 && lat <= 4.665 && lng >= -74.095 && lng <= -74.065) {
+      return 'TEUSAQUILLO';
+    }
+    // Centro / La Candelaria / Santa Fe: lat ~4.585 - 4.620, lng >= -74.085 && lng <= -74.050
+    if (lat >= 4.585 && lat <= 4.620 && lng >= -74.085 && lng <= -74.050) {
+      return 'CENTRO_HISTORICO';
+    }
+    // Bosa: lat ~4.580 - 4.630, lng >= -74.210 && lng <= -74.165
+    if (lat >= 4.580 && lat <= 4.630 && lng >= -74.210 && lng <= -74.165) {
+      return 'BOSA';
+    }
+    // Barrios Unidos: lat ~4.650 - 4.690, lng >= -74.090 && lng <= -74.055
+    if (lat >= 4.650 && lat <= 4.690 && lng >= -74.090 && lng <= -74.055) {
+      return 'BARRIOS_UNIDOS';
+    }
+  }
+
+  return 'OTRA_LOCALIDAD_BOGOTA';
+}
+
+/**
+ * Obtiene el nombre amigable de la localidad de Bogotá.
+ */
+export function getBogotaLocalityName(localityCode: string): string {
+  switch (localityCode) {
+    case 'KENNEDY': return 'Kennedy';
+    case 'SUBA': return 'Suba';
+    case 'ENGATIVA': return 'Engativá';
+    case 'USAQUEN': return 'Usaquén';
+    case 'CHAPINERO': return 'Chapinero';
+    case 'TEUSAQUILLO': return 'Teusaquillo';
+    case 'FONTIBON': return 'Fontibón';
+    case 'CENTRO_HISTORICO': return 'La Candelaria / Centro';
+    case 'BOSA': return 'Bosa';
+    case 'BARRIOS_UNIDOS': return 'Barrios Unidos';
+    case 'PUENTE_ARANDA': return 'Puente Aranda';
+    default: return 'Bogotá D.C.';
+  }
+}
+
 export const DELIVERY_CONFIG = {
   coverageRadiusMeters: COVERAGE_RADIUS_METERS,
   maxDeliverySeconds: MAX_DELIVERY_SECONDS,
@@ -290,6 +436,13 @@ export interface DeliveryQuote {
   scheduledEligible: boolean;
   scheduledSlots: ScheduledSlot[];
   scheduledExplanation?: string;
+
+  // Localidad y conmutación automática Turbo vs Programado
+  detectedLocality?: string;
+  detectedLocalityName?: string;
+  isTurboLocality?: boolean;
+  autoSwitchedToScheduled?: boolean;
+  switchReason?: 'LOCALITY_NOT_TURBO' | 'TURBO_CONDITIONS_NOT_MET' | 'WEIGHT_OVERSIZED';
 
   destination: {
     address: string;
@@ -917,17 +1070,118 @@ export function evaluateDeliveryQuote(
     };
   }
 
+  // Validación de localidad en Bogotá
+  const detectedLocality = detectBogotaLocality(destination.coordinates, destination.address);
+  const detectedLocalityName = getBogotaLocalityName(detectedLocality);
+  const isTurboLocality = TURBO_ALLOWED_LOCALITIES.includes(detectedLocality as any);
+
   // Bodegas activas con Turbo habilitado (Kennedy, Álamos, Suba)
   const activeTurboStores = stores.filter(s => s.isActive && s.turboEnabled);
+
+  // Distancia mínima global a cualquier bodega activa de Bogotá
+  let minGlobalGeoDistance = Infinity;
+  for (const s of stores.filter(st => st.isActive)) {
+    const d = haversine(getStoreDispatchCoordinates(s), destination.coordinates);
+    if (d < minGlobalGeoDistance) minGlobalGeoDistance = d;
+  }
+  const isWithinScheduledCoverage = minGlobalGeoDistance <= DELIVERY_CONFIG.scheduledCoverageRadiusMeters;
+
+  // Si está fuera de todo el perímetro metropolitano de Bogotá (> 25 km)
+  if (!isWithinScheduledCoverage) {
+    let minTurboGeoDistance = Infinity;
+    for (const store of activeTurboStores) {
+      const d = haversine(getStoreDispatchCoordinates(store), destination.coordinates);
+      if (d < minTurboGeoDistance) minTurboGeoDistance = d;
+    }
+    const geoKm = Number((minTurboGeoDistance / 1000).toFixed(1));
+    const roadKm = Number(((minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor) / 1000).toFixed(1));
+
+    return {
+      quoteId,
+      eligibilityStatus: DeliveryStatus.OUT_OF_COVERAGE,
+      reasonCode: 'OUT_OF_ALL_COVERAGE',
+      message: 'Dirección fuera del perímetro metropolitano de Bogotá.',
+      availableModes: { turbo: false, turboDividido: false, scheduled: false },
+      recommendedMode: null,
+      autoSwitchedToScheduled: false,
+      detectedLocality,
+      detectedLocalityName,
+      isTurboLocality: false,
+      destination,
+      geographicDistanceMeters: minTurboGeoDistance,
+      geographicDistanceKm: geoKm,
+      roadDistanceMeters: Math.round(minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor),
+      roadDistanceKm: roadKm,
+      scheduledEligible: false,
+      scheduledSlots: [],
+      calculatedAt: now.toISOString(),
+      expiresAt,
+      configVersion: DELIVERY_CONFIG.configVersion,
+      candidateWarehousesEvaluated: activeTurboStores.length,
+      basketValidated: !!items?.length,
+      totalWeightKg,
+      totalWeightGrams,
+    };
+  }
+
+  // REGLA 1: Turbo y Turbo Dividido únicamente en Kennedy, Suba y Engativá.
+  // En cualquier otra localidad de Bogotá, selecciona automáticamente Envío Programado.
+  if (!isTurboLocality) {
+    let minTurboGeoDistance = Infinity;
+    for (const store of activeTurboStores) {
+      const d = haversine(getStoreDispatchCoordinates(store), destination.coordinates);
+      if (d < minTurboGeoDistance) minTurboGeoDistance = d;
+    }
+    const geoKm = Number((minTurboGeoDistance / 1000).toFixed(1));
+    const roadKm = Number(((minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor) / 1000).toFixed(1));
+
+    return {
+      quoteId,
+      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
+      reasonCode: 'NON_TURBO_LOCALITY_AUTO_SCHEDULED',
+      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
+      availableModes: {
+        turbo: false,
+        turboDividido: false,
+        scheduled: true,
+      },
+      recommendedMode: 'PROGRAMADO',
+      autoSwitchedToScheduled: true,
+      switchReason: 'LOCALITY_NOT_TURBO',
+      detectedLocality,
+      detectedLocalityName,
+      isTurboLocality: false,
+      destination,
+      geographicDistanceMeters: minTurboGeoDistance,
+      geographicDistanceKm: geoKm,
+      roadDistanceMeters: Math.round(minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor),
+      roadDistanceKm: roadKm,
+      scheduledEligible: true,
+      scheduledSlots,
+      scheduledExplanation: `Turbo y Turbo Dividido aplican exclusivamente en Kennedy, Suba y Engativá. Para ${detectedLocalityName}, continuamos con Envío Programado.`,
+      calculatedAt: now.toISOString(),
+      expiresAt,
+      configVersion: DELIVERY_CONFIG.configVersion,
+      candidateWarehousesEvaluated: activeTurboStores.length,
+      basketValidated: !!items?.length,
+      totalWeightKg,
+      totalWeightGrams,
+    };
+  }
 
   if (activeTurboStores.length === 0) {
     return {
       quoteId,
-      eligibilityStatus: DeliveryStatus.STORE_CLOSED,
+      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
       reasonCode: 'NO_ACTIVE_TURBO_STORES',
-      message: 'No hay bodegas habilitadas disponibles para entregas Turbo en este momento.',
+      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
       availableModes: { turbo: false, turboDividido: false, scheduled: true },
       recommendedMode: 'PROGRAMADO',
+      autoSwitchedToScheduled: true,
+      switchReason: 'TURBO_CONDITIONS_NOT_MET',
+      detectedLocality,
+      detectedLocalityName,
+      isTurboLocality: true,
       destination,
       geographicDistanceMeters: 0,
       geographicDistanceKm: 0,
@@ -997,15 +1251,7 @@ export function evaluateDeliveryQuote(
     }
   }
 
-  // Distancia mínima global a cualquier bodega activa de Bogotá
-  let minGlobalGeoDistance = Infinity;
-  for (const s of stores.filter(st => st.isActive)) {
-    const d = haversine(getStoreDispatchCoordinates(s), destination.coordinates);
-    if (d < minGlobalGeoDistance) minGlobalGeoDistance = d;
-  }
-  const isWithinScheduledCoverage = minGlobalGeoDistance <= DELIVERY_CONFIG.scheduledCoverageRadiusMeters;
-
-  // CASO FUERA DEL RADIO TURBO DE 6 KM
+  // CASO FUERA DEL RADIO TURBO DE 6 KM DENTRO DE LOCALIDADES TURBO
   if (candidates.length === 0) {
     let minTurboGeoDistance = Infinity;
     for (const store of activeTurboStores) {
@@ -1016,60 +1262,38 @@ export function evaluateDeliveryQuote(
     const geoKm = Number((minTurboGeoDistance / 1000).toFixed(1));
     const roadKm = Number(((minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor) / 1000).toFixed(1));
 
-    if (isWithinScheduledCoverage) {
-      // Caso C: Fuera de Turbo (6 km), pero DENTRO de Envío Programado Bogotá
-      return {
-        quoteId,
-        eligibilityStatus: DeliveryStatus.OUT_OF_COVERAGE,
-        reasonCode: 'DISTANCE_EXCEEDS_6KM_SCHEDULED_AVAILABLE',
-        message: `Esta dirección está fuera de nuestra cobertura Turbo de 6 km (distancia: ${geoKm} km). ¡Puedes recibir tu compra con Envío Programado!`,
-        availableModes: {
-          turbo: false,
-          turboDividido: false,
-          scheduled: true,
-        },
-        recommendedMode: 'PROGRAMADO',
-        destination,
-        geographicDistanceMeters: minTurboGeoDistance,
-        geographicDistanceKm: geoKm,
-        roadDistanceMeters: Math.round(minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor),
-        roadDistanceKm: roadKm,
-        scheduledEligible: true,
-        scheduledSlots,
-        scheduledExplanation: `Tu dirección está a ${geoKm} km del centro de distribución más cercano (límite Turbo: 6 km). Puedes seleccionar una franja horaria para recibir tu pedido por Envío Programado.`,
-        calculatedAt: now.toISOString(),
-        expiresAt,
-        configVersion: DELIVERY_CONFIG.configVersion,
-        candidateWarehousesEvaluated: activeTurboStores.length,
-        basketValidated: !!items?.length,
-        totalWeightKg,
-        totalWeightGrams,
-      };
-    } else {
-      // Caso D: Fuera de toda cobertura metropolitana
-      return {
-        quoteId,
-        eligibilityStatus: DeliveryStatus.OUT_OF_COVERAGE,
-        reasonCode: 'OUTSIDE_METROPOLITAN_COVERAGE',
-        message: 'Esta dirección está fuera de nuestra zona de cobertura en Bogotá.',
-        availableModes: { turbo: false, turboDividido: false, scheduled: false },
-        recommendedMode: null,
-        destination,
-        geographicDistanceMeters: minTurboGeoDistance,
-        geographicDistanceKm: geoKm,
-        roadDistanceMeters: Math.round(minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor),
-        roadDistanceKm: roadKm,
-        scheduledEligible: false,
-        scheduledSlots: [],
-        calculatedAt: now.toISOString(),
-        expiresAt,
-        configVersion: DELIVERY_CONFIG.configVersion,
-        candidateWarehousesEvaluated: activeTurboStores.length,
-        basketValidated: !!items?.length,
-        totalWeightKg,
-        totalWeightGrams,
-      };
-    }
+    return {
+      quoteId,
+      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
+      reasonCode: 'DISTANCE_EXCEEDS_6KM_AUTO_SCHEDULED',
+      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
+      availableModes: {
+        turbo: false,
+        turboDividido: false,
+        scheduled: true,
+      },
+      recommendedMode: 'PROGRAMADO',
+      autoSwitchedToScheduled: true,
+      switchReason: 'TURBO_CONDITIONS_NOT_MET',
+      detectedLocality,
+      detectedLocalityName,
+      isTurboLocality: true,
+      destination,
+      geographicDistanceMeters: minTurboGeoDistance,
+      geographicDistanceKm: geoKm,
+      roadDistanceMeters: Math.round(minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor),
+      roadDistanceKm: roadKm,
+      scheduledEligible: true,
+      scheduledSlots,
+      scheduledExplanation: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
+      calculatedAt: now.toISOString(),
+      expiresAt,
+      configVersion: DELIVERY_CONFIG.configVersion,
+      candidateWarehousesEvaluated: activeTurboStores.length,
+      basketValidated: !!items?.length,
+      totalWeightKg,
+      totalWeightGrams,
+    };
   }
 
   // Filtrar candidatos por inventario suficiente
@@ -1077,22 +1301,28 @@ export function evaluateDeliveryQuote(
   if (items && items.length > 0 && stockEligibleCandidates.length === 0) {
     return {
       quoteId,
-      eligibilityStatus: DeliveryStatus.OUT_OF_STOCK,
-      reasonCode: 'OUT_OF_STOCK_IN_COVERED_HUBS',
-      message: 'Las sedes dentro de tu cobertura no cuentan con existencias suficientes para los productos de tu carrito.',
+      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
+      reasonCode: 'OUT_OF_STOCK_AUTO_SCHEDULED',
+      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
       availableModes: {
         turbo: false,
         turboDividido: false,
-        scheduled: isWithinScheduledCoverage,
+        scheduled: true,
       },
-      recommendedMode: isWithinScheduledCoverage ? 'PROGRAMADO' : null,
+      recommendedMode: 'PROGRAMADO',
+      autoSwitchedToScheduled: true,
+      switchReason: 'TURBO_CONDITIONS_NOT_MET',
+      detectedLocality,
+      detectedLocalityName,
+      isTurboLocality: true,
       destination,
       geographicDistanceMeters: candidates[0].geoDistanceMeters,
       geographicDistanceKm: Number((candidates[0].geoDistanceMeters / 1000).toFixed(1)),
       roadDistanceMeters: candidates[0].roadDistanceMeters,
       roadDistanceKm: Number((candidates[0].roadDistanceMeters / 1000).toFixed(1)),
-      scheduledEligible: isWithinScheduledCoverage,
-      scheduledSlots: isWithinScheduledCoverage ? scheduledSlots : [],
+      scheduledEligible: true,
+      scheduledSlots,
+      scheduledExplanation: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
       calculatedAt: now.toISOString(),
       expiresAt,
       configVersion: DELIVERY_CONFIG.configVersion,
@@ -1112,15 +1342,20 @@ export function evaluateDeliveryQuote(
     const bestCandidate = pool.sort((a, b) => a.totalSeconds - b.totalSeconds)[0];
     return {
       quoteId,
-      eligibilityStatus: DeliveryStatus.OVER_TIME_LIMIT,
-      reasonCode: 'ETA_EXCEEDS_1500_SECONDS',
-      message: 'Por el momento no podemos entregar en esta dirección dentro de 25 minutos. ¡Puedes programar tu entrega!',
+      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
+      reasonCode: 'ETA_EXCEEDS_25MIN_AUTO_SCHEDULED',
+      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
       availableModes: {
         turbo: false,
         turboDividido: false,
-        scheduled: isWithinScheduledCoverage,
+        scheduled: true,
       },
-      recommendedMode: isWithinScheduledCoverage ? 'PROGRAMADO' : null,
+      recommendedMode: 'PROGRAMADO',
+      autoSwitchedToScheduled: true,
+      switchReason: 'TURBO_CONDITIONS_NOT_MET',
+      detectedLocality,
+      detectedLocalityName,
+      isTurboLocality: true,
       destination,
       geographicDistanceMeters: bestCandidate.geoDistanceMeters,
       geographicDistanceKm: Number((bestCandidate.geoDistanceMeters / 1000).toFixed(1)),
@@ -1128,9 +1363,9 @@ export function evaluateDeliveryQuote(
       roadDistanceKm: Number((bestCandidate.roadDistanceMeters / 1000).toFixed(1)),
       etaComponents: bestCandidate.etaComponents,
       estimatedMinutes: bestCandidate.estimatedMinutes,
-      scheduledEligible: isWithinScheduledCoverage,
-      scheduledSlots: isWithinScheduledCoverage ? scheduledSlots : [],
-      scheduledExplanation: `El tiempo estimado de entrega actual (${bestCandidate.estimatedMinutes} min) excede la promesa Turbo de 25 min. Te ofrecemos Envío Programado.`,
+      scheduledEligible: true,
+      scheduledSlots,
+      scheduledExplanation: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
       calculatedAt: now.toISOString(),
       expiresAt,
       configVersion: DELIVERY_CONFIG.configVersion,
@@ -1158,7 +1393,6 @@ export function evaluateDeliveryQuote(
   const isHeavyOrder = totalWeightGrams > DELIVERY_CONFIG.heavyOrderThresholdGrams;
 
   if (isHeavyOrder && items && items.length > 0 && catalogProducts.length > 0) {
-    // Generar plan de partición en unidades enteras
     const splitPlan = generateSplitDeliveryPlan(
       items,
       catalogProducts,
@@ -1172,13 +1406,17 @@ export function evaluateDeliveryQuote(
         quoteId,
         eligibilityStatus: DeliveryStatus.ELIGIBLE,
         reasonCode: 'TURBO_DIVIDIDO_ELIGIBLE',
-        message: `Tu pedido pesa ${totalWeightKg} kg (> 60 kg). Podemos entregarlo en ${splitPlan.shipmentCount} motos Turbo simultáneas en aprox. ${winner.estimatedMinutes} min o mediante Envío Programado.`,
+        message: `Tu pedido pesa ${totalWeightKg} kg (> 60 kg). Se entregará en ${splitPlan.shipmentCount} motos Turbo simultáneas en aprox. ${winner.estimatedMinutes} min.`,
         availableModes: {
           turbo: false, // Monomoto deshabilitada por exceder 60 kg
           turboDividido: true,
           scheduled: true,
         },
         recommendedMode: 'TURBO_DIVIDIDO',
+        autoSwitchedToScheduled: false,
+        detectedLocality,
+        detectedLocalityName,
+        isTurboLocality: true,
         assignedStoreId: winner.store.id,
         assignedStoreName: winner.store.name,
         assignedStoreAddress: winner.store.address,
@@ -1202,18 +1440,23 @@ export function evaluateDeliveryQuote(
         totalWeightGrams,
       };
     } else {
-      // Peso > 60 kg pero división Turbo no es factible -> solo Envío Programado
+      // Peso > 60 kg pero división Turbo no es factible -> Envío Programado
       return {
         quoteId,
         eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
         reasonCode: 'HEAVY_ORDER_SCHEDULED_ONLY',
-        message: `Tu pedido pesa ${totalWeightKg} kg. Por seguridad y volumen de carga, se entregará en vehículo de carga mediante Envío Programado.`,
+        message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
         availableModes: {
           turbo: false,
           turboDividido: false,
           scheduled: true,
         },
         recommendedMode: 'PROGRAMADO',
+        autoSwitchedToScheduled: true,
+        switchReason: 'WEIGHT_OVERSIZED',
+        detectedLocality,
+        detectedLocalityName,
+        isTurboLocality: true,
         assignedStoreId: winner.store.id,
         assignedStoreName: winner.store.name,
         assignedStoreAddress: winner.store.address,
@@ -1225,7 +1468,7 @@ export function evaluateDeliveryQuote(
         roadDistanceKm: Number((winner.roadDistanceMeters / 1000).toFixed(1)),
         scheduledEligible: true,
         scheduledSlots,
-        scheduledExplanation: `El pedido supera el límite de motocicletas (${totalWeightKg} kg). Selecciona fecha y franja horaria para recibirlo en camioneta.`,
+        scheduledExplanation: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
         calculatedAt: now.toISOString(),
         expiresAt,
         configVersion: DELIVERY_CONFIG.configVersion,
@@ -1237,7 +1480,7 @@ export function evaluateDeliveryQuote(
     }
   }
 
-  // CASO A: Pedido estándar elegible para Turbo (peso <= 60 kg, <= 6 km, <= 25 min)
+  // CASO A: Pedido estándar elegible para Turbo (peso <= 60 kg, <= 6 km, <= 25 min en Kennedy/Suba/Engativá)
   return {
     quoteId,
     eligibilityStatus: DeliveryStatus.ELIGIBLE,
@@ -1246,9 +1489,13 @@ export function evaluateDeliveryQuote(
     availableModes: {
       turbo: true,
       turboDividido: false,
-      scheduled: true, // El cliente también puede optar por envío programado si lo prefiere
+      scheduled: true,
     },
     recommendedMode: 'TURBO',
+    autoSwitchedToScheduled: false,
+    detectedLocality,
+    detectedLocalityName,
+    isTurboLocality: true,
     assignedStoreId: winner.store.id,
     assignedStoreName: winner.store.name,
     assignedStoreAddress: winner.store.address,

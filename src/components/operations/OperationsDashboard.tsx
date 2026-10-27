@@ -28,7 +28,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('HUB_KENNEDY');
+  const [selectedStoreId, setSelectedStoreId] = useState<string>('ALL_ACTIVE');
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
@@ -64,8 +64,24 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     return () => clearInterval(interval);
   }, []);
 
-  // Filtered orders
-  const storeOrders = orders.filter(o => o.storeId === selectedStoreId);
+  // Funciones de validación de bodegas y exclusión de Centro
+  const isCentroStore = (store: Store | { id: string; name?: string }) =>
+    store.id === 'HUB_CENTRO' || (store.name?.toLowerCase().includes('centro') ?? false);
+
+  const activeStoresExceptCentro = stores.filter(s => s.isActive && !isCentroStore(s));
+  const activeStoresExceptCentroIds = activeStoresExceptCentro.map(s => s.id);
+
+  const selectedStore = selectedStoreId === 'ALL_ACTIVE' ? null : stores.find(s => s.id === selectedStoreId);
+  const isSelectedStoreInactive = selectedStore ? !selectedStore.isActive : false;
+  const isSelectedStoreCentro = selectedStore ? isCentroStore(selectedStore) : false;
+
+  // Filtrado dinámico de pedidos según bodega seleccionada
+  const storeOrders = orders.filter(o => {
+    if (selectedStoreId === 'ALL_ACTIVE') {
+      return activeStoresExceptCentroIds.includes(o.storeId);
+    }
+    return o.storeId === selectedStoreId;
+  });
   const scheduledOrders = orders.filter(o => o.deliveryMode === 'PROGRAMADO');
   const pendingPrescriptionOrders = orders.filter(o => o.prescriptionReview?.status === 'PENDIENTE_REVISION');
 
@@ -144,6 +160,166 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     URL.revokeObjectURL(url);
   };
 
+  // Selector visual de Bodega para las pestañas operativas (PEDIDOS e INVENTARIO)
+  const renderWarehouseSelectorBar = () => (
+    <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
+      <div className="flex items-center gap-1.5 flex-wrap">
+        <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1 mr-1">
+          <Building2 className="w-3.5 h-3.5" />
+          Bodega:
+        </span>
+
+        {/* Opción por defecto: Todas las activas (excluye Centro) */}
+        <button
+          onClick={() => setSelectedStoreId('ALL_ACTIVE')}
+          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+            selectedStoreId === 'ALL_ACTIVE'
+              ? 'bg-slate-900 text-white shadow-xs'
+              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+          }`}
+        >
+          <span>Todas las activas (sin Centro)</span>
+          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+            selectedStoreId === 'ALL_ACTIVE' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-800'
+          }`}>
+            {orders.filter(o => activeStoresExceptCentroIds.includes(o.storeId)).length}
+          </span>
+        </button>
+
+        {/* Bodegas Activas Individuales */}
+        {stores.filter(s => s.isActive && !isCentroStore(s)).map(store => {
+          const isSelected = selectedStoreId === store.id;
+          const orderCount = orders.filter(o => o.storeId === store.id).length;
+          return (
+            <button
+              key={store.id}
+              onClick={() => setSelectedStoreId(store.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
+                isSelected
+                  ? 'bg-slate-900 text-white shadow-xs'
+                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+              }`}
+            >
+              <span>{store.name.replace('Bolt Pets ', '')}</span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                isSelected ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-800'
+              }`}>
+                {orderCount}
+              </span>
+            </button>
+          );
+        })}
+
+        {/* Sede Centro Histórico (Excluida por defecto) */}
+        {stores.filter(s => isCentroStore(s)).map(store => {
+          const isSelected = selectedStoreId === store.id;
+          const orderCount = orders.filter(o => o.storeId === store.id).length;
+          return (
+            <button
+              key={store.id}
+              onClick={() => setSelectedStoreId(store.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
+                isSelected
+                  ? 'bg-slate-800 text-amber-300 border-slate-800 shadow-xs'
+                  : 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100'
+              }`}
+              title="Sede administrativa excluida de la vista por defecto"
+            >
+              <span>{store.name.replace('Bolt Pets ', '')}</span>
+              <span className="text-[9px] bg-amber-200/90 text-amber-900 px-1 py-0.2 rounded font-black uppercase">
+                Excluida
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                isSelected ? 'bg-slate-950 text-amber-200' : 'bg-white/80 text-amber-950'
+              }`}>
+                {orderCount}
+              </span>
+            </button>
+          );
+        })}
+
+        {/* Bodegas Inactivas */}
+        {stores.filter(s => !s.isActive && !isCentroStore(s)).map(store => {
+          const isSelected = selectedStoreId === store.id;
+          const orderCount = orders.filter(o => o.storeId === store.id).length;
+          return (
+            <button
+              key={store.id}
+              onClick={() => setSelectedStoreId(store.id)}
+              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
+                isSelected
+                  ? 'bg-slate-700 text-slate-100 border-slate-700 shadow-xs'
+                  : 'bg-slate-100 text-slate-500 border-dashed border-slate-300 hover:bg-slate-200'
+              }`}
+              title="Ubicación inactiva - seleccionable para auditoría"
+            >
+              <span>{store.name.replace('Bolt Pets ', '')}</span>
+              <span className="text-[9px] bg-slate-300 text-slate-700 px-1 py-0.2 rounded font-black uppercase">
+                Inactiva
+              </span>
+              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
+                isSelected ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
+              }`}>
+                {orderCount}
+              </span>
+            </button>
+          );
+        })}
+      </div>
+
+      <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 shrink-0">
+        <span>Filtro activo:</span>
+        <strong className="text-slate-900">
+          {selectedStoreId === 'ALL_ACTIVE'
+            ? 'Red Turbo Activa (Kennedy · Álamos · Suba)'
+            : selectedStore?.name.replace('Bolt Pets ', '')}
+        </strong>
+      </div>
+    </div>
+  );
+
+  const renderAuditBanners = () => (
+    <>
+      {isSelectedStoreInactive && (
+        <div className="bg-amber-50 border border-amber-200 text-amber-900 p-3.5 rounded-2xl flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+            <div>
+              <p className="font-bold text-amber-950">
+                Ubicación Inactiva: {selectedStore?.name}
+              </p>
+              <p className="text-amber-800 text-[11px]">
+                Esta bodega está inactiva y no recibe órdenes Turbo en vivo. Visualizando inventario y registros en modo auditoría.
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-black bg-amber-200 text-amber-950 px-2.5 py-1 rounded-lg uppercase tracking-wide shrink-0">
+            Modo Auditoría
+          </span>
+        </div>
+      )}
+
+      {isSelectedStoreCentro && (
+        <div className="bg-slate-100 border border-slate-200 text-slate-800 p-3.5 rounded-2xl flex items-center justify-between text-xs">
+          <div className="flex items-center gap-2.5">
+            <Building2 className="w-4 h-4 text-slate-600 shrink-0" />
+            <div>
+              <p className="font-bold text-slate-900">
+                Sede Centro Histórico (Excluida por defecto)
+              </p>
+              <p className="text-slate-600 text-[11px]">
+                Ubicación administrativa fuera de la red de despachos Turbo (SLA 25 min). Se encuentra excluida de la vista consolidada activa.
+              </p>
+            </div>
+          </div>
+          <span className="text-[10px] font-black bg-slate-200 text-slate-800 px-2.5 py-1 rounded-lg uppercase tracking-wide shrink-0">
+            Sede Administrativa
+          </span>
+        </div>
+      )}
+    </>
+  );
+
   return (
     <div className="min-h-screen bg-[#F1F5F9] text-slate-900 flex flex-col">
       {/* Top Operations Bar */}
@@ -170,18 +346,40 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
           <div className="flex items-center gap-3">
             {/* Store Hub filter */}
-            <div className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-xl text-xs font-semibold">
-              <span className="text-slate-400">Sede:</span>
+            <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-700/60">
+              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
+              <span className="text-slate-400">Bodega:</span>
               <select
                 value={selectedStoreId}
                 onChange={e => setSelectedStoreId(e.target.value)}
-                className="bg-transparent text-white font-bold focus:outline-none cursor-pointer"
+                className="bg-transparent text-white font-bold focus:outline-none cursor-pointer max-w-[210px] truncate"
               >
-                {stores.map(s => (
-                  <option key={s.id} value={s.id} className="bg-slate-800 text-white">
-                    {s.name.replace('Sede ', '')}
-                  </option>
-                ))}
+                <option value="ALL_ACTIVE" className="bg-slate-900 text-white font-bold">
+                  ⭐ Todas las activas (sin Centro)
+                </option>
+                <optgroup label="── Bodegas Activas (Red Turbo) ──" className="bg-slate-900 text-slate-300 font-bold">
+                  {stores.filter(s => s.isActive && !isCentroStore(s)).map(s => (
+                    <option key={s.id} value={s.id} className="bg-slate-800 text-white">
+                      {s.name.replace('Bolt Pets ', '')}
+                    </option>
+                  ))}
+                </optgroup>
+                <optgroup label="── Excluida por Defecto ──" className="bg-slate-900 text-amber-300 font-bold">
+                  {stores.filter(s => isCentroStore(s)).map(s => (
+                    <option key={s.id} value={s.id} className="bg-slate-800 text-amber-300">
+                      {s.name.replace('Bolt Pets ', '')} (No-Turbo)
+                    </option>
+                  ))}
+                </optgroup>
+                {stores.some(s => !s.isActive && !isCentroStore(s)) && (
+                  <optgroup label="── Bodegas Inactivas ──" className="bg-slate-900 text-slate-400 font-bold">
+                    {stores.filter(s => !s.isActive && !isCentroStore(s)).map(s => (
+                      <option key={s.id} value={s.id} className="bg-slate-800 text-slate-400">
+                        {s.name.replace('Bolt Pets ', '')} [Inactiva]
+                      </option>
+                    ))}
+                  </optgroup>
+                )}
               </select>
             </div>
 
@@ -275,6 +473,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Warehouse Selector Toolbar */}
+            {renderWarehouseSelectorBar()}
+
+            {/* Inactive / Excluded Store Audit Banners */}
+            {renderAuditBanners()}
 
             {/* Delivery Mode Filter Chips */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs font-bold">
@@ -943,6 +1147,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               </div>
             </div>
 
+            {/* Warehouse Selector Toolbar */}
+            {renderWarehouseSelectorBar()}
+
+            {/* Inactive / Excluded Store Audit Banners */}
+            {renderAuditBanners()}
+
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
                 <table className="w-full text-left text-xs">
@@ -952,7 +1162,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       <th className="p-3.5">SKU / Reg ICA</th>
                       <th className="p-3.5">Categoría</th>
                       <th className="p-3.5">Precio COP</th>
-                      <th className="p-3.5">Stock Sede</th>
+                      <th className="p-3.5">
+                        {selectedStoreId === 'ALL_ACTIVE'
+                          ? 'Stock Total (Activas)'
+                          : `Stock Sede (${selectedStore?.name.replace('Bolt Pets ', '') || ''})`}
+                      </th>
                       <th className="p-3.5">Reservado</th>
                       <th className="p-3.5">Lote / Vencimiento</th>
                       <th className="p-3.5">Estado Venta</th>
@@ -960,8 +1174,17 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                     {products.map(prod => {
-                      const stock = prod.stockByStore[selectedStoreId] || 0;
-                      const reserved = prod.reservedStockByStore[selectedStoreId] || 0;
+                      let stock = 0;
+                      let reserved = 0;
+                      if (selectedStoreId === 'ALL_ACTIVE') {
+                        activeStoresExceptCentro.forEach(s => {
+                          stock += (prod.stockByStore[s.id] || 0);
+                          reserved += (prod.reservedStockByStore[s.id] || 0);
+                        });
+                      } else {
+                        stock = prod.stockByStore[selectedStoreId] || 0;
+                        reserved = prod.reservedStockByStore[selectedStoreId] || 0;
+                      }
                       const available = Math.max(0, stock - reserved);
                       const lot = prod.lots?.[0];
 
@@ -989,13 +1212,21 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                               {prod.category}
                             </span>
                           </td>
-                          <td className="p-3.5 font-bold text-slate-900">
+                          <td className="p-3.5 font-bold text-slate-900 font-mono">
                             {formatCOP(prod.price)}
                           </td>
                           <td className="p-3.5 font-bold text-slate-900">
-                            {stock}
+                            <span className="font-mono text-sm">{stock}</span>
+                            {selectedStoreId === 'ALL_ACTIVE' && (
+                              <p className="text-[10px] text-slate-400 font-mono font-medium mt-0.5">
+                                {activeStoresExceptCentro.map(s => {
+                                  const label = s.name.replace('Bolt Pets ', '').substring(0, 3).toUpperCase();
+                                  return `${label}: ${prod.stockByStore[s.id] || 0}`;
+                                }).join(' · ')}
+                              </p>
+                            )}
                           </td>
-                          <td className="p-3.5 text-amber-700 font-bold">
+                          <td className="p-3.5 text-amber-700 font-bold font-mono">
                             {reserved}
                           </td>
                           <td className="p-3.5 text-[11px]">
@@ -1007,7 +1238,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             ) : 'N/A'}
                           </td>
                           <td className="p-3.5">
-                            {available <= 0 ? (
+                            {isSelectedStoreInactive ? (
+                              <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
+                                Bodega Inactiva ({available})
+                              </span>
+                            ) : available <= 0 ? (
                               <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
                                 Agotado
                               </span>

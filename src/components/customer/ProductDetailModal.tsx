@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale } from 'lucide-react';
+import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -14,6 +14,8 @@ interface ProductDetailModalProps {
   selectedStoreId: string;
   isCompared?: boolean;
   onToggleCompare?: (p: Product) => void;
+  isInWishlist?: boolean;
+  onOpenSaveToWishlist?: (p: Product) => void;
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
@@ -27,6 +29,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   selectedStoreId,
   isCompared = false,
   onToggleCompare,
+  isInWishlist = false,
+  onOpenSaveToWishlist,
 }) => {
   if (!product) return null;
 
@@ -37,7 +41,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
-      <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
+      <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg min-[669px]:max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
         {/* Sticky close and favorite header */}
         <div className="sticky top-0 z-20 flex items-center justify-between p-4 bg-white/90 backdrop-blur-md border-b border-slate-100">
           <div className="flex items-center gap-2">
@@ -52,6 +56,22 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
                 }`}
               />
             </button>
+
+            {onOpenSaveToWishlist && (
+              <button
+                type="button"
+                onClick={() => onOpenSaveToWishlist(product)}
+                className={`h-9 px-3 rounded-full flex items-center gap-1.5 text-xs font-bold transition cursor-pointer ${
+                  isInWishlist
+                    ? 'bg-amber-500 text-white shadow-xs'
+                    : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
+                }`}
+                title={isInWishlist ? 'En tu lista de deseos (organizar)' : 'Guardar en Lista de Deseos'}
+              >
+                <Bookmark className={`w-4 h-4 ${isInWishlist ? 'fill-white' : ''}`} />
+                <span>{isInWishlist ? 'En listas' : 'Guardar en lista'}</span>
+              </button>
+            )}
 
             {onToggleCompare && (
               <button
@@ -82,22 +102,24 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           </button>
         </div>
 
-        {/* Product Image */}
-        <div className="w-full aspect-4/3 bg-slate-50 flex items-center justify-center relative overflow-hidden">
-          <img
-            src={product.image}
-            alt={product.name}
-            className="w-full h-full object-cover"
-          />
-          {product.discountPercent && product.discountPercent > 0 && (
-            <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
-              -{product.discountPercent}% DESCUENTO
-            </span>
-          )}
-        </div>
+        {/* Contenedor responsivo: imagen y detalles lado a lado en modo desplegado */}
+        <div className="min-[669px]:grid min-[669px]:grid-cols-2">
+          {/* Product Image */}
+          <div className="w-full aspect-4/3 min-[669px]:aspect-square bg-slate-50 flex items-center justify-center relative overflow-hidden">
+            <img
+              src={product.image}
+              alt={product.name}
+              className="w-full h-full object-cover"
+            />
+            {product.discountPercent && product.discountPercent > 0 && (
+              <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
+                -{product.discountPercent}% DESCUENTO
+              </span>
+            )}
+          </div>
 
-        {/* Content details */}
-        <div className="p-5 space-y-4">
+          {/* Content details */}
+          <div className="p-5 space-y-4 flex flex-col justify-between">
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
@@ -221,5 +243,6 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
         </div>
       </div>
     </div>
-  );
+  </div>
+);
 };
