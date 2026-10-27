@@ -94,92 +94,16 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <>
-      <header className={`bg-[#DC2626] text-white transition-all duration-200 z-40 sticky top-0 shadow-md ${isCompact ? 'py-2 px-3' : 'pt-3 pb-3 px-4'}`}>
-        <div className="max-w-7xl mx-auto">
-          {/* Top Bar: Brand, Address & Account */}
-          <div className="flex items-center justify-between gap-3">
-            {/* Logo and Brand */}
-            <div className="flex items-center gap-2.5 cursor-pointer" onClick={() => onSelectCategory('Todo')}>
-              <img
-                src="/assets/aistudio/Bolt_Pets_logo_original__1__ce47c0d5.jpg"
-                alt="Bolt Pets"
-                className="w-10 h-10 rounded-xl object-cover shadow-sm border border-red-400/40"
-              />
-              {!isCompact && (
-                <div className="leading-tight">
-                  <span className="font-extrabold text-xl tracking-tight text-white flex items-center gap-1">
-                    Bolt Pets
-                    <span className="text-[11px] font-bold bg-yellow-400 text-red-950 px-1.5 py-0.2 rounded-md uppercase tracking-wider">
-                      Turbo
-                    </span>
-                  </span>
-                  <p className="text-[11px] text-red-100 font-medium">Ultra-rápido en Bogotá</p>
-                </div>
-              )}
-            </div>
-
-            {/* Address-First Starting Point: ¿Dónde entregamos tu pedido? */}
-            <button
-              onClick={() => (onOpenAddressModal ? onOpenAddressModal() : setShowStoreModal(true))}
-              className="flex-1 max-w-sm flex items-center justify-between bg-red-700/80 hover:bg-red-700 text-white rounded-full px-3.5 py-1.5 text-left border border-red-500/50 shadow-inner transition group"
-            >
-              <div className="flex items-center gap-1.5 overflow-hidden">
-                <MapPin className="w-3.5 h-3.5 text-yellow-300 shrink-0" />
-                <div className="truncate text-xs">
-                  {customerAddress ? (
-                    <>
-                      <span className="font-bold">{customerAddress}</span>
-                      <span className="text-red-200 text-[10px] ml-1">
-                        ({currentStore.name.replace('Sede ', '')})
-                      </span>
-                    </>
-                  ) : (
-                    <span className="font-extrabold text-white">¿Dónde entregamos tu pedido?</span>
-                  )}
-                </div>
-              </div>
-              <ChevronDown className="w-3.5 h-3.5 text-red-200 shrink-0 ml-1 group-hover:translate-y-0.5 transition" />
-            </button>
-
-            {/* Delivery capsule & Quick Actions */}
-            <div className="flex items-center gap-2">
-              {!isCompact && (
-                <div 
-                  onClick={() => onOpenAddressModal && onOpenAddressModal()}
-                  className={`hidden sm:flex items-center gap-1.5 font-bold text-xs px-3 py-1.5 rounded-full shadow-sm cursor-pointer transition ${
-                    isScheduledDelivery
-                      ? 'bg-blue-100 hover:bg-blue-200 text-blue-950 border border-blue-300/80'
-                      : 'bg-yellow-400 text-red-950 font-black hover:bg-yellow-300'
-                  }`}
-                  title={isScheduledDelivery ? 'Modalidad: Envío Programado en camioneta' : 'Tiempo estimado dinámico según tu dirección'}
-                >
-                  {isScheduledDelivery ? (
-                    <>
-                      <Calendar className="w-3.5 h-3.5 text-blue-700 shrink-0" />
-                      <span>
-                        {selectedScheduledWindow ? (
-                          `Envío programado · ${formatHeaderWindow(selectedScheduledWindow)}`
-                        ) : (
-                          `Envío programado · Elige día y horario`
-                        )}
-                      </span>
-                    </>
-                  ) : (
-                    <>
-                      <span className="animate-pulse">⚡</span>
-                      <span>
-                        {`⚡ Entrega estimada en ${deliveryQuote?.estimatedMinutes || 25} min`}
-                      </span>
-                    </>
-                  )}
-                </div>
-              )}
-
-              {/* Active Order Shortcut if any */}
-              {activeOrdersCount > 0 && (
+      <header className={`bg-[#DC2626] text-white transition-all duration-200 z-40 sticky top-0 shadow-md ${isCompact ? 'py-2 px-3' : 'pt-3 pb-2.5 px-3 sm:px-4'}`}>
+        <div className="max-w-7xl mx-auto space-y-2.5">
+          {/* ROW 1: TOP BAR WITH CENTERED BOLT PETS LOGO & ACTIONS */}
+          <div className="relative flex items-center justify-between">
+            {/* Left side: Active Order Shortcut if running, or spacer */}
+            <div className="flex items-center gap-1.5 w-1/4">
+              {activeOrdersCount > 0 ? (
                 <button
                   onClick={onOpenActiveOrders}
-                  className="bg-white text-red-600 hover:bg-red-50 text-xs font-bold px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-sm transition animate-bounce"
+                  className="bg-white text-red-600 hover:bg-red-50 text-[11px] font-bold px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-sm transition animate-bounce"
                   title="Ver pedido en curso"
                 >
                   <Clock className="w-3.5 h-3.5" />
@@ -188,9 +112,32 @@ export const Header: React.FC<HeaderProps> = ({
                     {activeOrdersCount}
                   </span>
                 </button>
+              ) : (
+                <div className="w-8 h-8" />
               )}
+            </div>
 
-              {/* Notifications Bell Button */}
+            {/* CENTER: Prominent Bolt Pets Logo with visually highlighted yellow lightning */}
+            <div
+              className="flex flex-col items-center justify-center cursor-pointer group"
+              onClick={() => onSelectCategory('Todo')}
+              title="Bolt Pets - Inicio"
+            >
+              <div className="relative p-1 rounded-2xl bg-linear-to-tr from-yellow-400 via-amber-300 to-yellow-500 shadow-lg shadow-yellow-500/30 ring-2 ring-yellow-300 transition-transform group-hover:scale-105 active:scale-95">
+                <img
+                  src="/assets/aistudio/Bolt_Pets_logo_original__1__ce47c0d5.jpg"
+                  alt="Bolt Pets"
+                  className="w-12 h-12 sm:w-14 sm:h-14 rounded-xl object-cover"
+                />
+                <div className="absolute -bottom-1 -right-1 bg-yellow-400 text-red-950 w-5 h-5 rounded-full shadow-md text-xs font-black flex items-center justify-center border-2 border-white animate-pulse">
+                  ⚡
+                </div>
+              </div>
+            </div>
+
+            {/* Right side: Notifications & Account Menu */}
+            <div className="flex items-center justify-end gap-2 w-1/4">
+              {/* Notifications Bell */}
               <button
                 onClick={onOpenNotifications}
                 className="relative w-8 h-8 rounded-full bg-red-700 hover:bg-red-800 text-white flex items-center justify-center border border-red-500/60 shadow-sm transition"
@@ -293,30 +240,84 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
           </div>
 
-          {/* Search Bar - styled identically to Rappi Turbo screenshot with white pill */}
-          <div className="mt-2.5">
-            <div className="relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-              <input
-                type="text"
-                placeholder="Busca en Bolt Pets (alimentos, farmacia, marcas)..."
-                value={searchQuery}
-                onChange={(e) => onSearchChange(e.target.value)}
-                className="w-full bg-white text-slate-900 placeholder-slate-400 text-sm font-medium rounded-full pl-10 pr-10 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
-              />
-              {searchQuery && (
-                <button
-                  onClick={() => onSearchChange('')}
-                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-                >
-                  <X className="w-3.5 h-3.5" />
-                </button>
+          {/* ROW 2: PROMINENT DELIVERY-TIME CAPSULE (INSPIRED BY RAPPI TURBO) */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => onOpenAddressModal ? onOpenAddressModal() : setShowStoreModal(true)}
+              className={`inline-flex items-center gap-2 px-5 py-1.5 rounded-full font-black text-xs sm:text-sm shadow-md transition-transform hover:scale-[1.02] active:scale-95 border ${
+                isScheduledDelivery
+                  ? 'bg-blue-900/95 hover:bg-blue-900 text-blue-100 border-blue-400/50 shadow-blue-950/20'
+                  : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/25'
+              }`}
+              title={isScheduledDelivery ? 'Modalidad: Envío Programado' : 'Entrega ultra-rápida Turbo en Bogotá'}
+            >
+              {isScheduledDelivery ? (
+                <>
+                  <Calendar className="w-4 h-4 text-yellow-300 shrink-0" />
+                  <span className="font-bold">
+                    {selectedScheduledWindow ? (
+                      `Envío programado · ${formatHeaderWindow(selectedScheduledWindow)}`
+                    ) : (
+                      'Envío programado · Elige día y horario'
+                    )}
+                  </span>
+                </>
+              ) : (
+                <>
+                  <span className="w-5 h-5 rounded-full bg-white/20 flex items-center justify-center text-yellow-300 text-xs font-black shrink-0">
+                    ⚡
+                  </span>
+                  <span className="tracking-wide">
+                    Entrega en <span className="font-black text-white text-sm sm:text-base">{deliveryQuote?.estimatedMinutes || 25} min</span>
+                  </span>
+                </>
               )}
-            </div>
+            </button>
           </div>
 
-          {/* Horizontally scrollable category pills */}
-          <div className="mt-2.5 flex items-center gap-2 overflow-x-auto no-scrollbar pb-1">
+          {/* ROW 3: WIDER, CLEANER CUSTOMER DELIVERY-ADDRESS BAR */}
+          {/* Displays the customer's address, not the warehouse address */}
+          <div className="flex justify-center">
+            <button
+              onClick={() => (onOpenAddressModal ? onOpenAddressModal() : setShowStoreModal(true))}
+              className="w-full max-w-xl flex items-center justify-between bg-red-800/85 hover:bg-red-800 text-white rounded-full px-4 py-2 text-left border border-red-500/60 shadow-inner transition group"
+            >
+              <div className="flex items-center gap-2 overflow-hidden flex-1">
+                <MapPin className="w-4 h-4 text-yellow-300 shrink-0" />
+                <div className="truncate text-xs sm:text-sm font-semibold flex-1">
+                  {customerAddress ? (
+                    <span className="font-bold text-white tracking-wide">{customerAddress}</span>
+                  ) : (
+                    <span className="font-extrabold text-white/95">¿Dónde entregamos tu pedido? Ingresa tu dirección</span>
+                  )}
+                </div>
+              </div>
+              <ChevronDown className="w-4 h-4 text-red-200 shrink-0 ml-2 group-hover:translate-y-0.5 transition" />
+            </button>
+          </div>
+
+          {/* ROW 4: SEARCH BAR */}
+          <div className="relative">
+            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
+            <input
+              type="text"
+              placeholder="Busca en Bolt Pets (alimentos, farmacia, marcas)..."
+              value={searchQuery}
+              onChange={(e) => onSearchChange(e.target.value)}
+              className="w-full bg-white text-slate-900 placeholder-slate-400 text-xs sm:text-sm font-medium rounded-full pl-10 pr-10 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
+            />
+            {searchQuery && (
+              <button
+                onClick={() => onSearchChange('')}
+                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+              >
+                <X className="w-3.5 h-3.5" />
+              </button>
+            )}
+          </div>
+
+          {/* ROW 5: HORIZONTALLY SCROLLABLE PRODUCT CATEGORIES */}
+          <div className="flex items-center gap-2 overflow-x-auto no-scrollbar pb-0.5">
             {CATEGORIES.map((cat) => {
               const isSelected = selectedCategory === cat;
               return (
@@ -325,8 +326,8 @@ export const Header: React.FC<HeaderProps> = ({
                   onClick={() => onSelectCategory(cat)}
                   className={`px-3.5 py-1.5 rounded-full text-xs font-bold whitespace-nowrap transition-all shadow-sm ${
                     isSelected
-                      ? 'bg-white text-red-600 scale-105'
-                      : 'bg-red-700/60 hover:bg-red-700 text-white'
+                      ? 'bg-white text-red-600 scale-105 shadow-md'
+                      : 'bg-red-700/70 hover:bg-red-700 text-white'
                   }`}
                 >
                   {cat === 'Farmacia' ? '💊 Farmacia' : cat}

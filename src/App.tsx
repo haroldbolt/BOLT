@@ -1,6 +1,5 @@
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/customer/Header';
-import { BenefitProgressBar } from './components/customer/BenefitProgressBar';
 import { CampaignBanner } from './components/customer/CampaignBanner';
 import { ProductCard } from './components/customer/ProductCard';
 import { CategoryCollageCard } from './components/customer/CategoryCollageCard';
@@ -453,9 +452,6 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="max-w-7xl mx-auto px-4 pt-3 space-y-4">
-        {/* Dynamic Benefit Progress Bar for Free Shipping */}
-        <BenefitProgressBar subtotal={cartTotal} threshold={70000} />
-
         {/* If user selected Farmacia category or clicked pharmacy view */}
         {selectedCategory === 'Farmacia' ? (
           <FarmaciaView

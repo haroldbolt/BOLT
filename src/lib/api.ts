@@ -192,4 +192,17 @@ export const api = {
       return { message: 'Sincronización simulada exitosa', state };
     }
   },
+
+  async simulateShopifyWebhook(storeId: string, sku: string, newOnHand: number, committed: number = 0): Promise<any> {
+    const res = await fetch(`${BASE_URL}/shopify/simulate-webhook`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ storeId, sku, newOnHand, committed }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al simular webhook de Shopify');
+    }
+    return await res.json();
+  },
 };

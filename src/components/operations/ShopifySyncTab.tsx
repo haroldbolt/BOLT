@@ -2,7 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { 
   ShoppingBag, RefreshCw, CheckCircle2, AlertTriangle, 
   ExternalLink, Key, ShieldCheck, Database, Layers, 
-  ArrowRight, Check, HelpCircle, Lock, Clock
+  ArrowRight, Check, HelpCircle, Lock, Clock, Zap, Radio, Send, Play
 } from 'lucide-react';
 import { ShopifySyncState, ShopifyLocationMapping } from '../../types';
 import { api } from '../../lib/api';
@@ -12,12 +12,65 @@ interface ShopifySyncTabProps {
   onRefreshData?: () => void;
 }
 
+interface SimulatedWebhookEvent {
+  id: string;
+  timestamp: string;
+  topic: string;
+  storeId: string;
+  storeName: string;
+  locationGid: string;
+  sku: string;
+  productName: string;
+  onHand: number;
+  committed: number;
+  sellable: number;
+  success: boolean;
+}
+
 export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData }) => {
   const [syncState, setSyncState] = useState<ShopifySyncState | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
-  const [activeGuideTab, setActiveGuideTab] = useState<'STATUS' | 'LOCATIONS' | 'MAPPING' | 'GUIDE'>('STATUS');
+  const [activeGuideTab, setActiveGuideTab] = useState<'STATUS' | 'LOCATIONS' | 'MAPPING' | 'WEBHOOKS' | 'GUIDE'>('STATUS');
+
+  // Simulator states
+  const [simStoreId, setSimStoreId] = useState<string>('HUB_KENNEDY');
+  const [simSku, setSimSku] = useState<string>('SKU-PROPLAN-AD-MED-15KG');
+  const [simOnHand, setSimOnHand] = useState<number>(18);
+  const [simCommitted, setSimCommitted] = useState<number>(1);
+  const [isSimulating, setIsSimulating] = useState(false);
+  const [simResult, setSimResult] = useState<{ success: boolean; message: string } | null>(null);
+  const [simHistory, setSimHistory] = useState<SimulatedWebhookEvent[]>([
+    {
+      id: 'WH-INIT-1',
+      timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
+      topic: 'inventory_levels/update',
+      storeId: 'HUB_KENNEDY',
+      storeName: 'Bolt Pets Kennedy',
+      locationGid: 'gid://shopify/Location/115617857816',
+      sku: 'SKU-PROPLAN-AD-MED-15KG',
+      productName: 'Purina Pro Plan Adulto Raza Mediana 15kg',
+      onHand: 15,
+      committed: 0,
+      sellable: 13,
+      success: true,
+    },
+    {
+      id: 'WH-INIT-2',
+      timestamp: new Date(Date.now() - 28 * 60 * 1000).toISOString(),
+      topic: 'inventory_levels/update',
+      storeId: 'HUB_ALAMOS',
+      storeName: 'Bolt Pets Álamos',
+      locationGid: 'gid://shopify/Location/115617890584',
+      sku: 'SKU-BRAVECTO-10-20KG',
+      productName: 'Bravecto Antipulgas y Garrapatas Perros 10 a 20 kg',
+      onHand: 24,
+      committed: 2,
+      sellable: 20,
+      success: true,
+    },
+  ]);
 
   const loadShopifyStatus = async () => {
     try {
@@ -47,6 +100,47 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
       setSyncFeedback(e.message || 'Error durante la sincronización');
     } finally {
       setIsSyncing(false);
+    }
+  };
+
+  const handleRunSimulation = async () => {
+    setIsSimulating(true);
+    setSimResult(null);
+    try {
+      await api.simulateShopifyWebhook(simStoreId, simSku, simOnHand, simCommitted);
+      const storeObj = syncState?.locations.find(l => l.storeId === simStoreId);
+      const itemObj = syncState?.inventoryItems.find(i => i.sku === simSku);
+      const sellable = Math.max(0, simOnHand - simCommitted - 2);
+
+      const newEvent: SimulatedWebhookEvent = {
+        id: `WH-SIM-${Date.now().toString().slice(-4)}`,
+        timestamp: new Date().toISOString(),
+        topic: 'inventory_levels/update',
+        storeId: simStoreId,
+        storeName: storeObj?.storeName || simStoreId,
+        locationGid: storeObj?.shopifyLocationGid || '',
+        sku: simSku,
+        productName: itemObj?.productName || simSku,
+        onHand: simOnHand,
+        committed: simCommitted,
+        sellable,
+        success: true,
+      };
+
+      setSimHistory(prev => [newEvent, ...prev]);
+      setSimResult({
+        success: true,
+        message: `Webhook procesado: ${storeObj?.storeName || simStoreId} ahora cuenta con ${sellable} uds vendibles de ${itemObj?.productName || simSku}. Álamos y Suba no fueron alteradas.`,
+      });
+      await loadShopifyStatus();
+      onRefreshData?.();
+    } catch (e: any) {
+      setSimResult({
+        success: false,
+        message: e.message || 'Error al ejecutar webhook simulado',
+      });
+    } finally {
+      setIsSimulating(false);
     }
   };
 
@@ -198,6 +292,16 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
             }`}
           >
             🏷️ Mapeo de Variantes y SKUs
+          </button>
+          <button
+            onClick={() => setActiveGuideTab('WEBHOOKS')}
+            className={`px-3 py-1.5 text-xs font-bold rounded-lg transition ${
+              activeGuideTab === 'WEBHOOKS'
+                ? 'bg-slate-900 text-white'
+                : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
+            }`}
+          >
+            ⚡ Webhooks y Simulador
           </button>
           <button
             onClick={() => setActiveGuideTab('GUIDE')}
@@ -391,6 +495,257 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 ))}
               </tbody>
             </table>
+          </div>
+        </div>
+      )}
+
+      {/* SUB-PANEL: WEBHOOKS Y SIMULADOR DE INVENTARIO */}
+      {activeGuideTab === 'WEBHOOKS' && (
+        <div className="space-y-6">
+          {/* Tarjeta de Especificación y Seguridad del Webhook */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
+                  <Zap className="w-4 h-4 text-amber-500" />
+                  Configuración de Webhooks en Shopify Admin (inventory_levels/update)
+                </h3>
+                <p className="text-xs text-slate-500 mt-0.5">
+                  Recepción de cambios de stock en tiempo real por ubicación física estricta (Kennedy, Álamos, Suba)
+                </p>
+              </div>
+              <span className="text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-full">
+                Seguridad HMAC SHA256 Activa
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-3 gap-3 text-xs">
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Tópico (Topic)</span>
+                <code className="font-mono font-bold text-slate-900 block bg-white px-2 py-1 rounded border border-slate-200">
+                  inventory_levels/update
+                </code>
+                <p className="text-[10px] text-slate-500">Se dispara al registrar compras, devoluciones o conteos físicos en Shopify.</p>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Endpoint de Callback</span>
+                <code className="font-mono font-bold text-slate-900 block bg-white px-2 py-1 rounded border border-slate-200 truncate">
+                  /api/v1/shopify/webhook
+                </code>
+                <p className="text-[10px] text-slate-500">Recibe el payload JSON con location_id, inventory_item_id y available.</p>
+              </div>
+
+              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-1">
+                <span className="text-[11px] font-bold text-slate-500 uppercase tracking-wider block">Aislamiento de Bodega</span>
+                <span className="font-bold text-emerald-700 block bg-emerald-50 px-2 py-1 rounded border border-emerald-200">
+                  100% Blindado por Location GID
+                </span>
+                <p className="text-[10px] text-slate-500">Un cambio en Kennedy jamás altera el stock físico de Álamos ni Suba.</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Formulario Interactivo del Simulador de Webhooks */}
+          <div className="bg-white rounded-2xl p-6 shadow-sm border border-slate-200 space-y-5">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div className="flex items-center gap-2">
+                <div className="w-8 h-8 rounded-xl bg-red-50 text-red-600 flex items-center justify-center font-bold">
+                  <Play className="w-4 h-4 fill-current" />
+                </div>
+                <div>
+                  <h4 className="font-black text-slate-900 text-sm">
+                    Simulador Interactivo de Eventos de Inventario
+                  </h4>
+                  <p className="text-xs text-slate-500">
+                    Prueba cómo responde Bolt Pets cuando Shopify envía un webhook de actualización de stock.
+                  </p>
+                </div>
+              </div>
+              <span className="text-xs font-mono bg-slate-100 text-slate-700 px-2.5 py-1 rounded-full font-bold">
+                Modo Seguro (Sin tocar inventario real)
+              </span>
+            </div>
+
+            <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
+              {/* Selección de Sede */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  1. Bodega de Cumplimiento (Shopify Location):
+                </label>
+                <select
+                  value={simStoreId}
+                  onChange={(e) => setSimStoreId(e.target.value)}
+                  className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  <option value="HUB_KENNEDY">Bolt Pets Kennedy (GID: ...816)</option>
+                  <option value="HUB_ALAMOS">Bolt Pets Álamos (GID: ...584)</option>
+                  <option value="HUB_SUBA">Bolt Pets Suba (GID: ...352)</option>
+                </select>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Sede aislada: las otras 2 bodegas no se modificarán.
+                </span>
+              </div>
+
+              {/* Selección de SKU */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  2. Producto / SKU a actualizar:
+                </label>
+                <select
+                  value={simSku}
+                  onChange={(e) => setSimSku(e.target.value)}
+                  className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500"
+                >
+                  {syncState?.inventoryItems.map((item) => (
+                    <option key={item.sku} value={item.sku}>
+                      {item.sku} - {item.productName.slice(0, 24)}...
+                    </option>
+                  ))}
+                </select>
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Identificador Inventory Item de Shopify.
+                </span>
+              </div>
+
+              {/* Cantidad Física (On Hand) */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  3. Stock Físico (On Hand en Shopify):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="500"
+                  value={simOnHand}
+                  onChange={(e) => setSimOnHand(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-full text-xs font-bold font-mono bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Unidades contadas en bodega.
+                </span>
+              </div>
+
+              {/* Cantidad Comprometida */}
+              <div>
+                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  4. Comprometido (Committed):
+                </label>
+                <input
+                  type="number"
+                  min="0"
+                  max="100"
+                  value={simCommitted}
+                  onChange={(e) => setSimCommitted(Math.max(0, parseInt(e.target.value) || 0))}
+                  className="w-full text-xs font-bold font-mono bg-white border border-slate-300 rounded-xl px-3 py-2 text-slate-900 focus:outline-none focus:ring-2 focus:ring-red-500"
+                />
+                <span className="text-[10px] text-slate-400 mt-1 block">
+                  Pedidos en proceso de empaque.
+                </span>
+              </div>
+            </div>
+
+            {/* Cálculo de Stock Vendible Resultante */}
+            <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-200 flex flex-col sm:flex-row sm:items-center justify-between gap-3 text-xs">
+              <div className="space-y-0.5">
+                <span className="font-bold text-slate-700 block">Stock Vendible resultante tras aplicar la regla de autoridad:</span>
+                <span className="text-[11px] text-slate-500">
+                  Fórmula: {simOnHand} (Físico) - {simCommitted} (Comprometido) - 2 (Stock de Seguridad) ={' '}
+                  <strong className="text-emerald-700 font-bold font-mono">
+                    {Math.max(0, simOnHand - simCommitted - 2)} unidades vendibles
+                  </strong>
+                </span>
+              </div>
+
+              <button
+                onClick={handleRunSimulation}
+                disabled={isSimulating}
+                className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition disabled:opacity-50 shrink-0 cursor-pointer"
+              >
+                <Zap className={`w-4 h-4 ${isSimulating ? 'animate-spin' : ''}`} />
+                <span>{isSimulating ? 'Disparando Webhook...' : 'Simular Webhook de Shopify'}</span>
+              </button>
+            </div>
+
+            {/* Feedback del Simulador */}
+            {simResult && (
+              <div
+                className={`p-3.5 rounded-xl border text-xs flex items-center gap-2.5 animate-in fade-in ${
+                  simResult.success
+                    ? 'bg-emerald-50 border-emerald-200 text-emerald-900'
+                    : 'bg-red-50 border-red-200 text-red-900'
+                }`}
+              >
+                {simResult.success ? (
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                ) : (
+                  <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
+                )}
+                <span className="font-medium">{simResult.message}</span>
+              </div>
+            )}
+          </div>
+
+          {/* Historial de Webhooks Recibidos y Auditoría */}
+          <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
+            <div className="flex items-center justify-between">
+              <div>
+                <h4 className="font-black text-slate-900 text-sm">
+                  Registro de Auditoría de Webhooks de Inventario
+                </h4>
+                <p className="text-xs text-slate-500">
+                  Histórico de eventos procesados durante la sesión con verificación de sede.
+                </p>
+              </div>
+              <span className="text-[11px] font-bold text-slate-500 font-mono">
+                {simHistory.length} eventos registrados
+              </span>
+            </div>
+
+            <div className="overflow-x-auto">
+              <table className="w-full text-left border-collapse text-xs">
+                <thead>
+                  <tr className="border-b border-slate-200 bg-slate-50/70 text-slate-600 font-bold uppercase tracking-wider">
+                    <th className="py-2.5 px-3">Hora Bogotá</th>
+                    <th className="py-2.5 px-3">Sede Afectada</th>
+                    <th className="py-2.5 px-3">SKU</th>
+                    <th className="py-2.5 px-3">Producto</th>
+                    <th className="py-2.5 px-3 text-right">Físico</th>
+                    <th className="py-2.5 px-3 text-right">Vendible</th>
+                    <th className="py-2.5 px-3 text-center">Estado</th>
+                  </tr>
+                </thead>
+                <tbody className="divide-y divide-slate-100 font-medium">
+                  {simHistory.map((ev) => (
+                    <tr key={ev.id} className="hover:bg-slate-50/80 transition">
+                      <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
+                        {formatTimeBogota(ev.timestamp)}
+                      </td>
+                      <td className="py-3 px-3 font-bold text-slate-900">
+                        {ev.storeName}
+                      </td>
+                      <td className="py-3 px-3 font-mono font-bold text-slate-800 text-[11px]">
+                        {ev.sku}
+                      </td>
+                      <td className="py-3 px-3 text-slate-700 truncate max-w-xs">
+                        {ev.productName}
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-bold text-slate-900">
+                        {ev.onHand} uds
+                      </td>
+                      <td className="py-3 px-3 text-right font-mono font-extrabold text-emerald-600">
+                        {ev.sellable} uds
+                      </td>
+                      <td className="py-3 px-3 text-center">
+                        <span className="inline-flex items-center gap-1 text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
+                          <Check className="w-3 h-3" /> Procesado
+                        </span>
+                      </td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
           </div>
         </div>
       )}

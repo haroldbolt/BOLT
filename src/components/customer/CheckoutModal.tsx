@@ -9,6 +9,7 @@ import { CartItem, Store, PaymentMethod, PorteriaPolicy, DeliveryMode, Scheduled
 import { DeliveryQuote, LatLng, ScheduledSlot } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
 import { api } from '../../lib/api';
+import { BenefitProgressBar } from './BenefitProgressBar';
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -627,6 +628,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </button>
               ))}
             </div>
+          </div>
+
+          {/* Dynamic Free Shipping Benefit relocated to Checkout */}
+          <div className="pt-1">
+            <BenefitProgressBar subtotal={subtotal} threshold={70000} />
           </div>
 
           {/* Breakdown and Submit */}
