@@ -1,25 +1,21 @@
 import { Product, Store, Order, GPSTelemetry, DriverProfile } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
-import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
+import { INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
+import { DeliveryQuote, QuoteRequest } from './deliveryService';
 
 const BASE_URL = '/api/v1';
 
 export const api = {
-  async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[]): Promise<DeliveryQuote> {
-    try {
+  async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[], signal?: AbortSignal): Promise<DeliveryQuote> {
       const res = await fetch(`${BASE_URL}/delivery/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
+        signal,
       });
       if (!res.ok) {
         throw new Error('Error del servidor en cotización');
       }
       return await res.json();
-    } catch {
-      // Fallback local autoritativo
-      return evaluateDeliveryQuote(req, localStores || INITIAL_STORES, localProducts || INITIAL_PRODUCTS);
-    }
   },
 
   async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string } | null> {
@@ -45,29 +41,36 @@ export const api = {
   },
 
   async getStores(): Promise<Store[]> {
-    try {
-      const res = await fetch(`${BASE_URL}/stores`);
-      if (!res.ok) throw new Error('Error al consultar sedes');
-      return await res.json();
-    } catch {
-      return INITIAL_STORES;
-    }
+    const res = await fetch(`${BASE_URL}/stores`);
+    if (!res.ok) throw new Error('No pudimos consultar las bodegas. Intenta de nuevo.');
+    return await res.json();
   },
 
-  async getCatalog(params?: { category?: string; species?: string; q?: string; storeId?: string }): Promise<Product[]> {
+  async getCatalog(params?: { category?: string; species?: string; q?: string; storeId?: string; scope?: 'admin' | 'customer' }, signal?: AbortSignal): Promise<Product[]> {
     try {
       const url = new URL(`${window.location.origin}${BASE_URL}/catalog`);
       if (params?.category) url.searchParams.append('category', params.category);
       if (params?.species) url.searchParams.append('species', params.species);
       if (params?.q) url.searchParams.append('q', params.q);
       if (params?.storeId) url.searchParams.append('storeId', params.storeId);
+      if (params?.scope) url.searchParams.append('scope', params.scope);
 
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), { signal });
       if (!res.ok) throw new Error('Error al cargar catálogo');
       return await res.json();
-    } catch {
-      return INITIAL_PRODUCTS;
+    } catch (error) {
+      throw error instanceof Error ? error : new Error('Error al cargar catálogo');
     }
+  },
+
+  async getInventoryStatus(): Promise<{
+    version?: string; mode?: string; fetchedAt?: string; lastSuccessfulSync?: string;
+    lastAttemptedSync?: string; nextSyncAt?: string; automaticSync?: boolean; liveVerified?: boolean;
+    isStale?: boolean; credentialsConfigured?: boolean; reconciliationIntervalMinutes?: number; errorMessage?: string;
+  }> {
+    const res = await fetch(`${BASE_URL}/inventory/status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('No pudimos revisar la actualización del inventario.');
+    return await res.json();
   },
 
   async createOrder(payload: any): Promise<Order> {
@@ -192,27 +195,13 @@ export const api = {
   },
 
   async getShopifyStatus(): Promise<any> {
-    try {
-      const res = await fetch(`${BASE_URL}/shopify/status`);
-      if (!res.ok) throw new Error('Error al consultar estado de Shopify');
-      return await res.json();
-    } catch {
-      // Fallback a servicio cliente
-      const { shopifyService } = await import('./shopifyService');
-      return shopifyService.getState();
-    }
+    const res = await fetch(`${BASE_URL}/shopify/status`);
+    if (!res.ok) throw new Error('Error al consultar estado de Shopify');
+    return await res.json();
   },
 
   async syncShopifyInventory(): Promise<any> {
-    try {
-      const res = await fetch(`${BASE_URL}/shopify/sync`, { method: 'POST' });
-      if (!res.ok) throw new Error('Error al sincronizar inventario con Shopify');
-      return await res.json();
-    } catch {
-      const { shopifyService } = await import('./shopifyService');
-      const state = await shopifyService.triggerReconciliation();
-      return { message: 'Sincronización simulada exitosa', state };
-    }
+    throw new Error('La sincronización manual requiere autorización administrativa en el servidor. Usa Revisar estado para consultar la lectura actual.');
   },
 
   async simulateShopifyWebhook(storeId: string, sku: string, newOnHand: number, committed: number = 0): Promise<any> {

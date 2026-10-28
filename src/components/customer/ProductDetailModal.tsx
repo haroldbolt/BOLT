@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
+import { getProductPurchaseBlock, getProductSellableQuantity } from '../../lib/productAvailability';
 
 interface ProductDetailModalProps {
   product: Product | null;
@@ -34,9 +35,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 }) => {
   if (!product) return null;
 
-  const stock = product.stockByStore[selectedStoreId] || 0;
-  const reserved = product.reservedStockByStore[selectedStoreId] || 0;
-  const availableToSell = Math.max(0, stock - reserved);
+  const purchaseBlock = getProductPurchaseBlock(product);
+  const availableToSell = getProductSellableQuantity(product, selectedStoreId);
   const isOutOfStock = availableToSell <= 0;
 
   return (
@@ -123,7 +123,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
-                {formatCOP(product.price)}
+                {product.pricePending ? 'Precio por confirmar' : formatCOP(product.price)}
               </span>
               {product.originalPrice && product.originalPrice > product.price && (
                 <span className="text-sm text-slate-400 line-through font-semibold">
@@ -205,7 +205,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <p className="text-[11px] text-slate-500">Stock disponible:</p>
               <p className="text-xs font-bold text-slate-800">
                 {isOutOfStock ? (
-                  <span className="text-red-600">Agotado</span>
+                  <span className="text-red-600">{purchaseBlock || 'Agotado'}</span>
                 ) : (
                   <span className="text-emerald-700">{availableToSell} unidades en sede</span>
                 )}

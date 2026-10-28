@@ -22,6 +22,7 @@
  */
 
 import { Store, Product, DeliveryMode, ScheduledDeliveryWindow, SCHEDULED_DELIVERY_CONFIG } from '../types';
+import { getProductPurchaseBlock } from './productAvailability';
 import {
   getCurrentBogotaTime,
   getAvailableScheduledWindows,
@@ -1025,6 +1026,28 @@ export function evaluateDeliveryQuote(
   const quoteId = `QUO-${Date.now()}-${Math.floor(Math.random() * 9000 + 1000)}`;
   const expiresAt = new Date(now.getTime() + 10 * 60 * 1000).toISOString(); // 10 min validez
   const scheduledSlots = generateScheduledSlots(now);
+
+  // Imported variants with incomplete data must not receive an invented shipping weight.
+  const seenItems = new Set<string>();
+  for (const item of items || []) {
+    const product = catalogProducts.find(p => p.id === item.productId);
+    const invalidQuantity = !Number.isSafeInteger(item.quantity) || item.quantity <= 0 || seenItems.has(item.productId);
+    seenItems.add(item.productId);
+    const missingProduct = catalogProducts.length > 0 && !product;
+    const blocked = product ? getProductPurchaseBlock(product) : null;
+    if (invalidQuantity || missingProduct || blocked) {
+      return {
+        quoteId, eligibilityStatus: DeliveryStatus.ESTIMATE_UNAVAILABLE,
+        reasonCode: invalidQuantity ? 'INVALID_BASKET' : missingProduct ? 'PRODUCT_NOT_FOUND' : 'PRODUCT_DATA_PENDING',
+        message: blocked ? `${product!.name}: ${blocked}.` : 'Revisa los productos y cantidades de tu pedido.',
+        availableModes: { turbo: false, turboDividido: false, scheduled: false }, recommendedMode: null,
+        destination, geographicDistanceMeters: 0, geographicDistanceKm: 0,
+        roadDistanceMeters: 0, roadDistanceKm: 0, scheduledEligible: false, scheduledSlots: [],
+        calculatedAt: now.toISOString(), expiresAt, configVersion: DELIVERY_CONFIG.configVersion,
+        candidateWarehousesEvaluated: 0, basketValidated: false, totalWeightKg: 0, totalWeightGrams: 0,
+      };
+    }
+  }
 
   // Calcular peso total de la cesta en gramos
   let totalWeightGrams = 0;

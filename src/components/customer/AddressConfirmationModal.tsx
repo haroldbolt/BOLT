@@ -124,27 +124,30 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   cartItems,
   products = [],
 }) => {
-  const [addressInput, setAddressInput] = useState(currentAddress || 'Calle 3 #78-20, Kennedy Central, Bogotá');
-  const [detailsInput, setDetailsInput] = useState(currentDetails || 'Apto 502, Torre 2');
+  const [addressInput, setAddressInput] = useState(currentAddress || '');
+  const [detailsInput, setDetailsInput] = useState(currentDetails || '');
   const [pinCoordinates, setPinCoordinates] = useState<LatLng>(
-    currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 }
+    currentCoordinates?.lat ? currentCoordinates : { lat: 4.65, lng: -74.10 }
   );
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const [isAddressSynced, setIsAddressSynced] = useState(true);
+  const [isAddressSynced, setIsAddressSynced] = useState(!!currentAddress.trim());
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
 
   const debounceTimeoutRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
   const reverseGeocodeReqSeqRef = useRef<number>(0);
+  const quoteRequestSequence = useRef(0);
 
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
 
   // Request authoritative quote from backend
   const evaluateAddressQuote = useCallback(async (coords: LatLng, addr: string) => {
+    if (!addr.trim()) { setQuote(null); return; }
+    const sequence = ++quoteRequestSequence.current;
     setIsEvaluating(true);
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -162,36 +165,48 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
           items: cartItems?.map(i => ({ productId: i.product.id, quantity: i.quantity })),
         },
         stores,
-        products
+        products,
+        abortControllerRef.current.signal,
       );
-      setQuote(q);
+      if (sequence === quoteRequestSequence.current) setQuote(q);
     } catch (e: any) {
       if (e.name !== 'AbortError') {
         console.error('Error fetching delivery quote:', e);
       }
     } finally {
-      setIsEvaluating(false);
+      if (sequence === quoteRequestSequence.current) setIsEvaluating(false);
     }
   }, [detailsInput, cartItems, stores, products]);
+  const evaluateAddressQuoteRef = useRef(evaluateAddressQuote);
+  useEffect(() => { evaluateAddressQuoteRef.current = evaluateAddressQuote; }, [evaluateAddressQuote]);
 
   // Synchronize inputs when modal opens
   useEffect(() => {
     if (isOpen) {
-      const initialAddr = currentAddress || 'Calle 3 #78-20, Kennedy Central, Bogotá';
-      const initialDetails = currentDetails || 'Apto 502, Torre 2';
-      const initialCoords = currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 };
+      const initialAddr = currentAddress || '';
+      const initialDetails = currentDetails || '';
+      const initialCoords = currentCoordinates?.lat ? currentCoordinates : { lat: 4.65, lng: -74.10 };
 
       setAddressInput(initialAddr);
       setDetailsInput(initialDetails);
       setPinCoordinates(initialCoords);
-      setIsAddressSynced(true);
+      setIsAddressSynced(!!initialAddr.trim());
+      setQuote(null);
+      setIsEvaluating(false);
+      setIsGeocoding(false);
       setGeocodeError(null);
       setIsReverseGeocoding(false);
       reverseGeocodeReqSeqRef.current = 0;
 
-      evaluateAddressQuote(initialCoords, initialAddr);
+      if (initialAddr.trim()) evaluateAddressQuoteRef.current(initialCoords, initialAddr);
     }
-  }, [isOpen, currentAddress, currentDetails, currentCoordinates, evaluateAddressQuote]);
+    return () => {
+      quoteRequestSequence.current++;
+      reverseGeocodeReqSeqRef.current++;
+      abortControllerRef.current?.abort();
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    };
+  }, [isOpen, currentAddress, currentDetails, currentCoordinates]);
 
   /**
    * Ejecuta la geocodificación inversa para las coordenadas del pin.
@@ -205,6 +220,11 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     // Requisito 6: Muestra un indicador durante la consulta y evita confirmar una dirección anterior asociada a coordenadas nuevas
     setIsReverseGeocoding(true);
     setIsAddressSynced(false);
+    setQuote(null);
+    quoteRequestSequence.current++;
+    abortControllerRef.current?.abort();
+    setIsEvaluating(false);
+    setIsGeocoding(false);
     setGeocodeError(null);
 
     // Cancelar cualquier debounce de entrada de texto pendiente
@@ -343,17 +363,21 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   // Manejo de escritura manual de la dirección
   const handleAddressInputChange = (val: string) => {
     setAddressInput(val);
+    setQuote(null);
     setGeocodeError(null);
-    setIsAddressSynced(true);
+    setIsAddressSynced(false);
+    setIsEvaluating(false);
+    quoteRequestSequence.current++;
+    abortControllerRef.current?.abort();
 
     // Cancelar solicitudes de geocodificación inversa en curso
-    reverseGeocodeReqSeqRef.current++;
+    const requestId = ++reverseGeocodeReqSeqRef.current;
     setIsReverseGeocoding(false);
 
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
 
     debounceTimeoutRef.current = setTimeout(async () => {
-      if (!val.trim()) return;
+      if (!val.trim()) { setIsGeocoding(false); return; }
       setIsGeocoding(true);
 
       let foundCoords: LatLng | null = null;
@@ -392,16 +416,15 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         }
       }
 
-      // 3. Fallback a cuadrícula de Bogotá
-      if (!foundCoords) {
-        foundCoords = geocodeBogotaAddress(val);
-      }
-
+      if (requestId !== reverseGeocodeReqSeqRef.current) return;
       setIsGeocoding(false);
 
       if (foundCoords) {
         setPinCoordinates(foundCoords);
+        setIsAddressSynced(true);
         evaluateAddressQuote(foundCoords, val);
+      } else {
+        setGeocodeError('No pudimos ubicar esa dirección. Revísala o selecciona el punto exacto en el mapa.');
       }
     }, 500);
   };
@@ -409,10 +432,12 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   // Requisito 4: Al confirmar, onConfirmAddress debe recibir los datos de esa misma ubicación
   const canConfirm = 
     !isEvaluating && 
+    !isGeocoding &&
     !isReverseGeocoding && 
+    !!addressInput.trim() &&
     isAddressSynced && 
     !geocodeError &&
-    !!quote && 
+    !!quote?.assignedStoreId &&
     (quote.availableModes.turbo || quote.availableModes.turboDividido || quote.availableModes.scheduled);
 
   const handleConfirm = () => {
@@ -426,7 +451,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const isTurbo = !!quote?.availableModes?.turbo;
   const isTurboDividido = !!quote?.availableModes?.turboDividido;
   const isScheduledOnly = !isTurbo && !isTurboDividido && !!quote?.availableModes?.scheduled;
-  const isOutOfAllCoverage = !isTurbo && !isTurboDividido && !quote?.availableModes?.scheduled;
+  const isOutOfAllCoverage = !!quote && !isTurbo && !isTurboDividido && !quote.availableModes?.scheduled;
 
   const detectedLocality = useMemo(() => {
     return quote?.detectedLocality || detectBogotaLocality(pinCoordinates, addressInput);
@@ -448,6 +473,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   ];
 
   const handleSelectPreset = (preset: typeof PRESET_LOCATIONS[0]) => {
+    reverseGeocodeReqSeqRef.current++;
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    setIsReverseGeocoding(false);
+    setIsGeocoding(false);
     setAddressInput(preset.address);
     setPinCoordinates(preset.coords);
     setIsAddressSynced(true);
@@ -524,13 +553,13 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
               <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
                   <span>Dirección en Bogotá</span>
-                  <span className={`text-[10px] px-2 py-0.2 rounded-full font-bold border ${
+                  {addressInput.trim() && isAddressSynced && <span className={`text-[10px] px-2 py-0.2 rounded-full font-bold border ${
                     isTurboLocality
                       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                       : 'bg-blue-50 text-blue-800 border-blue-200'
                   }`}>
                     Localidad: {localityName} {isTurboLocality ? '⚡' : '📅'}
-                  </span>
+                  </span>}
                 </span>
                 {isReverseGeocoding ? (
                   <span className="text-red-600 text-[10px] animate-pulse flex items-center gap-1 font-bold">
@@ -848,6 +877,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
               </span>
             ) : !isAddressSynced && geocodeError ? (
               <span className="text-amber-700 font-bold">Dirección desincronizada del pin</span>
+            ) : !quote ? (
+              <span className="text-slate-500 font-bold">Ingresa tu dirección o selecciona el punto exacto en el mapa</span>
             ) : isTurbo ? (
               <span className="text-emerald-700 font-bold">✓ Cumple radio de 6 km y límite de 25 min</span>
             ) : isTurboDividido ? (

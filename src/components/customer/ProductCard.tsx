@@ -2,6 +2,7 @@ import React from 'react';
 import { Heart, Plus, Minus, FileText, Scale, Check, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
+import { getProductPurchaseBlock, getProductSellableQuantity } from '../../lib/productAvailability';
 
 interface ProductCardProps {
   product: Product;
@@ -32,9 +33,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   isInWishlist = false,
   onOpenSaveToWishlist,
 }) => {
-  const stock = product.stockByStore[selectedStoreId] || 0;
-  const reserved = product.reservedStockByStore[selectedStoreId] || 0;
-  const availableToSell = Math.max(0, stock - reserved);
+  const purchaseBlock = getProductPurchaseBlock(product);
+  const availableToSell = getProductSellableQuantity(product, selectedStoreId);
   const isOutOfStock = availableToSell <= 0;
   const isLowStock = availableToSell > 0 && availableToSell <= 2;
 
@@ -169,7 +169,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Prices matching Rappi Turbo format */}
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span className="text-base font-black text-slate-900 tracking-tight">
-            {formatCOP(product.price)}
+            {product.pricePending ? 'Precio por confirmar' : formatCOP(product.price)}
           </span>
           {product.originalPrice && product.originalPrice > product.price && (
             <span className="text-xs text-slate-400 line-through font-semibold">
@@ -195,7 +195,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         <div className="mt-1.5 flex items-center gap-1 text-[10px]">
           {isOutOfStock ? (
             <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded">
-              Agotado en esta sede
+              {purchaseBlock || 'Agotado en esta sede'}
             </span>
           ) : isLowStock ? (
             <span className="text-amber-700 font-bold bg-amber-50 px-1.5 py-0.5 rounded">

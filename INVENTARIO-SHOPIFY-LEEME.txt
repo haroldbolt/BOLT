@@ -1,0 +1,86 @@
+BOLT PETS — CATÁLOGO E INVENTARIO POR BODEGA
+
+Base: haroldbolt/BOLT, commit 8f0294d395af557b25feefb72088524ee6f9e9dd,
+con los cambios de inventario preparados en este proyecto. Se conserva el diseño.
+
+ESTADO DE LA CONEXIÓN
+El código está preparado para leer Shopify con una app propia de solo lectura,
+conservar una caché privada y actualizar el inventario por bodega.
+Las credenciales reales todavía no se han proporcionado a este proyecto.
+No se da por terminada la conexión automática ni se afirma que ya se leyó la
+tienda en vivo. Guía completa: docs/SHOPIFY-INVENTARIO.md.
+
+ÚLTIMA CARGA DISPONIBLE
+- Tienda: Agrocentro Pets, 1c76bc-08.myshopify.com.
+- Lectura original: 26 de octubre de 2026, 9:16:43 a. m., Colombia.
+- 3.830 productos, 5.652 variantes y cinco ubicaciones.
+- Kennedy, Álamos y Suba son orígenes Turbo. Centro sigue fuera de Turbo;
+  Carrera 73a #2-27 está inactiva.
+- Cantidades, fotos, presentaciones y pesos disponibles provienen del archivo.
+- Los SKU vacíos no se inventan: cada variante conserva su ID Shopify.
+Estos conteos describen esa copia, no un límite para futuras lecturas reales.
+
+DÓNDE VERLO
+Vista local de esta sesión: http://127.0.0.1:4325/
+Operación > Bodegas y Mapas > Inventario Físico de esta Sede.
+Shopify Agrocentro muestra el estado y la fecha que conoce el servidor.
+Consultar el estado no equivale a completar una lectura de Shopify.
+
+AUTORIZACIÓN PENDIENTE
+1. Crear o seleccionar una app propia en el Dev Dashboard de Shopify y aprobar:
+   read_products, read_inventory, read_locations.
+2. Instalarla en la tienda correcta. Client credentials solo corresponde a una
+   app y tienda de la misma organización. Para otra organización hace falta
+   OAuth y un token autorizado mantenido fuera de este runtime.
+3. Configurar las variables privadas del servidor según .env.example.
+4. Comprobar una lectura real completa y después otra lectura automática.
+No pegar secretos en el chat, React, variables VITE_, capturas o GitHub.
+La conexión Shopify del chat no proporciona una credencial para ejecutar la app.
+
+ARCHIVO PRIVADO
+.bolt-private/shopify/snapshot.json
+Está excluido de Git. No mover a public o dist ni pegar el JSON en AI Studio.
+Un clon de GitHub no incluye el archivo. Sin archivo ni autorización, el sistema
+muestra catálogo vacío y estado pendiente, sin productos de demostración.
+Si un ZIP privado incluye datos, conservarlo solo para su dueño.
+BOLT_SHOPIFY_SNAPSHOT_PATH permite usar otro archivo privado.
+
+ACTUALIZACIÓN CONTINUA
+Intervalo inicial: diez minutos. El temporizador requiere un proceso activo;
+no funciona con el equipo suspendido ni con el servicio detenido o congelado.
+Se necesita un servidor disponible o un planificador externo autorizado.
+La caché debe estar en almacenamiento privado persistente para sobrevivir
+reemplazos del servidor. Varias réplicas requieren coordinación adicional.
+La sincronización manual necesita un token administrativo solo del servidor.
+Los webhooks requieren HTTPS, registro en Shopify y firma válida.
+
+CALIDAD DE DATOS Y COMPRAS
+La copia del 26 de octubre contiene 4.476 variantes sin peso físico de envío,
+4.674 marcadas inventario-pendiente, 1.500 con precio pendiente y 581 para
+revisión veterinaria. Los grupos se superponen.
+No hay una variante lista para comprar en esa copia: las que tienen peso también
+llevan la marca de inventario pendiente. Se mantienen los controles de compra.
+El peso del animal no se interpreta como peso del paquete. La sincronización
+no inventa ni corrige datos, no crea pedidos y no modifica inventario Shopify.
+
+EJECUTAR Y COMPROBAR
+Con Node.js y npm, desde la carpeta del proyecto:
+  npm install
+  npm run dev
+Producción:
+  npm run build
+  npm start
+El puerto predeterminado es 3000; PORT permite cambiarlo.
+
+Comprobaciones sin mostrar claves ni escribir en Shopify:
+  node scripts/check-shopify-readiness.mjs --env-only
+  node scripts/check-shopify-readiness.mjs --url http://127.0.0.1:3000
+  node scripts/check-shopify-readiness.mjs --url http://127.0.0.1:3000 --require-live
+Las variables presentes o las pruebas con datos simulados no bastan para dar
+por conectada la tienda: comprobar una lectura real y que siga actualizándose.
+
+CONTINUAR EN GOOGLE AI STUDIO
+Usar el proyecto completo como base y conservar componentes y estilos.
+Guardar las credenciales y el archivo privado exclusivamente en el servidor.
+No sustituir inventario real por productos de ejemplo ni marcar una conexión
+como terminada cuando solo existe una copia guardada.

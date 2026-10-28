@@ -8,7 +8,8 @@ import {
 import { Store, Product, Order, WarehouseVerificationStatus } from '../../types';
 import { api } from '../../lib/api';
 import { haversine } from '../../lib/deliveryService';
-import { formatTimeBogota } from '../../lib/formatters';
+import { formatTimeBogota, formatDateBogota } from '../../lib/formatters';
+import { getProductPurchaseBlock } from '../../lib/productAvailability';
 
 interface WarehouseManagerTabProps {
   stores: Store[];
@@ -28,6 +29,12 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
   const [activeSubTab, setActiveSubTab] = useState<'MAP' | 'INVENTORY' | 'OPERATIONS'>('MAP');
   
   const currentStore = stores.find(s => s.id === selectedStoreId) || stores[0];
+  const entranceVerified = currentStore?.verificationStatus === 'VERIFIED';
+  const entranceDiscrepancy = currentStore?.verificationStatus === 'DISCREPANCY_WARNING';
+  const verifiedAt = currentStore?.verifiedAt;
+  const auditDate = verifiedAt && Number.isFinite(Date.parse(verifiedAt))
+    ? `${formatDateBogota(verifiedAt)}, ${formatTimeBogota(verifiedAt)}`
+    : null;
 
   // Coordenadas del pin arrastrable para la entrada de cargue
   const [entrancePin, setEntrancePin] = useState<{ lat: number; lng: number }>({
@@ -38,6 +45,11 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
   const [isSavingEntrance, setIsSavingEntrance] = useState(false);
   const [saveSuccessMessage, setSaveSuccessMessage] = useState('');
   const [searchSku, setSearchSku] = useState('');
+  const [visibleInventoryCount, setVisibleInventoryCount] = useState(100);
+
+  useEffect(() => {
+    setVisibleInventoryCount(100);
+  }, [searchSku, selectedStoreId]);
 
   // Sincronizar el pin cuando cambia la bodega seleccionada
   useEffect(() => {
@@ -125,7 +137,7 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
               const isSelected = store.id === selectedStoreId;
               const isTurbo = store.turboEnabled;
               const isInactive = !store.isActive;
-              const isCentro = store.id === 'HUB_CENTRO' || store.name.toLowerCase().includes('centro');
+              const isCentro = store.id === 'HUB_CENTRO';
 
               return (
                 <button
@@ -180,7 +192,7 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
             <span className="text-xs text-slate-500 font-semibold block">Dirección Oficial</span>
             <p className="font-bold text-slate-900 text-sm mt-0.5">{currentStore?.address}</p>
             <span className="text-[11px] text-slate-400 font-mono block mt-1">
-              Place ID: {currentStore?.placeId || 'ChIJ_BOGOTA_VAL'}
+              Place ID: {currentStore?.placeId || 'Pendiente'}
             </span>
           </div>
 
@@ -197,13 +209,13 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
           <div className="p-3.5 bg-slate-50 rounded-xl border border-slate-100">
             <span className="text-xs text-slate-500 font-semibold block">Estado de Verificación</span>
             <div className="flex items-center gap-1.5 mt-0.5">
-              <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-              <span className="font-bold text-emerald-700 text-sm">
-                Entrada Verificada
+              {entranceVerified ? <CheckCircle2 className="w-4 h-4 text-emerald-600" /> : <AlertTriangle className="w-4 h-4 text-amber-600" />}
+              <span className={`font-bold text-sm ${entranceVerified ? 'text-emerald-700' : 'text-amber-700'}`}>
+                {entranceVerified ? 'Entrada Verificada' : entranceDiscrepancy ? 'Revisar discrepancia' : 'Pendiente de verificar'}
               </span>
             </div>
             <span className="text-[11px] text-slate-500 block mt-1">
-              Auditado: {currentStore?.verifiedAt || 'Hoy, 15:30'}
+              {auditDate ? `Auditado: ${auditDate}` : 'Sin auditoría registrada'}
             </span>
           </div>
 
@@ -213,10 +225,10 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
               <span className="font-bold text-slate-900 text-sm">
                 {currentStore?.turboEnabled ? 'Turbo Activo (≤ 25 min)' : 'Excluido de Turbo'}
               </span>
-              <span className="text-xs font-bold text-slate-500">Radio 6 km</span>
+              <span className="text-xs font-bold text-slate-500">Radio {currentStore?.maxDeliveryRadiusKm ?? 0} km</span>
             </div>
             <span className="text-[11px] text-slate-500 block mt-1">
-              Stock Seg.: {currentStore?.safetyStockDefault || 2} uds/SKU
+              Stock Seg.: {currentStore?.safetyStockDefault ?? 0} uds/variante
             </span>
           </div>
         </div>
@@ -241,7 +253,7 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
                 : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
             }`}
           >
-            📦 Inventario Físico de esta Sede ({products.length} SKUs)
+            📦 Inventario Físico de esta Sede ({products.length} variantes)
           </button>
           <button
             onClick={() => setActiveSubTab('OPERATIONS')}
@@ -418,29 +430,32 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {filteredProducts.map(product => {
-                  const onHand = product.stockByStore[currentStore.id] || 0;
+                {filteredProducts.slice(0, visibleInventoryCount).map(product => {
+                  const imported = product.source === 'SHOPIFY';
+                  const inventory = product.inventoryByStore?.[currentStore.id];
+                  const onHand = imported ? inventory?.onHand ?? null : product.stockByStore[currentStore.id] || 0;
                   const reserved = product.reservedStockByStore[currentStore.id] || 0;
-                  const safetyStock = currentStore.safetyStockDefault || 2;
-                  const committed = Math.min(2, Math.floor(onHand * 0.1));
-                  const sellable = Math.max(0, onHand - committed - reserved - safetyStock);
+                  const safetyStock = imported ? 0 : currentStore.safetyStockDefault ?? 2;
+                  const committed = imported ? inventory?.committed ?? null : 0;
+                  const available = imported ? (inventory?.available == null ? null : product.stockByStore[currentStore.id]) : onHand;
+                  const sellable = available === null ? null : Math.max(0, available - reserved - safetyStock);
 
-                  const isAgotado = sellable <= 0;
+                  const isAgotado = sellable !== null && sellable <= 0;
 
                   return (
                     <tr key={product.id} className="hover:bg-slate-50/80 transition">
                       <td className="py-3 px-3 font-mono font-bold text-slate-700">
-                        {product.sku}
+                        {product.sku || `Var. ${product.shopifyVariantGid?.split('/').pop() || product.id}`}
                       </td>
                       <td className="py-3 px-3">
                         <div className="font-bold text-slate-900 leading-tight">{product.name}</div>
                         <div className="text-[11px] text-slate-400 font-normal">{product.presentation} · {product.brand}</div>
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-800 font-bold">
-                        {onHand}
+                        {onHand ?? 'Pendiente'}
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums text-slate-500">
-                        {committed}
+                        {committed ?? 'Pendiente'}
                       </td>
                       <td className="py-3 px-3 text-right font-mono tabular-nums text-amber-600 font-bold">
                         {reserved}
@@ -449,10 +464,14 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
                         {safetyStock}
                       </td>
                       <td className={`py-3 px-3 text-right font-mono tabular-nums font-extrabold ${isAgotado ? 'text-rose-600' : 'text-emerald-700'}`}>
-                        {sellable}
+                        {sellable ?? 'Pendiente'}
                       </td>
                       <td className="py-3 px-3 text-center">
-                        {isAgotado ? (
+                        {sellable === null || getProductPurchaseBlock(product) ? (
+                          <span title={getProductPurchaseBlock(product) || 'Inventario por confirmar'} className="text-[10px] font-bold bg-slate-100 text-slate-600 px-2 py-0.5 rounded-full">
+                            Por verificar
+                          </span>
+                        ) : isAgotado ? (
                           <span className="text-[10px] font-bold bg-rose-100 text-rose-800 px-2 py-0.5 rounded-full">
                             Agotado en sede
                           </span>
@@ -472,6 +491,11 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
               </tbody>
             </table>
           </div>
+          {filteredProducts.length > visibleInventoryCount && (
+            <button type="button" onClick={() => setVisibleInventoryCount(count => count + 100)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+              Ver más productos ({visibleInventoryCount} de {filteredProducts.length})
+            </button>
+          )}
         </div>
       )}
 
