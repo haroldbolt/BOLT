@@ -1,0 +1,64 @@
+[
+  {
+    "id": "DRV-CARLOS-01",
+    "name": "Carlos Rodríguez",
+    "phone": "+57 312 456 7890",
+    "vehiclePlate": "TPK-44E",
+    "vehicleType": "MOTO",
+    "maxWeightKg": 25,
+    "rating": 4.95,
+    "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80",
+    "isOnline": true,
+    "currentStatus": "EN_CAMINO_CLIENTE",
+    "currentLocation": {
+      "lat": 4.6312,
+      "lng": -74.1485,
+      "heading": 210,
+      "speed": 32,
+      "updatedAt": "2026-10-29T04:59:23.274Z"
+    },
+    "activeOrderId": "ORD-2026-8941",
+    "activeAssignmentId": "ASG-5510",
+    "cashBalance": 68500
+  },
+  {
+    "id": "DRV-DAVID-02",
+    "name": "David Gómez",
+    "phone": "+57 310 987 6543",
+    "vehiclePlate": "MNB-12F",
+    "vehicleType": "MOTO",
+    "maxWeightKg": 25,
+    "rating": 4.88,
+    "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80",
+    "isOnline": true,
+    "currentStatus": "DISPONIBLE",
+    "currentLocation": {
+      "lat": 4.6295,
+      "lng": -74.1545,
+      "heading": 90,
+      "speed": 0,
+      "updatedAt": "2026-10-29T04:59:23.274Z"
+    },
+    "cashBalance": 0
+  },
+  {
+    "id": "DRV-VALENTINA-03",
+    "name": "Valentina Ríos",
+    "phone": "+57 320 123 4567",
+    "vehiclePlate": "ZXZ-89D",
+    "vehicleType": "MOTO",
+    "maxWeightKg": 25,
+    "rating": 4.92,
+    "photo": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80",
+    "isOnline": true,
+    "currentStatus": "DISPONIBLE",
+    "currentLocation": {
+      "lat": 4.6945,
+      "lng": -74.1205,
+      "heading": 0,
+      "speed": 0,
+      "updatedAt": "2026-10-29T04:59:23.274Z"
+    },
+    "cashBalance": 0
+  }
+]

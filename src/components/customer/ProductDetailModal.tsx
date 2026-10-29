@@ -34,6 +34,24 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 }) => {
   if (!product) return null;
 
+  const [selectedVariantId, setSelectedVariantId] = React.useState<string>(() => {
+    return product.presentaciones?.[0]?.varianteId || product.id;
+  });
+
+  React.useEffect(() => {
+    if (product.presentaciones?.[0]?.varianteId) {
+      setSelectedVariantId(product.presentaciones[0].varianteId);
+    }
+  }, [product.id]);
+
+  const currentVariant = React.useMemo(() => {
+    return product.presentaciones?.find(v => v.varianteId === selectedVariantId) || product.presentaciones?.[0];
+  }, [product.presentaciones, selectedVariantId]);
+
+  const displayImage = currentVariant?.foto || product.image;
+  const displayPresentation = currentVariant?.nombre || product.presentation;
+  const displaySku = currentVariant?.sku || product.sku;
+
   const stock = product.stockByStore[selectedStoreId] || 0;
   const reserved = product.reservedStockByStore[selectedStoreId] || 0;
   const availableToSell = Math.max(0, stock - reserved);
@@ -107,9 +125,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           {/* Product Image */}
           <div className="w-full aspect-4/3 min-[669px]:aspect-square bg-slate-50 flex items-center justify-center relative overflow-hidden">
             <img
-              src={product.image}
+              src={displayImage}
               alt={product.name}
-              className="w-full h-full object-cover"
+              className="w-full h-full object-cover transition-all duration-300"
             />
             {product.discountPercent && product.discountPercent > 0 && (
               <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
@@ -123,7 +141,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
-                {formatCOP(product.price)}
+                {product.price > 0 ? formatCOP(product.price) : 'Precio por confirmar'}
               </span>
               {product.originalPrice && product.originalPrice > product.price && (
                 <span className="text-sm text-slate-400 line-through font-semibold">
@@ -134,11 +152,39 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <h2 className="text-lg font-black text-slate-900 mt-1 leading-snug">
               {product.name}
             </h2>
-            <div className="flex items-center gap-3 text-xs text-slate-500 mt-1.5 font-medium">
-              <span>Presentación: <strong className="text-slate-700">{product.presentation}</strong></span>
+            <div className="flex items-center gap-3 text-xs text-slate-500 mt-1.5 font-medium flex-wrap">
+              <span>Presentación: <strong className="text-slate-700">{displayPresentation}</strong></span>
               <span>•</span>
-              <span>SKU: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">{product.sku}</code></span>
+              <span>SKU: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">{displaySku}</code></span>
             </div>
+
+            {/* Selector de presentaciones agrupadas */}
+            {product.presentaciones && product.presentaciones.length > 1 && (
+              <div className="mt-3 pt-3 border-t border-slate-100">
+                <p className="text-[11px] font-bold text-slate-700 mb-1.5">
+                  Presentaciones disponibles ({product.presentaciones.length}):
+                </p>
+                <div className="flex flex-wrap gap-1.5">
+                  {product.presentaciones.map((pres) => {
+                    const isPresSelected = pres.varianteId === selectedVariantId;
+                    return (
+                      <button
+                        key={pres.varianteId}
+                        type="button"
+                        onClick={() => setSelectedVariantId(pres.varianteId)}
+                        className={`px-3 py-1 text-xs font-bold rounded-xl transition border cursor-pointer ${
+                          isPresSelected
+                            ? 'bg-red-600 text-white border-red-600 shadow-xs'
+                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
+                        }`}
+                      >
+                        {pres.nombre}
+                      </button>
+                    );
+                  })}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Prescription Alert if required */}

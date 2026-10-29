@@ -418,23 +418,31 @@ export const Header: React.FC<HeaderProps> = ({
             <div className="mt-4 space-y-2.5">
               {allStores.map((store) => {
                 const isSelected = store.id === currentStore.id;
+                const isInactive = !store.isActive;
                 return (
                   <div
                     key={store.id}
                     onClick={() => {
+                      if (isInactive) return;
                       onSelectStore(store);
                       setShowStoreModal(false);
                     }}
-                    className={`p-3.5 rounded-2xl border-2 cursor-pointer transition flex items-start justify-between ${
-                      isSelected
-                        ? 'border-red-600 bg-red-50/50'
-                        : 'border-slate-100 hover:border-slate-200 bg-white'
+                    className={`p-3.5 rounded-2xl border-2 transition flex items-start justify-between ${
+                      isInactive
+                        ? 'opacity-60 bg-slate-50 border-slate-200 cursor-not-allowed'
+                        : isSelected
+                        ? 'border-red-600 bg-red-50/50 cursor-pointer'
+                        : 'border-slate-100 hover:border-slate-200 bg-white cursor-pointer'
                     }`}
                   >
                     <div>
                       <div className="flex items-center gap-2">
                         <span className="font-bold text-slate-900 text-sm">{store.name}</span>
-                        {store.turboEnabled ? (
+                        {isInactive ? (
+                          <span className="text-[10px] font-bold bg-slate-200 text-slate-600 px-2 py-0.5 rounded-full">
+                            🚫 Inactiva
+                          </span>
+                        ) : store.turboEnabled ? (
                           <span className="text-[10px] font-extrabold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
                             ⚡ Turbo 15m
                           </span>
@@ -445,9 +453,11 @@ export const Header: React.FC<HeaderProps> = ({
                         )}
                       </div>
                       <p className="text-xs text-slate-600 mt-0.5">{store.address}</p>
-                      <p className="text-[11px] text-slate-400 mt-1">Horario: {store.schedule}</p>
+                      <p className="text-[11px] text-slate-400 mt-1">
+                        {isInactive ? 'Sede temporalmente deshabilitada' : `Horario: ${store.schedule}`}
+                      </p>
                     </div>
-                    {isSelected && (
+                    {isSelected && !isInactive && (
                       <span className="w-5 h-5 rounded-full bg-red-600 text-white flex items-center justify-center text-xs font-bold shrink-0 mt-1">
                         ✓
                       </span>

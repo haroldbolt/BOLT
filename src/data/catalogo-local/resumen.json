@@ -1,23 +1,38 @@
 {
-  "modo": "CATALOGO_LOCAL",
-  "necesitaConexionShopify": false,
-  "fechaDeLosDatos": "2026-10-26T14:16:43.296Z",
-  "productos": 3830,
-  "variantes": 5652,
-  "bodegas": 5,
-  "variantesSinFoto": 3,
-  "enlacesUnicosDeFotos": 4804,
-  "variantesActivasAsociadasPorBodega": {
-    "HUB_ALAMOS": 356,
-    "HUB_CENTRO": 538,
-    "HUB_KENNEDY": 536,
-    "HUB_SUBA": 361,
-    "SHOPIFY_LOCATION_99059073304": 0
-  },
-  "incluyeClaves": false,
-  "incluyePrecios": false,
-  "incluyeCantidades": false,
-  "fotoFormato": "Enlaces HTTPS originales; no contiene los archivos binarios de las imágenes.",
-  "significadoBodegaIds": "Bodegas con existencias positivas registradas en la copia del 26 de octubre. Es una asociación histórica, no inventario en tiempo real. Una lista vacía no autoriza asignar el producto a todas las bodegas.",
-  "alcance": "Archivos de datos para importar. No modifican por sí solos la aplicación ni sus servicios."
+  "totalProductosAgrupados": 3830,
+  "totalVariantes": 5652,
+  "totalBodegas": 5,
+  "productosActivos": 3619,
+  "bodegas": [
+    {
+      "id": "gid://shopify/Location/115617890584",
+      "boltId": "HUB_ALAMOS",
+      "name": "Agrocentro Pets - Álamos",
+      "isActive": true
+    },
+    {
+      "id": "gid://shopify/Location/115676021016",
+      "boltId": "HUB_CENTRO",
+      "name": "Agrocentro Pets - Centro",
+      "isActive": true
+    },
+    {
+      "id": "gid://shopify/Location/115617857816",
+      "boltId": "HUB_KENNEDY",
+      "name": "Agrocentro Pets - Kennedy",
+      "isActive": true
+    },
+    {
+      "id": "gid://shopify/Location/115617923352",
+      "boltId": "HUB_SUBA",
+      "name": "Agrocentro Pets - Suba",
+      "isActive": true
+    },
+    {
+      "id": "gid://shopify/Location/99059073304",
+      "boltId": "HUB_FONTIBON",
+      "name": "Carrera 73a #2-27",
+      "isActive": false
+    }
+  ]
 }

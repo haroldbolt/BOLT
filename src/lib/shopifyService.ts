@@ -154,18 +154,45 @@ class ShopifyService {
     syncState.status = 'SINCRONIZANDO';
     syncState.lastAttemptedSync = new Date().toISOString();
 
-    // Simular consulta segura GraphQL Admin API de Shopify (read_inventory)
-    await new Promise(r => setTimeout(r, 600));
+    const accessToken = process.env.SHOPIFY_ADMIN_ACCESS_TOKEN;
+    if (!accessToken) {
+      // Regla estricta: No mostrar Shopify conectado sin verificar una conexión real.
+      syncState.status = 'PENDIENTE_AUTORIZACION';
+      return { ...syncState };
+    }
 
-    const now = new Date().toISOString();
-    syncState.lastSuccessfulSync = now;
-    syncState.status = 'CONECTADO';
+    try {
+      const response = await fetch(
+        `https://${SHOPIFY_CONFIG.canonicalDomain}/admin/api/${SHOPIFY_CONFIG.apiVersion}/graphql.json`,
+        {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Shopify-Access-Token': accessToken,
+          },
+          body: JSON.stringify({
+            query: `{ shop { name myshopifyDomain } }`,
+          }),
+        }
+      );
 
-    // Actualizar timestamps de las sedes
-    syncState.locations = syncState.locations.map(loc => ({
-      ...loc,
-      lastSyncAt: now,
-    }));
+      if (response.ok) {
+        const data = await response.json();
+        if (data.data?.shop) {
+          const now = new Date().toISOString();
+          syncState.lastSuccessfulSync = now;
+          syncState.status = 'CONECTADO';
+          syncState.locations = syncState.locations.map(loc => ({
+            ...loc,
+            lastSyncAt: now,
+          }));
+          return { ...syncState };
+        }
+      }
+      syncState.status = 'PENDIENTE_AUTORIZACION';
+    } catch {
+      syncState.status = 'ERROR_SINCRONIZACION';
+    }
 
     return { ...syncState };
   }

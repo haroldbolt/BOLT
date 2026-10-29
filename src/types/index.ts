@@ -31,8 +31,17 @@ export interface ProductLot {
   isRecalled?: boolean;
 }
 
+export interface ProductPresentation {
+  varianteId: string;
+  nombre: string;
+  sku: string;
+  foto: string;
+  bodegaIds: string[];
+}
+
 export interface Product {
   id: string;
+  productoId?: string;
   sku: string;
   barcode?: string;
   name: string;
@@ -65,6 +74,9 @@ export interface Product {
   isNew?: boolean;
   isLightningDeal?: boolean;
   tags: string[];
+  status?: string;
+  bodegaIds?: string[];
+  presentaciones?: ProductPresentation[];
 }
 
 export interface ProductFilterState {
@@ -227,12 +239,34 @@ export interface ScheduledDeliveryWindow {
   price?: number;
 }
 
+export type ActorRole = 'CLIENTE' | 'BODEGA' | 'CONDUCTOR' | 'SISTEMA' | OperationRole;
+
+export interface OrderActor {
+  role: ActorRole;
+  id?: string;
+  name?: string;
+}
+
+export interface OrderStatusHistoryEntry {
+  id: string;
+  orderId: string;
+  shipmentId?: string;
+  previousStatus: FulfillmentStatus;
+  newStatus: FulfillmentStatus;
+  timestamp: string;
+  actor: OrderActor;
+  reason?: string;
+  metadata?: Record<string, any>;
+}
+
 export interface ChildShipment {
   shipmentId: string;
   shipmentIndex: number;
   shipmentCount: number;
   parentOrderId: string;
   childOrderId?: string;
+  assignmentId?: string;
+  tripId?: string;
   items: OrderItem[];
   weightKg: number;
   weightGrams: number;
@@ -257,7 +291,13 @@ export interface ChildShipment {
     assignedAt?: string;
     pickedUpAt?: string;
     deliveredAt?: string;
+    cancelledAt?: string;
   };
+  statusHistory?: OrderStatusHistoryEntry[];
+  physicalReturnPending?: boolean;
+  physicalReturnConfirmedAt?: string;
+  physicalReturnConfirmedBy?: string;
+  cancelReason?: string;
 }
 
 export interface Order {
@@ -273,6 +313,8 @@ export interface Order {
   shipmentId?: string;
   shipmentIndex?: number;
   shipmentCount?: number;
+  assignmentId?: string;
+  tripId?: string;
   childShipments?: ChildShipment[];
   customer: {
     name: string;
@@ -329,6 +371,11 @@ export interface Order {
     rating: number;
     photo: string;
   };
+  statusHistory?: OrderStatusHistoryEntry[];
+  physicalReturnPending?: boolean;
+  physicalReturnConfirmedAt?: string;
+  physicalReturnConfirmedBy?: string;
+  cancelReason?: string;
   incidents?: Array<{
     id: string;
     type: string;
@@ -372,7 +419,10 @@ export interface DriverProfile {
 }
 
 export interface GPSTelemetry {
+  pointId?: string;
   orderId: string;
+  shipmentId?: string;
+  driverId?: string;
   assignmentId: string;
   tripId: string;
   latitude: number;
@@ -383,6 +433,66 @@ export interface GPSTelemetry {
   batteryLevel?: number;
   timestamp: number;
   sequenceNumber: number;
+}
+
+export type GPSTrackingPoint = {
+  id?: string;
+  orderId: string;
+  shipmentId?: string;
+  driverId: string;
+  driverName?: string;
+  latitude: number;
+  longitude: number;
+  accuracy: number; // Precisión en metros (ej. 5.2m)
+  heading?: number; // Rumbo / orientación en grados (0 - 360)
+  speed?: number; // Velocidad en m/s o km/h
+  altitude?: number;
+  batteryLevel?: number; // Nivel de batería del dispositivo móvil (0 - 100%)
+  timestamp: number | string; // Timestamp ISO-8601 o milisegundos Unix
+  sequenceNumber?: number; // Secuencia incremental para ordenamiento
+};
+
+export interface DeliveryTracking {
+  orderId: string;
+  orderNumber?: string;
+  shipmentId?: string;
+  driver: {
+    id: string;
+    name: string;
+    phone?: string;
+    vehiclePlate?: string;
+    vehicleType?: string;
+    photo?: string;
+  };
+  destination: {
+    address: string;
+    coordinates: {
+      lat: number;
+      lng: number;
+    };
+    details?: string;
+    recipientName?: string;
+  };
+  originHub?: {
+    storeId: string;
+    storeName: string;
+    coordinates: {
+      lat: number;
+      lng: number;
+    };
+  };
+  currentLocation: {
+    latitude: number;
+    longitude: number;
+    accuracy: number;
+    heading?: number;
+    speed?: number;
+    timestamp: number | string;
+  };
+  status: FulfillmentStatus;
+  history?: GPSTrackingPoint[];
+  estimatedRemainingMinutes?: number;
+  lastUpdated: string;
 }
 
 export type OperationRole =

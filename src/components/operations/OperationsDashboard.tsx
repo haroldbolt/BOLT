@@ -1,11 +1,12 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
   Settings, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, UserCheck, 
   Search, RefreshCw, Key, Download, Sparkles, Phone, MapPin, Calendar,
-  Building2, ShoppingBag
+  Building2, ShoppingBag, Navigation, Radio, Play, Square, Battery,
+  Compass, Crosshair, Activity, Smartphone
 } from 'lucide-react';
-import { Order, Product, Store, DriverProfile, OperationRole, FulfillmentStatus } from '../../types';
+import { Order, Product, Store, DriverProfile, OperationRole, FulfillmentStatus, GPSTelemetry, GPSTrackingPoint } from '../../types';
 import { formatCOP, formatTimeBogota, formatDateBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
 import { pushService } from '../../lib/notifications';
@@ -39,6 +40,79 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   // Integrations state
   const [integrations, setIntegrations] = useState<any>(null);
 
+  // ============================================================================
+  // GPS TELEMETRY & TRACKING ENGINE (BOLT CONDUCTOR)
+  // Transmisión cada 5 segundos vinculada exclusivamente a entregas en EN_CAMINO
+  // ============================================================================
+  const [gpsTrackingActive, setGpsTrackingActive] = useState<boolean>(false);
+  const [gpsActiveOrderId, setGpsActiveOrderId] = useState<string | null>(null);
+  const [gpsActiveShipmentId, setGpsActiveShipmentId] = useState<string | null>(null);
+  const [gpsActiveDriverId, setGpsActiveDriverId] = useState<string>('DRV-CARLOS-01');
+  const [gpsPermissionStatus, setGpsPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
+  const [gpsCountdown, setGpsCountdown] = useState<number>(5);
+  const [gpsLastPoint, setGpsLastPoint] = useState<GPSTrackingPoint | null>(null);
+  const [gpsPointsSent, setGpsPointsSent] = useState<number>(0);
+  const [gpsError, setGpsError] = useState<string | null>(null);
+  const [gpsSuccessNotice, setGpsSuccessNotice] = useState<string | null>(null);
+  const [gpsBatteryPercent, setGpsBatteryPercent] = useState<number | null>(null);
+  const [gpsHistoryLog, setGpsHistoryLog] = useState<Array<{
+    seq: number;
+    lat: number;
+    lng: number;
+    accuracy: number;
+    speed?: number;
+    heading?: number;
+    time: string;
+    status: 'OK' | 'ERROR';
+    message?: string;
+  }>>([]);
+
+  const gpsSequenceRef = useRef<number>(1);
+  const gpsIntervalRef = useRef<any>(null);
+  const gpsCountdownIntervalRef = useRef<any>(null);
+  const gpsActiveOrderRef = useRef<string | null>(null);
+  gpsActiveOrderRef.current = gpsActiveOrderId;
+
+  // Verificación reactiva de permisos del navegador
+  const checkGpsPermission = useCallback(async () => {
+    if (typeof window === 'undefined' || !('geolocation' in navigator)) {
+      setGpsPermissionStatus('unsupported');
+      return 'unsupported';
+    }
+    if (navigator.permissions && navigator.permissions.query) {
+      try {
+        const queryStatus = await navigator.permissions.query({ name: 'geolocation' });
+        setGpsPermissionStatus(queryStatus.state as any);
+        queryStatus.onchange = () => {
+          setGpsPermissionStatus(queryStatus.state as any);
+        };
+        return queryStatus.state;
+      } catch {
+        // Fallback para navegadores sin query de geolocalización
+      }
+    }
+    return 'prompt';
+  }, []);
+
+  const stopGpsTelemetry = useCallback((reason?: string) => {
+    if (gpsIntervalRef.current) {
+      clearInterval(gpsIntervalRef.current);
+      gpsIntervalRef.current = null;
+    }
+    if (gpsCountdownIntervalRef.current) {
+      clearInterval(gpsCountdownIntervalRef.current);
+      gpsCountdownIntervalRef.current = null;
+    }
+    setGpsTrackingActive(false);
+    setGpsActiveOrderId(null);
+    setGpsActiveShipmentId(null);
+    setGpsCountdown(5);
+    if (reason) {
+      setGpsSuccessNotice(reason);
+      setTimeout(() => setGpsSuccessNotice(null), 6000);
+    }
+  }, []);
+
   const loadData = async () => {
     try {
       const [ordList, prodList, storeList, integ] = await Promise.all([
@@ -51,6 +125,14 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       setProducts(prodList);
       setStores(storeList);
       setIntegrations(integ);
+
+      // Verificación de fin de ciclo para entrega rastreada
+      if (gpsActiveOrderRef.current) {
+        const tracked = ordList.find(o => o.id === gpsActiveOrderRef.current);
+        if (tracked && (tracked.fulfillmentStatus === 'ENTREGADO' || tracked.fulfillmentStatus === 'CANCELADO')) {
+          stopGpsTelemetry(`El pedido ${tracked.orderNumber} pasó a ${tracked.fulfillmentStatus}. Transmisión GPS finalizada automáticamente.`);
+        }
+      }
     } catch (e) {
       console.error('Error loading operations data:', e);
     } finally {
@@ -60,9 +142,25 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
   useEffect(() => {
     loadData();
+    checkGpsPermission();
+
+    // Obtener nivel de batería si el dispositivo lo soporta
+    if (typeof navigator !== 'undefined' && (navigator as any).getBattery) {
+      (navigator as any).getBattery().then((battery: any) => {
+        setGpsBatteryPercent(Math.round(battery.level * 100));
+        battery.onlevelchange = () => {
+          setGpsBatteryPercent(Math.round(battery.level * 100));
+        };
+      }).catch(() => {});
+    }
+
     const interval = setInterval(loadData, 6000);
-    return () => clearInterval(interval);
-  }, []);
+    return () => {
+      clearInterval(interval);
+      if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
+      if (gpsCountdownIntervalRef.current) clearInterval(gpsCountdownIntervalRef.current);
+    };
+  }, [checkGpsPermission, stopGpsTelemetry]);
 
   // Funciones de validación de bodegas y exclusión de Centro
   const isCentroStore = (store: Store | { id: string; name?: string }) =>
@@ -93,55 +191,297 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     return true;
   });
 
-  // Handle stage change
-  const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus, shipmentId?: string) => {
-    const targetOrder = orders.find(o => o.id === orderId);
-    await api.updateOrderStatus(orderId, status, shipmentId);
-    await loadData();
-    if (selectedOrder && selectedOrder.id === orderId) {
-      setSelectedOrder(prev => prev ? { ...prev, fulfillmentStatus: status } : null);
+  const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [historyModalOrder, setHistoryModalOrder] = useState<Order | null>(null);
+  const [orderHistoryEntries, setOrderHistoryEntries] = useState<any[]>([]);
+  const [loadingHistory, setLoadingHistory] = useState(false);
+
+  // Handle stage change with role authorization and PIN validation
+  const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus, shipmentId?: string, reason?: string, deliveryCode?: string) => {
+    try {
+      setErrorMessage(null);
+      const targetOrder = orders.find(o => o.id === orderId);
+
+      // Si es entrega física, requiere PIN
+      let finalCode = deliveryCode;
+      if (status === 'ENTREGADO' && !finalCode) {
+        if (shipmentId && targetOrder?.childShipments) {
+          const child = targetOrder.childShipments.find(c => c.shipmentId === shipmentId);
+          finalCode = child?.secretDeliveryCode;
+        } else {
+          finalCode = targetOrder?.secretDeliveryCode;
+        }
+      }
+
+      await api.updateOrderStatus(orderId, status, shipmentId, reason, finalCode, currentRole);
+
+      // Si el pedido finaliza o se cancela, detener transmisión GPS activa si correspondía a este pedido
+      if (status === 'ENTREGADO' || status === 'CANCELADO') {
+        if (gpsActiveOrderId === orderId) {
+          stopGpsTelemetry(`El pedido ${targetOrder?.orderNumber || orderId} fue marcado como ${status}. Transmisión GPS finalizada.`);
+        }
+      }
+
+      await loadData();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        const updated = await api.getOrder(orderId);
+        setSelectedOrder(updated);
+      }
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Error al cambiar estado del pedido');
     }
-    if (targetOrder) {
-      pushService.simulateOrderTransition(
-        targetOrder.orderNumber,
-        targetOrder.id,
-        status,
-        targetOrder.driver?.name,
-        targetOrder.secretDeliveryCode
-      );
+  };
+
+  const startGpsTelemetry = async (orderId: string, shipmentId?: string) => {
+    setGpsError(null);
+    setGpsSuccessNotice(null);
+
+    // 1. Validar que la orden existe y está EXCLUSIVAMENTE en estado EN_CAMINO
+    const targetOrder = orders.find(o => o.id === orderId);
+    if (!targetOrder) {
+      setGpsError('Pedido no encontrado en la base de datos.');
+      return;
+    }
+
+    let isEnCamino = false;
+    let driverAssignedId = gpsActiveDriverId;
+
+    if (shipmentId && targetOrder.childShipments) {
+      const child = targetOrder.childShipments.find(c => c.shipmentId === shipmentId);
+      if (!child) {
+        setGpsError(`Envío parcial ${shipmentId} no encontrado.`);
+        return;
+      }
+      isEnCamino = child.fulfillmentStatus === 'EN_CAMINO';
+      if (child.driver?.id) driverAssignedId = child.driver.id;
+
+      if (!isEnCamino) {
+        if (child.fulfillmentStatus === 'REPARTIDOR_ASIGNADO') {
+          await handleUpdateStatus(orderId, 'EN_CAMINO', shipmentId);
+          isEnCamino = true;
+        } else {
+          setGpsError(`El envío ${shipmentId} está en estado '${child.fulfillmentStatus}'. La telemetría GPS está restringida exclusivamente a entregas en 'EN_CAMINO'.`);
+          return;
+        }
+      }
+    } else {
+      isEnCamino = targetOrder.fulfillmentStatus === 'EN_CAMINO';
+      if (targetOrder.driver?.id) driverAssignedId = targetOrder.driver.id;
+
+      if (!isEnCamino) {
+        if (targetOrder.fulfillmentStatus === 'REPARTIDOR_ASIGNADO' || targetOrder.fulfillmentStatus === 'LISTO_PARA_DESPACHO') {
+          await handleUpdateStatus(orderId, 'EN_CAMINO');
+          isEnCamino = true;
+        } else {
+          setGpsError(`El pedido ${targetOrder.orderNumber} está en estado '${targetOrder.fulfillmentStatus}'. La telemetría GPS está restringida exclusivamente a entregas en 'EN_CAMINO'.`);
+          return;
+        }
+      }
+    }
+
+    // 2. Validar soporte de geolocalización en navegador
+    if (typeof window === 'undefined' || !('geolocation' in navigator)) {
+      setGpsError('El navegador o dispositivo no soporta la API de geolocalización.');
+      setGpsPermissionStatus('unsupported');
+      return;
+    }
+
+    // 3. Captura inicial y comprobación de permisos de ubicación
+    try {
+      const initialPos = await new Promise<GeolocationPosition>((resolve, reject) => {
+        navigator.geolocation.getCurrentPosition(resolve, reject, {
+          enableHighAccuracy: true,
+          timeout: 10000,
+          maximumAge: 0,
+        });
+      });
+      setGpsPermissionStatus('granted');
+
+      // Limpiar temporizadores anteriores si los hubiera
+      if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
+      if (gpsCountdownIntervalRef.current) clearInterval(gpsCountdownIntervalRef.current);
+
+      setGpsTrackingActive(true);
+      setGpsActiveOrderId(orderId);
+      setGpsActiveShipmentId(shipmentId || null);
+      setGpsActiveDriverId(driverAssignedId);
+      gpsSequenceRef.current = 1;
+      setGpsPointsSent(0);
+      setGpsCountdown(5);
+
+      const transmitPoint = async (pos: GeolocationPosition) => {
+        const seq = gpsSequenceRef.current++;
+        const pointData: GPSTelemetry = {
+          orderId,
+          shipmentId: shipmentId || undefined,
+          driverId: driverAssignedId,
+          assignmentId: targetOrder.assignmentId || `ASG-${orderId.substring(0, 8)}`,
+          tripId: targetOrder.tripId || `TRIP-${orderId.substring(0, 8)}`,
+          latitude: pos.coords.latitude,
+          longitude: pos.coords.longitude,
+          accuracy: Math.round(pos.coords.accuracy || 5),
+          heading: pos.coords.heading ?? 0,
+          speed: pos.coords.speed ?? 0,
+          batteryLevel: gpsBatteryPercent ?? 85,
+          timestamp: Date.now(),
+          sequenceNumber: seq,
+        };
+
+        const trackingPoint: GPSTrackingPoint = {
+          orderId,
+          shipmentId: shipmentId || undefined,
+          driverId: driverAssignedId,
+          driverName: targetOrder.driver?.name || 'Conductor Bolt',
+          latitude: pointData.latitude,
+          longitude: pointData.longitude,
+          accuracy: pointData.accuracy,
+          heading: pointData.heading,
+          speed: pointData.speed,
+          batteryLevel: pointData.batteryLevel,
+          timestamp: pointData.timestamp,
+          sequenceNumber: seq,
+        };
+
+        setGpsLastPoint(trackingPoint);
+
+        try {
+          await api.sendGpsTelemetry(pointData, driverAssignedId);
+          setGpsPointsSent(prev => prev + 1);
+          setGpsHistoryLog(prev => [
+            {
+              seq,
+              lat: pointData.latitude,
+              lng: pointData.longitude,
+              accuracy: pointData.accuracy,
+              speed: pointData.speed,
+              heading: pointData.heading,
+              time: new Date().toLocaleTimeString('es-CO', { timeZone: 'America/Bogota' }),
+              status: 'OK',
+            },
+            ...prev.slice(0, 49),
+          ]);
+        } catch (err: any) {
+          const errMsg = err.message || 'Error en endpoint /api/v1/driver/gps';
+          setGpsHistoryLog(prev => [
+            {
+              seq,
+              lat: pointData.latitude,
+              lng: pointData.longitude,
+              accuracy: pointData.accuracy,
+              speed: pointData.speed,
+              heading: pointData.heading,
+              time: new Date().toLocaleTimeString('es-CO', { timeZone: 'America/Bogota' }),
+              status: 'ERROR',
+              message: errMsg,
+            },
+            ...prev.slice(0, 49),
+          ]);
+
+          if (errMsg.toLowerCase().includes('no está en camino') || errMsg.toLowerCase().includes('finalizada')) {
+            stopGpsTelemetry(errMsg);
+          } else {
+            setGpsError(errMsg);
+          }
+        }
+      };
+
+      // Transmisión inmediata del primer punto
+      await transmitPoint(initialPos);
+
+      // Temporizador de cuenta regresiva visual cada segundo (5 -> 0)
+      let count = 5;
+      gpsCountdownIntervalRef.current = setInterval(() => {
+        count = count <= 1 ? 5 : count - 1;
+        setGpsCountdown(count);
+      }, 1000);
+
+      // Ciclo estricto de transmisión recurrente cada 5 segundos (5000ms)
+      gpsIntervalRef.current = setInterval(() => {
+        navigator.geolocation.getCurrentPosition(
+          async (pos) => {
+            await transmitPoint(pos);
+          },
+          (err) => {
+            console.warn('Advertencia al consultar GPS en intervalo:', err.message);
+            setGpsError(`Señal GPS: ${err.message}`);
+          },
+          {
+            enableHighAccuracy: true,
+            timeout: 4800,
+            maximumAge: 0,
+          }
+        );
+      }, 5000);
+
+      setGpsSuccessNotice(`Transmisión GPS iniciada para pedido ${targetOrder.orderNumber} cada 5 segundos.`);
+      setTimeout(() => setGpsSuccessNotice(null), 5000);
+
+    } catch (err: any) {
+      if (err.code === 1) {
+        setGpsPermissionStatus('denied');
+        setGpsError('Permiso de ubicación denegado en el navegador. Por favor otorgue acceso de ubicación para transmitir telemetría.');
+      } else if (err.code === 2) {
+        setGpsError('Ubicación física no disponible en este dispositivo.');
+      } else if (err.code === 3) {
+        setGpsError('Tiempo de espera agotado al consultar coordenadas satelitales GPS.');
+      } else {
+        setGpsError(err.message || 'Error al iniciar captura GPS.');
+      }
     }
   };
 
   // Handle driver assign (supports whole order or specific child shipment)
   const handleAssignDriver = async (orderId: string, shipmentId?: string) => {
-    const targetOrder = orders.find(o => o.id === orderId);
-    await api.assignDriver(orderId, 'DRV-CARLOS-01', shipmentId);
-    await loadData();
-    if (targetOrder) {
-      pushService.simulateOrderTransition(
-        targetOrder.orderNumber,
-        targetOrder.id,
-        'REPARTIDOR_ASIGNADO',
-        'Carlos Rodríguez'
-      );
+    try {
+      setErrorMessage(null);
+      await api.assignDriver(orderId, 'DRV-CARLOS-01', shipmentId);
+      await loadData();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        const updated = await api.getOrder(orderId);
+        setSelectedOrder(updated);
+      }
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Error al asignar conductor');
+    }
+  };
+
+  // Handle physical return confirmation
+  const handleConfirmPhysicalReturn = async (orderId: string) => {
+    try {
+      setErrorMessage(null);
+      await api.confirmPhysicalReturn(orderId, `Operador Bodega (${currentRole})`);
+      await loadData();
+      if (selectedOrder && selectedOrder.id === orderId) {
+        const updated = await api.getOrder(orderId);
+        setSelectedOrder(updated);
+      }
+    } catch (e: any) {
+      setErrorMessage(e.message || 'Error al confirmar retorno físico');
+    }
+  };
+
+  // Open audit history modal
+  const handleOpenHistory = async (ord: Order) => {
+    setHistoryModalOrder(ord);
+    setLoadingHistory(true);
+    try {
+      const data = await api.getOrderHistory(ord.id);
+      setOrderHistoryEntries(data.history || []);
+    } catch (e) {
+      console.error('Error fetching audit history:', e);
+      setOrderHistoryEntries(ord.statusHistory || []);
+    } finally {
+      setLoadingHistory(false);
     }
   };
 
   // Handle prescription review
   const handleReviewPrescription = async (orderId: string, status: 'APROBADA' | 'RECHAZADA') => {
-    const targetOrder = orders.find(o => o.id === orderId);
     await api.reviewPrescription(orderId, status, reviewNotes, reviewerName);
     setReviewNotes('');
     await loadData();
     if (selectedOrder && selectedOrder.id === orderId) {
       setSelectedOrder(null);
-    }
-    if (targetOrder && status === 'APROBADA') {
-      pushService.simulateOrderTransition(
-        targetOrder.orderNumber,
-        targetOrder.id,
-        'PRESCRIPTION_APPROVED'
-      );
     }
   };
 
@@ -417,7 +757,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             { id: 'INVENTARIO', label: 'Inventario & Lotes', count: products.length, icon: Settings },
             { id: 'EFECTIVO', label: 'Recaudo de Efectivo', icon: DollarSign },
             { id: 'INFORMES', label: 'Métricas & SLA', icon: BarChart3 },
-            { id: 'CONDUCTOR', label: 'Bolt Conductor & API', icon: Download },
+            { 
+              id: 'CONDUCTOR', 
+              label: gpsTrackingActive ? 'Bolt Conductor (GPS Activo)' : 'Bolt Conductor & API', 
+              icon: gpsTrackingActive ? Radio : Download,
+              alert: gpsTrackingActive,
+              count: gpsTrackingActive ? gpsPointsSent : undefined,
+            },
           ].map(tab => {
             const Icon = tab.icon;
             const isSelected = activeTab === tab.id;
@@ -431,7 +777,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                     : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
                 }`}
               >
-                <Icon className="w-3.5 h-3.5" />
+                <Icon className={`w-3.5 h-3.5 ${tab.alert && !isSelected ? 'text-red-600 animate-pulse' : ''}`} />
                 <span>{tab.label}</span>
                 {tab.count !== undefined && (
                   <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
@@ -447,6 +793,101 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
           })}
         </div>
       </nav>
+
+      {/* Barra Flotante / Alerta de Transmisión GPS Activa */}
+      {gpsTrackingActive && (
+        <div className="bg-slate-900 border-b border-emerald-500/40 text-white px-4 py-2.5 shadow-lg sticky top-24 z-20 transition">
+          <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3 text-xs">
+            <div className="flex items-center gap-3">
+              <span className="flex h-3 w-3 relative">
+                <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
+              </span>
+              <div className="flex items-center gap-2">
+                <span className="font-black text-emerald-400 uppercase tracking-wider text-[11px]">GPS EN VIVO (5s):</span>
+                <strong className="text-white font-mono bg-slate-800 px-2 py-0.5 rounded">
+                  {orders.find(o => o.id === gpsActiveOrderId)?.orderNumber || gpsActiveOrderId}
+                </strong>
+                {gpsActiveShipmentId && (
+                  <span className="bg-amber-500/20 text-amber-300 px-1.5 py-0.2 rounded font-bold text-[10px]">
+                    Envío {gpsActiveShipmentId}
+                  </span>
+                )}
+                <span className="text-slate-400 hidden sm:inline">
+                  • {gpsActiveDriverId}
+                </span>
+              </div>
+            </div>
+
+            <div className="flex items-center gap-3 md:gap-4 text-[11px]">
+              <div className="flex items-center gap-1.5 text-slate-300">
+                <Crosshair className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="font-mono">
+                  {gpsLastPoint ? `${gpsLastPoint.latitude.toFixed(4)}, ${gpsLastPoint.longitude.toFixed(4)} (±${gpsLastPoint.accuracy}m)` : 'Obteniendo señal satelital...'}
+                </span>
+              </div>
+
+              <div className="flex items-center gap-1.5 bg-slate-800 px-2.5 py-0.5 rounded-lg border border-slate-700">
+                <Clock className="w-3 h-3 text-yellow-400" />
+                <span>Próximo ping: <strong className="text-yellow-300 font-mono">{gpsCountdown}s</strong></span>
+                <span className="text-slate-600">|</span>
+                <span>Enviados: <strong className="text-emerald-400 font-mono">{gpsPointsSent}</strong></span>
+              </div>
+
+              {gpsBatteryPercent !== null && (
+                <div className="flex items-center gap-1 text-slate-400 hidden md:flex">
+                  <Battery className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>{gpsBatteryPercent}%</span>
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                {gpsActiveOrderId && (
+                  <button
+                    onClick={() => onViewOrderTracking(gpsActiveOrderId)}
+                    className="bg-slate-800 hover:bg-slate-700 text-slate-200 font-bold px-2.5 py-1 rounded-lg text-[11px] transition"
+                  >
+                    Ver en Mapa
+                  </button>
+                )}
+                <button
+                  onClick={() => stopGpsTelemetry('Transmisión detenida por el conductor.')}
+                  className="bg-rose-600 hover:bg-rose-700 text-white font-black px-3 py-1 rounded-lg text-[11px] flex items-center gap-1 transition shadow-xs"
+                >
+                  <Square className="w-3 h-3 fill-current" />
+                  <span>Detener GPS</span>
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Notificación de Éxito de GPS */}
+      {gpsSuccessNotice && (
+        <div className="bg-emerald-50 border-b border-emerald-200 text-emerald-900 px-4 py-2 text-xs font-bold flex items-center justify-between">
+          <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+              <span>{gpsSuccessNotice}</span>
+            </div>
+            <button onClick={() => setGpsSuccessNotice(null)} className="text-emerald-700 hover:text-emerald-900 font-bold px-2">✕</button>
+          </div>
+        </div>
+      )}
+
+      {/* Notificación de Error de GPS */}
+      {gpsError && (
+        <div className="bg-rose-50 border-b border-rose-200 text-rose-900 px-4 py-2 text-xs font-bold flex items-center justify-between">
+          <div className="max-w-7xl mx-auto w-full flex items-center justify-between">
+            <div className="flex items-center gap-2">
+              <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+              <span>{gpsError}</span>
+            </div>
+            <button onClick={() => setGpsError(null)} className="text-rose-700 hover:text-rose-900 font-bold px-2">✕</button>
+          </div>
+        </div>
+      )}
 
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
@@ -473,6 +914,22 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 </button>
               </div>
             </div>
+
+            {/* Error / Rejection Banner */}
+            {errorMessage && (
+              <div className="bg-rose-50 border border-rose-300 text-rose-800 p-3.5 rounded-2xl flex items-center justify-between text-xs font-bold shadow-xs">
+                <div className="flex items-center gap-2">
+                  <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                  <span>{errorMessage}</span>
+                </div>
+                <button
+                  onClick={() => setErrorMessage(null)}
+                  className="text-rose-500 hover:text-rose-700 font-extrabold text-sm ml-2 px-1"
+                >
+                  ✕
+                </button>
+              </div>
+            )}
 
             {/* Warehouse Selector Toolbar */}
             {renderWarehouseSelectorBar()}
@@ -702,55 +1159,123 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                         {/* If Split Order: Show Individual Child Shipments Status & Controls */}
                         {order.isSplitOrder && order.childShipments && order.childShipments.length > 0 ? (
                           <div className="space-y-1.5 pt-1">
-                            {order.childShipments.map(child => (
-                              <div
-                                key={child.shipmentId}
-                                className="bg-slate-50 p-2 rounded-xl border border-slate-200 text-[11px] space-y-1"
-                              >
-                                <div className="flex justify-between items-center">
-                                  <span className="font-bold text-slate-800">
-                                    Envío {child.shipmentIndex} ({child.weightKg} kg):
-                                  </span>
-                                  <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
-                                    child.fulfillmentStatus === 'ENTREGADO'
-                                      ? 'bg-emerald-100 text-emerald-800'
-                                      : 'bg-yellow-100 text-yellow-900'
-                                  }`}>
-                                    {child.fulfillmentStatus}
-                                  </span>
+                            {order.childShipments.map(child => {
+                              const isThisChildTracking = gpsTrackingActive && gpsActiveOrderId === order.id && gpsActiveShipmentId === child.shipmentId;
+                              return (
+                                <div
+                                  key={child.shipmentId}
+                                  className="bg-slate-50 p-2 rounded-xl border border-slate-200 text-[11px] space-y-1.5"
+                                >
+                                  <div className="flex justify-between items-center">
+                                    <span className="font-bold text-slate-800">
+                                      Envío {child.shipmentIndex} ({child.weightKg} kg):
+                                    </span>
+                                    <span className={`text-[9px] font-black px-1.5 py-0.2 rounded ${
+                                      child.fulfillmentStatus === 'ENTREGADO'
+                                        ? 'bg-emerald-100 text-emerald-800'
+                                        : 'bg-yellow-100 text-yellow-900'
+                                    }`}>
+                                      {child.fulfillmentStatus}
+                                    </span>
+                                  </div>
+                                  <div className="flex justify-between items-center text-[10px] text-slate-500">
+                                    <span>PIN: <strong className="text-red-600 font-mono">{child.secretDeliveryCode}</strong></span>
+                                    <span>{child.driver?.name?.split(' ')[0]} ({child.driver?.vehiclePlate})</span>
+                                  </div>
+
+                                  {/* GPS Telemetry Controls per Child Shipment */}
+                                  {child.fulfillmentStatus === 'EN_CAMINO' && (
+                                    isThisChildTracking ? (
+                                      <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-1.5 rounded-lg text-[10px] flex items-center justify-between">
+                                        <div className="flex items-center gap-1 font-bold">
+                                          <span className="flex h-1.5 w-1.5 relative">
+                                            <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                            <span className="relative inline-flex rounded-full h-1.5 w-1.5 bg-emerald-600"></span>
+                                          </span>
+                                          <span>GPS Activo (5s) • #{gpsPointsSent}</span>
+                                        </div>
+                                        <button
+                                          onClick={() => stopGpsTelemetry('Transmisión detenida por el conductor')}
+                                          className="text-rose-700 hover:text-rose-900 font-extrabold text-[10px] underline ml-1"
+                                        >
+                                          Detener
+                                        </button>
+                                      </div>
+                                    ) : (
+                                      <button
+                                        onClick={() => startGpsTelemetry(order.id, child.shipmentId)}
+                                        className="w-full bg-amber-500 hover:bg-amber-600 text-white font-bold text-[10px] py-1 rounded-lg flex items-center justify-center gap-1 transition shadow-2xs"
+                                      >
+                                        <Radio className="w-3 h-3" />
+                                        <span>Transmitir GPS Envío {child.shipmentIndex} (5s)</span>
+                                      </button>
+                                    )
+                                  )}
+
+                                  {child.fulfillmentStatus !== 'ENTREGADO' && (
+                                    <button
+                                      onClick={() => handleUpdateStatus(order.id, 'ENTREGADO', child.shipmentId)}
+                                      className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition"
+                                    >
+                                      Confirmar Entrega Envío {child.shipmentIndex} ✓
+                                    </button>
+                                  )}
                                 </div>
-                                <div className="flex justify-between items-center text-[10px] text-slate-500">
-                                  <span>PIN: <strong className="text-red-600 font-mono">{child.secretDeliveryCode}</strong></span>
-                                  <span>{child.driver?.name?.split(' ')[0]} ({child.driver?.vehiclePlate})</span>
-                                </div>
-                                {child.fulfillmentStatus !== 'ENTREGADO' && (
-                                  <button
-                                    onClick={() => handleUpdateStatus(order.id, 'ENTREGADO', child.shipmentId)}
-                                    className="w-full bg-emerald-600 hover:bg-emerald-700 text-white font-bold text-[10px] py-1 rounded-lg transition"
-                                  >
-                                    Confirmar Entrega Envío {child.shipmentIndex} ✓
-                                  </button>
-                                )}
-                              </div>
-                            ))}
+                              );
+                            })}
                           </div>
                         ) : (
-                          <div className="p-2 bg-slate-50 rounded-xl text-xs space-y-1">
-                            <p className="text-slate-600 text-[11px]">
-                              Vehículo: <strong className="text-slate-800">{order.driver?.vehiclePlate}</strong>
-                            </p>
-                            <p className="text-slate-600 text-[11px]">
-                              Código Secreto: <strong className="text-red-600 font-black">{order.secretDeliveryCode}</strong>
-                            </p>
+                          <div className="space-y-1.5">
+                            <div className="p-2 bg-slate-50 rounded-xl text-xs space-y-1">
+                              <p className="text-slate-600 text-[11px]">
+                                Vehículo: <strong className="text-slate-800">{order.driver?.vehiclePlate}</strong>
+                              </p>
+                              <p className="text-slate-600 text-[11px]">
+                                Código Secreto: <strong className="text-red-600 font-black">{order.secretDeliveryCode}</strong>
+                              </p>
+                            </div>
+
+                            {/* Direct GPS Telemetry Status for Non-Split Order */}
+                            {gpsTrackingActive && gpsActiveOrderId === order.id && !gpsActiveShipmentId ? (
+                              <div className="bg-emerald-50 border border-emerald-300 text-emerald-900 p-2 rounded-xl text-xs flex items-center justify-between">
+                                <div className="flex items-center gap-2">
+                                  <span className="flex h-2.5 w-2.5 relative">
+                                    <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-emerald-400 opacity-75"></span>
+                                    <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
+                                  </span>
+                                  <div>
+                                    <p className="font-bold text-[11px]">GPS Transmitiendo cada 5s</p>
+                                    <p className="text-[10px] text-emerald-700 font-mono">
+                                      {gpsLastPoint ? `${gpsLastPoint.latitude.toFixed(4)}, ${gpsLastPoint.longitude.toFixed(4)}` : 'Obteniendo GPS...'}
+                                    </p>
+                                  </div>
+                                </div>
+                                <button
+                                  onClick={() => stopGpsTelemetry('Transmisión detenida por el conductor')}
+                                  className="bg-rose-600 hover:bg-rose-700 text-white font-black text-[10px] px-2.5 py-1 rounded-lg transition"
+                                >
+                                  Detener
+                                </button>
+                              </div>
+                            ) : (
+                              <button
+                                onClick={() => startGpsTelemetry(order.id)}
+                                className="w-full bg-yellow-400 hover:bg-yellow-500 text-red-950 font-black text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
+                              >
+                                <Radio className="w-3.5 h-3.5" />
+                                <span>Iniciar GPS Conductor (5s)</span>
+                              </button>
+                            )}
                           </div>
                         )}
 
                         <div className="flex gap-2">
                           <button
                             onClick={() => onViewOrderTracking(order.id)}
-                            className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 rounded-xl text-center transition"
+                            className="flex-1 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2 rounded-xl text-center transition flex items-center justify-center gap-1"
                           >
-                            Ver en Mapa
+                            <MapPin className="w-3 h-3 text-red-400" />
+                            <span>Ver en Mapa</span>
                           </button>
                           <button
                             onClick={() => handleUpdateStatus(order.id, 'ENTREGADO')}
@@ -806,6 +1331,75 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 </div>
               </div>
             </div>
+
+            {/* Cancelled Orders & Physical Returns Queue */}
+            {filteredStoreOrders.some(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending) && (
+              <div className="bg-rose-50/70 border border-rose-200 rounded-3xl p-4 md:p-5 space-y-3 shadow-xs">
+                <div className="flex items-center justify-between">
+                  <h3 className="text-xs font-black text-rose-950 uppercase tracking-wider flex items-center gap-1.5">
+                    <AlertTriangle className="w-4 h-4 text-rose-600" />
+                    <span>Pedidos Cancelados & Devoluciones Físicas a Bodega</span>
+                  </h3>
+                  <span className="text-[10px] font-extrabold bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full">
+                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'CANCELADO').length} cancelados
+                  </span>
+                </div>
+
+                <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                  {filteredStoreOrders
+                    .filter(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending)
+                    .map(order => (
+                      <div key={order.id} className="bg-white p-3.5 rounded-2xl border border-rose-200 text-xs space-y-2 shadow-xs">
+                        <div className="flex items-center justify-between">
+                          <div className="flex items-center gap-1.5">
+                            <span className="font-black text-slate-900">{order.orderNumber}</span>
+                            <span className="text-[10px] bg-rose-100 text-rose-800 font-bold px-2 py-0.5 rounded">
+                              CANCELADO
+                            </span>
+                          </div>
+                          <button
+                            onClick={() => handleOpenHistory(order)}
+                            className="text-[10px] font-bold text-slate-600 hover:text-slate-900 bg-slate-100 hover:bg-slate-200 px-2 py-0.5 rounded-md transition"
+                          >
+                            Auditoría
+                          </button>
+                        </div>
+
+                        {order.cancelReason && (
+                          <p className="text-[11px] text-slate-600">
+                            <strong>Motivo:</strong> {order.cancelReason}
+                          </p>
+                        )}
+
+                        {order.physicalReturnPending ? (
+                          <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl space-y-1.5">
+                            <p className="text-[11px] font-extrabold text-amber-900">
+                              ⚠️ Mercancía despachada: Retorno físico pendiente de verificación
+                            </p>
+                            <p className="text-[10px] text-amber-700">
+                              El stock reservado permanece en cuarentena y NO está disponible para la venta hasta confirmación de inspección física en sede.
+                            </p>
+                            <button
+                              onClick={() => handleConfirmPhysicalReturn(order.id)}
+                              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition shadow-xs"
+                            >
+                              Confirmar Inspección Física y Reingreso de Stock ✓
+                            </button>
+                          </div>
+                        ) : order.physicalReturnConfirmedAt ? (
+                          <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 p-2 rounded-xl border border-emerald-100">
+                            ✓ Retorno físico verificado por {order.physicalReturnConfirmedBy} ({formatTimeBogota(order.physicalReturnConfirmedAt)})
+                          </div>
+                        ) : (
+                          <div className="text-[10px] text-slate-500 bg-slate-50 p-2 rounded-xl border border-slate-100">
+                            Cancelado antes de despacho: Stock liberado atómicamente a inventario vendible.
+                          </div>
+                        )}
+                      </div>
+                    ))}
+                </div>
+              </div>
+            )}
           </div>
         )}
 
@@ -1330,14 +1924,304 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 7: BOLT CONDUCTOR CONTRACT & INTEGRATIONS */}
+        {/* TAB 7: BOLT CONDUCTOR GPS EN VIVO & CONTRATOS DE INTEGRACIÓN */}
         {/* ============================================================== */}
         {activeTab === 'CONDUCTOR' && (
-          <div className="space-y-5">
+          <div className="space-y-6">
             <div>
-              <h2 className="text-xl font-black text-slate-900">Bolt Conductor Android & Contratos de Integración</h2>
+              <div className="flex items-center justify-between flex-wrap gap-2">
+                <div>
+                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
+                    <Radio className="w-5 h-5 text-red-600 animate-pulse" />
+                    <span>Consola de Transmisión GPS en Vivo — Bolt Conductor</span>
+                  </h2>
+                  <p className="text-xs text-slate-500">
+                    Captura y transmisión satelital con cadencia estricta de 5 segundos vinculada exclusivamente a entregas en <strong className="text-slate-800">EN_CAMINO</strong>.
+                  </p>
+                </div>
+
+                <div className="flex items-center gap-2">
+                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 ${
+                    gpsTrackingActive 
+                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
+                      : 'bg-slate-100 text-slate-600'
+                  }`}>
+                    <span className={`w-2.5 h-2.5 rounded-full ${gpsTrackingActive ? 'bg-emerald-600 animate-ping' : 'bg-slate-400'}`}></span>
+                    <span>{gpsTrackingActive ? 'Transmisión Activa (5s)' : 'En Espera de Entrega'}</span>
+                  </span>
+                </div>
+              </div>
+            </div>
+
+            {/* Panel de Control y Captura de Coordenadas */}
+            <div className="bg-white rounded-3xl border border-slate-200 p-5 md:p-6 shadow-xs space-y-5">
+              {/* Perfil del Conductor & Permisos del Navegador */}
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-slate-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-xs">
+                    🏍️
+                  </div>
+                  <div>
+                    <h4 className="font-black text-sm text-slate-900">Carlos Rodríguez</h4>
+                    <p className="text-xs text-slate-500">ID: <strong className="font-mono text-slate-700">DRV-CARLOS-01</strong></p>
+                    <p className="text-[11px] text-slate-400">Moto Yamaha FZ 2.0 • TPK-44E</p>
+                  </div>
+                </div>
+
+                {/* Permisos de Geolocalización en Navegador */}
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col justify-between text-xs space-y-1.5">
+                  <div className="flex items-center justify-between">
+                    <span className="font-bold text-slate-500 uppercase text-[10px]">Permiso GPS Navegador:</span>
+                    <button
+                      onClick={checkGpsPermission}
+                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"
+                    >
+                      <RefreshCw className="w-3 h-3" />
+                      <span>Revisar</span>
+                    </button>
+                  </div>
+                  <div className="flex items-center gap-2">
+                    {gpsPermissionStatus === 'granted' && (
+                      <span className="text-emerald-700 font-black flex items-center gap-1 text-xs">
+                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
+                        <span>Permiso Concedido (Alta Precisión)</span>
+                      </span>
+                    )}
+                    {gpsPermissionStatus === 'prompt' && (
+                      <span className="text-amber-700 font-bold flex items-center gap-1 text-xs">
+                        <AlertTriangle className="w-4 h-4 text-amber-600" />
+                        <span>Pendiente de Aprobación en Navegador</span>
+                      </span>
+                    )}
+                    {gpsPermissionStatus === 'denied' && (
+                      <span className="text-rose-700 font-bold flex items-center gap-1 text-xs">
+                        <XCircle className="w-4 h-4 text-rose-600" />
+                        <span>Permiso Bloqueado en Ajustes</span>
+                      </span>
+                    )}
+                    {gpsPermissionStatus === 'unsupported' && (
+                      <span className="text-slate-500 font-bold flex items-center gap-1 text-xs">
+                        <XCircle className="w-4 h-4 text-slate-400" />
+                        <span>No Soportado por Dispositivo</span>
+                      </span>
+                    )}
+                  </div>
+                  <p className="text-[10px] text-slate-400">
+                    {gpsPermissionStatus === 'denied' 
+                      ? 'Haga clic en el candado de la URL para desbloquear el acceso a Ubicación.'
+                      : 'El navegador solicitará acceso a la ubicación física de este equipo.'}
+                  </p>
+                </div>
+
+                {/* Batería y Hardware Móvil */}
+                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col justify-between text-xs space-y-1.5">
+                  <span className="font-bold text-slate-500 uppercase text-[10px]">Telemetría del Dispositivo:</span>
+                  <div className="flex items-center justify-between">
+                    <span className="text-slate-600">Batería móvil:</span>
+                    <strong className="text-emerald-600 font-mono text-sm">
+                      {gpsBatteryPercent !== null ? `${gpsBatteryPercent}%` : '85% (Est.)'}
+                    </strong>
+                  </div>
+                  <div className="flex items-center justify-between text-[11px] text-slate-500">
+                    <span>Protocolo:</span>
+                    <span className="font-mono font-bold text-slate-700">HTTPS / REST POST</span>
+                  </div>
+                </div>
+              </div>
+
+              {/* Selector de Pedido Activo */}
+              <div className="space-y-3">
+                <div className="flex items-center justify-between">
+                  <label className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
+                    <Boxes className="w-4 h-4 text-slate-600" />
+                    <span>Seleccionar Entrega Activa para Transmisión</span>
+                  </label>
+                  <span className="text-[11px] text-slate-400 font-medium">
+                    Regla: Sólo pedidos en camino
+                  </span>
+                </div>
+
+                {orders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length === 0 ? (
+                  <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-2">
+                    <p className="font-bold flex items-center gap-1.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
+                      <span>No hay entregas activas en ruta en este momento</span>
+                    </p>
+                    <p className="text-[11px] text-amber-800">
+                      Para iniciar la transmisión GPS, asigne un conductor y despache un pedido a estado <strong className="font-black">EN CAMINO</strong> en la pestaña <button onClick={() => setActiveTab('PEDIDOS')} className="underline font-bold">Tablero de Pedidos</button>.
+                    </p>
+                  </div>
+                ) : (
+                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
+                    {orders
+                      .filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')
+                      .map(ord => {
+                        const isThisOrderActive = gpsTrackingActive && gpsActiveOrderId === ord.id;
+                        return (
+                          <div
+                            key={ord.id}
+                            className={`p-4 rounded-2xl border-2 transition text-xs space-y-2.5 ${
+                              isThisOrderActive
+                                ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
+                                : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80'
+                            }`}
+                          >
+                            <div className="flex items-start justify-between">
+                              <div>
+                                <span className="font-black text-slate-900 text-sm">{ord.orderNumber}</span>
+                                <p className="text-[11px] text-slate-500 font-medium truncate">{ord.customer.name}</p>
+                              </div>
+                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
+                                ord.fulfillmentStatus === 'EN_CAMINO'
+                                  ? 'bg-yellow-400 text-red-950'
+                                  : 'bg-blue-100 text-blue-800'
+                              }`}>
+                                {ord.fulfillmentStatus}
+                              </span>
+                            </div>
+
+                            <div className="text-[11px] text-slate-600 space-y-0.5">
+                              <p className="truncate">📍 {ord.deliveryAddress.address}</p>
+                              <p>⚖️ {ord.totals.totalWeightKg} kg • {ord.deliveryMode}</p>
+                              {ord.secretDeliveryCode && (
+                                <p>🔑 PIN: <strong className="text-red-600 font-mono font-bold">{ord.secretDeliveryCode}</strong></p>
+                              )}
+                            </div>
+
+                            <div className="pt-2 border-t border-slate-200 flex items-center gap-2">
+                              {isThisOrderActive ? (
+                                <button
+                                  onClick={() => stopGpsTelemetry('Transmisión detenida por el conductor')}
+                                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
+                                >
+                                  <Square className="w-3.5 h-3.5 fill-current" />
+                                  <span>Detener Transmisión GPS</span>
+                                </button>
+                              ) : (
+                                <button
+                                  onClick={() => startGpsTelemetry(ord.id)}
+                                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
+                                >
+                                  <Play className="w-3.5 h-3.5 fill-current text-yellow-400" />
+                                  <span>{ord.fulfillmentStatus === 'EN_CAMINO' ? 'Iniciar GPS (5s)' : 'Marcar En Ruta y Transmitir'}</span>
+                                </button>
+                              )}
+                            </div>
+                          </div>
+                        );
+                      })}
+                  </div>
+                )}
+              </div>
+
+              {/* Métricas e Instrumentación en Tiempo Real */}
+              <div className="pt-2 border-t border-slate-100">
+                <h4 className="font-extrabold text-xs text-slate-700 uppercase tracking-wider mb-3">
+                  Telemetría Activa & Satélites GPS
+                </h4>
+
+                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Cadencia de Envío</span>
+                    <p className="text-base font-black text-slate-900 mt-0.5">5.0 segundos</p>
+                    <div className="mt-1 flex items-center gap-1.5">
+                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
+                        <div
+                          className="bg-yellow-500 h-full transition-all duration-1000"
+                          style={{ width: `${((5 - gpsCountdown) / 5) * 100}%` }}
+                        ></div>
+                      </div>
+                      <span className="text-[10px] font-mono font-bold text-slate-600 shrink-0">
+                        {gpsTrackingActive ? `${gpsCountdown}s` : '--'}
+                      </span>
+                    </div>
+                  </div>
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Coordenadas Actuales</span>
+                    <p className="text-xs font-mono font-bold text-slate-800 mt-1 truncate">
+                      {gpsLastPoint ? `${gpsLastPoint.latitude.toFixed(5)}, ${gpsLastPoint.longitude.toFixed(5)}` : 'Sin transmisión'}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      {gpsLastPoint ? 'Bogotá D.C., Colombia' : 'Presione Iniciar'}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Precisión Satelital</span>
+                    <p className="text-base font-black text-emerald-600 mt-0.5">
+                      {gpsLastPoint ? `±${gpsLastPoint.accuracy} m` : '--'}
+                    </p>
+                    <p className="text-[10px] text-slate-500 mt-0.5">
+                      {gpsLastPoint?.speed ? `${(gpsLastPoint.speed * 3.6).toFixed(1)} km/h` : '0 km/h en moto'}
+                    </p>
+                  </div>
+
+                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Paquetes Transmitidos</span>
+                    <p className="text-base font-black text-slate-900 mt-0.5 font-mono">
+                      {gpsPointsSent}
+                    </p>
+                    <p className="text-[10px] text-slate-400 mt-0.5">
+                      Secuencia #{gpsSequenceRef.current > 1 ? gpsSequenceRef.current - 1 : 0}
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Registro en Vivo de Telemetría (Live Telemetry Log Stream) */}
+              <div className="pt-2 border-t border-slate-100 space-y-2">
+                <div className="flex items-center justify-between">
+                  <h4 className="font-extrabold text-xs text-slate-700 uppercase tracking-wider">
+                    Registro de Envíos al Servidor (/api/v1/driver/gps)
+                  </h4>
+                  {gpsHistoryLog.length > 0 && (
+                    <button
+                      onClick={() => setGpsHistoryLog([])}
+                      className="text-[11px] text-slate-400 hover:text-slate-600 font-bold"
+                    >
+                      Limpiar consola
+                    </button>
+                  )}
+                </div>
+
+                {gpsHistoryLog.length === 0 ? (
+                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center text-xs text-slate-400 italic">
+                    {gpsTrackingActive ? 'Esperando primer ciclo de transmisión...' : 'Inicie una transmisión para visualizar el registro de telemetría.'}
+                  </div>
+                ) : (
+                  <div className="bg-slate-900 text-slate-100 rounded-2xl p-3 font-mono text-[11px] max-h-48 overflow-y-auto space-y-1.5 shadow-inner">
+                    {gpsHistoryLog.map((log, idx) => (
+                      <div key={idx} className="flex items-center justify-between border-b border-slate-800 pb-1">
+                        <div className="flex items-center gap-2">
+                          <span className={`w-2 h-2 rounded-full ${log.status === 'OK' ? 'bg-emerald-400' : 'bg-rose-500'}`}></span>
+                          <span className="text-slate-400">[{log.time}]</span>
+                          <span className="text-yellow-400 font-bold">#{log.seq}</span>
+                          <span>Lat: {log.lat.toFixed(5)}, Lng: {log.lng.toFixed(5)}</span>
+                          <span className="text-slate-400">(±{log.accuracy}m)</span>
+                        </div>
+                        <div>
+                          {log.status === 'OK' ? (
+                            <span className="text-emerald-400 font-bold text-[10px] bg-emerald-950/80 px-1.5 py-0.2 rounded">
+                              200 OK
+                            </span>
+                          ) : (
+                            <span className="text-rose-400 font-bold text-[10px] bg-rose-950/80 px-1.5 py-0.2 rounded" title={log.message}>
+                              ERR: {log.message || '400'}
+                            </span>
+                          )}
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </div>
+            </div>
+
+            <div>
+              <h3 className="font-extrabold text-sm text-slate-900 mb-1">Documentación Técnica & Contratos de Integración</h3>
               <p className="text-xs text-slate-500">
-                Documentación técnica, esquemas OpenAPI 3.0 y estado de conectores empresariales.
+                Especificaciones formales para la aplicación Android nativa y esquemas OpenAPI 3.0.
               </p>
             </div>
 
@@ -1408,6 +2292,86 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
           </div>
         )}
       </main>
+
+      {/* Modal de Auditoría y Trazabilidad de Estados del Servidor */}
+      {historyModalOrder && (
+        <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-4">
+          <div className="bg-white rounded-3xl max-w-xl w-full p-6 shadow-2xl space-y-4 max-h-[85vh] flex flex-col">
+            <div className="flex items-center justify-between border-b border-slate-100 pb-3">
+              <div>
+                <h3 className="text-base font-black text-slate-900 flex items-center gap-2">
+                  <FileText className="w-4 h-4 text-red-600" />
+                  <span>Historial de Auditoría — {historyModalOrder.orderNumber}</span>
+                </h3>
+                <p className="text-xs text-slate-500">
+                  Registro inmutable de transiciones y eventos validados por el servidor
+                </p>
+              </div>
+              <button
+                onClick={() => setHistoryModalOrder(null)}
+                className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-sm transition"
+              >
+                ✕
+              </button>
+            </div>
+
+            <div className="flex-1 overflow-y-auto space-y-2.5 pr-1">
+              {loadingHistory ? (
+                <div className="py-8 text-center text-xs font-bold text-slate-400">
+                  Cargando trazabilidad desde el servidor autoritativo...
+                </div>
+              ) : orderHistoryEntries.length === 0 ? (
+                <div className="py-8 text-center text-xs text-slate-400">
+                  No hay registros de auditoría disponibles para este pedido.
+                </div>
+              ) : (
+                orderHistoryEntries.map((entry, idx) => (
+                  <div key={entry.id || idx} className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200/80 text-xs space-y-1.5 shadow-2xs">
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-2">
+                        <span className="font-mono text-[10px] text-slate-400 font-bold">#{idx + 1}</span>
+                        <span className="font-extrabold text-slate-900">
+                          {entry.previousStatus} → <span className="text-red-600 font-black">{entry.newStatus}</span>
+                        </span>
+                        {entry.shipmentId && (
+                          <span className="text-[10px] bg-amber-100 text-amber-900 px-1.5 py-0.2 rounded font-bold">
+                            {entry.shipmentId}
+                          </span>
+                        )}
+                      </div>
+                      <span className="text-[10px] font-mono text-slate-500">
+                        {formatTimeBogota(entry.timestamp)}
+                      </span>
+                    </div>
+
+                    <div className="flex items-center gap-2 text-[11px] text-slate-600">
+                      <span className="font-bold bg-slate-200 text-slate-800 px-1.5 py-0.2 rounded-md text-[10px]">
+                        Actor: {entry.actor?.role}
+                      </span>
+                      <span>{entry.actor?.name || entry.actor?.id || 'Sistema'}</span>
+                    </div>
+
+                    {entry.reason && (
+                      <p className="text-[11px] text-slate-700 bg-white p-2 rounded-xl border border-slate-100 font-medium">
+                        <strong>Motivo:</strong> {entry.reason}
+                      </p>
+                    )}
+                  </div>
+                ))
+              )}
+            </div>
+
+            <div className="pt-2 border-t border-slate-100 flex justify-end">
+              <button
+                onClick={() => setHistoryModalOrder(null)}
+                className="bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs px-4 py-2 rounded-xl transition"
+              >
+                Cerrar
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };

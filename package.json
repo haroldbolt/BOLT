@@ -9,7 +9,8 @@
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
-    "lint": "tsc --noEmit"
+    "lint": "tsc --noEmit",
+    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

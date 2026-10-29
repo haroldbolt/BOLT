@@ -1,0 +1,2459 @@
+[
+  {
+    "id": "ORD-TEST-1793249993090-SPLIT",
+    "orderNumber": "#BP-TEST-SPLIT",
+    "createdAt": "2026-10-29T04:59:53.061Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "ENTREGADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:53.061Z",
+      "end": "2026-10-29T05:21:53.061Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:53.061Z",
+      "prepStartedAt": "2026-10-29T04:59:53.065Z",
+      "prepCompletedAt": "2026-10-29T04:59:53.067Z",
+      "assignedAt": "2026-10-29T04:59:53.068Z",
+      "pickedUpAt": "2026-10-29T04:59:53.069Z",
+      "deliveredAt": "2026-10-29T04:59:53.103Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249993061-A",
+    "tripId": "TRP-ORD-TEST-1793249993061-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249993090-5045",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "LISTO_PARA_DESPACHO",
+        "timestamp": "2026-10-29T04:59:53.090Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": true,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249993093-7577",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "shipmentId": "SHP-PLIT-1",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:53.093Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al envío hijo 1",
+        "metadata": {
+          "shipmentIndex": 1,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249993095-8050",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "shipmentId": "SHP-PLIT-2",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:53.095Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al envío hijo 2",
+        "metadata": {
+          "shipmentIndex": 2,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249993097-6297",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "shipmentId": "SHP-PLIT-1",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:53.097Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "shipmentIndex": 1,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249993099-1234",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "shipmentId": "SHP-PLIT-1",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "ENTREGADO",
+        "timestamp": "2026-10-29T04:59:53.099Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+        "metadata": {
+          "shipmentIndex": 1,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249993101-7159",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "shipmentId": "SHP-PLIT-2",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:53.101Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "shipmentIndex": 2,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249993104-8821",
+        "orderId": "ORD-TEST-1793249993090-SPLIT",
+        "shipmentId": "SHP-PLIT-2",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "ENTREGADO",
+        "timestamp": "2026-10-29T04:59:53.103Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+        "metadata": {
+          "shipmentIndex": 2,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "isSplitOrder": true,
+    "shipmentCount": 2,
+    "childShipments": [
+      {
+        "shipmentId": "SHP-PLIT-1",
+        "shipmentIndex": 1,
+        "shipmentCount": 2,
+        "parentOrderId": "ORD-TEST-1793249993090-SPLIT",
+        "childOrderId": "ORD-TEST-1793249993090-SPLIT-A",
+        "assignmentId": "ASG-PLIT-1",
+        "tripId": "TRP-PLIT-1",
+        "items": [
+          {
+            "productId": "prod-rc-maxi-15k",
+            "sku": "RC-MAXI-15KG",
+            "name": "Royal Canin Maxi Adult Perros Grandes",
+            "brand": "Royal Canin",
+            "presentation": "15 kg",
+            "price": 185000,
+            "quantity": 2,
+            "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+            "weightKg": 15,
+            "requiresPrescription": false
+          }
+        ],
+        "weightKg": 24,
+        "weightGrams": 24000,
+        "subtotal": 185000,
+        "cashToCollect": 0,
+        "fulfillmentStatus": "ENTREGADO",
+        "secretDeliveryCode": "1111",
+        "estimatedDeliveryMinutes": 20,
+        "timestamps": {
+          "prepCompletedAt": "2026-10-29T04:59:53.090Z",
+          "assignedAt": "2026-10-29T04:59:53.093Z",
+          "pickedUpAt": "2026-10-29T04:59:53.097Z",
+          "deliveredAt": "2026-10-29T04:59:53.099Z"
+        },
+        "statusHistory": [
+          {
+            "id": "HIST-1793249993093-7577",
+            "orderId": "ORD-TEST-1793249993090-SPLIT",
+            "shipmentId": "SHP-PLIT-1",
+            "previousStatus": "LISTO_PARA_DESPACHO",
+            "newStatus": "REPARTIDOR_ASIGNADO",
+            "timestamp": "2026-10-29T04:59:53.093Z",
+            "actor": {
+              "role": "COORDINADOR",
+              "name": "Jefe"
+            },
+            "reason": "Conductor Carlos Rodríguez asignado al envío hijo 1",
+            "metadata": {
+              "shipmentIndex": 1,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249993097-6297",
+            "orderId": "ORD-TEST-1793249993090-SPLIT",
+            "shipmentId": "SHP-PLIT-1",
+            "previousStatus": "REPARTIDOR_ASIGNADO",
+            "newStatus": "EN_CAMINO",
+            "timestamp": "2026-10-29T04:59:53.097Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+            "metadata": {
+              "shipmentIndex": 1,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249993099-1234",
+            "orderId": "ORD-TEST-1793249993090-SPLIT",
+            "shipmentId": "SHP-PLIT-1",
+            "previousStatus": "EN_CAMINO",
+            "newStatus": "ENTREGADO",
+            "timestamp": "2026-10-29T04:59:53.099Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+            "metadata": {
+              "shipmentIndex": 1,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          }
+        ],
+        "driver": {
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez",
+          "phone": "+57 312 456 7890",
+          "vehiclePlate": "TPK-44E",
+          "vehicleType": "MOTO",
+          "rating": 4.95,
+          "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+        }
+      },
+      {
+        "shipmentId": "SHP-PLIT-2",
+        "shipmentIndex": 2,
+        "shipmentCount": 2,
+        "parentOrderId": "ORD-TEST-1793249993090-SPLIT",
+        "childOrderId": "ORD-TEST-1793249993090-SPLIT-B",
+        "assignmentId": "ASG-PLIT-2",
+        "tripId": "TRP-PLIT-2",
+        "items": [
+          {
+            "productId": "prod-rc-maxi-15k",
+            "sku": "RC-MAXI-15KG",
+            "name": "Royal Canin Maxi Adult Perros Grandes",
+            "brand": "Royal Canin",
+            "presentation": "15 kg",
+            "price": 185000,
+            "quantity": 2,
+            "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+            "weightKg": 15,
+            "requiresPrescription": false
+          }
+        ],
+        "weightKg": 24,
+        "weightGrams": 24000,
+        "subtotal": 185000,
+        "cashToCollect": 0,
+        "fulfillmentStatus": "ENTREGADO",
+        "secretDeliveryCode": "2222",
+        "estimatedDeliveryMinutes": 20,
+        "timestamps": {
+          "prepCompletedAt": "2026-10-29T04:59:53.090Z",
+          "assignedAt": "2026-10-29T04:59:53.095Z",
+          "pickedUpAt": "2026-10-29T04:59:53.101Z",
+          "deliveredAt": "2026-10-29T04:59:53.103Z"
+        },
+        "statusHistory": [
+          {
+            "id": "HIST-1793249993095-8050",
+            "orderId": "ORD-TEST-1793249993090-SPLIT",
+            "shipmentId": "SHP-PLIT-2",
+            "previousStatus": "LISTO_PARA_DESPACHO",
+            "newStatus": "REPARTIDOR_ASIGNADO",
+            "timestamp": "2026-10-29T04:59:53.095Z",
+            "actor": {
+              "role": "COORDINADOR",
+              "name": "Jefe"
+            },
+            "reason": "Conductor Carlos Rodríguez asignado al envío hijo 2",
+            "metadata": {
+              "shipmentIndex": 2,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249993101-7159",
+            "orderId": "ORD-TEST-1793249993090-SPLIT",
+            "shipmentId": "SHP-PLIT-2",
+            "previousStatus": "REPARTIDOR_ASIGNADO",
+            "newStatus": "EN_CAMINO",
+            "timestamp": "2026-10-29T04:59:53.101Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+            "metadata": {
+              "shipmentIndex": 2,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249993104-8821",
+            "orderId": "ORD-TEST-1793249993090-SPLIT",
+            "shipmentId": "SHP-PLIT-2",
+            "previousStatus": "EN_CAMINO",
+            "newStatus": "ENTREGADO",
+            "timestamp": "2026-10-29T04:59:53.103Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+            "metadata": {
+              "shipmentIndex": 2,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          }
+        ],
+        "driver": {
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez",
+          "phone": "+57 312 456 7890",
+          "vehiclePlate": "TPK-44E",
+          "vehicleType": "MOTO",
+          "rating": 4.95,
+          "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ORD-TEST-1793249993076-POST",
+    "orderNumber": "#BP-TEST-POST",
+    "createdAt": "2026-10-29T04:59:53.061Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "CANCELADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:53.061Z",
+      "end": "2026-10-29T05:21:53.061Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:53.061Z",
+      "prepStartedAt": "2026-10-29T04:59:53.065Z",
+      "prepCompletedAt": "2026-10-29T04:59:53.067Z",
+      "assignedAt": "2026-10-29T04:59:53.068Z",
+      "pickedUpAt": "2026-10-29T04:59:53.069Z",
+      "deliveredAt": "2026-10-29T04:59:53.070Z",
+      "cancelledAt": "2026-10-29T04:59:53.085Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249993061-A",
+    "tripId": "TRP-ORD-TEST-1793249993061-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249993077-4404",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "CONFIRMADO",
+        "timestamp": "2026-10-29T04:59:53.077Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": false,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249993079-6088",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "CONFIRMADO",
+        "newStatus": "EN_ALISTAMIENTO",
+        "timestamp": "2026-10-29T04:59:53.079Z",
+        "actor": {
+          "role": "ALISTADOR",
+          "id": "OP-01",
+          "name": "Mateo (Alistador Kennedy)"
+        },
+        "reason": "Transición autorizada a EN_ALISTAMIENTO",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993080-9578",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "EN_ALISTAMIENTO",
+        "newStatus": "LISTO_PARA_DESPACHO",
+        "timestamp": "2026-10-29T04:59:53.080Z",
+        "actor": {
+          "role": "DESPACHADOR",
+          "id": "OP-02",
+          "name": "Laura (Despachadora)"
+        },
+        "reason": "Transición autorizada a LISTO_PARA_DESPACHO",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993082-4820",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:53.082Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-POST",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993084-9338",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:53.084Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993085-7652",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "CANCELADO",
+        "timestamp": "2026-10-29T04:59:53.085Z",
+        "actor": {
+          "role": "SOPORTE",
+          "name": "Agente Soporte"
+        },
+        "reason": "Dirección inexistente reportada por conductor",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993088-5026",
+        "orderId": "ORD-TEST-1793249993076-POST",
+        "previousStatus": "CANCELADO",
+        "newStatus": "CANCELADO",
+        "timestamp": "2026-10-29T04:59:53.088Z",
+        "actor": {
+          "role": "BODEGA",
+          "name": "Jefe de Bodega Kennedy"
+        },
+        "reason": "Devolución física inspeccionada y reingresada a inventario disponible. Notas: Paquete recibido sin roturas",
+        "metadata": {
+          "physicalReturnCleared": true
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "cancelReason": "Dirección inexistente reportada por conductor",
+    "physicalReturnPending": false,
+    "physicalReturnConfirmedAt": "2026-10-29T04:59:53.088Z",
+    "physicalReturnConfirmedBy": "Jefe de Bodega Kennedy"
+  },
+  {
+    "id": "ORD-TEST-1793249993073-PRE",
+    "orderNumber": "#BP-TEST-PRE",
+    "createdAt": "2026-10-29T04:59:53.061Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "CANCELADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:53.061Z",
+      "end": "2026-10-29T05:21:53.061Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:53.061Z",
+      "prepStartedAt": "2026-10-29T04:59:53.065Z",
+      "prepCompletedAt": "2026-10-29T04:59:53.067Z",
+      "assignedAt": "2026-10-29T04:59:53.068Z",
+      "pickedUpAt": "2026-10-29T04:59:53.069Z",
+      "deliveredAt": "2026-10-29T04:59:53.070Z",
+      "cancelledAt": "2026-10-29T04:59:53.074Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249993061-A",
+    "tripId": "TRP-ORD-TEST-1793249993061-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249993073-2615",
+        "orderId": "ORD-TEST-1793249993073-PRE",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "CONFIRMADO",
+        "timestamp": "2026-10-29T04:59:53.073Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": false,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249993074-1123",
+        "orderId": "ORD-TEST-1793249993073-PRE",
+        "previousStatus": "CONFIRMADO",
+        "newStatus": "CANCELADO",
+        "timestamp": "2026-10-29T04:59:53.074Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Cliente cambió de opinión antes del despacho",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "cancelReason": "Cliente cambió de opinión antes del despacho"
+  },
+  {
+    "id": "ORD-TEST-1793249993061-A",
+    "orderNumber": "#BP-TEST-01",
+    "createdAt": "2026-10-29T04:59:53.061Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "ENTREGADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:53.061Z",
+      "end": "2026-10-29T05:21:53.061Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:53.061Z",
+      "prepStartedAt": "2026-10-29T04:59:53.065Z",
+      "prepCompletedAt": "2026-10-29T04:59:53.067Z",
+      "assignedAt": "2026-10-29T04:59:53.068Z",
+      "pickedUpAt": "2026-10-29T04:59:53.069Z",
+      "deliveredAt": "2026-10-29T04:59:53.070Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249993061-A",
+    "tripId": "TRP-ORD-TEST-1793249993061-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249993061-3183",
+        "orderId": "ORD-TEST-1793249993061-A",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "CONFIRMADO",
+        "timestamp": "2026-10-29T04:59:53.061Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": false,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249993065-1841",
+        "orderId": "ORD-TEST-1793249993061-A",
+        "previousStatus": "CONFIRMADO",
+        "newStatus": "EN_ALISTAMIENTO",
+        "timestamp": "2026-10-29T04:59:53.065Z",
+        "actor": {
+          "role": "ALISTADOR",
+          "id": "OP-01",
+          "name": "Mateo (Alistador Kennedy)"
+        },
+        "reason": "Transición autorizada a EN_ALISTAMIENTO",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO"
+        }
+      },
+      {
+        "id": "HIST-1793249993067-7639",
+        "orderId": "ORD-TEST-1793249993061-A",
+        "previousStatus": "EN_ALISTAMIENTO",
+        "newStatus": "LISTO_PARA_DESPACHO",
+        "timestamp": "2026-10-29T04:59:53.067Z",
+        "actor": {
+          "role": "DESPACHADOR",
+          "id": "OP-02",
+          "name": "Laura (Despachadora)"
+        },
+        "reason": "Empaque sellado con precinto #0082",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO"
+        }
+      },
+      {
+        "id": "HIST-1793249993068-1019",
+        "orderId": "ORD-TEST-1793249993061-A",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:53.068Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe Despacho"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-01",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993069-6554",
+        "orderId": "ORD-TEST-1793249993061-A",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:53.069Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249993070-7711",
+        "orderId": "ORD-TEST-1793249993061-A",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "ENTREGADO",
+        "timestamp": "2026-10-29T04:59:53.070Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    }
+  },
+  {
+    "id": "ORD-TEST-1793249963302-SPLIT",
+    "orderNumber": "#BP-TEST-SPLIT",
+    "createdAt": "2026-10-29T04:59:23.280Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "ENTREGADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:23.280Z",
+      "end": "2026-10-29T05:21:23.280Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:23.280Z",
+      "prepStartedAt": "2026-10-29T04:59:23.283Z",
+      "prepCompletedAt": "2026-10-29T04:59:23.284Z",
+      "assignedAt": "2026-10-29T04:59:23.285Z",
+      "pickedUpAt": "2026-10-29T04:59:23.289Z",
+      "deliveredAt": "2026-10-29T04:59:23.310Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249963280-A",
+    "tripId": "TRP-ORD-TEST-1793249963280-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249963302-6379",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "LISTO_PARA_DESPACHO",
+        "timestamp": "2026-10-29T04:59:23.302Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": true,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249963303-7124",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "shipmentId": "SHP-PLIT-1",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:23.303Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al envío hijo 1",
+        "metadata": {
+          "shipmentIndex": 1,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249963305-1021",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "shipmentId": "SHP-PLIT-2",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:23.305Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al envío hijo 2",
+        "metadata": {
+          "shipmentIndex": 2,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249963306-5942",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "shipmentId": "SHP-PLIT-1",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:23.306Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "shipmentIndex": 1,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249963307-3160",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "shipmentId": "SHP-PLIT-1",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "ENTREGADO",
+        "timestamp": "2026-10-29T04:59:23.307Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+        "metadata": {
+          "shipmentIndex": 1,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249963308-2040",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "shipmentId": "SHP-PLIT-2",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:23.308Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "shipmentIndex": 2,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      },
+      {
+        "id": "HIST-1793249963310-4844",
+        "orderId": "ORD-TEST-1793249963302-SPLIT",
+        "shipmentId": "SHP-PLIT-2",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "ENTREGADO",
+        "timestamp": "2026-10-29T04:59:23.310Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+        "metadata": {
+          "shipmentIndex": 2,
+          "shipmentCount": 2,
+          "weightKg": 24
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "isSplitOrder": true,
+    "shipmentCount": 2,
+    "childShipments": [
+      {
+        "shipmentId": "SHP-PLIT-1",
+        "shipmentIndex": 1,
+        "shipmentCount": 2,
+        "parentOrderId": "ORD-TEST-1793249963302-SPLIT",
+        "childOrderId": "ORD-TEST-1793249963302-SPLIT-A",
+        "assignmentId": "ASG-PLIT-1",
+        "tripId": "TRP-PLIT-1",
+        "items": [
+          {
+            "productId": "prod-rc-maxi-15k",
+            "sku": "RC-MAXI-15KG",
+            "name": "Royal Canin Maxi Adult Perros Grandes",
+            "brand": "Royal Canin",
+            "presentation": "15 kg",
+            "price": 185000,
+            "quantity": 2,
+            "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+            "weightKg": 15,
+            "requiresPrescription": false
+          }
+        ],
+        "weightKg": 24,
+        "weightGrams": 24000,
+        "subtotal": 185000,
+        "cashToCollect": 0,
+        "fulfillmentStatus": "ENTREGADO",
+        "secretDeliveryCode": "1111",
+        "estimatedDeliveryMinutes": 20,
+        "timestamps": {
+          "prepCompletedAt": "2026-10-29T04:59:23.302Z",
+          "assignedAt": "2026-10-29T04:59:23.303Z",
+          "pickedUpAt": "2026-10-29T04:59:23.306Z",
+          "deliveredAt": "2026-10-29T04:59:23.307Z"
+        },
+        "statusHistory": [
+          {
+            "id": "HIST-1793249963303-7124",
+            "orderId": "ORD-TEST-1793249963302-SPLIT",
+            "shipmentId": "SHP-PLIT-1",
+            "previousStatus": "LISTO_PARA_DESPACHO",
+            "newStatus": "REPARTIDOR_ASIGNADO",
+            "timestamp": "2026-10-29T04:59:23.303Z",
+            "actor": {
+              "role": "COORDINADOR",
+              "name": "Jefe"
+            },
+            "reason": "Conductor Carlos Rodríguez asignado al envío hijo 1",
+            "metadata": {
+              "shipmentIndex": 1,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249963306-5942",
+            "orderId": "ORD-TEST-1793249963302-SPLIT",
+            "shipmentId": "SHP-PLIT-1",
+            "previousStatus": "REPARTIDOR_ASIGNADO",
+            "newStatus": "EN_CAMINO",
+            "timestamp": "2026-10-29T04:59:23.306Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+            "metadata": {
+              "shipmentIndex": 1,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249963307-3160",
+            "orderId": "ORD-TEST-1793249963302-SPLIT",
+            "shipmentId": "SHP-PLIT-1",
+            "previousStatus": "EN_CAMINO",
+            "newStatus": "ENTREGADO",
+            "timestamp": "2026-10-29T04:59:23.307Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+            "metadata": {
+              "shipmentIndex": 1,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          }
+        ],
+        "driver": {
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez",
+          "phone": "+57 312 456 7890",
+          "vehiclePlate": "TPK-44E",
+          "vehicleType": "MOTO",
+          "rating": 4.95,
+          "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+        }
+      },
+      {
+        "shipmentId": "SHP-PLIT-2",
+        "shipmentIndex": 2,
+        "shipmentCount": 2,
+        "parentOrderId": "ORD-TEST-1793249963302-SPLIT",
+        "childOrderId": "ORD-TEST-1793249963302-SPLIT-B",
+        "assignmentId": "ASG-PLIT-2",
+        "tripId": "TRP-PLIT-2",
+        "items": [
+          {
+            "productId": "prod-rc-maxi-15k",
+            "sku": "RC-MAXI-15KG",
+            "name": "Royal Canin Maxi Adult Perros Grandes",
+            "brand": "Royal Canin",
+            "presentation": "15 kg",
+            "price": 185000,
+            "quantity": 2,
+            "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+            "weightKg": 15,
+            "requiresPrescription": false
+          }
+        ],
+        "weightKg": 24,
+        "weightGrams": 24000,
+        "subtotal": 185000,
+        "cashToCollect": 0,
+        "fulfillmentStatus": "ENTREGADO",
+        "secretDeliveryCode": "2222",
+        "estimatedDeliveryMinutes": 20,
+        "timestamps": {
+          "prepCompletedAt": "2026-10-29T04:59:23.302Z",
+          "assignedAt": "2026-10-29T04:59:23.305Z",
+          "pickedUpAt": "2026-10-29T04:59:23.308Z",
+          "deliveredAt": "2026-10-29T04:59:23.310Z"
+        },
+        "statusHistory": [
+          {
+            "id": "HIST-1793249963305-1021",
+            "orderId": "ORD-TEST-1793249963302-SPLIT",
+            "shipmentId": "SHP-PLIT-2",
+            "previousStatus": "LISTO_PARA_DESPACHO",
+            "newStatus": "REPARTIDOR_ASIGNADO",
+            "timestamp": "2026-10-29T04:59:23.305Z",
+            "actor": {
+              "role": "COORDINADOR",
+              "name": "Jefe"
+            },
+            "reason": "Conductor Carlos Rodríguez asignado al envío hijo 2",
+            "metadata": {
+              "shipmentIndex": 2,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249963308-2040",
+            "orderId": "ORD-TEST-1793249963302-SPLIT",
+            "shipmentId": "SHP-PLIT-2",
+            "previousStatus": "REPARTIDOR_ASIGNADO",
+            "newStatus": "EN_CAMINO",
+            "timestamp": "2026-10-29T04:59:23.308Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+            "metadata": {
+              "shipmentIndex": 2,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          },
+          {
+            "id": "HIST-1793249963310-4844",
+            "orderId": "ORD-TEST-1793249963302-SPLIT",
+            "shipmentId": "SHP-PLIT-2",
+            "previousStatus": "EN_CAMINO",
+            "newStatus": "ENTREGADO",
+            "timestamp": "2026-10-29T04:59:23.310Z",
+            "actor": {
+              "role": "CONDUCTOR",
+              "id": "DRV-CARLOS-01",
+              "name": "Carlos Rodríguez"
+            },
+            "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+            "metadata": {
+              "shipmentIndex": 2,
+              "shipmentCount": 2,
+              "weightKg": 24
+            }
+          }
+        ],
+        "driver": {
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez",
+          "phone": "+57 312 456 7890",
+          "vehiclePlate": "TPK-44E",
+          "vehicleType": "MOTO",
+          "rating": 4.95,
+          "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+        }
+      }
+    ]
+  },
+  {
+    "id": "ORD-TEST-1793249963295-POST",
+    "orderNumber": "#BP-TEST-POST",
+    "createdAt": "2026-10-29T04:59:23.280Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "CANCELADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:23.280Z",
+      "end": "2026-10-29T05:21:23.280Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:23.280Z",
+      "prepStartedAt": "2026-10-29T04:59:23.283Z",
+      "prepCompletedAt": "2026-10-29T04:59:23.284Z",
+      "assignedAt": "2026-10-29T04:59:23.285Z",
+      "pickedUpAt": "2026-10-29T04:59:23.289Z",
+      "deliveredAt": "2026-10-29T04:59:23.290Z",
+      "cancelledAt": "2026-10-29T04:59:23.300Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249963280-A",
+    "tripId": "TRP-ORD-TEST-1793249963280-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249963295-2803",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "CONFIRMADO",
+        "timestamp": "2026-10-29T04:59:23.295Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": false,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249963296-8320",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "CONFIRMADO",
+        "newStatus": "EN_ALISTAMIENTO",
+        "timestamp": "2026-10-29T04:59:23.296Z",
+        "actor": {
+          "role": "ALISTADOR",
+          "id": "OP-01",
+          "name": "Mateo (Alistador Kennedy)"
+        },
+        "reason": "Transición autorizada a EN_ALISTAMIENTO",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963297-3855",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "EN_ALISTAMIENTO",
+        "newStatus": "LISTO_PARA_DESPACHO",
+        "timestamp": "2026-10-29T04:59:23.297Z",
+        "actor": {
+          "role": "DESPACHADOR",
+          "id": "OP-02",
+          "name": "Laura (Despachadora)"
+        },
+        "reason": "Transición autorizada a LISTO_PARA_DESPACHO",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963297-3291",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:23.297Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-POST",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963299-5291",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:23.299Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963300-3005",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "CANCELADO",
+        "timestamp": "2026-10-29T04:59:23.300Z",
+        "actor": {
+          "role": "SOPORTE",
+          "name": "Agente Soporte"
+        },
+        "reason": "Dirección inexistente reportada por conductor",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963301-5776",
+        "orderId": "ORD-TEST-1793249963295-POST",
+        "previousStatus": "CANCELADO",
+        "newStatus": "CANCELADO",
+        "timestamp": "2026-10-29T04:59:23.301Z",
+        "actor": {
+          "role": "BODEGA",
+          "name": "Jefe de Bodega Kennedy"
+        },
+        "reason": "Devolución física inspeccionada y reingresada a inventario disponible. Notas: Paquete recibido sin roturas",
+        "metadata": {
+          "physicalReturnCleared": true
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "cancelReason": "Dirección inexistente reportada por conductor",
+    "physicalReturnPending": false,
+    "physicalReturnConfirmedAt": "2026-10-29T04:59:23.301Z",
+    "physicalReturnConfirmedBy": "Jefe de Bodega Kennedy"
+  },
+  {
+    "id": "ORD-TEST-1793249963293-PRE",
+    "orderNumber": "#BP-TEST-PRE",
+    "createdAt": "2026-10-29T04:59:23.280Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "CANCELADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:23.280Z",
+      "end": "2026-10-29T05:21:23.280Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:23.280Z",
+      "prepStartedAt": "2026-10-29T04:59:23.283Z",
+      "prepCompletedAt": "2026-10-29T04:59:23.284Z",
+      "assignedAt": "2026-10-29T04:59:23.285Z",
+      "pickedUpAt": "2026-10-29T04:59:23.289Z",
+      "deliveredAt": "2026-10-29T04:59:23.290Z",
+      "cancelledAt": "2026-10-29T04:59:23.294Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249963280-A",
+    "tripId": "TRP-ORD-TEST-1793249963280-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249963293-9315",
+        "orderId": "ORD-TEST-1793249963293-PRE",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "CONFIRMADO",
+        "timestamp": "2026-10-29T04:59:23.293Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": false,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249963294-4879",
+        "orderId": "ORD-TEST-1793249963293-PRE",
+        "previousStatus": "CONFIRMADO",
+        "newStatus": "CANCELADO",
+        "timestamp": "2026-10-29T04:59:23.294Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Cliente cambió de opinión antes del despacho",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "cancelReason": "Cliente cambió de opinión antes del despacho"
+  },
+  {
+    "id": "ORD-TEST-1793249963280-A",
+    "orderNumber": "#BP-TEST-01",
+    "createdAt": "2026-10-29T04:59:23.280Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Kennedy",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Camila Morales",
+      "phone": "3157891234",
+      "email": "camila.test@boltpets.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 38 Sur #72-10",
+      "details": "Apto 402",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.621,
+        "lng": -74.152
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "15 kg",
+        "price": 185000,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false
+      }
+    ],
+    "totals": {
+      "subtotal": 370000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 371500,
+      "totalWeightKg": 30
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "ENTREGADO",
+    "secretDeliveryCode": "7412",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:59:23.280Z",
+      "end": "2026-10-29T05:21:23.280Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:59:23.280Z",
+      "prepStartedAt": "2026-10-29T04:59:23.283Z",
+      "prepCompletedAt": "2026-10-29T04:59:23.284Z",
+      "assignedAt": "2026-10-29T04:59:23.285Z",
+      "pickedUpAt": "2026-10-29T04:59:23.289Z",
+      "deliveredAt": "2026-10-29T04:59:23.290Z"
+    },
+    "assignmentId": "ASG-ORD-TEST-1793249963280-A",
+    "tripId": "TRP-ORD-TEST-1793249963280-A",
+    "statusHistory": [
+      {
+        "id": "HIST-1793249963280-1540",
+        "orderId": "ORD-TEST-1793249963280-A",
+        "previousStatus": "PENDIENTE_CONFIRMACION",
+        "newStatus": "CONFIRMADO",
+        "timestamp": "2026-10-29T04:59:23.280Z",
+        "actor": {
+          "role": "CLIENTE",
+          "id": "camila.test@boltpets.co",
+          "name": "Camila Morales"
+        },
+        "reason": "Creación y registro de pedido en el servidor autoritativo",
+        "metadata": {
+          "deliveryMode": "TURBO",
+          "isSplitOrder": false,
+          "itemsCount": 1,
+          "totalCOP": 371500
+        }
+      },
+      {
+        "id": "HIST-1793249963283-3418",
+        "orderId": "ORD-TEST-1793249963280-A",
+        "previousStatus": "CONFIRMADO",
+        "newStatus": "EN_ALISTAMIENTO",
+        "timestamp": "2026-10-29T04:59:23.283Z",
+        "actor": {
+          "role": "ALISTADOR",
+          "id": "OP-01",
+          "name": "Mateo (Alistador Kennedy)"
+        },
+        "reason": "Transición autorizada a EN_ALISTAMIENTO",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO"
+        }
+      },
+      {
+        "id": "HIST-1793249963284-9866",
+        "orderId": "ORD-TEST-1793249963280-A",
+        "previousStatus": "EN_ALISTAMIENTO",
+        "newStatus": "LISTO_PARA_DESPACHO",
+        "timestamp": "2026-10-29T04:59:23.284Z",
+        "actor": {
+          "role": "DESPACHADOR",
+          "id": "OP-02",
+          "name": "Laura (Despachadora)"
+        },
+        "reason": "Empaque sellado con precinto #0082",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO"
+        }
+      },
+      {
+        "id": "HIST-1793249963285-8000",
+        "orderId": "ORD-TEST-1793249963280-A",
+        "previousStatus": "LISTO_PARA_DESPACHO",
+        "newStatus": "REPARTIDOR_ASIGNADO",
+        "timestamp": "2026-10-29T04:59:23.285Z",
+        "actor": {
+          "role": "COORDINADOR",
+          "name": "Jefe Despacho"
+        },
+        "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-01",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963289-2208",
+        "orderId": "ORD-TEST-1793249963280-A",
+        "previousStatus": "REPARTIDOR_ASIGNADO",
+        "newStatus": "EN_CAMINO",
+        "timestamp": "2026-10-29T04:59:23.289Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      },
+      {
+        "id": "HIST-1793249963290-3120",
+        "orderId": "ORD-TEST-1793249963280-A",
+        "previousStatus": "EN_CAMINO",
+        "newStatus": "ENTREGADO",
+        "timestamp": "2026-10-29T04:59:23.290Z",
+        "actor": {
+          "role": "CONDUCTOR",
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez"
+        },
+        "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+        "metadata": {
+          "paymentStatus": "APROBADO",
+          "deliveryMode": "TURBO",
+          "driverId": "DRV-CARLOS-01"
+        }
+      }
+    ],
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    }
+  },
+  {
+    "id": "ORD-2026-8941",
+    "orderNumber": "#BP-8941",
+    "createdAt": "2026-10-29T04:47:23.274Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Principal Kennedy",
+    "customer": {
+      "name": "María Camila Restrepo",
+      "phone": "+57 315 889 0012",
+      "email": "m.camila@example.com",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 3 #78-20, Apto 502, Kennedy Central",
+      "details": "Conjunto Residencial Los Sauces, Torre 2",
+      "porteriaPolicy": "DEJAR_EN_PORTERIA",
+      "coordinates": {
+        "lat": 4.6365,
+        "lng": -74.1448
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-nexgard-spectra-m",
+        "sku": "FAR-NX-SPEC-715",
+        "name": "NexGard Spectra 7.5 a 15 Kg",
+        "brand": "Boehringer Ingelheim",
+        "presentation": "Caja x 1 Tableta Masticable",
+        "price": 68500,
+        "quantity": 1,
+        "image": "https://images.unsplash.com/photo-1628088062854-d1870b4553da?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 0.1,
+        "requiresPrescription": false,
+        "picked": true,
+        "verifiedLot": "L-NX26-A1"
+      },
+      {
+        "productId": "prod-churu-atun-pollo",
+        "sku": "SNK-CHURU-4U",
+        "name": "Churu Puré Cremoso Atún con Pollo",
+        "brand": "Inaba Churu",
+        "presentation": "Pack x 4 Tubos (56 g)",
+        "price": 18900,
+        "quantity": 1,
+        "image": "https://images.unsplash.com/photo-1533738363-b7f9aef128ce?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 0.08,
+        "requiresPrescription": false,
+        "picked": true,
+        "verifiedLot": "L-CHU26-55"
+      }
+    ],
+    "totals": {
+      "subtotal": 87400,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 2000,
+      "total": 90900,
+      "totalWeightKg": 0.18
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO",
+      "transactionId": "TXN-WMP-7788912"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "EN_CAMINO",
+    "secretDeliveryCode": "4892",
+    "estimatedDeliveryMinutes": 7,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:49:23.274Z",
+      "end": "2026-10-29T05:04:23.274Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:48:23.274Z",
+      "prepStartedAt": "2026-10-29T04:50:23.274Z",
+      "prepCompletedAt": "2026-10-29T04:53:23.274Z",
+      "assignedAt": "2026-10-29T04:54:23.274Z",
+      "pickedUpAt": "2026-10-29T04:56:23.274Z"
+    },
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 312 456 7890",
+      "vehiclePlate": "TPK-44E",
+      "vehicleType": "MOTO",
+      "rating": 4.95,
+      "photo": "https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80"
+    },
+    "assignmentId": "ASG-8941",
+    "tripId": "TRP-8941",
+    "statusHistory": []
+  },
+  {
+    "id": "ORD-2026-8942",
+    "orderNumber": "#BP-8942",
+    "createdAt": "2026-10-29T04:34:23.275Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Principal Kennedy",
+    "customer": {
+      "name": "Andrés Felipe Morales",
+      "phone": "+57 311 234 5678",
+      "email": "andres.felipe@example.com",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Transversal 78H #38C-10 Sur, Kennedy",
+      "details": "Casa esquinera portón blanco",
+      "porteriaPolicy": "LLAMAR_AL_LLEGAR",
+      "coordinates": {
+        "lat": 4.6225,
+        "lng": -74.1585
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-apoquel-16mg",
+        "sku": "FAR-APOQ-16MG",
+        "name": "Apoquel 16 mg Oclacitinib",
+        "brand": "Zoetis",
+        "presentation": "Blíster x 20 Comprimidos",
+        "price": 189000,
+        "quantity": 1,
+        "image": "https://images.unsplash.com/photo-1471864190281-a93a3070b6de?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 0.05,
+        "requiresPrescription": true,
+        "picked": false
+      }
+    ],
+    "totals": {
+      "subtotal": 189000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 0,
+      "total": 190500,
+      "totalWeightKg": 0.05
+    },
+    "payment": {
+      "method": "WOMPI_PSE",
+      "status": "APROBADO",
+      "transactionId": "TXN-WMP-7788913"
+    },
+    "prescriptionReview": {
+      "status": "PENDIENTE_REVISION",
+      "documentUrl": "https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=800&auto=format&fit=crop&q=80",
+      "documentName": "formula_medica_dr_ramirez_oct2026.pdf",
+      "uploadedAt": "2026-10-29T04:36:23.275Z",
+      "vetName": "Dr. Alejandro Ramírez - MP: 14892-COMVEZCOL",
+      "vetLicense": "14892"
+    },
+    "fulfillmentStatus": "EN_ALISTAMIENTO",
+    "secretDeliveryCode": "7219",
+    "estimatedDeliveryMinutes": 20,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:44:23.275Z",
+      "end": "2026-10-29T05:14:23.275Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:35:23.275Z",
+      "prepStartedAt": "2026-10-29T04:44:23.275Z"
+    },
+    "assignmentId": "ASG-8942",
+    "tripId": "TRP-8942",
+    "statusHistory": []
+  },
+  {
+    "id": "ORD-2026-9050",
+    "orderNumber": "#BP-9050",
+    "createdAt": "2026-10-29T04:41:23.275Z",
+    "storeId": "HUB_KENNEDY",
+    "storeName": "Sede Principal Kennedy",
+    "deliveryMode": "TURBO_DIVIDIDO",
+    "isSplitOrder": true,
+    "shipmentCount": 2,
+    "customer": {
+      "name": "Natalia Cárdenas (Criadero Canino)",
+      "phone": "+57 310 998 7766",
+      "email": "natalia.cardenas@criadero.co",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 3 #78-20, Kennedy Central, Bogotá",
+      "details": "Casa 4, Manzana B",
+      "porteriaPolicy": "SUBIR_A_PUERTA",
+      "coordinates": {
+        "lat": 4.6365,
+        "lng": -74.1448
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "Bulto x 15 Kg",
+        "price": 365000,
+        "quantity": 5,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false,
+        "picked": true
+      }
+    ],
+    "totals": {
+      "subtotal": 1825000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 5000,
+      "total": 1831500,
+      "totalWeightKg": 75
+    },
+    "payment": {
+      "method": "CASH_ON_DELIVERY",
+      "status": "PENDIENTE",
+      "cashToCollect": 1831500,
+      "cashSettled": false
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "EN_CAMINO",
+    "secretDeliveryCode": "4821",
+    "estimatedDeliveryMinutes": 20,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:41:23.275Z",
+      "end": "2026-10-29T05:06:23.275Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:41:23.275Z",
+      "prepStartedAt": "2026-10-29T04:43:23.275Z",
+      "prepCompletedAt": "2026-10-29T04:49:23.275Z",
+      "assignedAt": "2026-10-29T04:51:23.275Z",
+      "pickedUpAt": "2026-10-29T04:53:23.275Z"
+    },
+    "driver": {
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez",
+      "phone": "+57 300 456 7890",
+      "vehiclePlate": "XYZ-12C",
+      "vehicleType": "MOTO",
+      "rating": 4.88,
+      "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80"
+    },
+    "childShipments": [
+      {
+        "shipmentId": "SHP-9050-1",
+        "shipmentIndex": 1,
+        "shipmentCount": 2,
+        "parentOrderId": "ORD-2026-9050",
+        "childOrderId": "ORD-2026-9050-A",
+        "items": [
+          {
+            "productId": "prod-rc-maxi-15k",
+            "sku": "RC-MAXI-15KG",
+            "name": "Royal Canin Maxi Adult Perros Grandes",
+            "brand": "Royal Canin",
+            "presentation": "Bulto x 15 Kg",
+            "price": 365000,
+            "quantity": 2,
+            "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+            "weightKg": 15,
+            "requiresPrescription": false
+          }
+        ],
+        "weightKg": 30,
+        "weightGrams": 30000,
+        "subtotal": 730000,
+        "cashToCollect": 732600,
+        "fulfillmentStatus": "ENTREGADO",
+        "secretDeliveryCode": "4821",
+        "estimatedDeliveryMinutes": 15,
+        "driver": {
+          "id": "DRV-CARLOS-01",
+          "name": "Carlos Rodríguez",
+          "phone": "+57 300 456 7890",
+          "vehiclePlate": "XYZ-12C",
+          "vehicleType": "MOTO",
+          "rating": 4.88,
+          "photo": "https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80"
+        },
+        "timestamps": {
+          "confirmedAt": "2026-10-29T04:41:23.275Z",
+          "prepStartedAt": "2026-10-29T04:43:23.275Z",
+          "prepCompletedAt": "2026-10-29T04:49:23.275Z",
+          "assignedAt": "2026-10-29T04:51:23.275Z",
+          "pickedUpAt": "2026-10-29T04:53:23.275Z",
+          "deliveredAt": "2026-10-29T04:57:23.275Z"
+        },
+        "assignmentId": "ASG-9050-1",
+        "tripId": "TRP-9050-1",
+        "statusHistory": []
+      },
+      {
+        "shipmentId": "SHP-9050-2",
+        "shipmentIndex": 2,
+        "shipmentCount": 2,
+        "parentOrderId": "ORD-2026-9050",
+        "childOrderId": "ORD-2026-9050-B",
+        "items": [
+          {
+            "productId": "prod-rc-maxi-15k",
+            "sku": "RC-MAXI-15KG",
+            "name": "Royal Canin Maxi Adult Perros Grandes",
+            "brand": "Royal Canin",
+            "presentation": "Bulto x 15 Kg",
+            "price": 365000,
+            "quantity": 3,
+            "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+            "weightKg": 15,
+            "requiresPrescription": false
+          }
+        ],
+        "weightKg": 45,
+        "weightGrams": 45000,
+        "subtotal": 1095000,
+        "cashToCollect": 1098900,
+        "fulfillmentStatus": "EN_CAMINO",
+        "secretDeliveryCode": "8914",
+        "estimatedDeliveryMinutes": 20,
+        "driver": {
+          "id": "DRV-VALENTINA-03",
+          "name": "Valentina Ríos",
+          "phone": "+57 320 123 4567",
+          "vehiclePlate": "ZXZ-89D",
+          "vehicleType": "MOTO",
+          "rating": 4.92,
+          "photo": "https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80"
+        },
+        "timestamps": {
+          "confirmedAt": "2026-10-29T04:41:23.275Z",
+          "prepStartedAt": "2026-10-29T04:43:23.275Z",
+          "prepCompletedAt": "2026-10-29T04:49:23.275Z",
+          "assignedAt": "2026-10-29T04:51:23.275Z",
+          "pickedUpAt": "2026-10-29T04:55:23.275Z"
+        },
+        "assignmentId": "ASG-9050-2",
+        "tripId": "TRP-9050-2",
+        "statusHistory": []
+      }
+    ],
+    "assignmentId": "ASG-9050",
+    "tripId": "TRP-9050",
+    "statusHistory": []
+  },
+  {
+    "id": "ORD-2026-9051",
+    "orderNumber": "#BP-9051",
+    "createdAt": "2026-10-29T03:59:23.275Z",
+    "storeId": "HUB_ALAMOS",
+    "storeName": "Sede Álamos / Engativá",
+    "deliveryMode": "PROGRAMADO",
+    "scheduledWindow": {
+      "slotId": "SLOT-TODAY-HORARIO_2",
+      "windowId": "HORARIO_2",
+      "windowName": "Horario 2",
+      "date": "2026-10-29",
+      "dateLabel": "Hoy",
+      "startTime": "14:00",
+      "endTime": "18:00",
+      "displayWindow": "14:00–18:00",
+      "displayWindowShort": "2:00–6:00 p. m.",
+      "bookingCutoffTime": "12:00",
+      "bookingCutoffLabel": "12:00 m.",
+      "commercialHook": "Pide antes de las 12:00 m. y recibe hoy de 2:00 p. m. a 6:00 p. m."
+    },
+    "customer": {
+      "name": "Diana Patricia Salazar",
+      "phone": "+57 318 765 4321",
+      "email": "diana.salazar@example.com",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Carrera 7 #120-15, Usaquén, Bogotá",
+      "details": "Torre 4, Apto 802",
+      "porteriaPolicy": "DEJAR_EN_PORTERIA",
+      "coordinates": {
+        "lat": 4.698,
+        "lng": -74.032
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-bravecto-20-40",
+        "sku": "FAR-BRAV-2040",
+        "name": "Bravecto 20 a 40 Kg",
+        "brand": "MSD Salud Animal",
+        "presentation": "Caja x 1 Tableta Masticable",
+        "price": 139000,
+        "quantity": 1,
+        "image": "https://images.unsplash.com/photo-1608248597359-5484852c0199?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 0.1,
+        "requiresPrescription": false,
+        "picked": true
+      },
+      {
+        "productId": "prod-churu-atun-pollo",
+        "sku": "CAT-CHURU-ATUN",
+        "name": "Inaba Churu Puré Atún con Pollo para Gatos",
+        "brand": "Inaba Churu",
+        "presentation": "Paquete x 4 tubos (56g)",
+        "price": 19500,
+        "quantity": 2,
+        "image": "https://images.unsplash.com/photo-1514888286974-6c03e2ca1dba?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 0.06,
+        "requiresPrescription": false,
+        "picked": true
+      }
+    ],
+    "totals": {
+      "subtotal": 178000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 3000,
+      "total": 182500,
+      "totalWeightKg": 0.22
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO",
+      "transactionId": "TXN-WMP-994411"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "CONFIRMADO",
+    "secretDeliveryCode": "5920",
+    "estimatedDeliveryMinutes": 180,
+    "originalPromiseWindow": {
+      "start": "14:00",
+      "end": "18:00"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T03:59:23.275Z"
+    },
+    "assignmentId": "ASG-9051",
+    "tripId": "TRP-9051",
+    "statusHistory": []
+  },
+  {
+    "id": "ORD-2026-9052",
+    "orderNumber": "#BP-9052",
+    "createdAt": "2026-10-29T04:45:23.275Z",
+    "storeId": "HUB_SUBA",
+    "storeName": "Bolt Pets Suba",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Santiago Méndez",
+      "phone": "+57 312 998 1122",
+      "email": "santiago.mendez@example.com",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Carrera 111 #145-20, Suba Tibabuyes, Bogotá",
+      "details": "Conjunto Rincón de Suba, Torre 1",
+      "porteriaPolicy": "DEJAR_EN_PORTERIA",
+      "coordinates": {
+        "lat": 4.748,
+        "lng": -74.101
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-proplan-cat-salmon",
+        "sku": "PP-CAT-SALM-3KG",
+        "name": "Purina Pro Plan Adult Cat Salmón & Arroz",
+        "brand": "Pro Plan",
+        "presentation": "Bolsa 3 Kg",
+        "price": 124000,
+        "quantity": 1,
+        "image": "https://images.unsplash.com/photo-1548767797-d8c844163c4c?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 3,
+        "requiresPrescription": false,
+        "picked": false
+      }
+    ],
+    "totals": {
+      "subtotal": 124000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 1500,
+      "tip": 2000,
+      "total": 127500,
+      "totalWeightKg": 3
+    },
+    "payment": {
+      "method": "WOMPI_PSE",
+      "status": "APROBADO",
+      "transactionId": "TXN-WMP-883311"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "EN_ALISTAMIENTO",
+    "secretDeliveryCode": "6145",
+    "estimatedDeliveryMinutes": 22,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T04:49:23.275Z",
+      "end": "2026-10-29T05:14:23.275Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T04:45:23.275Z",
+      "prepStartedAt": "2026-10-29T04:49:23.275Z"
+    },
+    "assignmentId": "ASG-9052",
+    "tripId": "TRP-9052",
+    "statusHistory": []
+  },
+  {
+    "id": "ORD-2026-9053",
+    "orderNumber": "#BP-9053",
+    "createdAt": "2026-10-29T02:59:23.275Z",
+    "storeId": "HUB_CENTRO",
+    "storeName": "Sede Centro Histórico",
+    "deliveryMode": "TURBO",
+    "customer": {
+      "name": "Oficinas Administrativas La Candelaria",
+      "phone": "+57 314 555 8899",
+      "email": "admin.candelaria@boltpets.com",
+      "isGuest": false
+    },
+    "deliveryAddress": {
+      "address": "Calle 11 #15-53, La Candelaria / Centro, Bogotá",
+      "details": "Piso 2 Administración",
+      "porteriaPolicy": "SUBIR_A_PUERTA",
+      "coordinates": {
+        "lat": 4.6028,
+        "lng": -74.0754
+      }
+    },
+    "items": [
+      {
+        "productId": "prod-rc-maxi-15k",
+        "sku": "RC-MAXI-15KG",
+        "name": "Royal Canin Maxi Adult Perros Grandes",
+        "brand": "Royal Canin",
+        "presentation": "Bulto 15 Kg",
+        "price": 365000,
+        "quantity": 1,
+        "image": "https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800&auto=format&fit=crop&q=80",
+        "weightKg": 15,
+        "requiresPrescription": false,
+        "picked": true
+      }
+    ],
+    "totals": {
+      "subtotal": 365000,
+      "discount": 0,
+      "shipping": 0,
+      "serviceFee": 0,
+      "tip": 0,
+      "total": 365000,
+      "totalWeightKg": 15
+    },
+    "payment": {
+      "method": "WOMPI_CARD",
+      "status": "APROBADO",
+      "transactionId": "TXN-WMP-CENTRO-01"
+    },
+    "prescriptionReview": {
+      "status": "NO_REQUIERE"
+    },
+    "fulfillmentStatus": "LISTO_PARA_DESPACHO",
+    "secretDeliveryCode": "1099",
+    "estimatedDeliveryMinutes": 30,
+    "originalPromiseWindow": {
+      "start": "2026-10-29T02:59:23.275Z",
+      "end": "2026-10-29T03:59:23.275Z"
+    },
+    "timestamps": {
+      "confirmedAt": "2026-10-29T02:59:23.275Z",
+      "prepStartedAt": "2026-10-29T03:09:23.275Z",
+      "prepCompletedAt": "2026-10-29T03:29:23.275Z"
+    },
+    "assignmentId": "ASG-9053",
+    "tripId": "TRP-9053",
+    "statusHistory": []
+  }
+]

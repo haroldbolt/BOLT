@@ -169,7 +169,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Prices matching Rappi Turbo format */}
         <div className="flex items-baseline gap-1.5 flex-wrap">
           <span className="text-base font-black text-slate-900 tracking-tight">
-            {formatCOP(product.price)}
+            {product.price > 0 ? formatCOP(product.price) : 'Consultar precio'}
           </span>
           {product.originalPrice && product.originalPrice > product.price && (
             <span className="text-xs text-slate-400 line-through font-semibold">
@@ -186,9 +186,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         {/* Presentation & Unit Price */}
         <div className="mt-1 flex items-center justify-between text-[11px] text-slate-500 font-medium">
           <span className="truncate">{product.presentation}</span>
-          {product.unitPriceText && (
+          {product.presentaciones && product.presentaciones.length > 1 ? (
+            <span className="text-[10px] font-bold bg-slate-100 text-slate-700 px-1.5 py-0.5 rounded">
+              {product.presentaciones.length} variantes
+            </span>
+          ) : product.unitPriceText ? (
             <span className="text-slate-400 font-semibold">{product.unitPriceText}</span>
-          )}
+          ) : null}
         </div>
 
         {/* Stock / Warning notice */}

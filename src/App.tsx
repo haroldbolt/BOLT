@@ -532,13 +532,28 @@ export default function App() {
   // Base products matching search query or selected tab/category
   const baseCategoryOrSearchProducts = useMemo(() => {
     let list = [...products];
+
+    // 4. Para clientes muestra productos ACTIVE
+    list = list.filter(p => !p.status || p.status === 'ACTIVE');
+
+    // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
+    if (currentStore) {
+      const targetGid = currentStore.shopifyLocationGid;
+      list = list.filter(p => {
+        if (!p.bodegaIds) return true;
+        if (p.bodegaIds.length === 0) return false; // Una lista vacía no significa disponibilidad en todas las bodegas
+        return (targetGid && p.bodegaIds.includes(targetGid)) || p.bodegaIds.includes(currentStore.id);
+      });
+    }
+
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
       list = list.filter(p =>
         p.name.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
-        (p.activeIngredient && p.activeIngredient.toLowerCase().includes(q))
+        (p.activeIngredient && p.activeIngredient.toLowerCase().includes(q)) ||
+        (p.tags && p.tags.some(t => t.toLowerCase().includes(q)))
       );
     } else if (currentTab === 'favoritos') {
       list = list.filter(p => !!favorites[p.id]);
@@ -548,7 +563,7 @@ export default function App() {
       list = list.filter(p => p.category === selectedCategory || (p.pharmacySubcategory as any) === selectedCategory);
     }
     return list;
-  }, [products, searchQuery, currentTab, selectedCategory, favorites]);
+  }, [products, currentStore, searchQuery, currentTab, selectedCategory, favorites]);
 
   // Apply advanced filters: price range, brands, weight range
   const filteredProducts = useMemo(() => {

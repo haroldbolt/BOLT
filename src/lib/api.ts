@@ -1,4 +1,4 @@
-import { Product, Store, Order, GPSTelemetry, DriverProfile } from '../types';
+import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint, DeliveryTracking } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
 
@@ -112,9 +112,27 @@ export const api = {
     return await res.json();
   },
 
-  async getTracking(orderId: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/orders/${orderId}/tracking`);
-    if (!res.ok) throw new Error('Error al consultar rastreo');
+  async getTracking(orderId: string, shipmentId?: string): Promise<DeliveryTracking> {
+    const url = shipmentId
+      ? `${BASE_URL}/orders/${orderId}/tracking?shipmentId=${encodeURIComponent(shipmentId)}`
+      : `${BASE_URL}/orders/${orderId}/tracking`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al consultar rastreo');
+    }
+    return await res.json();
+  },
+
+  async getTelemetryHistory(orderId: string, shipmentId?: string): Promise<{ orderId: string; shipmentId?: string; history: GPSTrackingPoint[]; count: number }> {
+    const url = shipmentId
+      ? `${BASE_URL}/orders/${orderId}/telemetry/history?shipmentId=${encodeURIComponent(shipmentId)}`
+      : `${BASE_URL}/orders/${orderId}/telemetry/history`;
+    const res = await fetch(url);
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al consultar historial de telemetría');
+    }
     return await res.json();
   },
 
@@ -131,21 +149,78 @@ export const api = {
     return await res.json();
   },
 
-  async sendGpsTelemetry(telemetry: GPSTelemetry): Promise<any> {
+  async sendGpsTelemetry(telemetry: GPSTelemetry | GPSTrackingPoint, driverId?: string): Promise<{ status: string; point: any; count: number }> {
     const res = await fetch(`${BASE_URL}/driver/gps`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-role': 'CONDUCTOR',
+        ...(driverId ? { 'x-driver-id': driverId } : {}),
+      },
       body: JSON.stringify(telemetry),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || `Error enviando telemetría GPS (${res.status})`);
+    }
     return await res.json();
   },
 
-  async updateOrderStatus(orderId: string, status: string, shipmentId?: string): Promise<any> {
+  async updateOrderStatus(
+    orderId: string,
+    status: string,
+    shipmentId?: string,
+    reason?: string,
+    deliveryCode?: string,
+    role?: string
+  ): Promise<any> {
     const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/status`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ status, shipmentId }),
+      headers: {
+        'Content-Type': 'application/json',
+        ...(role ? { 'x-actor-role': role } : {}),
+      },
+      body: JSON.stringify({ status, shipmentId, reason, deliveryCode }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al actualizar estado');
+    }
+    return await res.json();
+  },
+
+  async getOrderHistory(orderId: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/orders/${orderId}/history`);
+    if (!res.ok) throw new Error('Error al consultar historial del pedido');
+    return await res.json();
+  },
+
+  async cancelOrder(orderId: string, reason?: string, role: string = 'CLIENTE'): Promise<any> {
+    const res = await fetch(`${BASE_URL}/orders/${orderId}/cancel`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-actor-role': role,
+      },
+      body: JSON.stringify({ reason, role }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'No se pudo cancelar el pedido');
+    }
+    return await res.json();
+  },
+
+  async confirmPhysicalReturn(orderId: string, inspectorName: string, notes?: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/confirm-physical-return`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ inspectorName, notes }),
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al confirmar devolución física');
+    }
     return await res.json();
   },
 
@@ -164,6 +239,10 @@ export const api = {
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ driverId, shipmentId }),
     });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al asignar conductor');
+    }
     return await res.json();
   },
 

@@ -1,37 +1,77 @@
-{
-  "version": 1,
-  "modo": "CATALOGO_LOCAL",
-  "fechaDeLosDatos": "2026-10-26T14:16:43.296Z",
-  "bodegas": [
-    {
-      "id": "HUB_ALAMOS",
-      "nombre": "Agrocentro Pets - Álamos",
-      "activa": true,
-      "turboHabilitado": true
-    },
-    {
-      "id": "HUB_CENTRO",
-      "nombre": "Agrocentro Pets - Centro",
-      "activa": true,
-      "turboHabilitado": false
-    },
-    {
-      "id": "HUB_KENNEDY",
-      "nombre": "Agrocentro Pets - Kennedy",
-      "activa": true,
-      "turboHabilitado": true
-    },
-    {
-      "id": "HUB_SUBA",
-      "nombre": "Agrocentro Pets - Suba",
-      "activa": true,
-      "turboHabilitado": true
-    },
-    {
-      "id": "SHOPIFY_LOCATION_99059073304",
-      "nombre": "Carrera 73a #2-27",
-      "activa": false,
-      "turboHabilitado": false
+[
+  {
+    "id": "gid://shopify/Location/115617890584",
+    "boltId": "HUB_ALAMOS",
+    "name": "Agrocentro Pets - Álamos",
+    "isActive": true,
+    "fulfillsOnlineOrders": true,
+    "address": {
+      "address1": "Calle 72 #97A-18",
+      "address2": null,
+      "city": "Bogotá",
+      "country": "Colombia",
+      "latitude": 4.7026365,
+      "longitude": -74.1149105
     }
-  ]
-}
+  },
+  {
+    "id": "gid://shopify/Location/115676021016",
+    "boltId": "HUB_CENTRO",
+    "name": "Agrocentro Pets - Centro",
+    "isActive": true,
+    "fulfillsOnlineOrders": true,
+    "address": {
+      "address1": "Calle 11 #15-53",
+      "address2": "",
+      "city": "Bogotá",
+      "country": "Colombia",
+      "latitude": 4.6028411,
+      "longitude": -74.0822618
+    }
+  },
+  {
+    "id": "gid://shopify/Location/115617857816",
+    "boltId": "HUB_KENNEDY",
+    "name": "Agrocentro Pets - Kennedy",
+    "isActive": true,
+    "fulfillsOnlineOrders": true,
+    "address": {
+      "address1": "Carrera 79A #2-05",
+      "address2": null,
+      "city": "Bogotá",
+      "country": "Colombia",
+      "latitude": 4.632029699999999,
+      "longitude": -74.15163059999999
+    }
+  },
+  {
+    "id": "gid://shopify/Location/115617923352",
+    "boltId": "HUB_SUBA",
+    "name": "Agrocentro Pets - Suba",
+    "isActive": true,
+    "fulfillsOnlineOrders": true,
+    "address": {
+      "address1": "Carrera 107 #143-31",
+      "address2": null,
+      "city": "Bogotá",
+      "country": "Colombia",
+      "latitude": 4.747154,
+      "longitude": -74.098137
+    }
+  },
+  {
+    "id": "gid://shopify/Location/99059073304",
+    "boltId": "HUB_FONTIBON",
+    "name": "Carrera 73a #2-27",
+    "isActive": false,
+    "fulfillsOnlineOrders": true,
+    "address": {
+      "address1": "Carrera 73a #2-27",
+      "address2": "Apartamenti",
+      "city": "Bogota",
+      "country": "Colombia",
+      "latitude": 4.6247216,
+      "longitude": -74.1420485
+    }
+  }
+]

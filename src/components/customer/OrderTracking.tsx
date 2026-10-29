@@ -51,8 +51,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   const [loading, setLoading] = useState(true);
   const [recenterCount, setRecenterCount] = useState(0);
   const [sheetExpanded, setSheetExpanded] = useState(false);
-  const [isSimulatingGps, setIsSimulatingGps] = useState(false);
-  const simulationIntervalRef = useRef<any>(null);
+  const [cancelling, setCancelling] = useState(false);
+  const [cancelError, setCancelError] = useState<string | null>(null);
   const foldable = useFoldable();
   const isSplitLayout = foldable.isExpanded || foldable.isDualScreen;
 
@@ -80,53 +80,19 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
     return () => clearInterval(interval);
   }, [orderId]);
 
-  // GPS Simulation along road in Bogotá
-  const toggleGpsSimulation = () => {
-    if (isSimulatingGps) {
-      clearInterval(simulationIntervalRef.current);
-      setIsSimulatingGps(false);
-    } else {
-      setIsSimulatingGps(true);
-      if (order) {
-        pushService.simulateOrderTransition(order.orderNumber, order.id, 'EN_CAMINO', order.driver?.name, order.secretDeliveryCode);
-      }
-      let step = 0;
-      const baseLat = 4.6284;
-      const baseLng = -74.1539;
-      const destLat = order?.deliveryAddress.coordinates.lat || 4.6365;
-      const destLng = order?.deliveryAddress.coordinates.lng || -74.1448;
-
-      simulationIntervalRef.current = setInterval(async () => {
-        step = (step + 1) % 20;
-        const fraction = step / 20;
-        const curLat = baseLat + (destLat - baseLat) * fraction;
-        const curLng = baseLng + (destLng - baseLng) * fraction;
-
-        const telemetry: GPSTelemetry = {
-          orderId,
-          assignmentId: 'ASG-SIM',
-          tripId: 'TRP-SIM',
-          latitude: curLat,
-          longitude: curLng,
-          accuracy: 4.0,
-          heading: 45,
-          speed: 28,
-          batteryLevel: 88,
-          timestamp: Date.now(),
-          sequenceNumber: step + 1,
-        };
-
-        await api.sendGpsTelemetry(telemetry);
-        await loadData();
-      }, 4000);
+  const handleCancelOrder = async () => {
+    if (!order) return;
+    try {
+      setCancelling(true);
+      setCancelError(null);
+      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE');
+      await loadData();
+    } catch (e: any) {
+      setCancelError(e.message || 'No se pudo cancelar el pedido');
+    } finally {
+      setCancelling(false);
     }
   };
-
-  useEffect(() => {
-    return () => {
-      if (simulationIntervalRef.current) clearInterval(simulationIntervalRef.current);
-    };
-  }, []);
 
   if (loading || !order) {
     return (
@@ -159,12 +125,20 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   const isLost = secondsAgo > 60;
 
   const getStatusBadge = () => {
+    if (effectiveStatus === 'CANCELADO') {
+      return { text: '✕ Pedido Cancelado', bg: 'bg-rose-700 text-white', dot: 'bg-rose-300' };
+    }
+    if (effectiveStatus === 'CON_INCIDENCIA') {
+      return { text: '⚠️ Novedad en curso', bg: 'bg-amber-600 text-white', dot: 'bg-amber-200 animate-pulse' };
+    }
     if (order.deliveryMode === 'PROGRAMADO' && effectiveStatus !== 'ENTREGADO') {
       return { text: '📅 Programado', bg: 'bg-blue-600 text-white', dot: 'bg-blue-300' };
     }
     switch (effectiveStatus) {
       case 'EN_CAMINO':
         return { text: '⚡ Repartidor en camino', bg: 'bg-yellow-400 text-red-950', dot: 'bg-red-600 animate-ping' };
+      case 'REPARTIDOR_ASIGNADO':
+        return { text: '🛵 Conductor Asignado', bg: 'bg-amber-500 text-white', dot: 'bg-amber-200 animate-pulse' };
       case 'ENTREGADO':
         return { text: '✓ Entregado', bg: 'bg-emerald-600 text-white', dot: 'bg-white' };
       case 'EN_ALISTAMIENTO':
@@ -355,6 +329,21 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                 <span>Total del pedido:</span>
                 <span className="text-red-600">{formatCOP(order.totals.total)}</span>
               </div>
+
+              {(order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.fulfillmentStatus === 'CONFIRMADO') && (
+                <div className="pt-2 border-t border-slate-100">
+                  <button
+                    onClick={handleCancelOrder}
+                    disabled={cancelling}
+                    className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5"
+                  >
+                    {cancelling ? 'Cancelando pedido...' : '✕ Cancelar Pedido'}
+                  </button>
+                  {cancelError && (
+                    <p className="text-[11px] text-rose-600 mt-1 text-center font-medium">{cancelError}</p>
+                  )}
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -367,19 +356,19 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
                 <span className={`w-2 h-2 rounded-full ${isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
                 {isLost ? (
-                  <span className="text-red-300">Señal GPS perdida (hace {secondsAgo}s)</span>
+                  <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
                 ) : isStale ? (
                   <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
                 ) : (
                   <span>GPS en vivo ({timeAgoSpanish(trackingData?.telemetry?.timestamp || Date.now())})</span>
                 )}
                 <button
-                  onClick={toggleGpsSimulation}
-                  className={`ml-2 px-2 py-0.5 rounded-md text-[10px] font-black transition ${
-                    isSimulatingGps ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-800 text-yellow-300 hover:bg-slate-700'
-                  }`}
+                  onClick={loadData}
+                  className="ml-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-800 text-slate-200 hover:bg-slate-700 flex items-center gap-1 transition"
+                  title="Sincronizar estado con el servidor"
                 >
-                  {isSimulatingGps ? 'Pausar Simulación' : 'Simular GPS'}
+                  <RefreshCw className="w-3 h-3" />
+                  <span>Sincronizar</span>
                 </button>
               </div>
             ) : order.deliveryMode === 'PROGRAMADO' ? (
@@ -504,20 +493,19 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
             <span className={`w-2 h-2 rounded-full ${isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
             {isLost ? (
-              <span className="text-red-300">Señal GPS perdida (hace {secondsAgo}s)</span>
+              <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
             ) : isStale ? (
               <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
             ) : (
               <span>Ubicación GPS en vivo ({timeAgoSpanish(trackingData?.telemetry?.timestamp || Date.now())})</span>
             )}
-
             <button
-              onClick={toggleGpsSimulation}
-              className={`ml-2 px-2 py-0.5 rounded-md text-[10px] font-black transition ${
-                isSimulatingGps ? 'bg-red-600 text-white animate-pulse' : 'bg-slate-800 text-yellow-300 hover:bg-slate-700'
-              }`}
+              onClick={loadData}
+              className="ml-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-800 text-slate-200 hover:bg-slate-700 flex items-center gap-1 transition"
+              title="Sincronizar estado con el servidor"
             >
-              {isSimulatingGps ? 'Pausar Simulación' : 'Simular GPS'}
+              <RefreshCw className="w-3 h-3" />
+              <span>Sincronizar</span>
             </button>
           </div>
         </div>
@@ -760,6 +748,21 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               <span>Total del pedido:</span>
               <span className="text-red-600">{formatCOP(order.totals.total)}</span>
             </div>
+
+            {(order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.fulfillmentStatus === 'CONFIRMADO') && (
+              <div className="pt-2 border-t border-slate-100">
+                <button
+                  onClick={handleCancelOrder}
+                  disabled={cancelling}
+                  className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2.5 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5"
+                >
+                  {cancelling ? 'Cancelando pedido...' : '✕ Cancelar Pedido'}
+                </button>
+                {cancelError && (
+                  <p className="text-[11px] text-rose-600 mt-1 text-center font-medium">{cancelError}</p>
+                )}
+              </div>
+            )}
           </div>
         </div>
       </div>

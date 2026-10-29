@@ -1,0 +1,794 @@
+[
+  {
+    "id": "HIST-1793249963280-1540",
+    "orderId": "ORD-TEST-1793249963280-A",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "CONFIRMADO",
+    "timestamp": "2026-10-29T04:59:23.280Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": false,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249963283-3418",
+    "orderId": "ORD-TEST-1793249963280-A",
+    "previousStatus": "CONFIRMADO",
+    "newStatus": "EN_ALISTAMIENTO",
+    "timestamp": "2026-10-29T04:59:23.283Z",
+    "actor": {
+      "role": "ALISTADOR",
+      "id": "OP-01",
+      "name": "Mateo (Alistador Kennedy)"
+    },
+    "reason": "Transición autorizada a EN_ALISTAMIENTO",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO"
+    }
+  },
+  {
+    "id": "HIST-1793249963284-9866",
+    "orderId": "ORD-TEST-1793249963280-A",
+    "previousStatus": "EN_ALISTAMIENTO",
+    "newStatus": "LISTO_PARA_DESPACHO",
+    "timestamp": "2026-10-29T04:59:23.284Z",
+    "actor": {
+      "role": "DESPACHADOR",
+      "id": "OP-02",
+      "name": "Laura (Despachadora)"
+    },
+    "reason": "Empaque sellado con precinto #0082",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO"
+    }
+  },
+  {
+    "id": "HIST-1793249963285-8000",
+    "orderId": "ORD-TEST-1793249963280-A",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:23.285Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe Despacho"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-01",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963289-2208",
+    "orderId": "ORD-TEST-1793249963280-A",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:23.289Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963290-3120",
+    "orderId": "ORD-TEST-1793249963280-A",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "ENTREGADO",
+    "timestamp": "2026-10-29T04:59:23.290Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963293-9315",
+    "orderId": "ORD-TEST-1793249963293-PRE",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "CONFIRMADO",
+    "timestamp": "2026-10-29T04:59:23.293Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": false,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249963294-4879",
+    "orderId": "ORD-TEST-1793249963293-PRE",
+    "previousStatus": "CONFIRMADO",
+    "newStatus": "CANCELADO",
+    "timestamp": "2026-10-29T04:59:23.294Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Cliente cambió de opinión antes del despacho",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963295-2803",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "CONFIRMADO",
+    "timestamp": "2026-10-29T04:59:23.295Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": false,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249963296-8320",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "CONFIRMADO",
+    "newStatus": "EN_ALISTAMIENTO",
+    "timestamp": "2026-10-29T04:59:23.296Z",
+    "actor": {
+      "role": "ALISTADOR",
+      "id": "OP-01",
+      "name": "Mateo (Alistador Kennedy)"
+    },
+    "reason": "Transición autorizada a EN_ALISTAMIENTO",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963297-3855",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "EN_ALISTAMIENTO",
+    "newStatus": "LISTO_PARA_DESPACHO",
+    "timestamp": "2026-10-29T04:59:23.297Z",
+    "actor": {
+      "role": "DESPACHADOR",
+      "id": "OP-02",
+      "name": "Laura (Despachadora)"
+    },
+    "reason": "Transición autorizada a LISTO_PARA_DESPACHO",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963297-3291",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:23.297Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-POST",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963299-5291",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:23.299Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963300-3005",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "CANCELADO",
+    "timestamp": "2026-10-29T04:59:23.300Z",
+    "actor": {
+      "role": "SOPORTE",
+      "name": "Agente Soporte"
+    },
+    "reason": "Dirección inexistente reportada por conductor",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249963301-5776",
+    "orderId": "ORD-TEST-1793249963295-POST",
+    "previousStatus": "CANCELADO",
+    "newStatus": "CANCELADO",
+    "timestamp": "2026-10-29T04:59:23.301Z",
+    "actor": {
+      "role": "BODEGA",
+      "name": "Jefe de Bodega Kennedy"
+    },
+    "reason": "Devolución física inspeccionada y reingresada a inventario disponible. Notas: Paquete recibido sin roturas",
+    "metadata": {
+      "physicalReturnCleared": true
+    }
+  },
+  {
+    "id": "HIST-1793249963302-6379",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "LISTO_PARA_DESPACHO",
+    "timestamp": "2026-10-29T04:59:23.302Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": true,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249963303-7124",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "shipmentId": "SHP-PLIT-1",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:23.303Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al envío hijo 1",
+    "metadata": {
+      "shipmentIndex": 1,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249963305-1021",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "shipmentId": "SHP-PLIT-2",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:23.305Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al envío hijo 2",
+    "metadata": {
+      "shipmentIndex": 2,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249963306-5942",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "shipmentId": "SHP-PLIT-1",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:23.306Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "shipmentIndex": 1,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249963307-3160",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "shipmentId": "SHP-PLIT-1",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "ENTREGADO",
+    "timestamp": "2026-10-29T04:59:23.307Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+    "metadata": {
+      "shipmentIndex": 1,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249963308-2040",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "shipmentId": "SHP-PLIT-2",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:23.308Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "shipmentIndex": 2,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249963310-4844",
+    "orderId": "ORD-TEST-1793249963302-SPLIT",
+    "shipmentId": "SHP-PLIT-2",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "ENTREGADO",
+    "timestamp": "2026-10-29T04:59:23.310Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+    "metadata": {
+      "shipmentIndex": 2,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249993061-3183",
+    "orderId": "ORD-TEST-1793249993061-A",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "CONFIRMADO",
+    "timestamp": "2026-10-29T04:59:53.061Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": false,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249993065-1841",
+    "orderId": "ORD-TEST-1793249993061-A",
+    "previousStatus": "CONFIRMADO",
+    "newStatus": "EN_ALISTAMIENTO",
+    "timestamp": "2026-10-29T04:59:53.065Z",
+    "actor": {
+      "role": "ALISTADOR",
+      "id": "OP-01",
+      "name": "Mateo (Alistador Kennedy)"
+    },
+    "reason": "Transición autorizada a EN_ALISTAMIENTO",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO"
+    }
+  },
+  {
+    "id": "HIST-1793249993067-7639",
+    "orderId": "ORD-TEST-1793249993061-A",
+    "previousStatus": "EN_ALISTAMIENTO",
+    "newStatus": "LISTO_PARA_DESPACHO",
+    "timestamp": "2026-10-29T04:59:53.067Z",
+    "actor": {
+      "role": "DESPACHADOR",
+      "id": "OP-02",
+      "name": "Laura (Despachadora)"
+    },
+    "reason": "Empaque sellado con precinto #0082",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO"
+    }
+  },
+  {
+    "id": "HIST-1793249993068-1019",
+    "orderId": "ORD-TEST-1793249993061-A",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:53.068Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe Despacho"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-01",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993069-6554",
+    "orderId": "ORD-TEST-1793249993061-A",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:53.069Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993070-7711",
+    "orderId": "ORD-TEST-1793249993061-A",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "ENTREGADO",
+    "timestamp": "2026-10-29T04:59:53.070Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993073-2615",
+    "orderId": "ORD-TEST-1793249993073-PRE",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "CONFIRMADO",
+    "timestamp": "2026-10-29T04:59:53.073Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": false,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249993074-1123",
+    "orderId": "ORD-TEST-1793249993073-PRE",
+    "previousStatus": "CONFIRMADO",
+    "newStatus": "CANCELADO",
+    "timestamp": "2026-10-29T04:59:53.074Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Cliente cambió de opinión antes del despacho",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993077-4404",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "CONFIRMADO",
+    "timestamp": "2026-10-29T04:59:53.077Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": false,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249993079-6088",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "CONFIRMADO",
+    "newStatus": "EN_ALISTAMIENTO",
+    "timestamp": "2026-10-29T04:59:53.079Z",
+    "actor": {
+      "role": "ALISTADOR",
+      "id": "OP-01",
+      "name": "Mateo (Alistador Kennedy)"
+    },
+    "reason": "Transición autorizada a EN_ALISTAMIENTO",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993080-9578",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "EN_ALISTAMIENTO",
+    "newStatus": "LISTO_PARA_DESPACHO",
+    "timestamp": "2026-10-29T04:59:53.080Z",
+    "actor": {
+      "role": "DESPACHADOR",
+      "id": "OP-02",
+      "name": "Laura (Despachadora)"
+    },
+    "reason": "Transición autorizada a LISTO_PARA_DESPACHO",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993082-4820",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:53.082Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al pedido #BP-TEST-POST",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993084-9338",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:53.084Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993085-7652",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "CANCELADO",
+    "timestamp": "2026-10-29T04:59:53.085Z",
+    "actor": {
+      "role": "SOPORTE",
+      "name": "Agente Soporte"
+    },
+    "reason": "Dirección inexistente reportada por conductor",
+    "metadata": {
+      "paymentStatus": "APROBADO",
+      "deliveryMode": "TURBO",
+      "driverId": "DRV-CARLOS-01"
+    }
+  },
+  {
+    "id": "HIST-1793249993088-5026",
+    "orderId": "ORD-TEST-1793249993076-POST",
+    "previousStatus": "CANCELADO",
+    "newStatus": "CANCELADO",
+    "timestamp": "2026-10-29T04:59:53.088Z",
+    "actor": {
+      "role": "BODEGA",
+      "name": "Jefe de Bodega Kennedy"
+    },
+    "reason": "Devolución física inspeccionada y reingresada a inventario disponible. Notas: Paquete recibido sin roturas",
+    "metadata": {
+      "physicalReturnCleared": true
+    }
+  },
+  {
+    "id": "HIST-1793249993090-5045",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "previousStatus": "PENDIENTE_CONFIRMACION",
+    "newStatus": "LISTO_PARA_DESPACHO",
+    "timestamp": "2026-10-29T04:59:53.090Z",
+    "actor": {
+      "role": "CLIENTE",
+      "id": "camila.test@boltpets.co",
+      "name": "Camila Morales"
+    },
+    "reason": "Creación y registro de pedido en el servidor autoritativo",
+    "metadata": {
+      "deliveryMode": "TURBO",
+      "isSplitOrder": true,
+      "itemsCount": 1,
+      "totalCOP": 371500
+    }
+  },
+  {
+    "id": "HIST-1793249993093-7577",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "shipmentId": "SHP-PLIT-1",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:53.093Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al envío hijo 1",
+    "metadata": {
+      "shipmentIndex": 1,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249993095-8050",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "shipmentId": "SHP-PLIT-2",
+    "previousStatus": "LISTO_PARA_DESPACHO",
+    "newStatus": "REPARTIDOR_ASIGNADO",
+    "timestamp": "2026-10-29T04:59:53.095Z",
+    "actor": {
+      "role": "COORDINADOR",
+      "name": "Jefe"
+    },
+    "reason": "Conductor Carlos Rodríguez asignado al envío hijo 2",
+    "metadata": {
+      "shipmentIndex": 2,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249993097-6297",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "shipmentId": "SHP-PLIT-1",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:53.097Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "shipmentIndex": 1,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249993099-1234",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "shipmentId": "SHP-PLIT-1",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "ENTREGADO",
+    "timestamp": "2026-10-29T04:59:53.099Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+    "metadata": {
+      "shipmentIndex": 1,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249993101-7159",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "shipmentId": "SHP-PLIT-2",
+    "previousStatus": "REPARTIDOR_ASIGNADO",
+    "newStatus": "EN_CAMINO",
+    "timestamp": "2026-10-29T04:59:53.101Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Recogida física verificada en bodega con precintos intactos. Inicio de recorrido.",
+    "metadata": {
+      "shipmentIndex": 2,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  },
+  {
+    "id": "HIST-1793249993104-8821",
+    "orderId": "ORD-TEST-1793249993090-SPLIT",
+    "shipmentId": "SHP-PLIT-2",
+    "previousStatus": "EN_CAMINO",
+    "newStatus": "ENTREGADO",
+    "timestamp": "2026-10-29T04:59:53.103Z",
+    "actor": {
+      "role": "CONDUCTOR",
+      "id": "DRV-CARLOS-01",
+      "name": "Carlos Rodríguez"
+    },
+    "reason": "Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.",
+    "metadata": {
+      "shipmentIndex": 2,
+      "shipmentCount": 2,
+      "weightKg": 24
+    }
+  }
+]

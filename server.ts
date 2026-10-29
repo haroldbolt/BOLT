@@ -3,36 +3,41 @@ import cors from 'cors';
 import path from 'path';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_DRIVERS, INITIAL_ORDERS } from './src/data/seedData';
-import { Order, Product, Store, DriverProfile, GPSTelemetry } from './src/types';
+import { INITIAL_PRODUCTS, INITIAL_STORES } from './src/data/seedData';
+import { Order, Product, Store, DriverProfile, GPSTelemetry, OrderActor, ActorRole } from './src/types';
 import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking } from './src/lib/deliveryService';
 import { shopifyService } from './src/lib/shopifyService';
+import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
+import { localCatalogService } from './src/lib/localCatalogService';
+import { ordersRepository } from './src/lib/ordersRepository';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Authoritative in-memory state initialized from seed data
-let stores: Store[] = JSON.parse(JSON.stringify(INITIAL_STORES));
-let products: Product[] = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
-let drivers: DriverProfile[] = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
-let orders: Order[] = JSON.parse(JSON.stringify(INITIAL_ORDERS));
-let gpsTelemetryHistory: Record<string, GPSTelemetry[]> = {
-  'ORD-2026-8941': [
-    {
-      orderId: 'ORD-2026-8941',
-      assignmentId: 'ASG-5510',
-      tripId: 'TRP-8821',
-      latitude: 4.6312,
-      longitude: -74.1485,
-      accuracy: 4.5,
-      heading: 210,
-      speed: 32,
-      batteryLevel: 85,
-      timestamp: Date.now() - 4000,
-      sequenceNumber: 142,
-    },
-  ],
-};
+// Helper para extraer el actor autenticado u operacional desde cabeceras/payload
+function extractActor(req: Request, defaultRole: ActorRole = 'BODEGA'): OrderActor {
+  const role = ((req.headers['x-actor-role'] as string) || req.body?.role || defaultRole) as any;
+  const id = (req.headers['x-actor-id'] as string) || req.body?.actorId;
+  const name = (req.headers['x-actor-name'] as string) || req.body?.actorName || (
+    role === 'CLIENTE' ? 'Cliente Web' :
+    role === 'CONDUCTOR' ? 'Carlos Rodríguez (Conductor)' :
+    'Operador Bodega'
+  );
+  return { role, id, name };
+}
+
+// Authoritative in-memory state initialized from local catalog (3.830 productos agrupados, 5.652 variantes, 5 bodegas)
+let stores: Store[] = localCatalogService.getStores().length > 0 ? localCatalogService.getStores() : JSON.parse(JSON.stringify(INITIAL_STORES));
+let products: Product[] = localCatalogService.getAllGroupedProducts().length > 0 ? localCatalogService.getAllGroupedProducts() : JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+
+// Registro de carga de catálogo local
+console.log(`[Catálogo Local] Iniciado con ${products.length} productos agrupados, ${localCatalogService.getTotalVariantsCount()} variantes y ${stores.length} bodegas.`);
+
+// Comprobación de inventario privado (.bolt-private/shopify/snapshot.json no bloqueante)
+const privateInventoryStatus: PrivateInventoryResult = loadPrivateInventorySnapshot();
+console.log(`[Inventario Privado] ${privateInventoryStatus.message} Se utiliza el catálogo local estructurado.`);
+let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
+
 
 async function startServer() {
   const app = express();
@@ -51,12 +56,35 @@ async function startServer() {
       status: 'ok',
       service: 'Bolt Pets Authoritative Backend',
       version: '1.0.0',
+      catalogSource: 'LOCAL_CATALOG (src/data/catalogo-local)',
       timezone: 'America/Bogota',
       locale: 'es-CO',
       storesCount: stores.length,
-      productsCount: products.length,
-      ordersCount: orders.length,
+      totalProductosAgrupados: products.length,
+      totalVariantes: localCatalogService.getTotalVariantsCount(),
+      productosActivos: products.filter(p => p.status === 'ACTIVE').length,
+      ordersCount: ordersRepository.getAllOrders().length,
+      privateInventory: {
+        targetFile: privateInventoryStatus.filePath,
+        found: privateInventoryStatus.fileFound,
+        message: privateInventoryStatus.message,
+      },
       timestamp: new Date().toISOString(),
+    });
+  });
+
+  // Resumen del catálogo local estructurado
+  app.get('/api/v1/catalog/summary', (_req: Request, res: Response) => {
+    res.json(localCatalogService.getSummary());
+  });
+
+  // Inventario privado status
+  app.get('/api/v1/inventory/status', (_req: Request, res: Response) => {
+    res.json({
+      targetFile: privateInventoryStatus.filePath,
+      found: privateInventoryStatus.fileFound,
+      message: privateInventoryStatus.message,
+      productsCount: products.length,
     });
   });
 
@@ -67,8 +95,26 @@ async function startServer() {
 
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
-    const { category, species, storeId, q } = req.query;
+    const { category, species, storeId, q, all } = req.query;
     let filtered = [...products];
+
+    // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
+    if (all !== 'true') {
+      filtered = filtered.filter(p => !p.status || p.status === 'ACTIVE');
+    }
+
+    // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
+    if (storeId) {
+      const storeIdStr = String(storeId);
+      const storeObj = stores.find(s => s.id === storeIdStr || s.shopifyLocationGid === storeIdStr);
+      const targetGid = storeObj?.shopifyLocationGid || storeIdStr;
+
+      filtered = filtered.filter(p => {
+        if (!p.bodegaIds) return true;
+        if (p.bodegaIds.length === 0) return false; // Una lista vacía no significa disponibilidad en todas las bodegas
+        return p.bodegaIds.includes(targetGid) || p.bodegaIds.includes(storeIdStr);
+      });
+    }
 
     if (category && category !== 'Todo') {
       filtered = filtered.filter(p => p.category === category || p.pharmacySubcategory === category);
@@ -83,7 +129,7 @@ async function startServer() {
         p.brand.toLowerCase().includes(queryStr) ||
         p.sku.toLowerCase().includes(queryStr) ||
         (p.activeIngredient && p.activeIngredient.toLowerCase().includes(queryStr)) ||
-        p.tags.some(t => t.toLowerCase().includes(queryStr))
+        (p.tags && p.tags.some(t => t.toLowerCase().includes(queryStr)))
       );
     }
 
@@ -220,8 +266,8 @@ async function startServer() {
             }
 
             // Validar capacidad de la franja (máximo 10 pedidos por franja)
-            const currentSlotOrders = orders.filter(
-              o => o.deliveryMode === 'PROGRAMADO' &&
+            const currentSlotOrders = ordersRepository.getAllOrders().filter(
+              (o: Order) => o.deliveryMode === 'PROGRAMADO' &&
               o.scheduledWindow &&
               o.scheduledWindow.date === scheduledWindow.date &&
               (o.scheduledWindow.slotId === scheduledWindow.slotId || o.scheduledWindow.startTime === scheduledWindow.startTime)
@@ -432,8 +478,11 @@ async function startServer() {
         },
       };
 
-      orders.unshift(newOrder);
-      return res.status(201).json(newOrder);
+      const createResult = ordersRepository.createOrder(newOrder, products);
+      if (!createResult.success) {
+        return res.status(400).json({ error: createResult.error });
+      }
+      return res.status(201).json(createResult.order);
     } catch (e: any) {
       console.error('Error creating order:', e);
       return res.status(500).json({ error: e.message || 'Error interno del servidor' });
@@ -443,7 +492,7 @@ async function startServer() {
   // Get orders
   app.get('/api/v1/orders', (req: Request, res: Response) => {
     const { storeId, status } = req.query;
-    let list = [...orders];
+    let list = ordersRepository.getAllOrders();
     if (storeId) list = list.filter(o => o.storeId === storeId);
     if (status) list = list.filter(o => o.fulfillmentStatus === status);
     res.json(list);
@@ -451,14 +500,44 @@ async function startServer() {
 
   // Get specific order
   app.get('/api/v1/orders/:orderId', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
+    const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
     res.json(order);
   });
 
+  // Get audit history of an order
+  app.get('/api/v1/orders/:orderId/history', (req: Request, res: Response) => {
+    const order = ordersRepository.getOrderById(req.params.orderId);
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
+    res.json({
+      orderId: order.id,
+      orderNumber: order.orderNumber,
+      status: order.fulfillmentStatus,
+      history: order.statusHistory || ordersRepository.getAuditHistory(order.id),
+    });
+  });
+
+  // Cancel order (Cliente solo antes de despacho; Bodega con motivo)
+  app.post('/api/v1/orders/:orderId/cancel', (req: Request, res: Response) => {
+    const { reason, role, actorName } = req.body;
+    const actor = extractActor(req, role || 'CLIENTE');
+    if (actorName) actor.name = actorName;
+
+    const result = ordersRepository.transitionStatus(req.params.orderId, 'CANCELADO', actor, {
+      reason: reason || 'Cancelación de pedido solicitada',
+      catalogProducts: products,
+    });
+
+    if (!result.success) {
+      return res.status(result.code || 400).json({ error: result.error });
+    }
+
+    res.json({ message: 'Pedido cancelado exitosamente', order: result.order });
+  });
+
   // Upload or update prescription document
   app.post('/api/v1/orders/:orderId/prescription', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
+    const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
     const { documentUrl, documentName, vetName, vetLicense } = req.body;
@@ -474,13 +553,13 @@ async function startServer() {
     res.json({ message: 'Fórmula veterinaria enviada a revisión', order });
   });
 
-  // Customer tracking endpoint (sanitized)
+  // Customer and Operational tracking endpoint (sanitized real GPS)
   app.get('/api/v1/orders/:orderId/tracking', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
+    const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const history = gpsTelemetryHistory[order.id] || [];
-    const latestTelemetry = history[history.length - 1];
+    const shipmentId = req.query.shipmentId ? String(req.query.shipmentId) : undefined;
+    const latestTelemetry = ordersRepository.getLatestTelemetry(order.id, shipmentId);
 
     res.json({
       orderId: order.id,
@@ -503,93 +582,59 @@ async function startServer() {
         rating: order.driver.rating,
       } : null,
       telemetry: latestTelemetry ? {
+        pointId: latestTelemetry.pointId,
+        orderId: latestTelemetry.orderId,
+        shipmentId: latestTelemetry.shipmentId,
+        driverId: latestTelemetry.driverId,
         latitude: latestTelemetry.latitude,
         longitude: latestTelemetry.longitude,
+        accuracy: latestTelemetry.accuracy,
         heading: latestTelemetry.heading,
         speed: latestTelemetry.speed,
         timestamp: latestTelemetry.timestamp,
-        secondsAgo: Math.floor((Date.now() - latestTelemetry.timestamp) / 1000),
+        sequenceNumber: latestTelemetry.sequenceNumber,
+        secondsAgo: Math.max(0, Math.floor((Date.now() - latestTelemetry.timestamp) / 1000)),
       } : null,
       hubCoordinates: stores.find(s => s.id === order.storeId)?.coordinates || { lat: 4.6284, lng: -74.1539 },
       customerCoordinates: order.deliveryAddress.coordinates,
     });
   });
 
-  // Verify delivery with customer secret code (supports entire order or individual child shipment)
-  app.post('/api/v1/orders/:orderId/verify-delivery', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
+  // GPS Telemetry History (breadcrumbs for audit and live route rendering)
+  app.get('/api/v1/orders/:orderId/telemetry/history', (req: Request, res: Response) => {
+    const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
+    const shipmentId = req.query.shipmentId ? String(req.query.shipmentId) : undefined;
+    const history = ordersRepository.getTelemetryHistory(order.id, shipmentId);
+
+    res.json({
+      orderId: order.id,
+      shipmentId,
+      pointsCount: history.length,
+      history,
+    });
+  });
+
+  // Verify delivery with customer secret code (supports entire order or individual child shipment)
+  app.post('/api/v1/orders/:orderId/verify-delivery', (req: Request, res: Response) => {
     const { deliveryCode, shipmentId } = req.body;
-    const inputCode = String(deliveryCode).trim();
-
-    // Caso A: Verificación de un envío hijo específico en pedido dividido
-    if (order.isSplitOrder && order.childShipments && shipmentId) {
-      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
-      if (!child) {
-        return res.status(404).json({ error: `Envío hijo no encontrado: ${shipmentId}` });
-      }
-
-      if (child.secretDeliveryCode !== inputCode && order.secretDeliveryCode !== inputCode) {
-        return res.status(403).json({
-          error: `Código de entrega inválido para el envío ${child.shipmentIndex} de ${child.shipmentCount}.`,
-        });
-      }
-
-      child.fulfillmentStatus = 'ENTREGADO';
-      child.timestamps.deliveredAt = new Date().toISOString();
-
-      // Deduct physical stock for items in this shipment
-      for (const item of child.items) {
-        const prod = products.find(p => p.id === item.productId);
-        if (prod) {
-          prod.stockByStore[order.storeId] = Math.max(0, (prod.stockByStore[order.storeId] || 0) - item.quantity);
-          prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
-        }
-      }
-
-      // Comprobar si todos los envíos hijos han sido entregados
-      const allDelivered = order.childShipments.every(s => s.fulfillmentStatus === 'ENTREGADO');
-      if (allDelivered) {
-        order.fulfillmentStatus = 'ENTREGADO';
-        order.timestamps.deliveredAt = new Date().toISOString();
-        if (order.payment.method === 'CASH_ON_DELIVERY') {
-          order.payment.cashSettled = true;
-          order.payment.status = 'APROBADO';
-        }
-      }
-
-      return res.json({
-        message: `Envío ${child.shipmentIndex} de ${child.shipmentCount} verificado y entregado exitosamente`,
-        childShipment: child,
-        order,
-      });
+    if (!deliveryCode) {
+      return res.status(400).json({ error: 'Se requiere el código secreto de entrega de 4 dígitos.' });
     }
 
-    // Caso B: Verificación general del pedido
-    if (order.secretDeliveryCode !== inputCode) {
-      return res.status(403).json({ error: 'Código de entrega inválido. Verifique el número de 4 dígitos con el cliente.' });
+    const actor = extractActor(req, 'CONDUCTOR');
+    const result = ordersRepository.verifyDelivery(req.params.orderId, deliveryCode, actor, shipmentId, products);
+
+    if (!result.success) {
+      return res.status(result.code || 403).json({ error: result.error });
     }
 
-    order.fulfillmentStatus = 'ENTREGADO';
-    order.timestamps.deliveredAt = new Date().toISOString();
-    if (order.childShipments) {
-      order.childShipments.forEach(s => {
-        s.fulfillmentStatus = 'ENTREGADO';
-        s.timestamps.deliveredAt = new Date().toISOString();
-      });
-    }
-
-    // Deduct physical stock permanently
-    for (const item of order.items) {
-      const prod = products.find(p => p.id === item.productId);
-      if (prod) {
-        prod.stockByStore[order.storeId] = Math.max(0, (prod.stockByStore[order.storeId] || 0) - item.quantity);
-        prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
-      }
-    }
-
-    res.json({ message: 'Entrega verificada exitosamente', order });
+    res.json({
+      message: shipmentId ? 'Envío verificado y entregado exitosamente' : 'Entrega verificada exitosamente',
+      childShipment: result.childShipment,
+      order: result.order,
+    });
   });
 
   // ==========================================
@@ -597,51 +642,196 @@ async function startServer() {
   // ==========================================
 
   app.get('/api/v1/driver/profile', (_req: Request, res: Response) => {
-    res.json(drivers[0]);
+    const currentDrivers = ordersRepository.getAllDrivers();
+    res.json(currentDrivers[0]);
   });
 
   app.post('/api/v1/driver/shift', (req: Request, res: Response) => {
     const { action } = req.body;
-    const driver = drivers[0];
+    const currentDrivers = ordersRepository.getAllDrivers();
+    const driver = currentDrivers[0];
     driver.isOnline = action === 'START';
     driver.currentStatus = driver.isOnline ? 'DISPONIBLE' : 'FUERA_DE_TURNO';
     res.json({ message: `Turno ${driver.isOnline ? 'iniciado' : 'finalizado'}`, driver });
   });
 
   app.get('/api/v1/driver/assignments', (_req: Request, res: Response) => {
-    const activeOrder = orders.find(o => o.driver?.id === drivers[0].id && o.fulfillmentStatus !== 'ENTREGADO');
+    const all = ordersRepository.getAllOrders();
+    const activeOrder = all.find(o => 
+      (o.driver?.id === 'DRV-CARLOS-01' && o.fulfillmentStatus !== 'ENTREGADO' && o.fulfillmentStatus !== 'CANCELADO') ||
+      (o.childShipments?.some(c => c.driver?.id === 'DRV-CARLOS-01' && c.fulfillmentStatus !== 'ENTREGADO' && c.fulfillmentStatus !== 'CANCELADO'))
+    );
     res.json({ activeAssignment: activeOrder || null });
+  });
+
+  app.post('/api/v1/driver/assignments/:assignmentId/accept', (req: Request, res: Response) => {
+    const assignmentId = req.params.assignmentId;
+    const all = ordersRepository.getAllOrders();
+    let targetOrder = all.find(o => o.assignmentId === assignmentId);
+    let targetShipmentId: string | undefined;
+
+    if (!targetOrder) {
+      for (const o of all) {
+        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
+        if (child) {
+          targetOrder = o;
+          targetShipmentId = child.shipmentId;
+          break;
+        }
+      }
+    }
+
+    if (!targetOrder) {
+      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
+    }
+
+    res.json({
+      message: 'Asignación aceptada por el conductor',
+      assignmentId,
+      orderId: targetOrder.id,
+      shipmentId: targetShipmentId,
+    });
+  });
+
+  app.post('/api/v1/driver/assignments/:assignmentId/pickup', (req: Request, res: Response) => {
+    const assignmentId = req.params.assignmentId;
+    const all = ordersRepository.getAllOrders();
+    let targetOrder = all.find(o => o.assignmentId === assignmentId);
+    let targetShipmentId: string | undefined;
+
+    if (!targetOrder) {
+      for (const o of all) {
+        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
+        if (child) {
+          targetOrder = o;
+          targetShipmentId = child.shipmentId;
+          break;
+        }
+      }
+    }
+
+    if (!targetOrder) {
+      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
+    }
+
+    const actor = extractActor(req, 'CONDUCTOR');
+    const result = ordersRepository.confirmPickup(targetOrder.id, actor, targetShipmentId);
+    if (!result.success) {
+      return res.status(result.code || 400).json({ error: result.error });
+    }
+
+    res.json({
+      message: 'Recogida física verificada en bodega. Pedido en camino.',
+      order: result.order,
+      childShipment: result.childShipment,
+    });
+  });
+
+  app.post('/api/v1/driver/assignments/:assignmentId/delivered', (req: Request, res: Response) => {
+    const assignmentId = req.params.assignmentId;
+    const { deliveryCode, recipientNotes } = req.body;
+
+    if (!deliveryCode) {
+      return res.status(400).json({ error: 'Se requiere el código de entrega de 4 dígitos.' });
+    }
+
+    const all = ordersRepository.getAllOrders();
+    let targetOrder = all.find(o => o.assignmentId === assignmentId);
+    let targetShipmentId: string | undefined;
+
+    if (!targetOrder) {
+      for (const o of all) {
+        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
+        if (child) {
+          targetOrder = o;
+          targetShipmentId = child.shipmentId;
+          break;
+        }
+      }
+    }
+
+    if (!targetOrder) {
+      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
+    }
+
+    const actor = extractActor(req, 'CONDUCTOR');
+    const result = ordersRepository.verifyDelivery(targetOrder.id, deliveryCode, actor, targetShipmentId, products);
+    if (!result.success) {
+      return res.status(result.code || 403).json({ error: result.error });
+    }
+
+    res.json({
+      message: 'Entrega verificada exitosamente',
+      order: result.order,
+      childShipment: result.childShipment,
+      recipientNotes,
+    });
+  });
+
+  app.post('/api/v1/driver/assignments/:assignmentId/incident', (req: Request, res: Response) => {
+    const assignmentId = req.params.assignmentId;
+    const { incidentType, description } = req.body;
+
+    const all = ordersRepository.getAllOrders();
+    let targetOrder = all.find(o => o.assignmentId === assignmentId);
+    let targetShipmentId: string | undefined;
+
+    if (!targetOrder) {
+      for (const o of all) {
+        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
+        if (child) {
+          targetOrder = o;
+          targetShipmentId = child.shipmentId;
+          break;
+        }
+      }
+    }
+
+    if (!targetOrder) {
+      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
+    }
+
+    const actor = extractActor(req, 'CONDUCTOR');
+    const result = ordersRepository.reportIncident(
+      targetOrder.id,
+      actor,
+      incidentType || 'NOVEDAD_RUTA',
+      description || 'Incidencia en ruta',
+      targetShipmentId
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      message: 'Incidencia registrada exitosamente',
+      order: result.order,
+    });
   });
 
   app.post('/api/v1/driver/gps', (req: Request, res: Response) => {
     const telemetry: GPSTelemetry = req.body;
-    if (!telemetry.orderId || !telemetry.latitude || !telemetry.longitude) {
-      return res.status(400).json({ error: 'Datos de telemetría incompletos' });
+    if (!telemetry || !telemetry.orderId || typeof telemetry.latitude !== 'number' || typeof telemetry.longitude !== 'number') {
+      return res.status(400).json({ error: 'Datos de telemetría incompletos (se requieren orderId, latitude y longitude)' });
     }
 
-    if (!gpsTelemetryHistory[telemetry.orderId]) {
-      gpsTelemetryHistory[telemetry.orderId] = [];
-    }
-    gpsTelemetryHistory[telemetry.orderId].push(telemetry);
-
-    // Keep memory lean
-    if (gpsTelemetryHistory[telemetry.orderId].length > 100) {
-      gpsTelemetryHistory[telemetry.orderId].shift();
+    const actor = extractActor(req, 'CONDUCTOR');
+    if (req.headers['x-driver-id']) {
+      actor.id = String(req.headers['x-driver-id']);
     }
 
-    // Update driver position
-    const driver = drivers.find(d => d.id === drivers[0].id);
-    if (driver) {
-      driver.currentLocation = {
-        lat: telemetry.latitude,
-        lng: telemetry.longitude,
-        heading: telemetry.heading,
-        speed: telemetry.speed,
-        updatedAt: new Date().toISOString(),
-      };
+    const result = ordersRepository.recordTelemetry(telemetry, actor);
+    if (!result.success) {
+      return res.status(result.code || 400).json({ error: result.error });
     }
 
-    res.json({ status: 'telemetry_received', count: gpsTelemetryHistory[telemetry.orderId].length });
+    const totalCount = ordersRepository.getTelemetryHistory(telemetry.orderId, telemetry.shipmentId).length;
+    res.json({
+      status: 'telemetry_received',
+      point: result.point,
+      count: totalCount,
+    });
   });
 
   // ==========================================
@@ -649,56 +839,33 @@ async function startServer() {
   // ==========================================
 
   app.post('/api/v1/operations/orders/:orderId/status', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
-    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
-    const { status, shipmentId } = req.body;
-
-    if (order.isSplitOrder && order.childShipments && shipmentId) {
-      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
-      if (child) {
-        child.fulfillmentStatus = status;
-        const nowIso = new Date().toISOString();
-        if (status === 'EN_ALISTAMIENTO' && !child.timestamps.prepStartedAt) child.timestamps.prepStartedAt = nowIso;
-        if (status === 'LISTO_PARA_DESPACHO' && !child.timestamps.prepCompletedAt) child.timestamps.prepCompletedAt = nowIso;
-        if (status === 'EN_CAMINO' && !child.timestamps.pickedUpAt) child.timestamps.pickedUpAt = nowIso;
-        if (status === 'ENTREGADO' && !child.timestamps.deliveredAt) child.timestamps.deliveredAt = nowIso;
-
-        // Sincronizar estado del pedido padre
-        if (order.childShipments.every(s => s.fulfillmentStatus === 'ENTREGADO')) {
-          order.fulfillmentStatus = 'ENTREGADO';
-          order.timestamps.deliveredAt = nowIso;
-        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'EN_CAMINO')) {
-          order.fulfillmentStatus = 'EN_CAMINO';
-        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')) {
-          order.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
-        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'LISTO_PARA_DESPACHO')) {
-          order.fulfillmentStatus = 'LISTO_PARA_DESPACHO';
-        } else if (order.childShipments.some(s => s.fulfillmentStatus === 'EN_ALISTAMIENTO')) {
-          order.fulfillmentStatus = 'EN_ALISTAMIENTO';
-        }
-
-        return res.json({ message: `Estado del envío ${child.shipmentIndex} actualizado a ${status}`, child, order });
-      }
+    const { status, shipmentId, reason, deliveryCode, notes } = req.body;
+    if (!status) {
+      return res.status(400).json({ error: 'Se requiere especificar el parámetro status' });
     }
 
-    order.fulfillmentStatus = status;
+    const actor = extractActor(req, 'BODEGA');
+    const result = ordersRepository.transitionStatus(req.params.orderId, status, actor, {
+      shipmentId,
+      reason,
+      deliveryCode,
+      catalogProducts: products,
+      notes,
+    });
 
-    if (status === 'EN_ALISTAMIENTO' && !order.timestamps.prepStartedAt) {
-      order.timestamps.prepStartedAt = new Date().toISOString();
-    }
-    if (status === 'LISTO_PARA_DESPACHO' && !order.timestamps.prepCompletedAt) {
-      order.timestamps.prepCompletedAt = new Date().toISOString();
-    }
-    if (status === 'EN_CAMINO' && !order.timestamps.pickedUpAt) {
-      order.timestamps.pickedUpAt = new Date().toISOString();
+    if (!result.success) {
+      return res.status(result.code || 400).json({ error: result.error });
     }
 
-    res.json({ message: 'Estado actualizado', order });
+    res.json({
+      message: `Estado actualizado exitosamente a ${status}`,
+      order: result.order,
+      childShipment: result.childShipment,
+    });
   });
 
   app.post('/api/v1/operations/orders/:orderId/prescription/review', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
+    const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
     const { status, reviewNotes, reviewerName } = req.body;
@@ -714,42 +881,39 @@ async function startServer() {
   });
 
   app.post('/api/v1/operations/orders/:orderId/assign-driver', (req: Request, res: Response) => {
-    const order = orders.find(o => o.id === req.params.orderId);
-    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
     const { driverId, shipmentId } = req.body;
-    const driver = drivers.find(d => d.id === driverId) || drivers[0];
-    const driverPayload = {
-      id: driver.id,
-      name: driver.name,
-      phone: driver.phone,
-      vehiclePlate: driver.vehiclePlate,
-      vehicleType: driver.vehicleType,
-      rating: driver.rating,
-      photo: driver.photo,
-    };
+    const actor = extractActor(req, 'COORDINADOR');
+    const result = ordersRepository.assignDriver(req.params.orderId, driverId || 'DRV-CARLOS-01', actor, shipmentId);
 
-    if (order.isSplitOrder && order.childShipments && shipmentId) {
-      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
-      if (child) {
-        child.driver = driverPayload;
-        child.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
-        child.timestamps.assignedAt = new Date().toISOString();
-
-        if (order.childShipments.every(s => !!s.driver)) {
-          order.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
-          order.timestamps.assignedAt = new Date().toISOString();
-        }
-
-        return res.json({ message: `Conductor asignado al envío ${child.shipmentIndex}`, child, order });
-      }
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
     }
 
-    order.driver = driverPayload;
-    order.fulfillmentStatus = 'REPARTIDOR_ASIGNADO';
-    order.timestamps.assignedAt = new Date().toISOString();
+    res.json({
+      message: 'Conductor asignado exitosamente',
+      order: result.order,
+      childShipment: result.childShipment,
+    });
+  });
 
-    res.json({ message: 'Conductor asignado exitosamente', order });
+  // Confirm physical return of cancelled dispatched order
+  app.post('/api/v1/operations/orders/:orderId/confirm-physical-return', (req: Request, res: Response) => {
+    const { inspectorName, notes } = req.body;
+    const result = ordersRepository.confirmPhysicalReturn(
+      req.params.orderId,
+      inspectorName || 'Supervisor de Bodega Kennedy',
+      products,
+      notes
+    );
+
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+
+    res.json({
+      message: 'Devolución física confirmada. Inventario reingresado a disponible.',
+      order: result.order,
+    });
   });
 
   // Integrations status
