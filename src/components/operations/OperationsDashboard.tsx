@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { 
   ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
   Settings, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, UserCheck, 
@@ -11,6 +11,7 @@ import { api } from '../../lib/api';
 import { pushService } from '../../lib/notifications';
 import { WarehouseManagerTab } from './WarehouseManagerTab';
 import { ShopifySyncTab } from './ShopifySyncTab';
+import { getProductPurchaseBlock } from '../../lib/productAvailability';
 
 interface OperationsDashboardProps {
   onBackToCustomer: () => void;
@@ -31,6 +32,14 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [selectedStoreId, setSelectedStoreId] = useState<string>('ALL_ACTIVE');
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [inventorySearch, setInventorySearch] = useState('');
+  const [visibleInventoryCount, setVisibleInventoryCount] = useState(100);
+
+  useEffect(() => { setVisibleInventoryCount(100); }, [inventorySearch, selectedStoreId]);
+  const inventoryProducts = useMemo(() => {
+    const query = inventorySearch.trim().toLocaleLowerCase('es-CO');
+    return products.filter(product => !query || `${product.sku} ${product.name}`.toLocaleLowerCase('es-CO').includes(query));
+  }, [products, inventorySearch]);
 
   // Pharmacy review state
   const [reviewNotes, setReviewNotes] = useState('');
@@ -43,7 +52,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     try {
       const [ordList, prodList, storeList, integ] = await Promise.all([
         api.getOrders(),
-        api.getCatalog(),
+        api.getCatalog({ scope: 'admin' }),
         api.getStores(),
         api.getIntegrationsStatus(),
       ]);
@@ -58,15 +67,23 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     }
   };
 
+  const refreshOrders = async () => {
+    try {
+      setOrders(await api.getOrders());
+    } catch (error) {
+      console.error('Error refreshing operations orders:', error);
+    }
+  };
+
   useEffect(() => {
     loadData();
-    const interval = setInterval(loadData, 6000);
+    const interval = setInterval(refreshOrders, 6000);
     return () => clearInterval(interval);
   }, []);
 
   // Funciones de validación de bodegas y exclusión de Centro
   const isCentroStore = (store: Store | { id: string; name?: string }) =>
-    store.id === 'HUB_CENTRO' || (store.name?.toLowerCase().includes('centro') ?? false);
+    store.id === 'HUB_CENTRO';
 
   const activeStoresExceptCentro = stores.filter(s => s.isActive && !isCentroStore(s));
   const activeStoresExceptCentroIds = activeStoresExceptCentro.map(s => s.id);
@@ -1142,7 +1159,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               <div>
                 <h2 className="text-xl font-black text-slate-900">Control de Inventario, Lotes y Cadena de Frío</h2>
                 <p className="text-xs text-slate-500">
-                  Regla de seguridad: Venta online se pausa automáticamente cuando quedan 2 o menos unidades.
+                  Existencias independientes por bodega. Los datos pendientes de Shopify se muestran por verificar.
                 </p>
               </div>
             </div>
@@ -1152,6 +1169,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
             {/* Inactive / Excluded Store Audit Banners */}
             {renderAuditBanners()}
+
+            <div className="flex items-center gap-2 flex-wrap">
+              <input type="search" value={inventorySearch} onChange={event => setInventorySearch(event.target.value)} placeholder="Buscar por SKU o producto..." className="w-full sm:w-80 px-3 py-2 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-600 font-medium" />
+              <button type="button" onClick={loadData} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">Actualizar inventario</button>
+            </div>
 
             <div className="bg-white rounded-3xl border border-slate-200 overflow-hidden shadow-xs">
               <div className="overflow-x-auto">
@@ -1173,7 +1195,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
-                    {products.map(prod => {
+                    {inventoryProducts.slice(0, visibleInventoryCount).map(prod => {
                       let stock = 0;
                       let reserved = 0;
                       if (selectedStoreId === 'ALL_ACTIVE') {
@@ -1186,6 +1208,9 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                         reserved = prod.reservedStockByStore[selectedStoreId] || 0;
                       }
                       const available = Math.max(0, stock - reserved);
+                      const selectedInventoryStores = selectedStoreId === 'ALL_ACTIVE' ? activeStoresExceptCentroIds : [selectedStoreId];
+                      const quantityPending = prod.source === 'SHOPIFY' && selectedInventoryStores.some(storeId => prod.inventoryByStore?.[storeId]?.available == null);
+                      const purchaseBlock = getProductPurchaseBlock(prod);
                       const lot = prod.lots?.[0];
 
                       return (
@@ -1199,7 +1224,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                           </td>
                           <td className="p-3.5">
                             <span className="font-mono bg-slate-100 px-1.5 py-0.5 rounded text-[11px]">
-                              {prod.sku}
+                              {prod.sku || `Var. ${prod.shopifyVariantGid?.split('/').pop() || prod.id}`}
                             </span>
                             {prod.icaRegistration && (
                               <p className="text-[10px] text-emerald-700 font-bold mt-0.5">
@@ -1213,15 +1238,16 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             </span>
                           </td>
                           <td className="p-3.5 font-bold text-slate-900 font-mono">
-                            {formatCOP(prod.price)}
+                            {prod.pricePending ? 'Pendiente' : formatCOP(prod.price)}
                           </td>
                           <td className="p-3.5 font-bold text-slate-900">
-                            <span className="font-mono text-sm">{stock}</span>
+                            <span className="font-mono text-sm">{quantityPending ? 'Por verificar' : stock}</span>
                             {selectedStoreId === 'ALL_ACTIVE' && (
                               <p className="text-[10px] text-slate-400 font-mono font-medium mt-0.5">
                                 {activeStoresExceptCentro.map(s => {
                                   const label = s.name.replace('Bolt Pets ', '').substring(0, 3).toUpperCase();
-                                  return `${label}: ${prod.stockByStore[s.id] || 0}`;
+                                  const pending = prod.source === 'SHOPIFY' && prod.inventoryByStore?.[s.id]?.available == null;
+                                  return `${label}: ${pending ? 'Pendiente' : prod.stockByStore[s.id] || 0}`;
                                 }).join(' · ')}
                               </p>
                             )}
@@ -1238,7 +1264,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             ) : 'N/A'}
                           </td>
                           <td className="p-3.5">
-                            {isSelectedStoreInactive ? (
+                            {quantityPending || purchaseBlock ? (
+                              <span title={purchaseBlock || 'Existencias pendientes de confirmar'} className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
+                                Por verificar
+                              </span>
+                            ) : isSelectedStoreInactive ? (
                               <span className="text-[10px] font-bold bg-slate-200 text-slate-700 px-2 py-0.5 rounded-full">
                                 Bodega Inactiva ({available})
                               </span>
@@ -1248,7 +1278,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                               </span>
                             ) : available <= 2 ? (
                               <span className="text-[10px] font-bold bg-amber-100 text-amber-800 px-2 py-0.5 rounded-full">
-                                Pausado (Margen Seg.)
+                                Bajo stock
                               </span>
                             ) : (
                               <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
@@ -1262,6 +1292,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                   </tbody>
                 </table>
               </div>
+              {inventoryProducts.length > visibleInventoryCount && (
+                <button type="button" onClick={() => setVisibleInventoryCount(count => count + 100)} className="m-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+                  Ver más productos ({visibleInventoryCount} de {inventoryProducts.length})
+                </button>
+              )}
             </div>
           </div>
         )}

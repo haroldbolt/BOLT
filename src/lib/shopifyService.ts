@@ -1,234 +1,170 @@
-/**
- * BOLT PETS — SERVICIO DE INTEGRACIÓN Y SINCRONIZACIÓN CON SHOPIFY
- * Tienda Oficial: Agrocentro Pets
- * Dominio Admin API Canónico: 1c76bc-08.myshopify.com
- * Dominio Comercial Público: cultivacenter.com
- * Versión API GraphQL Soportada: 2025-01
- * Permisos Iniciales de Solo Lectura: read_products, read_inventory, read_locations
- */
+/** Local, read-only Shopify snapshot state. This module performs no network or filesystem requests. */
+import type { ShopifySyncState, ShopifyInventoryItemMapping } from '../types';
+import type { ShopifyMappedProduct, normalizeShopifySnapshot } from './shopifyMapper';
 
-import { ShopifySyncState, ShopifyLocationMapping, ShopifyInventoryItemMapping } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_STORES } from '../data/seedData';
+type SnapshotInventory = ReturnType<typeof normalizeShopifySnapshot>;
 
 export const SHOPIFY_CONFIG = {
   storeName: 'Agrocentro Pets',
   canonicalDomain: '1c76bc-08.myshopify.com',
   publicDomain: 'cultivacenter.com',
-  apiVersion: '2025-01',
+  apiVersion: '2026-10',
   readOnlyScopes: ['read_products', 'read_inventory', 'read_locations'],
-  reconciliationIntervalMinutes: 10,
+  reconciliationIntervalMinutes: 0,
   locations: {
-    HUB_KENNEDY: {
-      gid: 'gid://shopify/Location/115617857816',
-      name: 'Bolt Pets Kennedy',
-      officialAddress: 'Carrera 79A #2-05, Bogotá, Colombia',
-    },
-    HUB_ALAMOS: {
-      gid: 'gid://shopify/Location/115617890584',
-      name: 'Bolt Pets Álamos',
-      officialAddress: 'Calle 72 #97A-18, Bogotá, Colombia',
-    },
-    HUB_SUBA: {
-      gid: 'gid://shopify/Location/115617923352',
-      name: 'Bolt Pets Suba',
-      officialAddress: 'Carrera 107 #143-31, Bogotá, Colombia',
-    },
-    HUB_CENTRO: {
-      gid: 'gid://shopify/Location/115617999999',
-      name: 'Sede Centro Histórico',
-      officialAddress: 'Calle 11 #15-53, La Candelaria / Centro, Bogotá',
-    },
+    HUB_KENNEDY: { gid: 'gid://shopify/Location/115617857816', name: 'Bolt Pets Kennedy', officialAddress: 'Carrera 79A #2-05, Bogotá, Colombia' },
+    HUB_ALAMOS: { gid: 'gid://shopify/Location/115617890584', name: 'Bolt Pets Álamos', officialAddress: 'Calle 72 #97A-18, Bogotá, Colombia' },
+    HUB_SUBA: { gid: 'gid://shopify/Location/115617923352', name: 'Bolt Pets Suba', officialAddress: 'Carrera 107 #143-31, Bogotá, Colombia' },
+    HUB_CENTRO: { gid: 'gid://shopify/Location/115676021016', name: 'Agrocentro Pets - Centro', officialAddress: 'Calle 11 #15-53, Bogotá, Colombia' },
   },
 };
 
-// Generar mapeos de inventario detallados a partir del catálogo semilla
-function buildInitialInventoryMappings(): ShopifyInventoryItemMapping[] {
-  return INITIAL_PRODUCTS.map((prod, index) => {
-    const paddedIndex = String(index + 1).padStart(3, '0');
-    const productGid = `gid://shopify/Product/98412850${paddedIndex}`;
-    const variantGid = `gid://shopify/ProductVariant/49213840${paddedIndex}`;
-    const inventoryItemGid = `gid://shopify/InventoryItem/51029481${paddedIndex}`;
+export class ShopifyService {
+  private syncState: ShopifySyncState = {
+    status: 'SIN_CONFIGURAR',
+    storeDomain: SHOPIFY_CONFIG.canonicalDomain,
+    publicDomain: SHOPIFY_CONFIG.publicDomain,
+    apiVersion: SHOPIFY_CONFIG.apiVersion,
+    readOnlyScopes: [...SHOPIFY_CONFIG.readOnlyScopes],
+    reconciliationIntervalMinutes: 0,
+    activeWarehousesCount: 0,
+    totalMappedSkus: 0,
+    unmappedSkusCount: 0,
+    discrepanciesCount: 0,
+    locations: [],
+    inventoryItems: [],
+    automaticSync: false,
+  };
+  private imported = false;
+  private productsById = new Map<string, ShopifyMappedProduct>();
 
-    const quantitiesByLocation: Record<string, {
-      onHand: number;
-      committed: number;
-      reservedBolt: number;
-      safetyStock: number;
-      sellable: number;
-    }> = {};
-
-    for (const store of INITIAL_STORES) {
-      const onHand = prod.stockByStore[store.id] || 0;
-      const reservedBolt = prod.reservedStockByStore[store.id] || 0;
-      const committed = Math.min(2, Math.floor(onHand * 0.1));
-      const safetyStock = store.safetyStockDefault || 2;
-      const sellable = Math.max(0, onHand - committed - reservedBolt - safetyStock);
-
-      quantitiesByLocation[store.id] = {
-        onHand,
-        committed,
-        reservedBolt,
-        safetyStock,
-        sellable,
-      };
+  configureSnapshot({ products, stores, status }: SnapshotInventory): ShopifySyncState {
+    if (!status.complete) throw new Error('No se puede instalar una instantánea incompleta de Shopify.');
+    for (const item of this.syncState.inventoryItems) this.refreshItem(item);
+    const previousReservations = new Map(this.syncState.inventoryItems.map(item => [item.shopifyVariantGid, item.quantitiesByLocation]));
+    for (const product of products) {
+      for (const storeId of Object.keys(product.inventoryByStore)) {
+        product.reservedStockByStore[storeId] = previousReservations.get(product.shopifyVariantGid)?.[storeId]?.reservedBolt
+          ?? product.reservedStockByStore[storeId] ?? 0;
+      }
     }
-
-    return {
-      sku: prod.sku,
-      productName: prod.name,
-      shopifyProductGid: productGid,
-      shopifyVariantGid: variantGid,
-      shopifyInventoryItemGid: inventoryItemGid,
-      quantitiesByLocation,
-      lastUpdated: new Date().toISOString(),
-    };
-  });
-}
-
-const initialLocations: ShopifyLocationMapping[] = [
-  {
-    storeId: 'HUB_KENNEDY',
-    storeName: 'Bolt Pets Kennedy',
-    shopifyLocationGid: 'gid://shopify/Location/115617857816',
-    shopifyLocationName: 'Agrocentro Kennedy Hub',
-    isActiveInBolt: true,
-    lastSyncAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    syncedProductsCount: INITIAL_PRODUCTS.length,
-    discrepanciesCount: 0,
-  },
-  {
-    storeId: 'HUB_ALAMOS',
-    storeName: 'Bolt Pets Álamos',
-    shopifyLocationGid: 'gid://shopify/Location/115617890584',
-    shopifyLocationName: 'Agrocentro Álamos Hub',
-    isActiveInBolt: true,
-    lastSyncAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    syncedProductsCount: INITIAL_PRODUCTS.length,
-    discrepanciesCount: 0,
-  },
-  {
-    storeId: 'HUB_SUBA',
-    storeName: 'Bolt Pets Suba',
-    shopifyLocationGid: 'gid://shopify/Location/115617923352',
-    shopifyLocationName: 'Agrocentro Suba Hub',
-    isActiveInBolt: true,
-    lastSyncAt: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-    syncedProductsCount: INITIAL_PRODUCTS.length,
-    discrepanciesCount: 0,
-  },
-  {
-    storeId: 'HUB_CENTRO',
-    storeName: 'Sede Centro Histórico',
-    shopifyLocationGid: 'gid://shopify/Location/115617999999',
-    shopifyLocationName: 'Agrocentro Centro Bogotá',
-    isActiveInBolt: false, // Fuera de la red Turbo de Bolt Pets
-    lastSyncAt: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-    syncedProductsCount: INITIAL_PRODUCTS.length,
-    discrepanciesCount: 0,
-  },
-];
-
-let syncState: ShopifySyncState = {
-  status: 'PENDIENTE_AUTORIZACION',
-  storeDomain: SHOPIFY_CONFIG.canonicalDomain,
-  publicDomain: SHOPIFY_CONFIG.publicDomain,
-  apiVersion: SHOPIFY_CONFIG.apiVersion,
-  readOnlyScopes: SHOPIFY_CONFIG.readOnlyScopes,
-  lastSuccessfulSync: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-  lastAttemptedSync: new Date(Date.now() - 4 * 60 * 1000).toISOString(),
-  reconciliationIntervalMinutes: SHOPIFY_CONFIG.reconciliationIntervalMinutes,
-  activeWarehousesCount: 3,
-  totalMappedSkus: INITIAL_PRODUCTS.length,
-  unmappedSkusCount: 0,
-  discrepanciesCount: 0,
-  locations: initialLocations,
-  inventoryItems: buildInitialInventoryMappings(),
-};
-
-class ShopifyService {
-  getState(): ShopifySyncState {
-    return { ...syncState };
-  }
-
-  async triggerReconciliation(): Promise<ShopifySyncState> {
-    syncState.status = 'SINCRONIZANDO';
-    syncState.lastAttemptedSync = new Date().toISOString();
-
-    // Simular consulta segura GraphQL Admin API de Shopify (read_inventory)
-    await new Promise(r => setTimeout(r, 600));
-
-    const now = new Date().toISOString();
-    syncState.lastSuccessfulSync = now;
-    syncState.status = 'CONECTADO';
-
-    // Actualizar timestamps de las sedes
-    syncState.locations = syncState.locations.map(loc => ({
-      ...loc,
-      lastSyncAt: now,
+    this.productsById = new Map(products.map(product => [product.id, product]));
+    const inventoryItems: ShopifyInventoryItemMapping[] = products.map(product => ({
+      productId: product.id,
+      sku: product.sku,
+      productName: `${product.name} · ${product.presentation}`,
+      shopifyProductGid: product.shopifyProductGid,
+      shopifyVariantGid: product.shopifyVariantGid,
+      shopifyInventoryItemGid: product.shopifyInventoryItemGid,
+      quantitiesByLocation: Object.fromEntries(Object.entries(product.inventoryByStore).map(([storeId, level]) => {
+        const reservedBolt = previousReservations.get(product.shopifyVariantGid)?.[storeId]?.reservedBolt
+          ?? product.reservedStockByStore[storeId] ?? 0;
+        return [storeId, {
+          available: level.available,
+          onHand: level.onHand,
+          committed: level.committed,
+          reservedBolt,
+          safetyStock: level.quantities.safety_stock ?? 0,
+          // Shopify available already accounts for its committed/reserved inventory.
+          sellable: level.available === null ? null : Math.max(0, level.available - reservedBolt),
+        }];
+      })),
+      lastUpdated: status.fetchedAt,
     }));
-
-    return { ...syncState };
+    this.syncState = {
+      ...status,
+      mode: 'READ_ONLY_SNAPSHOT',
+      status: 'SNAPSHOT_IMPORTADO',
+      storeDomain: status.shop.myshopifyDomain,
+      publicDomain: SHOPIFY_CONFIG.publicDomain,
+      apiVersion: status.apiVersion || '',
+      readOnlyScopes: [...SHOPIFY_CONFIG.readOnlyScopes],
+      lastSuccessfulSync: status.fetchedAt,
+      lastAttemptedSync: status.fetchedAt,
+      automaticSync: false,
+      reconciliationIntervalMinutes: 0,
+      activeWarehousesCount: stores.filter(store => store.isActive).length,
+      totalMappedSkus: products.length,
+      importedProductCount: status.productsCount,
+      importedVariantCount: status.variantCount,
+      unmappedSkusCount: 0,
+      discrepanciesCount: 0,
+      locations: status.locations.map(location => ({
+        ...location,
+        storeId: location.storeId,
+        storeName: location.name,
+        shopifyLocationGid: location.id,
+        shopifyLocationName: location.name,
+        isActiveInBolt: location.isActive,
+        lastSyncAt: status.fetchedAt,
+        syncedProductsCount: products.filter(product => product.inventoryByStore[location.storeId]).length,
+        discrepanciesCount: 0,
+      })),
+      inventoryItems,
+    };
+    this.imported = true;
+    return this.getState();
   }
 
-  /**
-   * Obtiene las existencias vendibles para un producto y sede específicos.
-   * Regla de negocio:
-   * Stock vendible = max(0, onHand - committed - reservedBolt - safetyStock)
-   */
-  getSellableStock(sku: string, storeId: string): number {
-    const item = syncState.inventoryItems.find(i => i.sku === sku);
-    if (!item || !item.quantitiesByLocation[storeId]) return 0;
-    return item.quantitiesByLocation[storeId].sellable;
+  getState(): ShopifySyncState {
+    for (const item of this.syncState.inventoryItems) this.refreshItem(item);
+    return structuredClone(this.syncState);
   }
 
-  /**
-   * Aplica una reserva local atómica para un pedido confirmado en Bolt Pets
-   * sin modificar inventario en Shopify (modo seguro de solo lectura).
-   */
-  reserveStockLocally(storeId: string, sku: string, quantity: number): boolean {
-    const item = syncState.inventoryItems.find(i => i.sku === sku);
-    if (!item || !item.quantitiesByLocation[storeId]) return false;
+  /** Observe the server's shared local inventory without changing the original Shopify quantities or read date. */
+  private refreshItem(item: ShopifyInventoryItemMapping): void {
+    const product = this.productsById.get(item.productId);
+    if (!product) return;
+    for (const [storeId, level] of Object.entries(item.quantitiesByLocation)) {
+      const original = product.inventoryByStore[storeId];
+      const stock = product.stockByStore[storeId];
+      const available = original?.available == null || !Number.isFinite(stock) ? null : stock;
+      const reservedBolt = product.reservedStockByStore[storeId] ?? 0;
+      level.available = available;
+      level.onHand = original?.onHand ?? null;
+      level.committed = original?.committed ?? null;
+      level.reservedBolt = reservedBolt;
+      level.safetyStock = original?.quantities.safety_stock ?? 0;
+      level.sellable = available === null ? null : Math.max(0, available - reservedBolt);
+    }
+  }
 
-    const locData = item.quantitiesByLocation[storeId];
-    if (locData.sellable < quantity) return false;
+  /** No token is configured here: a local refresh never invents a Shopify read or new timestamp. */
+  async triggerReconciliation(): Promise<ShopifySyncState> {
+    return this.getState();
+  }
 
-    locData.reservedBolt += quantity;
-    locData.sellable = Math.max(0, locData.onHand - locData.committed - locData.reservedBolt - locData.safetyStock);
-    item.lastUpdated = new Date().toISOString();
+  private findItem(productIdOrVariantGid: string): ShopifyInventoryItemMapping | undefined {
+    if (!productIdOrVariantGid) return undefined;
+    const item = this.syncState.inventoryItems.find(item => item.productId === productIdOrVariantGid || item.shopifyVariantGid === productIdOrVariantGid);
+    if (item) this.refreshItem(item);
+    return item;
+  }
+
+  getSellableStock(productIdOrVariantGid: string, storeId: string): number {
+    return this.findItem(productIdOrVariantGid)?.quantitiesByLocation[storeId]?.sellable ?? 0;
+  }
+
+  /** A Bolt reservation affects this process only and never writes to Shopify. */
+  reserveStockLocally(storeId: string, productIdOrVariantGid: string, quantity: number): boolean {
+    if (!Number.isSafeInteger(quantity) || quantity <= 0) return false;
+    const item = this.findItem(productIdOrVariantGid);
+    const level = item?.quantitiesByLocation[storeId];
+    if (!level || level.sellable == null || level.sellable < quantity || level.available == null) return false;
+    const product = this.productsById.get(item.productId);
+    if (!product) return false;
+    product.reservedStockByStore[storeId] = level.reservedBolt + quantity;
+    this.refreshItem(item);
     return true;
   }
 
-  /**
-   * Actualiza el inventario físico (onHand) y comprometido para una sede y SKU específicos.
-   * Utilizado para procesar webhooks de inventario o simulaciones operativas.
-   */
-  updateLocationStock(
-    storeId: string,
-    sku: string,
-    newOnHand: number,
-    committed: number = 0
-  ): { success: boolean; error?: string; item?: ShopifyInventoryItemMapping } {
-    const item = syncState.inventoryItems.find(i => i.sku === sku);
-    if (!item) return { success: false, error: `SKU ${sku} no encontrado en mapeo de Shopify` };
-
-    if (!item.quantitiesByLocation[storeId]) {
-      item.quantitiesByLocation[storeId] = {
-        onHand: newOnHand,
-        committed,
-        reservedBolt: 0,
-        safetyStock: 2,
-        sellable: Math.max(0, newOnHand - committed - 2),
-      };
-    } else {
-      const loc = item.quantitiesByLocation[storeId];
-      loc.onHand = newOnHand;
-      loc.committed = committed;
-      loc.sellable = Math.max(0, loc.onHand - loc.committed - loc.reservedBolt - loc.safetyStock);
-    }
-
-    item.lastUpdated = new Date().toISOString();
-    syncState.lastSuccessfulSync = item.lastUpdated;
-    return { success: true, item };
+  updateLocationStock(_storeId: string, _productId: string, _newOnHand: number, _committed = 0): { success: boolean; error?: string; item?: ShopifyInventoryItemMapping } {
+    return {
+      success: false,
+      error: this.imported
+        ? 'La instantánea Shopify es de solo lectura. El simulador no puede alterar las existencias importadas.'
+        : 'Falta importar un inventario autorizado de Shopify.',
+    };
   }
 }
 

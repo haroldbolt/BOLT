@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import { ShieldCheck, FileText, AlertCircle, Info, Filter, ArrowLeft, Upload, CheckCircle2 } from 'lucide-react';
 import { Product, PharmacySubcategory } from '../../types';
 import { ProductCard } from './ProductCard';
@@ -48,15 +48,18 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
   const [activeSubcat, setActiveSubcat] = useState<PharmacySubcategory | 'TODAS'>('TODAS');
   const [filterPrescriptionOnly, setFilterPrescriptionOnly] = useState(false);
   const [showFormulaInfoModal, setShowFormulaInfoModal] = useState(false);
+  const [visibleProductCount, setVisibleProductCount] = useState(48);
+
+  useEffect(() => { setVisibleProductCount(48); }, [activeSubcat, filterPrescriptionOnly, selectedStoreId]);
 
   // Filter pharmacy items
-  const pharmacyProducts = products.filter(p => {
+  const pharmacyProducts = useMemo(() => products.filter(p => {
     const isPharm = p.category === 'Farmacia' || p.category === 'Antipulgas' || !!p.pharmacySubcategory;
     if (!isPharm) return false;
     if (activeSubcat !== 'TODAS' && p.pharmacySubcategory !== activeSubcat) return false;
     if (filterPrescriptionOnly && !p.requiresPrescription) return false;
     return true;
-  });
+  }), [products, activeSubcat, filterPrescriptionOnly]);
 
   return (
     <div className="space-y-4 pb-20">
@@ -145,7 +148,7 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
 
       {/* Pharmacy Grid */}
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-3">
-        {pharmacyProducts.map(prod => (
+        {pharmacyProducts.slice(0, visibleProductCount).map(prod => (
           <ProductCard
             key={prod.id}
             product={prod}
@@ -163,6 +166,11 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
           />
         ))}
       </div>
+      {pharmacyProducts.length > visibleProductCount && (
+        <button type="button" onClick={() => setVisibleProductCount(count => count + 48)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+          Ver más productos ({visibleProductCount} de {pharmacyProducts.length})
+        </button>
+      )}
 
       {/* Modal Explanation: Prescription Gate */}
       {showFormulaInfoModal && (

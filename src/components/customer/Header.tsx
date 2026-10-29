@@ -5,6 +5,7 @@ import { DeliveryQuote } from '../../lib/deliveryService';
 
 interface HeaderProps {
   currentStore: Store;
+  addressConfirmed?: boolean;
   allStores: Store[];
   onSelectStore: (store: Store) => void;
   selectedCategory: MainCategory;
@@ -47,6 +48,7 @@ const CATEGORIES: MainCategory[] = [
 
 export const Header: React.FC<HeaderProps> = ({
   currentStore,
+  addressConfirmed = true,
   allStores,
   onSelectStore,
   selectedCategory,
@@ -279,7 +281,9 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex justify-center">
             <button
               onClick={() => {
-                if (isScheduledDelivery && onOpenScheduledModal) {
+                if (!addressConfirmed && onOpenAddressModal) {
+                  onOpenAddressModal();
+                } else if (isScheduledDelivery && onOpenScheduledModal) {
                   onOpenScheduledModal();
                 } else if (onOpenAddressModal) {
                   onOpenAddressModal();
@@ -292,9 +296,11 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-blue-900/95 hover:bg-blue-900 text-blue-100 border-blue-400/50 shadow-blue-950/20'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/25'
               }`}
-              title={isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Entrega ultra-rápida Turbo en Bogotá'}
+              title={!addressConfirmed ? 'Confirma tu dirección para consultar disponibilidad y entrega' : isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Consultar entrega para esta dirección'}
             >
-              {isScheduledDelivery ? (
+              {!addressConfirmed ? (
+                <><MapPin className="w-4 h-4 text-yellow-300 shrink-0" /><span>Confirma tu dirección</span></>
+              ) : isScheduledDelivery ? (
                 <>
                   <Calendar className="w-4 h-4 text-yellow-300 shrink-0" />
                   <span className="font-bold">
@@ -316,7 +322,7 @@ export const Header: React.FC<HeaderProps> = ({
                     ⚡
                   </span>
                   <span className="tracking-wide">
-                    Turbo <span className="font-black text-white text-sm sm:text-base">{deliveryQuote?.estimatedMinutes || 25} min</span>
+                    Turbo <span className="font-black text-white text-sm sm:text-base">{deliveryQuote?.estimatedMinutes ? `${deliveryQuote.estimatedMinutes} min` : 'Tiempo por confirmar'}</span>
                   </span>
                   {deliveryQuote?.detectedLocalityName && (
                     <span className="text-[10px] bg-emerald-800 text-emerald-100 font-bold px-1.5 py-0.5 rounded-full ml-0.5">

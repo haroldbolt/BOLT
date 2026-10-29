@@ -1,19 +1,25 @@
+import 'dotenv/config';
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
+import { timingSafeEqual } from 'node:crypto';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
-import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_DRIVERS, INITIAL_ORDERS } from './src/data/seedData';
+import { INITIAL_DRIVERS, INITIAL_ORDERS } from './src/data/seedData';
 import { Order, Product, Store, DriverProfile, GPSTelemetry } from './src/types';
-import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking } from './src/lib/deliveryService';
+import { evaluateDeliveryQuote, DELIVERY_CONFIG, validateScheduledBooking } from './src/lib/deliveryService';
 import { shopifyService } from './src/lib/shopifyService';
+import { createShopifyInventoryRuntime } from './lib/shopifyRuntime';
+import { getProductPurchaseBlock } from './src/lib/productAvailability';
+import { filterCustomerCatalog } from './src/lib/catalogAvailability';
+import { assignScheduledWarehouse } from './src/lib/warehouseAssignment';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Authoritative in-memory state initialized from seed data
-let stores: Store[] = JSON.parse(JSON.stringify(INITIAL_STORES));
-let products: Product[] = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+// Real catalog is installed from the private Shopify snapshot before serving requests.
+let stores: Store[] = [];
+let products: Product[] = [];
 let drivers: DriverProfile[] = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
 let orders: Order[] = JSON.parse(JSON.stringify(INITIAL_ORDERS));
 let gpsTelemetryHistory: Record<string, GPSTelemetry[]> = {
@@ -35,11 +41,59 @@ let gpsTelemetryHistory: Record<string, GPSTelemetry[]> = {
 };
 
 async function startServer() {
+  const inventoryRuntime = createShopifyInventoryRuntime({
+    projectRoot: __dirname,
+    onInventory(inventory) {
+      stores = inventory.stores;
+      products = inventory.products;
+      shopifyService.configureSnapshot(inventory);
+    },
+  });
+  await inventoryRuntime.initialize();
+  const inventoryStatus = () => {
+    const state = inventoryRuntime.getStatus();
+    const current = inventoryRuntime.getInventory();
+    return {
+      ...state,
+      importedProductCount: current?.status.productsCount || 0,
+      importedVariantCount: current?.products.length || 0,
+      locationsCount: current?.status.locationsCount || 0,
+      version: `${state.fetchedAt || 'empty'}:${state.status}:${state.isStale}`,
+    };
+  };
+  const getShopifyState = () => ({ ...shopifyService.getState(), ...inventoryStatus() });
+  const requireSyncAdmin = (req: Request, res: Response, next: () => void) => {
+    const expected = process.env.BOLT_ADMIN_API_TOKEN;
+    if (!expected) return res.status(503).json({ error: 'Configura el acceso privado de administración en el servidor.' });
+    const provided = req.headers.authorization?.startsWith('Bearer ') ? req.headers.authorization.slice(7) : '';
+    const left = Buffer.from(provided), right = Buffer.from(expected);
+    if (!left.length || left.length !== right.length || !timingSafeEqual(left, right)) {
+      return res.status(401).json({ error: 'Esta operación requiere autorización de administración.' });
+    }
+    next();
+  };
+  const quoteForInventory = (body: Parameters<typeof evaluateDeliveryQuote>[0]) =>
+    assignScheduledWarehouse(evaluateDeliveryQuote(body, stores, products), stores, products, body.items);
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
   app.use(cors());
+  // Verify the untouched bytes before express.json can transform the webhook body.
+  app.post('/api/v1/shopify/webhook', express.raw({ type: 'application/json', limit: '1mb' }), (req, res) => {
+    const headers = Object.fromEntries(Object.entries(req.headers).map(([key, value]) => [key, Array.isArray(value) ? value[0] : value]));
+    const result = inventoryRuntime.acceptWebhook(Buffer.isBuffer(req.body) ? req.body : Buffer.alloc(0), headers);
+    res.status(result.status).json({ received: result.accepted, duplicate: result.duplicate || false });
+  });
   app.use(express.json({ limit: '15mb' }));
+  app.use((req, res, next) => {
+    let requestPath: string;
+    try { requestPath = decodeURIComponent(req.path).replace(/\\/g, '/').toLowerCase(); }
+    catch { return res.sendStatus(400); }
+    if (requestPath.includes('/.bolt-private') || requestPath.endsWith('/snapshot_36b24de9.json')) {
+      return res.sendStatus(404);
+    }
+    next();
+  });
 
   // ==========================================
   // /api/v1 ROUTES
@@ -55,6 +109,11 @@ async function startServer() {
       locale: 'es-CO',
       storesCount: stores.length,
       productsCount: products.length,
+      inventoryMode: inventoryStatus().mode,
+      inventoryFetchedAt: inventoryStatus().fetchedAt,
+      shopifyProductCount: inventoryRuntime.getInventory()?.status.productsCount || 0,
+      shopifyVariantCount: products.length,
+      automaticSync: inventoryStatus().automaticSync,
       ordersCount: orders.length,
       timestamp: new Date().toISOString(),
     });
@@ -67,8 +126,19 @@ async function startServer() {
 
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
-    const { category, species, storeId, q } = req.query;
-    let filtered = [...products];
+    const { category, species, storeId, q, scope } = req.query;
+    let filtered: Product[];
+    if (scope === 'admin') {
+      filtered = [...products];
+    } else {
+      if (typeof storeId !== 'string' || !storeId) return res.status(400).json({ error: 'Confirma tu dirección para consultar disponibilidad.', code: 'ADDRESS_REQUIRED' });
+      if (!stores.some(store => store.id === storeId && store.isActive && !store.isPaused)) {
+        return res.status(422).json({ error: 'La bodega asignada no está disponible.', code: 'WAREHOUSE_UNAVAILABLE' });
+      }
+      filtered = filterCustomerCatalog(products, storeId);
+    }
+    res.setHeader('Cache-Control', 'no-store');
+    res.setHeader('X-Bolt-Inventory-Version', inventoryStatus().version);
 
     if (category && category !== 'Todo') {
       filtered = filtered.filter(p => p.category === category || p.pharmacySubcategory === category);
@@ -82,6 +152,7 @@ async function startServer() {
         p.name.toLowerCase().includes(queryStr) ||
         p.brand.toLowerCase().includes(queryStr) ||
         p.sku.toLowerCase().includes(queryStr) ||
+        p.presentation.toLowerCase().includes(queryStr) ||
         (p.activeIngredient && p.activeIngredient.toLowerCase().includes(queryStr)) ||
         p.tags.some(t => t.toLowerCase().includes(queryStr))
       );
@@ -92,7 +163,13 @@ async function startServer() {
 
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
-    return deliveryQuoteEndpoint(req, res, stores, products);
+    try { return res.json(quoteForInventory(req.body)); }
+    catch { return res.status(400).json({ error: 'Revisa la dirección y los productos del pedido.' }); }
+  });
+
+  app.get('/api/v1/inventory/status', (_req, res) => {
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(inventoryStatus());
   });
 
   // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
@@ -186,20 +263,43 @@ async function startServer() {
       if (!items || !items.length || !customer || !deliveryAddress || !paymentMethod) {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
       }
+      if (inventoryStatus().isStale) {
+        return res.status(409).json({ error: 'Estamos actualizando la disponibilidad. Intenta nuevamente en unos momentos.', code: 'INVENTORY_NOT_VERIFIED' });
+      }
+
+      if (!Array.isArray(items)) return res.status(400).json({ error: 'El pedido necesita una lista de productos válida.' });
+      const seenProducts = new Set<string>();
+      for (const item of items) {
+        if (!item || !Number.isSafeInteger(item.quantity) || item.quantity <= 0 || seenProducts.has(item.productId)) {
+          return res.status(400).json({ error: 'La cantidad del producto no es válida o está repetido.' });
+        }
+        seenProducts.add(item.productId);
+        const product = products.find(p => p.id === item.productId);
+        if (!product) return res.status(400).json({ error: 'Un producto del pedido ya no está en el catálogo.' });
+        const blocked = getProductPurchaseBlock(product);
+        if (blocked) return res.status(400).json({ error: `${product.name}: ${blocked}.`, code: 'PRODUCT_DATA_PENDING' });
+        // Prices, physical weights and identity always come from the imported catalog.
+        Object.assign(item, {
+          sku: product.sku, name: product.name, brand: product.brand,
+          presentation: product.presentation, price: product.price,
+          weightKg: product.weightKg, image: product.image,
+          requiresPrescription: product.requiresPrescription,
+        });
+      }
 
       // Validar cobertura y límite de tiempo con el motor autoritativo si hay coordenadas
       let assignedStoreId = storeId;
       let evaluatedQuote: any = null;
 
       if (deliveryAddress.coordinates && !isNaN(deliveryAddress.coordinates.lat) && !isNaN(deliveryAddress.coordinates.lng)) {
-        evaluatedQuote = evaluateDeliveryQuote({
+        evaluatedQuote = quoteForInventory({
           destination: {
             address: deliveryAddress.address,
             details: deliveryAddress.details,
             coordinates: deliveryAddress.coordinates,
           },
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
-        }, stores, products);
+        });
 
         // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
         if (requestedDeliveryMode === 'PROGRAMADO') {
@@ -246,10 +346,11 @@ async function startServer() {
         }
 
         // Asignación automática de bodega autoritativa
-        assignedStoreId = evaluatedQuote.assignedStoreId || storeId || 'HUB_KENNEDY';
+        assignedStoreId = evaluatedQuote.assignedStoreId;
       }
 
-      const assignedStore = stores.find(s => s.id === assignedStoreId) || stores[0];
+      const assignedStore = stores.find(s => s.id === assignedStoreId && s.isActive && !s.isPaused);
+      if (!evaluatedQuote || !assignedStore) return res.status(400).json({ error: 'Confirma tu dirección y la disponibilidad antes de realizar el pedido.' });
       assignedStoreId = assignedStore.id;
 
       // Check stock availability in assigned warehouse and reserve
@@ -757,9 +858,10 @@ async function startServer() {
     res.json({
       shopifyOlfato: {
         name: 'Shopify / Olfato',
-        status: 'En pruebas',
-        lastSync: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-        mappedSkusCount: 42,
+        status: inventoryStatus().status === 'CONECTADO' ? 'Conectado · lectura de inventario' : 'Lectura guardada · conexión pendiente o desactualizada',
+        lastSync: inventoryStatus().lastSuccessfulSync || inventoryStatus().fetchedAt,
+        mappedSkusCount: products.length,
+        automaticSync: inventoryStatus().automaticSync,
       },
       siigoNube: {
         name: 'Siigo Nube (Facturación Electrónica DIAN)',
@@ -809,14 +911,16 @@ async function startServer() {
 
   // Shopify sync state & triggers
   app.get('/api/v1/shopify/status', (_req: Request, res: Response) => {
-    res.json(shopifyService.getState());
+    res.setHeader('Cache-Control', 'no-store');
+    res.json(getShopifyState());
   });
 
-  app.post('/api/v1/shopify/sync', async (_req: Request, res: Response) => {
+  app.post('/api/v1/shopify/sync', requireSyncAdmin, async (_req: Request, res: Response) => {
     try {
-      const state = await shopifyService.triggerReconciliation();
-      res.json({
-        message: 'Conciliación de inventario con Shopify (Agrocentro Pets) completada exitosamente',
+      await inventoryRuntime.syncNow();
+      const state = getShopifyState();
+      res.status(state.status === 'CONECTADO' ? 200 : 503).json({
+        message: state.status === 'CONECTADO' ? 'Lectura real de Shopify completada.' : state.errorMessage || 'La conexión de Shopify requiere autorización.',
         state,
       });
     } catch (e: any) {
@@ -824,14 +928,8 @@ async function startServer() {
     }
   });
 
-  app.post('/api/v1/shopify/webhook', (req: Request, res: Response) => {
-    const topic = req.headers['x-shopify-topic'] || 'inventory_levels/update';
-    console.log(`[Shopify Webhook] Evento recibido: ${topic}`);
-    res.status(200).json({ received: true });
-  });
-
   // Simulador de webhook de Shopify (inventory_levels/update) para pruebas operativas seguras
-  app.post('/api/v1/shopify/simulate-webhook', (req: Request, res: Response) => {
+  app.post('/api/v1/shopify/simulate-webhook', requireSyncAdmin, (req: Request, res: Response) => {
     const { storeId, sku, newOnHand, committed = 0 } = req.body;
     if (!storeId || !sku || typeof newOnHand !== 'number') {
       return res.status(400).json({ error: 'Faltan parámetros requeridos (storeId, sku, newOnHand)' });
@@ -861,7 +959,10 @@ async function startServer() {
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        fs: { deny: ['.env', '.env.*', '*.{crt,pem}', '**/.git/**', '**/.bolt-private/**'] },
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);
@@ -872,9 +973,13 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  inventoryRuntime.start();
+  const server = app.listen(PORT, '0.0.0.0', () => {
     console.log(`Bolt Pets Authoritative Full-Stack Server running on port ${PORT}`);
   });
+  const shutdown = () => { inventoryRuntime.stop(); server.close(); };
+  process.once('SIGINT', shutdown);
+  process.once('SIGTERM', shutdown);
 }
 
 startServer().catch(err => {

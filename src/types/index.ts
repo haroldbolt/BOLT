@@ -32,6 +32,35 @@ export interface ProductLot {
 }
 
 export interface Product {
+  source?: 'SHOPIFY';
+  shopifyProductGid?: string;
+  shopifyVariantGid?: string;
+  shopifyInventoryItemGid?: string | null;
+  inventoryItemGid?: string | null;
+  shopifyHandle?: string;
+  shopifyStatus?: string;
+  status?: string;
+  sizeTitle?: string;
+  selectedOptions?: { name: string; value: string }[];
+  shippingWeightKg?: number | null;
+  weightVerified?: boolean;
+  weightSource?: 'SHOPIFY_INVENTORY_MEASUREMENT' | 'UNKNOWN';
+  pricePending?: boolean;
+  inventoryPending?: boolean;
+  requiresShipping?: boolean | null;
+  requiresPrescriptionKnown?: boolean;
+  prescriptionDataStatus?: 'PENDING_REVIEW' | 'NOT_APPLICABLE';
+  compliancePending?: boolean;
+  logisticsBlocked?: boolean;
+  qualityIssues?: string[];
+  ratingVerified?: false;
+  inventoryByStore?: Record<string, {
+    locationGid: string;
+    available: number | null;
+    onHand: number | null;
+    committed: number | null;
+    quantities: Record<string, number>;
+  }>;
   id: string;
   sku: string;
   barcode?: string;
@@ -100,6 +129,7 @@ export interface Store {
 }
 
 export type ShopifyConnectionStatus =
+  | 'SNAPSHOT_IMPORTADO'
   | 'SIN_CONFIGURAR'
   | 'PENDIENTE_AUTORIZACION'
   | 'CONECTADO'
@@ -118,22 +148,35 @@ export interface ShopifyLocationMapping {
 }
 
 export interface ShopifyInventoryItemMapping {
+  productId: string;
   sku: string;
   productName: string;
   shopifyProductGid: string;
   shopifyVariantGid: string;
-  shopifyInventoryItemGid: string;
+  shopifyInventoryItemGid: string | null;
   quantitiesByLocation: Record<string, {
-    onHand: number;
-    committed: number;
+    available?: number | null;
+    onHand: number | null;
+    committed: number | null;
     reservedBolt: number;
     safetyStock: number;
-    sellable: number;
+    sellable: number | null;
   }>;
   lastUpdated: string;
 }
 
 export interface ShopifySyncState {
+  mode?: 'READ_ONLY_SNAPSHOT' | 'SHOPIFY_LIVE_READ_ONLY' | 'UNCONFIGURED';
+  automaticSync?: boolean;
+  liveVerified?: boolean;
+  isStale?: boolean;
+  credentialsConfigured?: boolean;
+  errorCode?: string;
+  nextSyncAt?: string;
+  version?: string;
+  fetchedAt?: string;
+  importedProductCount?: number;
+  importedVariantCount?: number;
   status: ShopifyConnectionStatus;
   storeDomain: string;
   publicDomain: string;

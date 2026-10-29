@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { Header } from './components/customer/Header';
 import { CampaignBanner } from './components/customer/CampaignBanner';
 import { ProductCard } from './components/customer/ProductCard';
@@ -24,9 +24,15 @@ import { ScheduledDeliveryModal } from './components/customer/ScheduledDeliveryM
 
 import { Product, Store, CartItem, MainCategory, Order, DeliveryMode, ScheduledDeliveryWindow, ProductFilterState, WishlistCollection, WishlistItem } from './types';
 import { DeliveryQuote, LatLng } from './lib/deliveryService';
-import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS } from './data/seedData';
+import { INITIAL_ORDERS } from './data/seedData';
 import { api } from './lib/api';
 import { pushService } from './lib/notifications';
+import { getProductPurchaseBlock, getProductSellableQuantity } from './lib/productAvailability';
+import { filterCustomerCatalog, reconcileCartForCatalog } from './lib/catalogAvailability';
+const UNCONFIRMED_STORE: Store = {
+  id: 'UNCONFIRMED', name: 'Por confirmar', address: '', coordinates: { lat: 4.65, lng: -74.10 },
+  turboEnabled: false, isActive: false, schedule: '', maxDeliveryRadiusKm: 0, vehicleMaxWeightKg: 25,
+};
 const INITIAL_WISHLIST_COLLECTIONS: WishlistCollection[] = [
   {
     id: 'col-comida-mensual',
@@ -77,9 +83,17 @@ export default function App() {
   const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   // App data state
-  const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
-  const [currentStore, setCurrentStore] = useState<Store>(INITIAL_STORES[0]);
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [stores, setStores] = useState<Store[]>([]);
+  const [currentStore, setCurrentStore] = useState<Store>(UNCONFIRMED_STORE);
+  const [confirmedStoreId, setConfirmedStoreId] = useState<string | null>(null);
+  const [loadedCatalogStoreId, setLoadedCatalogStoreId] = useState<string | null>(null);
+  const [catalogProducts, setProducts] = useState<Product[]>([]);
+  const products = useMemo(() => loadedCatalogStoreId === confirmedStoreId
+    ? filterCustomerCatalog(catalogProducts, confirmedStoreId) : [], [catalogProducts, confirmedStoreId, loadedCatalogStoreId]);
+  const [inventoryStatus, setInventoryStatus] = useState<Awaited<ReturnType<typeof api.getInventoryStatus>> | null>(null);
+  const [cartFeedback, setCartFeedback] = useState<string | null>(null);
+  const catalogRequestSequence = useRef(0);
+  const [catalogError, setCatalogError] = useState<string | null>(null);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
 
   // Customer UI state
@@ -88,6 +102,7 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [productFilters, setProductFilters] = useState<ProductFilterState>(INITIAL_FILTER_STATE);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
+  const [visibleProductCount, setVisibleProductCount] = useState(48);
   const [favorites, setFavorites] = useState<Record<string, boolean>>({
     'prod-nexgard-spectra-m': true,
     'prod-rc-maxi-15k': true,
@@ -212,14 +227,14 @@ export default function App() {
   };
 
   const handleMoveCollectionToCart = (collectionId: string) => {
+    if (!confirmedStoreId) { setIsAddressModalOpen(true); return; }
     const col = wishlistCollections.find(c => c.id === collectionId);
     if (!col || col.items.length === 0) return;
 
     let addedCount = 0;
     col.items.forEach(item => {
       const prod = products.find(p => p.id === item.productId);
-      if (prod) {
-        handleAddToCart(prod);
+      if (prod && handleAddToCart(prod)) {
         addedCount++;
       }
     });
@@ -232,10 +247,7 @@ export default function App() {
   };
 
   // Cart state
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    { product: INITIAL_PRODUCTS[4], quantity: 1 }, // NexGard
-    { product: INITIAL_PRODUCTS[8], quantity: 1 }, // Churu
-  ]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
@@ -244,9 +256,9 @@ export default function App() {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(() => pushService.getUnreadCount());
 
   // Delivery Address & Authoritative Delivery Quote context
-  const [customerAddress, setCustomerAddress] = useState<string>('Calle 3 #78-20, Kennedy Central, Bogotá');
-  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('Apto 502, Torre 2');
-  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.6365, lng: -74.1448 });
+  const [customerAddress, setCustomerAddress] = useState<string>('');
+  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('');
+  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.65, lng: -74.10 });
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
@@ -333,52 +345,102 @@ export default function App() {
     };
   }, []);
 
-  // Fetch initial data
+  // Load warehouse metadata only. The customer catalog needs a confirmed address.
   useEffect(() => {
+    let active = true;
     const fetchInitial = async () => {
       try {
-        const [loadedStores, loadedProducts, loadedOrders] = await Promise.all([
+        const [loadedStores, loadedOrders] = await Promise.all([
           api.getStores(),
-          api.getCatalog(),
           api.getOrders(),
         ]);
-        if (loadedStores.length) setStores(loadedStores);
-        if (loadedProducts.length) setProducts(loadedProducts);
+        if (!active) return;
+        setStores(loadedStores);
         if (loadedOrders.length) setOrders(loadedOrders);
       } catch (e) {
+        if (active) setCatalogError('No pudimos consultar las bodegas. Vuelve a cargar la página para intentarlo de nuevo.');
         console.error('Error fetching initial app data:', e);
       }
     };
     fetchInitial();
+    return () => { active = false; };
   }, []);
 
-  // Re-evaluate delivery quote and update automatically assigned warehouse
+  // Poll lightweight metadata; download the catalog only when its version or warehouse changes.
   useEffect(() => {
-    const fetchQuote = async () => {
+    let active = true;
+    let inFlight = false;
+    const readStatus = async () => {
+      if (inFlight) return;
+      inFlight = true;
       try {
-        const q = await api.getDeliveryQuote(
-          {
-            destination: {
-              address: customerAddress,
-              details: customerAddressDetails,
-              coordinates: customerCoordinates,
-            },
-            items: cartItems.map(i => ({ productId: i.product.id, quantity: i.quantity })),
-          },
-          stores,
-          products
-        );
-        setDeliveryQuote(q);
-        if (q.assignedStoreId) {
-          const matchStore = stores.find(s => s.id === q.assignedStoreId);
-          if (matchStore) setCurrentStore(matchStore);
-        }
+        const status = await api.getInventoryStatus();
+        if (active) setInventoryStatus(status);
       } catch (e) {
-        console.error('Error fetching delivery quote:', e);
+        if (active) setInventoryStatus(previous => ({ ...previous, isStale: true, errorMessage: 'No pudimos verificar la actualización del inventario. Conservamos la última lectura disponible.' }));
+      } finally {
+        inFlight = false;
       }
     };
-    fetchQuote();
-  }, [customerCoordinates, stores]);
+    readStatus();
+    const interval = window.setInterval(readStatus, 20000);
+    return () => { active = false; window.clearInterval(interval); };
+  }, []);
+
+  const inventoryVersion = inventoryStatus?.version ?? inventoryStatus?.fetchedAt ?? inventoryStatus?.lastSuccessfulSync ?? '';
+  useEffect(() => {
+    const sequence = ++catalogRequestSequence.current;
+    if (!confirmedStoreId || currentPath !== '/') return;
+    const controller = new AbortController();
+    const loadCatalog = async () => {
+      try {
+        const [catalogResult, storesResult] = await Promise.allSettled([
+          api.getCatalog({ storeId: confirmedStoreId, scope: 'customer' }, controller.signal),
+          api.getStores(),
+        ]);
+        if (controller.signal.aborted || sequence !== catalogRequestSequence.current) return;
+        if (storesResult.status !== 'fulfilled') throw storesResult.reason;
+        const latestStores = storesResult.value;
+        const assigned = latestStores.find(store => store.id === confirmedStoreId && store.isActive);
+        if (!assigned) {
+          setConfirmedStoreId(null);
+          setLoadedCatalogStoreId(null);
+          setProducts([]);
+          setCatalogError('Necesitamos confirmar de nuevo tu dirección para encontrar una bodega disponible.');
+          return;
+        }
+        if (catalogResult.status !== 'fulfilled') throw catalogResult.reason;
+        setStores(latestStores);
+        setCurrentStore(assigned);
+        setProducts(catalogResult.value);
+        setLoadedCatalogStoreId(confirmedStoreId);
+        setCatalogError(null);
+      } catch (error) {
+        if (!controller.signal.aborted && sequence === catalogRequestSequence.current) {
+          setCatalogError('No pudimos actualizar los productos de tu bodega. Conservamos la última lectura; vuelve a intentarlo.');
+        }
+      }
+    };
+    loadCatalog();
+    return () => { controller.abort(); };
+  }, [confirmedStoreId, inventoryVersion, currentPath]);
+
+  useEffect(() => {
+    if (!confirmedStoreId || loadedCatalogStoreId !== confirmedStoreId) return;
+    const result = reconcileCartForCatalog(cartItems, catalogProducts, confirmedStoreId);
+    if (result.changed) setCartItems(result.items);
+    if (result.notices.length) {
+      const message = result.notices.join(' ');
+      setCartFeedback(message);
+      pushService.triggerNotification('Disponibilidad actualizada', message);
+    }
+  }, [catalogProducts, loadedCatalogStoreId, confirmedStoreId, cartItems]);
+
+  useEffect(() => {
+    const byId = new Map(products.map(product => [product.id, product]));
+    setCompareProducts(previous => previous.flatMap(product => byId.has(product.id) ? [byId.get(product.id)!] : []));
+    setDetailProduct(previous => previous ? byId.get(previous.id) || null : null);
+  }, [products]);
 
   const handleConfirmAddress = (
     newAddress: string,
@@ -392,12 +454,14 @@ export default function App() {
     setDeliveryQuote(newQuote);
 
     // Automatic store assignment based on quote
-    if (newQuote.assignedStoreId) {
-      const targetStore = stores.find(s => s.id === newQuote.assignedStoreId);
-      if (targetStore) {
-        setCurrentStore(targetStore);
-      }
+    const targetStore = stores.find(s => s.id === newQuote.assignedStoreId && s.isActive);
+    if (!targetStore || !(newQuote.availableModes.turbo || newQuote.availableModes.turboDividido || newQuote.availableModes.scheduled)) {
+      setConfirmedStoreId(null);
+      setCatalogError('No pudimos asignar una bodega para esa dirección. Revisa el punto de entrega.');
+      return;
     }
+    setCurrentStore(targetStore);
+    setConfirmedStoreId(targetStore.id);
 
     const shouldAutoSwitchToScheduled =
       newQuote.autoSwitchedToScheduled ||
@@ -419,7 +483,7 @@ export default function App() {
       setSelectedDeliveryMode(newQuote.recommendedMode || 'TURBO');
       pushService.triggerNotification(
         'Ubicación y Sede Confirmadas',
-        `Entregaremos en ${newAddress}. Atendido desde ${newQuote.assignedStoreName || 'sede cercana'}. ETA aprox: ${newQuote.estimatedMinutes || 25} min.`
+        `Entregaremos en ${newAddress}. Atendido desde ${targetStore.name}.${newQuote.estimatedMinutes ? ` Tiempo estimado: ${newQuote.estimatedMinutes} min.` : ''}`
       );
     }
   };
@@ -441,21 +505,42 @@ export default function App() {
     return cartItems.reduce((acc, item) => acc + item.quantity, 0);
   }, [cartItems]);
 
-  const handleAddToCart = (product: Product) => {
+  const handleAddToCart = (product: Product, quantity: number = 1): boolean => {
+    if (!confirmedStoreId || loadedCatalogStoreId !== confirmedStoreId || inventoryStatus?.isStale || catalogError) {
+      setCartFeedback('Confirma tu dirección y espera la revisión de disponibilidad antes de agregar productos.');
+      return false;
+    }
+    const currentProduct = products.find(item => item.id === product.id);
+    if (!currentProduct || !Number.isSafeInteger(quantity) || quantity <= 0) return false;
+    const blocked = getProductPurchaseBlock(currentProduct);
+    const available = getProductSellableQuantity(currentProduct, currentStore.id);
+    if (blocked || (cartQuantities[currentProduct.id] || 0) + quantity > available) return false;
     setCartItems(prev => {
-      const existing = prev.find(i => i.product.id === product.id);
+      const existing = prev.find(i => i.product.id === currentProduct.id);
+      // Recheck against the current cart so simultaneous wishlist additions cannot exceed stock.
+      if ((existing?.quantity || 0) + quantity > available) return prev;
       if (existing) {
-        return prev.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
+        return prev.map(i => i.product.id === currentProduct.id ? { product: currentProduct, quantity: i.quantity + quantity } : i);
       }
-      return [...prev, { product, quantity: 1 }];
+      return [...prev, { product: currentProduct, quantity }];
     });
+    return true;
   };
 
   const handleUpdateQuantity = (product: Product, newQuantity: number) => {
+    if (!Number.isSafeInteger(newQuantity)) return;
     if (newQuantity <= 0) {
       setCartItems(prev => prev.filter(i => i.product.id !== product.id));
     } else {
-      setCartItems(prev => prev.map(i => i.product.id === product.id ? { ...i, quantity: newQuantity } : i));
+      const currentProduct = products.find(item => item.id === product.id);
+      setCartItems(prev => {
+        const existing = prev.find(item => item.product.id === product.id);
+        if (!existing) return prev;
+        // A customer can always reduce or remove an existing item while a refresh is pending.
+        if (newQuantity <= existing.quantity) return prev.map(item => item.product.id === product.id ? { ...item, quantity: newQuantity } : item);
+        if (!currentProduct || getProductPurchaseBlock(currentProduct) || newQuantity > getProductSellableQuantity(currentProduct, currentStore.id)) return prev;
+        return prev.map(item => item.product.id === product.id ? { product: currentProduct, quantity: newQuantity } : item);
+      });
     }
   };
 
@@ -490,36 +575,12 @@ export default function App() {
   };
 
   const handleReorder = (order: Order) => {
+    if (!confirmedStoreId) { setIsAddressModalOpen(true); return; }
     for (const item of order.items) {
-      const prod = products.find(p => p.id === item.productId) || {
-        id: item.productId,
-        sku: item.sku,
-        name: item.name,
-        brand: item.brand,
-        species: 'Perro',
-        category: 'Alimentos',
-        requiresPrescription: item.requiresPrescription,
-        storageCondition: 'TEMPERATURA_AMBIENTE',
-        temperatureColdChain: false,
-        price: item.price,
-        presentation: item.presentation,
-        weightKg: item.weightKg,
-        image: item.image,
-        description: item.name,
-        stockByStore: { [currentStore.id]: 20 },
-        reservedStockByStore: { [currentStore.id]: 0 },
-        rating: 5,
-        reviewsCount: 10,
-        tags: [],
-      };
+      const prod = products.find(p => p.id === item.productId);
+      if (!prod) continue;
 
-      setCartItems(prev => {
-        const existing = prev.find(i => i.product.id === prod.id);
-        if (existing) {
-          return prev.map(i => i.product.id === prod.id ? { ...i, quantity: i.quantity + item.quantity } : i);
-        }
-        return [...prev, { product: prod as Product, quantity: item.quantity }];
-      });
+      handleAddToCart(prod, item.quantity);
     }
     setIsCartOpen(true);
   };
@@ -538,6 +599,7 @@ export default function App() {
         p.name.toLowerCase().includes(q) ||
         p.brand.toLowerCase().includes(q) ||
         p.sku.toLowerCase().includes(q) ||
+        p.presentation.toLowerCase().includes(q) ||
         (p.activeIngredient && p.activeIngredient.toLowerCase().includes(q))
       );
     } else if (currentTab === 'favoritos') {
@@ -578,6 +640,10 @@ export default function App() {
 
     return list;
   }, [baseCategoryOrSearchProducts, productFilters]);
+
+  useEffect(() => {
+    setVisibleProductCount(48);
+  }, [searchQuery, selectedCategory, currentTab, productFilters, currentStore.id]);
 
   // Rails data
   const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [products]);
@@ -640,7 +706,8 @@ export default function App() {
       <Header
         currentStore={currentStore}
         allStores={stores}
-        onSelectStore={(st) => setCurrentStore(st)}
+        onSelectStore={() => setIsAddressModalOpen(true)}
+        addressConfirmed={!!confirmedStoreId}
         selectedCategory={selectedCategory}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
@@ -686,6 +753,11 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 pl-safe pr-safe pt-3 space-y-4 pb-28 sm:pb-32">
+        {!confirmedStoreId && <button onClick={() => setIsAddressModalOpen(true)} className="bg-white rounded-3xl p-4 text-sm text-slate-600 border border-slate-100 w-full text-left">Confirma tu dirección para ver los productos disponibles para tu entrega.</button>}
+        {!!confirmedStoreId && loadedCatalogStoreId !== confirmedStoreId && !catalogError && <p role="status" className="bg-white rounded-3xl p-4 text-sm text-slate-600 border border-slate-100">Consultando los productos disponibles para tu dirección...</p>}
+        {catalogError && <p role="alert" className="bg-white rounded-3xl p-4 text-sm text-slate-600 border border-slate-100">{catalogError}</p>}
+        {inventoryStatus?.isStale && <p role="status" className="bg-white rounded-3xl p-4 text-sm text-slate-600 border border-slate-100">{inventoryStatus.errorMessage || 'La última lectura del inventario está pendiente de actualización.'}</p>}
+        {cartFeedback && <div role="status" className="bg-white rounded-3xl p-4 text-sm text-slate-600 border border-slate-100">{cartFeedback}<button className="ml-3 text-xs font-bold text-red-600" onClick={() => setCartFeedback(null)}>Cerrar</button></div>}
         {/* If user selected Listas de Deseos tab */}
         {currentTab === 'deseos' ? (
           <WishlistView
@@ -775,7 +847,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {filteredProducts.map(prod => (
+                    {filteredProducts.slice(0, visibleProductCount).map(prod => (
                       <ProductCard
                         key={prod.id}
                         product={prod}
@@ -793,6 +865,11 @@ export default function App() {
                       />
                     ))}
                   </div>
+                )}
+                {filteredProducts.length > visibleProductCount && (
+                  <button type="button" onClick={() => setVisibleProductCount(count => count + 48)} className="mt-4 px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+                    Ver más productos ({visibleProductCount} de {filteredProducts.length})
+                  </button>
                 )}
               </div>
             </div>
@@ -973,7 +1050,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                {lightningDeals.map(prod => (
+                {lightningDeals.slice(0, 48).map(prod => (
                   <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                     <ProductCard
                       product={prod}
@@ -1013,7 +1090,7 @@ export default function App() {
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                  {favoriteProducts.map(prod => (
+                  {favoriteProducts.slice(0, 48).map(prod => (
                     <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                       <ProductCard
                         product={prod}
@@ -1058,7 +1135,7 @@ export default function App() {
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                  {reorderProducts.map(prod => (
+                  {reorderProducts.slice(0, 48).map(prod => (
                     <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                       <ProductCard
                         product={prod}
@@ -1095,7 +1172,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                {recommendedProducts.map(prod => (
+                {recommendedProducts.slice(0, 48).map(prod => (
                   <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                     <ProductCard
                       product={prod}
@@ -1131,7 +1208,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                {newProducts.map(prod => (
+                {newProducts.slice(0, 48).map(prod => (
                   <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                     <ProductCard
                       product={prod}
@@ -1202,12 +1279,21 @@ export default function App() {
 
       {/* Cart Drawer */}
       <CartDrawer
-        isOpen={isCartOpen}
+        isOpen={isCartOpen && !!confirmedStoreId}
         onClose={() => setIsCartOpen(false)}
         cartItems={cartItems}
         onUpdateQuantity={handleUpdateQuantity}
         onClearCart={() => setCartItems([])}
         onProceedToCheckout={() => {
+          if (!confirmedStoreId || loadedCatalogStoreId !== confirmedStoreId) {
+            setIsCartOpen(false);
+            setIsAddressModalOpen(true);
+            return;
+          }
+          if (inventoryStatus?.isStale || catalogError) {
+            setCartFeedback('Estamos verificando las existencias. Espera una actualización antes de continuar con el pago.');
+            return;
+          }
           setIsCartOpen(false);
           setIsCheckoutOpen(true);
         }}
@@ -1216,7 +1302,7 @@ export default function App() {
 
       {/* Checkout Modal */}
       <CheckoutModal
-        isOpen={isCheckoutOpen}
+        isOpen={isCheckoutOpen && !!confirmedStoreId}
         onClose={() => setIsCheckoutOpen(false)}
         cartItems={cartItems}
         currentStore={currentStore}
@@ -1310,7 +1396,7 @@ export default function App() {
         }}
         cartCount={cartCount}
         cartTotal={cartTotal}
-        onOpenCart={() => setIsCartOpen(true)}
+        onOpenCart={() => confirmedStoreId ? setIsCartOpen(true) : setIsAddressModalOpen(true)}
         wishlistCount={totalWishlistItemsCount}
       />
 

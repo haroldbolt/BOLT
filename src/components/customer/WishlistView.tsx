@@ -6,6 +6,7 @@ import {
 } from 'lucide-react';
 import { Product, WishlistCollection, WishlistItem } from '../../types';
 import { formatCOP } from '../../lib/formatters';
+import { getProductPurchaseBlock, getProductSellableQuantity } from '../../lib/productAvailability';
 
 interface WishlistViewProps {
   collections: WishlistCollection[];
@@ -175,7 +176,8 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
             <div className="w-full md:w-auto flex items-center gap-2">
               <button
                 onClick={() => onAddCollectionToCart(activeCollection.id)}
-                disabled={collectionProducts.length === 0}
+                disabled={collectionProducts.length === 0 || collectionProducts.some(({ product }) =>
+                  !!getProductPurchaseBlock(product) || getProductSellableQuantity(product, selectedStoreId) <= (cartQuantities[product.id] || 0))}
                 className="w-full md:w-auto px-5 py-3 rounded-2xl bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black text-xs sm:text-sm shadow-md transition-all active:scale-95 disabled:cursor-not-allowed flex items-center justify-center gap-2"
               >
                 <Zap className="w-4 h-4 fill-white" />
@@ -209,7 +211,8 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {collectionProducts.map(({ item, product }) => {
-                const isOutOfStock = (product.stockByStore[selectedStoreId] || 0) <= 0;
+                const purchaseBlock = getProductPurchaseBlock(product);
+                const isOutOfStock = getProductSellableQuantity(product, selectedStoreId) <= (cartQuantities[product.id] || 0);
                 const inCartCount = cartQuantities[product.id] || 0;
                 const isEditingNote = editingNoteProductId === product.id;
 
@@ -317,9 +320,9 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
                     <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
                       <div className="text-[10px]">
                         {isOutOfStock ? (
-                          <span className="text-rose-600 font-bold">Agotado en sede</span>
+                          <span className="text-rose-600 font-bold">{purchaseBlock || 'Sin más unidades disponibles'}</span>
                         ) : (
-                          <span className="text-emerald-700 font-bold">✓ Disponible Turbo 25 min</span>
+                          <span className="text-emerald-700 font-bold">✓ Disponible para tu entrega</span>
                         )}
                       </div>
 

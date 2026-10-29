@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   ShoppingBag, RefreshCw, CheckCircle2, AlertTriangle, 
   ExternalLink, Key, ShieldCheck, Database, Layers, 
@@ -11,6 +11,11 @@ import { formatTimeBogota } from '../../lib/formatters';
 interface ShopifySyncTabProps {
   onRefreshData?: () => void;
 }
+
+type ShopifyRuntimeState = Omit<ShopifySyncState, 'mode'> & {
+  mode?: string; liveVerified?: boolean; isStale?: boolean; credentialsConfigured?: boolean;
+  nextSyncAt?: string; version?: string;
+};
 
 interface SimulatedWebhookEvent {
   id: string;
@@ -28,11 +33,13 @@ interface SimulatedWebhookEvent {
 }
 
 export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData }) => {
-  const [syncState, setSyncState] = useState<ShopifySyncState | null>(null);
+  const [syncState, setSyncState] = useState<ShopifyRuntimeState | null>(null);
   const [loading, setLoading] = useState(true);
   const [isSyncing, setIsSyncing] = useState(false);
   const [syncFeedback, setSyncFeedback] = useState<string | null>(null);
   const [activeGuideTab, setActiveGuideTab] = useState<'STATUS' | 'LOCATIONS' | 'MAPPING' | 'WEBHOOKS' | 'GUIDE'>('STATUS');
+  const [mappingSearch, setMappingSearch] = useState('');
+  const [visibleMappingCount, setVisibleMappingCount] = useState(100);
 
   // Simulator states
   const [simStoreId, setSimStoreId] = useState<string>('HUB_KENNEDY');
@@ -41,60 +48,77 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
   const [simCommitted, setSimCommitted] = useState<number>(1);
   const [isSimulating, setIsSimulating] = useState(false);
   const [simResult, setSimResult] = useState<{ success: boolean; message: string } | null>(null);
-  const [simHistory, setSimHistory] = useState<SimulatedWebhookEvent[]>([
-    {
-      id: 'WH-INIT-1',
-      timestamp: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-      topic: 'inventory_levels/update',
-      storeId: 'HUB_KENNEDY',
-      storeName: 'Bolt Pets Kennedy',
-      locationGid: 'gid://shopify/Location/115617857816',
-      sku: 'SKU-PROPLAN-AD-MED-15KG',
-      productName: 'Purina Pro Plan Adulto Raza Mediana 15kg',
-      onHand: 15,
-      committed: 0,
-      sellable: 13,
-      success: true,
-    },
-    {
-      id: 'WH-INIT-2',
-      timestamp: new Date(Date.now() - 28 * 60 * 1000).toISOString(),
-      topic: 'inventory_levels/update',
-      storeId: 'HUB_ALAMOS',
-      storeName: 'Bolt Pets Álamos',
-      locationGid: 'gid://shopify/Location/115617890584',
-      sku: 'SKU-BRAVECTO-10-20KG',
-      productName: 'Bravecto Antipulgas y Garrapatas Perros 10 a 20 kg',
-      onHand: 24,
-      committed: 2,
-      sellable: 20,
-      success: true,
-    },
-  ]);
+  const [simHistory, setSimHistory] = useState<SimulatedWebhookEvent[]>([]);
+  const isSnapshot = syncState?.mode === 'READ_ONLY_SNAPSHOT';
+  const liveVerified = syncState?.mode === 'SHOPIFY_LIVE_READ_ONLY' && syncState.liveVerified === true;
+  const versionRef = useRef('');
+  const statusRequestSequence = useRef(0);
+  const simulatorDisabled = true;
+  const mappingItems = useMemo(() => {
+    const query = mappingSearch.trim().toLocaleLowerCase('es-CO');
+    return (syncState?.inventoryItems || []).filter(item => !query || `${item.sku} ${item.productName}`.toLocaleLowerCase('es-CO').includes(query));
+  }, [syncState?.inventoryItems, mappingSearch]);
+  useEffect(() => { setVisibleMappingCount(100); }, [mappingSearch]);
+  const importedDate = syncState?.fetchedAt || syncState?.lastSuccessfulSync;
+  const importedDateLabel = importedDate && Number.isFinite(Date.parse(importedDate)) ? new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', dateStyle: 'medium', timeStyle: 'short' }).format(new Date(importedDate)) : 'Sin lectura confirmada';
+  const turboLocations = new Set(['HUB_KENNEDY', 'HUB_ALAMOS', 'HUB_SUBA']);
 
   const loadShopifyStatus = async () => {
+    const sequence = ++statusRequestSequence.current;
     try {
       setLoading(true);
       const data = await api.getShopifyStatus();
+      if (sequence !== statusRequestSequence.current) return;
+      versionRef.current = String(data.version ?? data.fetchedAt ?? data.lastSuccessfulSync ?? '');
       setSyncState(data);
+      return true;
     } catch (e: any) {
+      if (sequence === statusRequestSequence.current) {
+        setSyncFeedback(e.message || 'No se pudo consultar el estado de Shopify.');
+        setSyncState(previous => previous ? { ...previous, isStale: true, errorMessage: 'No pudimos verificar una lectura nueva de Shopify.' } : null);
+      }
       console.error('Error loading Shopify status:', e);
+      return false;
     } finally {
-      setLoading(false);
+      if (sequence === statusRequestSequence.current) setLoading(false);
     }
   };
 
   useEffect(() => {
     loadShopifyStatus();
+    let active = true;
+    let inFlight = false;
+    const interval = window.setInterval(async () => {
+      if (inFlight) return;
+      inFlight = true;
+      const sequence = ++statusRequestSequence.current;
+      try {
+        const metadata = await api.getInventoryStatus();
+        if (!active || sequence !== statusRequestSequence.current) return;
+        const version = String(metadata.version ?? metadata.fetchedAt ?? metadata.lastSuccessfulSync ?? '');
+        if (version !== versionRef.current) {
+          const data = await api.getShopifyStatus();
+          if (!active || sequence !== statusRequestSequence.current) return;
+          versionRef.current = version;
+          setSyncState(data);
+          onRefreshData?.();
+        } else {
+          setSyncState(previous => previous ? { ...previous, ...metadata } : null);
+        }
+      } catch {
+        if (active && sequence === statusRequestSequence.current) setSyncState(previous => previous ? { ...previous, isStale: true, errorMessage: 'No pudimos revisar una nueva lectura. Conservamos los datos anteriores.' } : null);
+      } finally { inFlight = false; }
+    }, 20000);
+    return () => { active = false; statusRequestSequence.current++; window.clearInterval(interval); };
   }, []);
 
   const handleManualSync = async () => {
     setIsSyncing(true);
     setSyncFeedback(null);
     try {
-      const res = await api.syncShopifyInventory();
-      setSyncState(res.state);
-      setSyncFeedback('Conciliación periódica de inventario completada con éxito.');
+      const reviewed = await loadShopifyStatus();
+      if (!reviewed) return;
+      setSyncFeedback('Estado consultado. Esta acción no inicia una sincronización ni cambia la fecha de lectura. La sincronización manual requiere autorización administrativa en el servidor.');
       onRefreshData?.();
     } catch (e: any) {
       setSyncFeedback(e.message || 'Error durante la sincronización');
@@ -104,6 +128,10 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
   };
 
   const handleRunSimulation = async () => {
+    if (simulatorDisabled) {
+      setSimResult({ success: false, message: 'La importación conserva las existencias de Shopify. El simulador está deshabilitado para estos datos.' });
+      return;
+    }
     setIsSimulating(true);
     setSimResult(null);
     try {
@@ -146,6 +174,12 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
 
   const getStatusBadge = (status?: string) => {
     switch (status) {
+      case 'SNAPSHOT_IMPORTADO':
+        return {
+          label: 'Inventario importado',
+          classes: 'bg-blue-100 text-blue-800 border-blue-200',
+          dot: 'bg-blue-500',
+        };
       case 'CONECTADO':
         return {
           label: 'Conectado',
@@ -180,7 +214,9 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
     }
   };
 
-  const statusBadge = getStatusBadge(syncState?.status);
+  const statusBadge = syncState?.isStale ? {
+    label: 'Lectura desactualizada', classes: 'bg-amber-100 text-amber-800 border-amber-200', dot: 'bg-amber-500',
+  } : getStatusBadge(syncState?.status === 'CONECTADO' && !liveVerified ? 'PENDIENTE_AUTORIZACION' : syncState?.status);
 
   return (
     <div className="space-y-6">
@@ -210,11 +246,11 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
           <div className="flex items-center gap-2">
             <button
               onClick={handleManualSync}
-              disabled={isSyncing}
+              disabled={isSyncing || loading}
               className="px-4 py-2.5 bg-emerald-600 hover:bg-emerald-700 text-white rounded-xl text-xs font-bold flex items-center gap-2 shadow-sm transition disabled:opacity-50"
             >
               <RefreshCw className={`w-3.5 h-3.5 ${isSyncing ? 'animate-spin' : ''}`} />
-              <span>{isSyncing ? 'Conciliando...' : 'Conciliar Ahora con Shopify'}</span>
+              <span>{isSyncing ? 'Consultando...' : 'Revisar estado'}</span>
             </button>
           </div>
         </div>
@@ -225,39 +261,41 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
             <span>{syncFeedback}</span>
           </div>
         )}
+        {syncState?.errorMessage && <p role="status" className="mt-4 text-xs text-amber-800">{syncState.errorMessage}</p>}
 
         {/* Métricas de Integración */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-100">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
             <span className="text-[11px] text-slate-500 font-semibold block">Sedes Mapeadas</span>
             <span className="text-base font-extrabold text-slate-900 font-mono mt-0.5 block">
-              3 Turbo + 1 Centro
+              {syncState?.locations.length ?? 0} sedes
             </span>
-            <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">Sin duplicados en Shopify</span>
+            <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">{syncState?.locations.filter(location => location.isActiveInBolt && turboLocations.has(location.storeId)).length ?? 0} bodegas Turbo</span>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-            <span className="text-[11px] text-slate-500 font-semibold block">SKUs Sincronizados</span>
+            <span className="text-[11px] text-slate-500 font-semibold block">Variantes importadas</span>
             <span className="text-base font-extrabold text-slate-900 font-mono mt-0.5 block">
-              {syncState?.totalMappedSkus || 15} SKUs
+              {syncState?.importedVariantCount ?? syncState?.totalMappedSkus ?? 0} variantes
             </span>
-            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">Mapeo GID exacto 100%</span>
+            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">{syncState?.importedProductCount ?? 0} productos · IDs de Shopify</span>
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
             <span className="text-[11px] text-slate-500 font-semibold block">Frecuencia de Conciliación</span>
             <span className="text-base font-extrabold text-slate-900 font-mono mt-0.5 block">
-              Cada {syncState?.reconciliationIntervalMinutes || 10} min
+              {syncState?.automaticSync ? `Cada ${syncState.reconciliationIntervalMinutes} min` : 'Pendiente de autorización'}
             </span>
-            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">Adaptable a cuotas de API</span>
+            <span className="text-[10px] text-slate-500 font-medium block mt-0.5">{syncState?.automaticSync ? (liveVerified ? 'Lectura automática verificada' : 'Esperando primera lectura válida') : 'Sin actualización automática'}</span>
+            {syncState?.nextSyncAt && Number.isFinite(Date.parse(syncState.nextSyncAt)) && <span className="text-[10px] text-slate-500 font-medium block mt-0.5">Próxima revisión: {formatTimeBogota(syncState.nextSyncAt)}</span>}
           </div>
 
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-            <span className="text-[11px] text-slate-500 font-semibold block">Última Sincronización</span>
+            <span className="text-[11px] text-slate-500 font-semibold block">Fecha del inventario</span>
             <span className="text-xs font-extrabold text-slate-900 font-mono mt-0.5 block truncate">
-              {syncState?.lastSuccessfulSync ? formatTimeBogota(syncState.lastSuccessfulSync) : 'Hace 4 min'}
+              {importedDateLabel}
             </span>
-            <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">Estado: Actualizado</span>
+            <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">{isSnapshot ? 'Copia guardada · Solo lectura' : liveVerified ? 'Shopify · Solo lectura' : statusBadge.label}</span>
           </div>
         </div>
 
@@ -322,10 +360,10 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
           <div className="bg-white rounded-2xl p-5 shadow-sm border border-slate-200 space-y-4">
             <h3 className="font-extrabold text-slate-900 text-sm flex items-center gap-2">
               <ShieldCheck className="w-4 h-4 text-emerald-600" />
-              Permisos Autorizados en Shopify (Solo Lectura)
+              Permisos para conexión automática (Solo Lectura)
             </h3>
             <p className="text-xs text-slate-600 leading-relaxed">
-              Para garantizar la seguridad de la tienda oficial Agrocentro Pets, Bolt Pets opera bajo el principio de menor privilegio con permisos de solo lectura:
+              La actualización automática utiliza una app propia autorizada con estos permisos de solo lectura. El estado superior confirma si ya existe una lectura real:
             </p>
 
             <div className="space-y-2">
@@ -377,11 +415,11 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
             <div className="p-3 bg-slate-50 rounded-xl border border-slate-100 space-y-2 text-xs">
               <div className="font-bold text-slate-800">Fórmula de Stock Vendible:</div>
               <div className="p-2 bg-white rounded-lg border border-slate-200 font-mono text-xs text-slate-900">
-                Stock Vendible = max(0, Físico - Comprometido - Reservas_Bolt - Stock_Seguridad)
+                Stock Vendible = max(0, Disponible_Shopify - Reservas_Bolt)
               </div>
               <ul className="list-disc pl-4 space-y-1 text-[11px] text-slate-600">
                 <li>Las reservas de pedidos en curso en Bolt Pets se descuentan transaccionalmente.</li>
-                <li>Se protege un stock de seguridad mínimo (2 unidades) para evitar quiebres simultáneos con otros canales de venta.</li>
+                <li>Los valores físicos y comprometidos se muestran solo cuando Shopify los suministra. Un dato pendiente no se inventa.</li>
                 <li>Si un producto se agota en Kennedy, el cliente no puede adquirirlo desde Álamos o Suba a menos que esté en cobertura de esa otra sede.</li>
               </ul>
             </div>
@@ -425,7 +463,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                       {loc.shopifyLocationName}
                     </td>
                     <td className="py-3 px-3">
-                      {loc.isActiveInBolt ? (
+                      {loc.isActiveInBolt && turboLocations.has(loc.storeId) ? (
                         <span className="text-[10px] font-bold bg-emerald-100 text-emerald-800 px-2 py-0.5 rounded-full">
                           Activa Turbo (≤ 25 min)
                         </span>
@@ -436,7 +474,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                       )}
                     </td>
                     <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
-                      {loc.lastSyncAt ? formatTimeBogota(loc.lastSyncAt) : 'Reciente'}
+                      {loc.lastSyncAt ? formatTimeBogota(loc.lastSyncAt) : 'Pendiente'}
                     </td>
                   </tr>
                 ))}
@@ -456,6 +494,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
             <p className="text-xs text-slate-500">
               Cada variante de producto se vincula mediante su Inventory Item GID exacto de Shopify para evitar confusiones de títulos o presentaciones.
             </p>
+            <input type="search" value={mappingSearch} onChange={event => setMappingSearch(event.target.value)} placeholder="Buscar por SKU o producto..." className="mt-3 w-full sm:w-80 px-3 py-1.5 text-xs rounded-xl border border-slate-200 focus:outline-none focus:ring-2 focus:ring-red-600 font-medium" />
           </div>
 
           <div className="overflow-x-auto">
@@ -471,31 +510,36 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 </tr>
               </thead>
               <tbody className="divide-y divide-slate-100 font-medium">
-                {syncState?.inventoryItems.map(item => (
-                  <tr key={item.sku} className="hover:bg-slate-50/80 transition">
+                {mappingItems.slice(0, visibleMappingCount).map(item => (
+                  <tr key={item.shopifyVariantGid} className="hover:bg-slate-50/80 transition">
                     <td className="py-3 px-3 font-mono font-bold text-slate-900">
-                      {item.sku}
+                      {item.sku || 'Sin SKU'}
                     </td>
                     <td className="py-3 px-3 text-slate-800 font-semibold truncate max-w-xs">
                       {item.productName}
                     </td>
                     <td className="py-3 px-3 font-mono text-slate-500 text-[11px]">
-                      {item.shopifyInventoryItemGid}
+                      {item.shopifyInventoryItemGid || 'Pendiente'}
                     </td>
                     <td className="py-3 px-3 text-right font-mono tabular-nums font-bold text-slate-900">
-                      {item.quantitiesByLocation['HUB_KENNEDY']?.sellable ?? 0} uds
+                      {item.quantitiesByLocation['HUB_KENNEDY']?.sellable ?? 'Pendiente'}
                     </td>
                     <td className="py-3 px-3 text-right font-mono tabular-nums font-bold text-slate-900">
-                      {item.quantitiesByLocation['HUB_ALAMOS']?.sellable ?? 0} uds
+                      {item.quantitiesByLocation['HUB_ALAMOS']?.sellable ?? 'Pendiente'}
                     </td>
                     <td className="py-3 px-3 text-right font-mono tabular-nums font-bold text-slate-900">
-                      {item.quantitiesByLocation['HUB_SUBA']?.sellable ?? 0} uds
+                      {item.quantitiesByLocation['HUB_SUBA']?.sellable ?? 'Pendiente'}
                     </td>
                   </tr>
                 ))}
               </tbody>
             </table>
           </div>
+          {mappingItems.length > visibleMappingCount && (
+            <button type="button" onClick={() => setVisibleMappingCount(count => count + 100)} className="px-4 py-2 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-xl text-xs font-bold transition">
+              Ver más variantes ({visibleMappingCount} de {mappingItems.length})
+            </button>
+          )}
         </div>
       )}
 
@@ -515,7 +559,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 </p>
               </div>
               <span className="text-[11px] font-bold bg-amber-50 text-amber-800 border border-amber-200 px-2.5 py-1 rounded-full">
-                Seguridad HMAC SHA256 Activa
+                {isSnapshot ? 'Conexión automática pendiente' : 'Verificar configuración del webhook'}
               </span>
             </div>
 
@@ -597,8 +641,8 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                   onChange={(e) => setSimSku(e.target.value)}
                   className="w-full text-xs font-semibold bg-white border border-slate-300 rounded-xl px-3 py-2.5 text-slate-800 focus:outline-none focus:ring-2 focus:ring-red-500"
                 >
-                  {syncState?.inventoryItems.map((item) => (
-                    <option key={item.sku} value={item.sku}>
+                  {syncState?.inventoryItems.slice(0, 100).map((item) => (
+                    <option key={item.shopifyVariantGid} value={item.sku}>
                       {item.sku} - {item.productName.slice(0, 24)}...
                     </option>
                   ))}
@@ -659,11 +703,11 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
 
               <button
                 onClick={handleRunSimulation}
-                disabled={isSimulating}
+                disabled={isSimulating || simulatorDisabled}
                 className="px-5 py-2.5 bg-red-600 hover:bg-red-700 text-white rounded-xl text-xs font-bold flex items-center justify-center gap-2 shadow-sm transition disabled:opacity-50 shrink-0 cursor-pointer"
               >
                 <Zap className={`w-4 h-4 ${isSimulating ? 'animate-spin' : ''}`} />
-                <span>{isSimulating ? 'Disparando Webhook...' : 'Simular Webhook de Shopify'}</span>
+                <span>Simulador deshabilitado para inventario real</span>
               </button>
             </div>
 
@@ -758,7 +802,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
               Instrucciones de Conexión en Shopify Dev Dashboard para el Propietario
             </h3>
             <p className="text-xs text-slate-600 mt-1">
-              Sigue estos 5 pasos dentro del panel oficial de Shopify de Agrocentro Pets (<span className="font-mono font-bold">1c76bc-08.myshopify.com</span>) para generar el token seguro de integración sin exponer credenciales:
+              Configura una app propia para Agrocentro Pets (<span className="font-mono font-bold">1c76bc-08.myshopify.com</span>). Las credenciales se guardan únicamente en el servidor:
             </p>
           </div>
 
@@ -768,9 +812,9 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 1
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-slate-900 text-sm">Acceder al Administrador de Shopify</h4>
+                <h4 className="font-bold text-slate-900 text-sm">Acceder a Shopify Dev Dashboard</h4>
                 <p className="text-xs text-slate-600">
-                  Ingresa con tu cuenta de propietario a <strong className="font-mono">https://1c76bc-08.myshopify.com/admin</strong>.
+                  Ingresa al <a href="https://dev.shopify.com/dashboard" target="_blank" rel="noopener noreferrer" className="underline font-bold">Dev Dashboard oficial</a> con la cuenta propietaria de la organización.
                 </p>
               </div>
             </div>
@@ -780,9 +824,9 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 2
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-slate-900 text-sm">Ir a Desarrollo de Apps</h4>
+                <h4 className="font-bold text-slate-900 text-sm">Crear o seleccionar la app propia</h4>
                 <p className="text-xs text-slate-600">
-                  Navega a <strong>Configuración (Settings)</strong> &gt; <strong>Apps y canales de venta</strong> &gt; <strong>Desarrollar apps</strong>. Si es la primera vez, haz clic en <em>Permitir desarrollo de apps personalizadas</em>.
+                  En <strong>Apps</strong>, crea o selecciona <strong>Bolt Pets Fulfillment</strong>. La app y la tienda deben pertenecer a la misma organización para usar la autorización con Client ID y Client secret.
                 </p>
               </div>
             </div>
@@ -792,9 +836,9 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 3
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-slate-900 text-sm">Crear App "Bolt Pets Fulfillment"</h4>
+                <h4 className="font-bold text-slate-900 text-sm">Comprobar la organización y el método de autorización</h4>
                 <p className="text-xs text-slate-600">
-                  Haz clic en <strong>Crear una app</strong>, asigna el nombre <code>Bolt Pets Fulfillment</code> y selecciona el desarrollador asignado.
+                  Verifica que la app tenga acceso a esta tienda. Si la app pertenece a un tercero u otra organización, se necesita el flujo OAuth correspondiente; no se sustituye por credenciales pegadas en esta pantalla.
                 </p>
               </div>
             </div>
@@ -806,7 +850,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
               <div className="space-y-1">
                 <h4 className="font-bold text-slate-900 text-sm">Seleccionar los 3 Permisos de Solo Lectura</h4>
                 <p className="text-xs text-slate-600">
-                  En la pestaña <strong>Configuración de la API Admin</strong>, busca y marca exclusivamente:
+                  En la configuración de acceso de la app, solicita exclusivamente estos permisos; publica la versión e instala o actualiza su autorización en la tienda:
                 </p>
                 <div className="flex flex-wrap gap-2 pt-1 font-mono text-xs">
                   <span className="bg-white border border-slate-300 px-2 py-0.5 rounded font-bold">read_products</span>
@@ -814,7 +858,7 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                   <span className="bg-white border border-slate-300 px-2 py-0.5 rounded font-bold">read_locations</span>
                 </div>
                 <p className="text-[11px] text-amber-700 font-medium pt-1">
-                  ⚠️ No habilites permisos de escritura (write_*) hasta que se autorice la reconciliación de órdenes.
+                  No habilites permisos de escritura para esta conexión de inventario.
                 </p>
               </div>
             </div>
@@ -824,12 +868,12 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
                 5
               </div>
               <div className="space-y-1">
-                <h4 className="font-bold text-slate-900 text-sm">Instalar App y Guardar Secreto</h4>
+                <h4 className="font-bold text-slate-900 text-sm">Guardar Client ID y Client secret en el servidor</h4>
                 <p className="text-xs text-slate-600">
-                  Haz clic en <strong>Instalar app</strong>. Se revelará una única vez el <strong>Token de acceso a la API Admin</strong> (<code className="font-mono">shpat_...</code>). Guarda este token en los secretos del backend como <code>SHOPIFY_ADMIN_ACCESS_TOKEN</code>.
+                  Copia <strong>Client ID</strong> y <strong>Client secret</strong> desde la configuración de la app a los secretos privados del servidor. El servidor intercambia estas credenciales por un token y lo renueva automáticamente antes de vencer. No se introducen credenciales en el navegador.
                 </p>
                 <p className="text-[11px] text-slate-500 italic pt-1">
-                  Nota de seguridad: Nunca pegues este token en chats públicos, archivos de repositorio ni formularios frontend.
+                  Consulta el <a href="https://shopify.dev/docs/apps/build/authentication-authorization/client-credentials-grant" target="_blank" rel="noopener noreferrer" className="underline">método oficial de Client credentials</a>. La conexión solo se muestra verificada después de una lectura completa y válida.
                 </p>
               </div>
             </div>
