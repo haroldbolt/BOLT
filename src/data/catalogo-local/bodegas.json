@@ -1,0 +1,37 @@
+{
+  "version": 1,
+  "modo": "CATALOGO_LOCAL",
+  "fechaDeLosDatos": "2026-10-26T14:16:43.296Z",
+  "bodegas": [
+    {
+      "id": "HUB_ALAMOS",
+      "nombre": "Agrocentro Pets - Álamos",
+      "activa": true,
+      "turboHabilitado": true
+    },
+    {
+      "id": "HUB_CENTRO",
+      "nombre": "Agrocentro Pets - Centro",
+      "activa": true,
+      "turboHabilitado": false
+    },
+    {
+      "id": "HUB_KENNEDY",
+      "nombre": "Agrocentro Pets - Kennedy",
+      "activa": true,
+      "turboHabilitado": true
+    },
+    {
+      "id": "HUB_SUBA",
+      "nombre": "Agrocentro Pets - Suba",
+      "activa": true,
+      "turboHabilitado": true
+    },
+    {
+      "id": "SHOPIFY_LOCATION_99059073304",
+      "nombre": "Carrera 73a #2-27",
+      "activa": false,
+      "turboHabilitado": false
+    }
+  ]
+}

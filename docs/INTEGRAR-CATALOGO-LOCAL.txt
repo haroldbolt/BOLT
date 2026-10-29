@@ -1,0 +1,15 @@
+BOLT PETS — INTEGRAR EL CATÁLOGO LOCAL DESDE ESTE REPOSITORIO
+
+Los archivos ya están en src/data/catalogo-local/productos.json y src/data/catalogo-local/bodegas.json. resumen.json describe su alcance y fecha. Esta entrega añade datos; todavía hay que conectarlos a las vistas de la aplicación.
+
+PROMPT PARA GOOGLE AI STUDIO
+
+Integra los archivos existentes src/data/catalogo-local/productos.json y src/data/catalogo-local/bodegas.json como catálogo local de Bolt Pets. No conectes Shopify ni solicites sus credenciales.
+
+Carga los nombres originales, enlaces de fotos y presentaciones, y organiza los productos según bodegaIds. Agrupa por productoId sin perder los IDs de las variantes. Para clientes muestra solo estado ACTIVE y no interpretes una lista vacía de bodegas como disponibilidad en todas. Mantén la ubicación inactiva deshabilitada. Conserva las coordenadas, direcciones y reglas existentes de cada bodega al asociarlas por ID.
+
+La visualización debe funcionar sin autorización de Shopify ni su sincronización, y no depender de un snapshot privado. No conviertas bodegaIds en una cantidad de stock ficticia ni inventes precios o pesos. Conserva los controles de compra, el diseño y las demás funciones.
+
+Confirma 3.830 productos agrupados, 5.652 variantes y cinco ubicaciones, y revisa nombres y fotos en la vista previa. Las fotos usan sus enlaces HTTPS actuales; no son archivos binarios de imágenes guardados en GitHub. Tres variantes carecen de foto en esta copia y deben usar el marcador de imagen faltante existente.
+
+Comprueba lint y build después de la integración. No publiques la app, cobres ni modifiques Shopify.

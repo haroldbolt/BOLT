@@ -1,0 +1,17 @@
+BOLT PETS — CATÁLOGO LOCAL, SIN CONEXIÓN A SHOPIFY
+
+Estos archivos contienen únicamente nombres originales de productos, fotos mediante sus enlaces, presentaciones, estado del producto y asociación con las bodegas. No incluyen claves, precios ni cantidades de inventario.
+
+productos.json: una entrada por variante/presentación, con un total de 5.652. productoId permite agruparlas en 3.830 productos sin duplicarlos ni perder las presentaciones. Se conservan los identificadores para mantener correspondencia con los datos ya importados; los identificadores no realizan solicitudes a Shopify.
+bodegas.json: cinco ubicaciones con ID, nombre y estado. Los nombres son los registrados en la copia; asociar por ID con las bodegas existentes de la app para conservar coordenadas, direcciones y reglas de entrega. No activar automáticamente una ubicación inactiva ni habilitar Centro para Turbo.
+resumen.json: conteos y alcance de esta entrega.
+
+bodegaIds contiene las bodegas que tenían existencias positivas en la copia del 26 de octubre de 2026. Solo sirve como asociación inicial para el catálogo local; no es inventario actual ni una cantidad vendible. Si la lista está vacía, no asignar el producto a todas las bodegas ni inventar disponibilidad. Los productos archivados o en borrador se conservan para administración; en el catálogo del cliente usar solo ACTIVE.
+
+Las fotos son enlaces HTTPS, por lo que requieren Internet para cargarse. No necesitan conectar la app a la API de Shopify. Tres variantes no tienen foto disponible en esta copia: mantener un marcador de imagen faltante y no inventar imágenes.
+
+Para Google AI Studio: adjuntar los archivos como datos y pedir que los incorpore realmente al proyecto (por ejemplo, src/data/catalogo-local/). No pegar el contenido masivo del JSON en el prompt. Adjuntar un ZIP no demuestra que se haya importado: el agente debe confirmar los archivos instalados y mostrar los productos en la vista previa.
+
+La visualización de este catálogo no debe depender de SHOPIFY_CLIENT_ID, SHOPIFY_CLIENT_SECRET, SHOPIFY_ADMIN_ACCESS_TOKEN, webhooks o sincronización. Mantener la conexión separada e inactiva; no marcarla como conectada ni exigir autorización para mostrar nombre y foto.
+
+No inventar precios, pesos ni stock a partir de estos archivos. Conservar los controles de compra y las reglas comerciales del código existente. Para mostrar los productos por bodega, filtrar por bodegaIds sin convertir esa asociación en una cantidad ficticia.
