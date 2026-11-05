@@ -133,11 +133,13 @@ async function runTests() {
   assert(quoteCentro.assignedStoreId !== 'HUB_CENTRO', 'Sede Centro (turboEnabled: false) no es asignada a pedidos Turbo');
 
   // Test 9: Strict 6,000m Geodesic Boundary: Point beyond 6 km from all hubs
-  const farClient = { lat: 4.8620, lng: -74.0580 }; // Chía
+  // Punto interior oficial de Usme: mantiene el caso >6 km dentro de Bogotá.
+  // Chía no tiene localidad de Bogotá y ya no puede heredar una sede arbitraria.
+  const farClient = { lat: 4.4880, lng: -74.1190 };
   const quoteFar = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Avenida Pradilla #4-12, Chía',
+        address: 'Dirección de prueba, Usme, Bogotá',
         coordinates: farClient,
       },
     },
@@ -153,12 +155,13 @@ async function runTests() {
   // Create an artificial candidate store at distance where total seconds exceeds 1500s but distance is <= 6000m
   const customStore = {
     ...kennedyHub,
-    id: 'TEST_HUB',
-    coordinates: { lat: 4.6284, lng: -74.1539 },
+    coordinates: { lat: 4.5800, lng: -74.1539 },
+    verifiedEntrance: { lat: 4.5800, lng: -74.1539 },
+    shopifyCoordinates: { lat: 4.5800, lng: -74.1539 },
   };
   // Distance 5.8 km (5800m <= 6000m), road distance 5800 * 1.32 = 7656m, travel = 7656 / (23000/3600) = 1198s
   // dispatch (180s) + handoff (60s) + 1198s + customer (120s) + buffer (120s) = 1678s (> 1500s)
-  const edgeCoords = { lat: 4.6800, lng: -74.1539 };
+  const edgeCoords = { lat: 4.6320, lng: -74.1539 }; // Interior real de Kennedy
   const quoteTimeExceeded = evaluateDeliveryQuote(
     {
       destination: {
@@ -172,7 +175,7 @@ async function runTests() {
   const geoDist = calculateHaversineDistanceMeters(customStore.coordinates, edgeCoords);
   if (geoDist <= 6000) {
     assert(
-      quoteTimeExceeded.availableModes.turbo === false && quoteTimeExceeded.autoSwitchedToScheduled === true,
+      quoteTimeExceeded.availableModes.turbo === false && quoteTimeExceeded.autoSwitchedToScheduled === true && quoteTimeExceeded.reasonCode === 'ETA_EXCEEDS_25MIN_AUTO_SCHEDULED',
       `Destino <= 6000m (${geoDist}m) pero ETA > 1500s conmuta a Programado sin pantalla de rechazo`
     );
   }

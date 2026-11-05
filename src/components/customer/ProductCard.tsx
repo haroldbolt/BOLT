@@ -12,6 +12,7 @@ interface ProductCardProps {
   onToggleFavorite: (product: Product) => void;
   onOpenDetails: (product: Product) => void;
   selectedStoreId: string;
+  addressReady?: boolean;
   isCompared?: boolean;
   onToggleCompare?: (product: Product) => void;
   isInWishlist?: boolean;
@@ -27,6 +28,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   onToggleFavorite,
   onOpenDetails,
   selectedStoreId,
+  addressReady = true,
   isCompared = false,
   onToggleCompare,
   isInWishlist = false,
@@ -35,7 +37,8 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const stock = product.stockByStore[selectedStoreId] || 0;
   const reserved = product.reservedStockByStore[selectedStoreId] || 0;
   const availableToSell = Math.max(0, stock - reserved);
-  const isOutOfStock = availableToSell <= 0;
+  const isOutOfStock = availableToSell <= 0 || product.price <= 0 || product.weightKg <= 0 || !!product.status && product.status !== 'ACTIVE';
+  const promotionLabel = (product as Product & { promotionLabel?: string }).promotionLabel;
   const isLowStock = availableToSell > 0 && availableToSell <= 2;
 
   return (
@@ -43,6 +46,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       {/* Top badges & Actions (Compare & Heart) */}
       <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10 pointer-events-none">
         <div className="flex flex-col gap-1 items-start">
+          {promotionLabel && <span className="bg-yellow-400 text-red-950 font-black text-[10px] px-2 py-0.5 rounded-md">{promotionLabel}</span>}
           {product.discountPercent && product.discountPercent > 0 && (
             <span className="bg-yellow-400 text-red-950 font-black text-[11px] px-2 py-0.5 rounded-md shadow-xs">
               -{product.discountPercent}%
@@ -131,13 +135,13 @@ export const ProductCard: React.FC<ProductCardProps> = ({
           {quantityInCart === 0 ? (
             <button
               onClick={() => onAddToCart(product)}
-              disabled={isOutOfStock}
+              disabled={addressReady && isOutOfStock}
               className={`w-10 h-10 rounded-full flex items-center justify-center shadow-md transition-all ${
-                isOutOfStock
+                addressReady && isOutOfStock
                   ? 'bg-slate-300 text-white cursor-not-allowed'
                   : 'bg-red-600 hover:bg-red-700 active:scale-90 text-white shadow-red-500/30'
               }`}
-              title="Agregar al carrito"
+              title={addressReady ? 'Agregar al carrito' : 'Consulta disponibilidad'}
             >
               <Plus className="w-5 h-5 stroke-[2.5]" />
             </button>
@@ -154,7 +158,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
               </span>
               <button
                 onClick={() => onUpdateQuantity(product, quantityInCart + 1)}
-                disabled={quantityInCart >= availableToSell}
+                disabled={addressReady && quantityInCart >= availableToSell}
                 className="w-8 h-8 rounded-full flex items-center justify-center hover:bg-red-700 active:scale-90 transition disabled:opacity-50"
               >
                 <Plus className="w-4 h-4 stroke-[2.5]" />
@@ -197,7 +201,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Stock / Warning notice */}
         <div className="mt-1.5 flex items-center gap-1 text-[10px]">
-          {isOutOfStock ? (
+          {!addressReady ? (
+            <span className="text-slate-600 font-medium">Consulta disponibilidad</span>
+          ) : isOutOfStock ? (
             <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded">
               Agotado en esta sede
             </span>
@@ -207,7 +213,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           ) : (
             <span className="text-emerald-700 font-medium">
-              Disponible para Turbo
+              Disponible en esta sede
             </span>
           )}
         </div>

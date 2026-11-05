@@ -2,6 +2,7 @@ import React from 'react';
 import { Product } from '../../types';
 import { X, Scale, Plus, Minus, Check, AlertCircle, ShoppingBag, Trash2, FileText, Snowflake } from 'lucide-react';
 import { formatCOP } from '../../lib/formatters';
+import { TurboPromise } from './TurboPromise';
 
 interface ProductCompareModalProps {
   isOpen: boolean;
@@ -13,6 +14,7 @@ interface ProductCompareModalProps {
   onAddToCart: (product: Product) => void;
   onUpdateQuantity: (product: Product, quantity: number) => void;
   selectedStoreId: string;
+  addressReady?: boolean;
 }
 
 export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
@@ -25,6 +27,7 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
   onAddToCart,
   onUpdateQuantity,
   selectedStoreId,
+  addressReady = true,
 }) => {
   if (!isOpen) return null;
 
@@ -32,7 +35,9 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-2 sm:p-4 animate-in fade-in">
       <div className="bg-white rounded-3xl max-w-5xl w-full max-h-[92vh] flex flex-col shadow-2xl relative overflow-hidden">
         {/* Modal Header */}
-        <div className="flex items-center justify-between p-4 sm:p-5 bg-white border-b border-slate-100 z-10">
+        <div className="p-4 sm:p-5 bg-white border-b border-slate-100 z-10 space-y-2">
+          <TurboPromise/>
+          <div className="flex items-center justify-between gap-2">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-2xl bg-amber-400 text-slate-900 flex items-center justify-center font-black shadow-xs">
               <Scale className="w-5 h-5 stroke-[2.5]" />
@@ -73,6 +78,7 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
           </div>
         </div>
 
+        </div>
         {/* Modal Body / Table Container */}
         <div className="flex-1 overflow-x-auto overflow-y-auto p-4 sm:p-6">
           {compareProducts.length === 0 ? (
@@ -158,7 +164,9 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
 
                       {/* Add to cart / Quantity controller */}
                       <div className="pt-2">
-                        {isOut ? (
+                        {!addressReady ? (
+                          <button type="button" onClick={() => onAddToCart(prod)} className="w-full py-2 bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs rounded-xl">Consulta disponibilidad</button>
+                        ) : isOut ? (
                           <div className="w-full py-2 bg-slate-200 text-slate-500 font-bold text-xs rounded-xl text-center">
                             Agotado en sede
                           </div>
@@ -315,7 +323,9 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
                   const available = Math.max(0, stock - reserved);
                   return (
                     <div key={p.id} className="text-[11px] tabular-nums font-semibold">
-                      {available > 0 ? (
+                      {!addressReady ? (
+                        <span className="text-slate-600">Consulta disponibilidad</span>
+                      ) : available > 0 ? (
                         <span className="text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-lg border border-emerald-200">
                           {available} uds disponibles
                         </span>

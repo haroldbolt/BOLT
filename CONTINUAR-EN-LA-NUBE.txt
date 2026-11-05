@@ -1,0 +1,122 @@
+BOLT PETS — CONTINUAR DESDE LA NUBE
+Preparación del 4 de noviembre de 2026 (Colombia)
+
+VERSIÓN QUE DEBES RETOMAR
+
+Repositorio: https://github.com/haroldbolt/BOLT
+Rama de respaldo y trabajo: codex/pedidos-gps. main conserva su versión anterior.
+Punto de partida de esta entrega: 64ec126, con la copia de inventario de prueba.
+Comprueba el commit remoto confirmado al terminar el respaldo antes de trabajar.
+Conserva el diseño, los flujos y las reglas de despacho de esta versión. Lee
+CONTINUAR-AQUI.txt, ADMINISTRACION.txt e INVENTARIO-DE-PRUEBA.txt.
+
+QUÉ SE RECUPERA DESDE GITHUB
+
+El código de la tienda y /operacion, las automatizaciones implementadas, pruebas,
+nombres, fotos, presentaciones y asociaciones históricas por bodega forman parte
+del proyecto. El catálogo incluye 3.830 productos y 5.652 presentaciones.
+
+El archivo src/data/inventario-autorizado.json incorpora la carga autorizada de
+100 unidades físicas por presentación y bodega asociada, junto con los precios
+y pesos confirmados incluidos en esa entrega. Permite reconstruir ese inventario
+en una base nueva mediante npm run inventory:import. No contiene pedidos, cuentas,
+contraseñas, reservas de compradores ni GPS.
+
+Las cuentas y los pedidos guardados localmente siguen en SQLite privado, fuera
+de Git. Para recuperar exactamente ese historial y sus reservas necesitas su
+respaldo privado en almacenamiento persistente. Para empezar en la nube con el
+inventario autorizado, no es necesario restaurar esa base: la importación inicial
+crea existencias con reservas cero y sin pedidos. Mantén las credenciales en el
+gestor privado del alojamiento. No publiques .bolt-private, SQLite ni archivos .env.
+
+PREPARAR EL ENTORNO DE DESARROLLO
+
+1. Abre un entorno privado de desarrollo desde el repositorio y la rama verificados.
+2. Instala Node.js 24 y comprueba su versión. SQLite requiere este runtime; instalar
+   solo herramientas de frontend no es suficiente para ejecutar el servidor.
+3. Instala las dependencias. Esta versión tiene bun.lock y no contiene todavía
+   package-lock.json. Si se utiliza npm, ejecuta npm install, conserva el lock que
+   genere y comprueba la instalación. Una vez exista un package-lock verificado,
+   las siguientes instalaciones pueden usar npm ci. No ejecutes npm ci sin lock.
+4. Configura BOLT_DATA_DIR con la ruta absoluta del volumen privado persistente
+   elegido para esta instalación nueva. Antes de arrancar el servidor o crear el
+   primer administrador, ejecuta npm run inventory:import. La importación inicial
+   toma la carga autorizada del repositorio; no requiere la base de este PC.
+5. Crea el primer administrador mediante npm run admin:create en una terminal
+   privada, manteniendo el mismo BOLT_DATA_DIR. Elige tus credenciales; no hay
+   contraseña predeterminada ni se recupera una cuenta local mediante GitHub.
+6. Ejecuta npm run lint, npm test y npm run build. Esta entrega aprobó localmente
+   821 comprobaciones en 29 archivos, tipos y compilación. Comprueba de nuevo su
+   resultado en el entorno nuevo, especialmente la configuración y persistencia.
+7. Conserva los cambios nuevos en una rama identificable y confirma el commit
+   probado antes de pasar de un equipo o entorno a otro.
+
+ARRANQUE DEL SERVIDOR PRIVADO
+
+El proyecto integra React y Express. Compilar el frontend no levanta la API.
+Después de npm run build, ejecuta npm start desde la raíz del proyecto con:
+
+  NODE_ENV=production
+  HOST=0.0.0.0
+  PORT=el puerto asignado por el alojamiento
+  BOLT_DATA_DIR=una ruta absoluta de un volumen privado persistente
+  BOLT_PUBLIC_ORIGIN=el origen HTTPS exacto de la aplicación
+
+Configura estas variables en el alojamiento, no dentro del repositorio. Mantén
+frontend y API bajo el mismo origen para las sesiones y comprobaciones CSRF.
+Comprueba /api/v1/health, la tienda y /operacion, además de persistencia después
+de reiniciar. Usa una instancia mientras se mantenga SQLite local; una base en
+disco temporal o varias copias independientes no comparten pedidos ni reservas.
+
+Google Maps necesita su configuración para el dominio de pruebas. La variable
+VITE_GOOGLE_MAPS_API_KEY se incorpora al compilar el cliente y también la consulta
+el servidor. Revisa APIs habilitadas, restricciones y funcionamiento en el origen
+elegido; ver un mapa no valida por sí solo GPS del repartidor.
+
+Si restauras la base privada, se conservan sus cuentas administrativas. Si empiezas
+con una base nueva, crea el primer administrador mediante npm run admin:create
+en una terminal privada, con BOLT_DATA_DIR apuntando al volumen correcto. No hay
+credenciales públicas predeterminadas. El panel se encuentra en /operacion.
+
+INVENTARIO AUTORIZADO Y COPIA DE ENSAYO
+
+La carga autorizada se importa una sola vez en una base nueva. La utilidad deja
+un marcador para reconocer una importación ya realizada: repetir el comando o
+reiniciar no repone las cantidades consumidas. Rechaza una base con operaciones
+o existencias previas que no correspondan a esa importación. Si se rechaza, revisa
+la ruta y los datos; no borres pedidos o inventario para forzar el paso.
+
+La copia de ensayo anterior continúa separada y conserva su banner de pruebas.
+Para recuperar exactamente sus ajustes e historial, restaura su respaldo privado
+y su identificación de entorno, adaptando las rutas de Windows al nuevo equipo.
+La importación autorizada es otra vía: reconstruye cantidades desde GitHub sin
+copiar ese historial ni sus reservas.
+
+La autorización de 100 existencias no completa precios o pesos pendientes. En la
+revisión anterior solo una presentación tenía todos los datos para comprar.
+Conserva los datos confirmados y completa los faltantes desde administración.
+Centro sigue excluido de nuevos Programados y Fontibón permanece inactiva.
+
+Se comprobó una recuperación completa en otra base vacía: 3.830 productos,
+5.652 presentaciones, 22.608 cantidades de 100, cero pedidos y cero cuentas.
+Repetir la importación conservó cantidades y movimientos. El inventario y los
+16 pedidos de la instalación original permanecieron iguales durante la prueba.
+
+ORDEN DE TRABAJO PARA PREPARAR EL LANZAMIENTO
+
+1. Completar y verificar precios, pesos y existencias reales por presentación y
+   bodega. Registrar promociones reales y comprobar total, envío y propina.
+2. Asegurar alojamiento HTTPS, volumen persistente, respaldos externos y una
+   restauración comprobada. Validar acceso administrativo y permisos por rol.
+3. Integrar y probar confirmación real de pagos: una selección o una simulación
+   no debe marcar una compra como pagada. Probar reintentos y pedidos duplicados.
+4. Completar cuentas y asignaciones de repartidores. Validar en un teléfono real
+   GPS, pérdida de señal, pantalla bloqueada y seguimiento privado del comprador.
+5. Conectar proveedores de transporte únicamente con credenciales y condiciones
+   confirmadas. Rappi se utilizará para repartir pedidos hechos en Bolt Pets.
+6. Ejecutar con la universidad un pedido completo por modalidad, desde dirección
+   hasta entrega, incluyendo falta de stock, cancelación y recuperación tras fallo.
+
+La fecha de lanzamiento se decide con esos resultados. Las pruebas automatizadas
+actuales no sustituyen la validación móvil, de pagos y de operación real. Preparar
+este respaldo no publica la app ni activa servicios, cobros o transportadoras.

@@ -1,0 +1,81 @@
+BOLT PETS — COPIA CON 100 EXISTENCIAS
+Preparada localmente el 3 de noviembre de 2026
+
+ABRIR LA COPIA
+
+Tienda: http://localhost:4330/
+Administración: http://localhost:4330/operacion
+
+Usa Abrir prueba inventario.cmd o Abrir administrador de prueba.cmd desde esta
+carpeta. Inician o reutilizan el servidor de ensayo. Si el puerto está ocupado,
+buscan otro libre entre 4330 y 4349 e indican el enlace correspondiente.
+El equipo debe estar encendido. No es una publicación en Internet.
+
+Entra con el mismo usuario y contraseña administrativa de la instalación local.
+Se conservaron las cuentas en la copia privada, pero se exige iniciar sesión
+nuevamente. No se incluyeron contraseñas en este documento ni en los scripts.
+El banner amarillo «INVENTARIO DE PRUEBA» identifica el entorno de ensayo.
+
+QUÉ SE CARGÓ
+
+- Los 3.830 productos y sus 5.652 presentaciones originales.
+- 100 unidades FÍSICAS por presentación en Kennedy, Álamos, Suba y Centro,
+  respetando sus asociaciones existentes: 22.608 combinaciones ajustadas.
+- No hubo excepciones en esta carga. Fontibón permanece inactiva y sin cambios.
+- No se cambiaron precios, pesos, estados, fotos ni nombres. Los identificadores
+  de bodega pueden incluir el alias interno que utiliza el administrador para
+  esa misma sede; no se incorporó ninguna relación con otra bodega.
+- Las reservas se conservan. Disponible = físico menos reservado. Por ejemplo,
+  Nutra Nuggets Gato Adulto 3 kg tiene 100 físicas, una reservada y 99 disponibles
+  en Kennedy dentro de esta copia. La unidad original no se alteró.
+- Los pedidos e historial existentes también están copiados. Cualquier cambio
+  que hagas aquí se guarda exclusivamente en esta base de pruebas.
+
+DATOS QUE TODAVÍA FALTAN
+
+Tener stock no completa los datos comerciales. Solo una presentación tiene
+precio, peso y estado suficientes para comprar. Hay 5.650 presentaciones con
+precio pendiente, 5.651 con peso pendiente y 372 pertenecientes a productos no
+activos; estas categorías se superponen. No se inventaron precios o pesos ni
+se reactivaron productos archivados. Puedes completar datos desde el panel de
+esta copia para ampliar tus ensayos sin modificar la instalación original.
+
+Se mantienen Turbo hasta 25 minutos, cobertura, límites de peso, franjas,
+descuentos y asignación por localidad. Centro sigue fuera de nuevos pedidos
+programados aunque tenga existencias en esta copia. El servidor de prueba
+bloquea las rutas de Shopify, pagos e integraciones comerciales.
+
+PERSISTENCIA Y RESPALDO
+
+La base original permanece en .bolt-private/operations y la copia independiente
+en .bolt-private/inventory-100-test/data. Se creó un respaldo consistente de la
+original antes de cargar y se conservaron los 16 pedidos originales intactos.
+Las bases, respaldos e informes detallados están excluidos de Git y public/.
+
+Abrir, reiniciar o recargar NO restablece las 100 unidades. Las compras o ajustes
+de prueba consumen o cambian cantidades normalmente. Para repetir una carga se
+necesita ejecutar explícitamente la utilidad manual con el servidor de prueba
+apagado. Nunca se hace desde el arranque ni desde el navegador.
+
+Desde la carpeta del proyecto, con Node y dependencias preparados:
+  node --import tsx scripts/prepare-inventory-test.mjs --preview
+  node --import tsx scripts/prepare-inventory-test.mjs --apply
+  node scripts/start-inventory-test.mjs
+
+La utilidad rechaza rutas operativas, bases enlazadas y cargar mientras esta
+copia está abierta. Repetir una carga sin cambios no suma unidades ni crea
+movimientos innecesarios. Antes de una nueva carga manual guarda un respaldo
+de la copia; no sobrescribe la original.
+
+VALIDACIÓN
+
+- 797 comprobaciones aprobadas en 28 archivos, incluidas 21 nuevas de carga
+  transaccional, variantes, reservas, aislamiento, reversión e idempotencia.
+- Validación de tipos y compilación de cliente/servidor correctas.
+- Verificados por lectura de SQLite todos los 22.608 pares con cantidad 100.
+- Confirmados mediante HTTP el catálogo actualizado, ambas páginas, el aviso de
+  pruebas y el bloqueo de conexiones comerciales.
+- Reinicio real de este servidor: cantidades, reservas y número de movimientos
+  conservados; no hubo una nueva carga automática.
+- Comparación de hashes: catálogo, inventario, pedidos y promociones originales
+  intactos. No se crearon pedidos ni se hicieron cobros durante la verificación.

@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef, lazy, Suspense } from 'react';
 import { Header } from './components/customer/Header';
 import { CampaignBanner } from './components/customer/CampaignBanner';
 import { ProductCard } from './components/customer/ProductCard';
@@ -9,7 +9,6 @@ import { FloatingNav, CustomerNavTab } from './components/customer/FloatingNav';
 import { CartDrawer } from './components/customer/CartDrawer';
 import { CheckoutModal } from './components/customer/CheckoutModal';
 import { OrderTracking } from './components/customer/OrderTracking';
-import { OperationsDashboard } from './components/operations/OperationsDashboard';
 import { OrderHistoryModal } from './components/customer/OrderHistoryModal';
 import { PushNotificationBanner } from './components/notifications/PushNotificationBanner';
 import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
@@ -26,7 +25,15 @@ import { Product, Store, CartItem, MainCategory, Order, DeliveryMode, ScheduledD
 import { DeliveryQuote, LatLng } from './lib/deliveryService';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS } from './data/seedData';
 import { api } from './lib/api';
+import { getOperationalCatalog } from './lib/catalogVariants';
+import { availableDeliveryMode, deliveryStore } from './lib/deliverySelection';
 import { pushService } from './lib/notifications';
+import { createConfirmedDeliveryAddress, readCustomerDeliveryAddress, saveCustomerDeliveryAddress, type ConfirmedDeliveryAddress } from './lib/customerDeliveryAddress';
+import { addCustomerCartLines, reconcileCustomerCart } from './lib/customerCartActions';
+const AdminPortal = lazy(() => import('./components/operations/AdminPortal').then(module => ({ default: module.AdminPortal })));
+type PurchaseIntent = { type: 'add'; productId: string; quantity: number } | { type: 'collection'; collectionId: string } | { type: 'reorder'; order: Order } | { type: 'checkout' };
+const addressContextKey = (value: ConfirmedDeliveryAddress | null) => value ? JSON.stringify([value.address, value.coordinates.lat, value.coordinates.lng, value.details]) : '';
+const quoteContext = (value: ConfirmedDeliveryAddress | null, items: CartItem[]) => JSON.stringify([addressContextKey(value), items.map(item => [item.product.id, item.quantity])]);
 const INITIAL_WISHLIST_COLLECTIONS: WishlistCollection[] = [
   {
     id: 'col-comida-mensual',
@@ -79,8 +86,10 @@ export default function App() {
   // App data state
   const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
   const [currentStore, setCurrentStore] = useState<Store>(INITIAL_STORES[0]);
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [products, setProducts] = useState<Product[]>([]);
+  const [catalogStoreId, setCatalogStoreId] = useState<string | null>(null);
+  const catalogRequestRef = useRef(0);
+  const [orders, setOrders] = useState<Order[]>([]);
 
   // Customer UI state
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('Todo');
@@ -212,30 +221,16 @@ export default function App() {
   };
 
   const handleMoveCollectionToCart = (collectionId: string) => {
-    const col = wishlistCollections.find(c => c.id === collectionId);
-    if (!col || col.items.length === 0) return;
-
-    let addedCount = 0;
-    col.items.forEach(item => {
-      const prod = products.find(p => p.id === item.productId);
-      if (prod) {
-        handleAddToCart(prod);
-        addedCount++;
-      }
-    });
-
-    pushService.triggerNotification(
-      'Colección añadida al Carrito',
-      `Se agregaron ${addedCount} productos de "${col.name}" a tu carrito.`
-    );
-    setIsCartOpen(true);
+    requestPurchase({ type: 'collection', collectionId });
   };
 
   // Cart state
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    { product: INITIAL_PRODUCTS[4], quantity: 1 }, // NexGard
-    { product: INITIAL_PRODUCTS[8], quantity: 1 }, // Churu
-  ]);
+  const [cartItems, setCartItems] = useState<CartItem[]>([]);
+  const cartItemsRef = useRef(cartItems);
+  cartItemsRef.current = cartItems;
+  const [cartReviewMessage, setCartReviewMessage] = useState('');
+  const [cartPriceNotice, setCartPriceNotice] = useState('');
+  const visibleCartReview = cartReviewMessage + (cartPriceNotice && !cartReviewMessage.includes(cartPriceNotice) ? ` ${cartPriceNotice}` : '');
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
@@ -244,20 +239,47 @@ export default function App() {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(() => pushService.getUnreadCount());
 
   // Delivery Address & Authoritative Delivery Quote context
-  const [customerAddress, setCustomerAddress] = useState<string>('Calle 3 #78-20, Kennedy Central, Bogotá');
-  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('Apto 502, Torre 2');
-  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.6365, lng: -74.1448 });
-  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const [customerLocation, setCustomerLocation] = useState<ConfirmedDeliveryAddress | null>(() => readCustomerDeliveryAddress());
+  const customerAddress = customerLocation?.address || '';
+  const customerCoordinates = customerLocation?.coordinates;
+  const customerAddressDetails = customerLocation?.details || '';
+  const quoteContextKey = quoteContext(customerLocation, cartItems);
+  const [quoteSnapshot, setQuoteSnapshot] = useState<{ key: string; quote: DeliveryQuote } | null>(null);
+  const deliveryQuote = quoteSnapshot?.key === quoteContextKey ? quoteSnapshot.quote : null;
+  const [addressValidationError, setAddressValidationError] = useState('');
+  const [addressStorageWarning, setAddressStorageWarning] = useState('');
+  const quoteRequestRef = useRef<AbortController | null>(null);
+  const pendingPurchase = useRef<PurchaseIntent | null>(null);
+  const acceptedAddress = useRef(false);
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
+  const [scheduledWindowNeedsSelection, setScheduledWindowNeedsSelection] = useState(false);
+  const [quoteRevision, setQuoteRevision] = useState(0);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
   const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
+  const activeDeliveryStore = deliveryStore(deliveryQuote, selectedDeliveryMode);
+  const catalogScope = customerLocation ? currentStore.id : 'BROWSE';
+  const catalogReady = catalogStoreId === catalogScope && (!activeDeliveryStore || activeDeliveryStore.id === currentStore.id);
+  const addressReady = !!customerLocation && !!deliveryQuote && !!activeDeliveryStore && catalogReady;
+  const deliveryAddressStatus = !customerLocation ? 'missing' : addressValidationError || (deliveryQuote && !activeDeliveryStore) ? 'error' : addressReady ? 'ready' : 'checking';
+
+  useEffect(() => {
+    if (!customerLocation) return;
+    if (!saveCustomerDeliveryAddress(customerLocation)) setAddressStorageWarning('La dirección se conservará solo durante esta sesión. Tu navegador no permitió recordarla.');
+    else setAddressStorageWarning('');
+  }, [customerLocation]);
+
+  const setCustomerAddressDetails = (details: string) => {
+    quoteRequestRef.current?.abort();
+    setCustomerLocation(previous => previous ? { ...previous, details } : null);
+  };
 
   // Guided Onboarding Coach Mark Tour state (activates on first visit)
   const [isTourOpen, setIsTourOpen] = useState(false);
 
   useEffect(() => {
-    const tourDone = localStorage.getItem('bolt_pets_tour_completed');
+    let tourDone: string | null = null;
+    try { tourDone = localStorage.getItem('bolt_pets_tour_completed'); } catch { /* La compra sigue disponible sin almacenamiento. */ }
     if (!tourDone) {
       const timer = setTimeout(() => {
         setIsTourOpen(true);
@@ -267,7 +289,7 @@ export default function App() {
   }, []);
 
   const handleDismissTour = () => {
-    localStorage.setItem('bolt_pets_tour_completed', 'true');
+    try { localStorage.setItem('bolt_pets_tour_completed', 'true'); } catch { /* El tour se cierra también en una sesión privada. */ }
     setIsTourOpen(false);
   };
 
@@ -285,17 +307,31 @@ export default function App() {
 
       if (shouldBeScheduled) {
         setSelectedDeliveryMode('PROGRAMADO');
-        if (!selectedScheduledWindow && deliveryQuote.scheduledSlots?.length) {
-          const firstValid = deliveryQuote.scheduledSlots.find(s => !s.cutoffPassed);
-          if (firstValid) {
-            setSelectedScheduledWindow(firstValid);
-          }
+      } else {
+        setSelectedDeliveryMode(previous => availableDeliveryMode(deliveryQuote, previous));
+      }
+      if (!deliveryQuote.availableModes.scheduled) {
+        setSelectedScheduledWindow(null);
+        setScheduledWindowNeedsSelection(false);
+        setIsScheduledModalOpen(false);
+      } else {
+        const valid = deliveryQuote.scheduledSlots.filter(slot => !slot.cutoffPassed && slot.availableCapacity > 0);
+        if (selectedScheduledWindow) {
+          const selected = valid.find(slot => slot.slotId === selectedScheduledWindow.slotId);
+          setSelectedScheduledWindow(selected || null);
+          if (!selected) setScheduledWindowNeedsSelection(true);
+        } else if (!scheduledWindowNeedsSelection) {
+          setSelectedScheduledWindow(valid[0] || null);
         }
-      } else if (deliveryQuote.recommendedMode) {
-        setSelectedDeliveryMode(deliveryQuote.recommendedMode);
       }
     }
   }, [deliveryQuote]);
+
+  useEffect(() => {
+    const dispatch = deliveryStore(deliveryQuote, selectedDeliveryMode);
+    const assigned = dispatch && stores.find(store => store.id === dispatch.id && store.isActive);
+    if (assigned) setCurrentStore(previous => previous === assigned ? previous : assigned);
+  }, [deliveryQuote, selectedDeliveryMode, stores]);
 
   // Selected product detail modal
   const [detailProduct, setDetailProduct] = useState<Product | null>(null);
@@ -335,25 +371,63 @@ export default function App() {
 
   // Fetch initial data
   useEffect(() => {
+    if (currentPath !== '/') return;
     const fetchInitial = async () => {
       try {
-        const [loadedStores, loadedProducts, loadedOrders] = await Promise.all([
+        const [loadedStores, loadedOrders] = await Promise.all([
           api.getStores(),
-          api.getCatalog(),
-          api.getOrders(),
+          api.getMyOrders(),
         ]);
         if (loadedStores.length) setStores(loadedStores);
-        if (loadedProducts.length) setProducts(loadedProducts);
-        if (loadedOrders.length) setOrders(loadedOrders);
+        setOrders(loadedOrders);
       } catch (e) {
         console.error('Error fetching initial app data:', e);
       }
     };
     fetchInitial();
-  }, []);
+  }, [currentPath]);
+
+  // Refresca catálogo/precios al volver del administrador y durante una sesión de compra.
+  useEffect(() => {
+    if (currentPath !== '/') return;
+    let stopped = false;
+    const refresh = async () => {
+      const request = ++catalogRequestRef.current;
+      setCatalogStoreId(null);
+      try {
+        const fresh = await api.getCatalog(catalogScope === 'BROWSE' ? undefined : { storeId: currentStore.id });
+        if (stopped || request !== catalogRequestRef.current) return;
+        setProducts(fresh);
+        setCatalogStoreId(catalogScope);
+        const selling = getOperationalCatalog(fresh);
+        if (customerLocation) {
+          const updated = reconcileCustomerCart(cartItemsRef.current, selling, currentStore.id);
+          cartItemsRef.current = updated.items;
+          setCartItems(updated.items);
+          setCartReviewMessage(updated.issues.join(' '));
+          if (updated.priceChanges.length) setCartPriceNotice(updated.priceChanges.join(' '));
+        }
+        setDetailProduct(previous => previous ? fresh.find(product => product.id === previous.id) || null : null);
+        setCompareProducts(previous => previous.map(product => fresh.find(item => item.id === product.id) || { ...product, status: 'ARCHIVED', stockByStore: {}, reservedStockByStore: {} }));
+      } catch { /* Se conserva la vista; el checkout vuelve a validar en el servidor. */ }
+    };
+    const visible = () => { if (!document.hidden) refresh(); };
+    refresh();
+    const timer = window.setInterval(visible, 15000);
+    window.addEventListener('focus', visible);
+    document.addEventListener('visibilitychange', visible);
+    return () => { stopped = true; window.clearInterval(timer); window.removeEventListener('focus', visible); document.removeEventListener('visibilitychange', visible); };
+  }, [catalogScope, currentPath]);
 
   // Re-evaluate delivery quote and update automatically assigned warehouse
   useEffect(() => {
+    if (currentPath !== '/') return;
+    quoteRequestRef.current?.abort();
+    setQuoteSnapshot(null);
+    setAddressValidationError('');
+    if (!customerLocation) return;
+    const controller = new AbortController();
+    quoteRequestRef.current = controller;
     const fetchQuote = async () => {
       try {
         const q = await api.getDeliveryQuote(
@@ -361,24 +435,24 @@ export default function App() {
             destination: {
               address: customerAddress,
               details: customerAddressDetails,
-              coordinates: customerCoordinates,
+              coordinates: customerLocation.coordinates,
             },
             items: cartItems.map(i => ({ productId: i.product.id, quantity: i.quantity })),
           },
           stores,
-          products
+          products,
+          controller.signal,
+          { authoritative: true }
         );
-        setDeliveryQuote(q);
-        if (q.assignedStoreId) {
-          const matchStore = stores.find(s => s.id === q.assignedStoreId);
-          if (matchStore) setCurrentStore(matchStore);
-        }
+        if (controller.signal.aborted || quoteRequestRef.current !== controller) return;
+        setQuoteSnapshot({ key: quoteContextKey, quote: q });
       } catch (e) {
-        console.error('Error fetching delivery quote:', e);
+        if (!controller.signal.aborted) setAddressValidationError(e instanceof Error ? e.message : 'No pudimos verificar la entrega para esta dirección.');
       }
     };
     fetchQuote();
-  }, [customerCoordinates, stores]);
+    return () => controller.abort();
+  }, [currentPath, customerLocation, customerAddressDetails, stores, cartItems, products, quoteRevision]);
 
   const handleConfirmAddress = (
     newAddress: string,
@@ -386,29 +460,34 @@ export default function App() {
     newCoords: LatLng,
     newQuote: DeliveryQuote
   ) => {
-    setCustomerAddress(newAddress);
-    setCustomerAddressDetails(newDetails);
-    setCustomerCoordinates(newCoords);
-    setDeliveryQuote(newQuote);
-
-    // Automatic store assignment based on quote
-    if (newQuote.assignedStoreId) {
-      const targetStore = stores.find(s => s.id === newQuote.assignedStoreId);
-      if (targetStore) {
-        setCurrentStore(targetStore);
-      }
-    }
+    // Abort synchronously: an older quote must not replace the location that
+    // has just been confirmed before the effect cleanup gets a chance to run.
+    quoteRequestRef.current?.abort();
+    const confirmed = createConfirmedDeliveryAddress(newAddress, newDetails, newCoords);
+    acceptedAddress.current = true;
+    setCustomerLocation(confirmed);
+    setAddressValidationError('');
+    setQuoteSnapshot(cartItemsRef.current.length ? null : { key: quoteContext(confirmed, []), quote: newQuote });
+    setSelectedScheduledWindow(null);
+    setCartReviewMessage(cartItemsRef.current.length ? 'Estamos revisando tu carrito para esta dirección. No se ha reservado ningún producto.' : '');
 
     const shouldAutoSwitchToScheduled =
       newQuote.autoSwitchedToScheduled ||
       newQuote.recommendedMode === 'PROGRAMADO' ||
       (!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && newQuote.availableModes.scheduled);
 
+    const nextMode = shouldAutoSwitchToScheduled ? 'PROGRAMADO' : newQuote.recommendedMode || 'TURBO';
+    const nextDispatch = deliveryStore(newQuote, nextMode);
+    const nextStore = nextDispatch && stores.find(store => store.id === nextDispatch.id && store.isActive);
+    if (nextStore) setCurrentStore(nextStore);
+    if (cartItemsRef.current.length && !pendingPurchase.current) setIsCartOpen(true);
+
     if (shouldAutoSwitchToScheduled) {
       setSelectedDeliveryMode('PROGRAMADO');
       if (newQuote.scheduledSlots && newQuote.scheduledSlots.length > 0) {
-        const firstValid = newQuote.scheduledSlots.find(s => !s.cutoffPassed) || newQuote.scheduledSlots[0];
-        setSelectedScheduledWindow(firstValid);
+        const firstValid = newQuote.scheduledSlots.find(s => !s.cutoffPassed && s.availableCapacity > 0);
+        setSelectedScheduledWindow(firstValid || null);
+        setScheduledWindowNeedsSelection(!firstValid);
       }
       setIsScheduledModalOpen(true);
       pushService.triggerNotification(
@@ -441,21 +520,57 @@ export default function App() {
     return cartItems.reduce((acc, item) => acc + item.quantity, 0);
   }, [cartItems]);
 
-  const handleAddToCart = (product: Product) => {
-    setCartItems(prev => {
-      const existing = prev.find(i => i.product.id === product.id);
-      if (existing) {
-        return prev.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, { product, quantity: 1 }];
-    });
+  function executePurchase(intent: PurchaseIntent) {
+    if (intent.type === 'checkout') {
+      setIsCartOpen(false);
+      setIsCheckoutOpen(true);
+      return;
+    }
+    const requests = intent.type === 'add' ? [{ productId: intent.productId, quantity: intent.quantity }]
+      : intent.type === 'reorder' ? intent.order.items.map(item => ({ productId: item.productId, quantity: item.quantity }))
+      : (wishlistCollections.find(collection => collection.id === intent.collectionId)?.items || []).map(item => ({ productId: item.productId, quantity: item.desiredQuantity || 1 }));
+    const updated = addCustomerCartLines(cartItemsRef.current, requests, getOperationalCatalog(products), currentStore.id);
+    cartItemsRef.current = updated.items;
+    setCartItems(updated.items);
+    setCartReviewMessage(updated.issues.join(' '));
+    if (updated.priceChanges.length) setCartPriceNotice(updated.priceChanges.join(' '));
+    if (intent.type === 'reorder') setIsOrderHistoryOpen(false);
+    if (intent.type !== 'add' || updated.issues.length) setIsCartOpen(true);
+  }
+
+  function requestPurchase(intent: PurchaseIntent) {
+    if (addressReady) { executePurchase(intent); return; }
+    pendingPurchase.current = intent;
+    if (!customerLocation || deliveryAddressStatus === 'error') {
+      setIsCartOpen(false);
+      setIsCheckoutOpen(false);
+      setIsOrderHistoryOpen(false);
+      setDetailProduct(null);
+      setIsCompareModalOpen(false);
+      acceptedAddress.current = false;
+      setIsAddressModalOpen(true);
+    } else setCartReviewMessage('Estamos verificando tu dirección y la bodega. Continuaremos cuando termine la consulta.');
+  }
+
+  const handleAddToCart = (product: Product, quantity = 1) => {
+    requestPurchase({ type: 'add', productId: product.id, quantity });
   };
 
   const handleUpdateQuantity = (product: Product, newQuantity: number) => {
     if (newQuantity <= 0) {
-      setCartItems(prev => prev.filter(i => i.product.id !== product.id));
+      const next = cartItemsRef.current.filter(item => item.product.id !== product.id);
+      cartItemsRef.current = next;
+      setCartItems(next);
+      setCartReviewMessage('');
     } else {
-      setCartItems(prev => prev.map(i => i.product.id === product.id ? { ...i, quantity: newQuantity } : i));
+      const existing = cartItemsRef.current.find(item => item.product.id === product.id)?.quantity || 0;
+      if (newQuantity > existing) requestPurchase({ type: 'add', productId: product.id, quantity: newQuantity - existing });
+      else {
+        const next = cartItemsRef.current.map(item => item.product.id === product.id ? { ...item, quantity: newQuantity } : item);
+        cartItemsRef.current = next;
+        setCartItems(next);
+        setCartReviewMessage('');
+      }
     }
   };
 
@@ -490,38 +605,30 @@ export default function App() {
   };
 
   const handleReorder = (order: Order) => {
-    for (const item of order.items) {
-      const prod = products.find(p => p.id === item.productId) || {
-        id: item.productId,
-        sku: item.sku,
-        name: item.name,
-        brand: item.brand,
-        species: 'Perro',
-        category: 'Alimentos',
-        requiresPrescription: item.requiresPrescription,
-        storageCondition: 'TEMPERATURA_AMBIENTE',
-        temperatureColdChain: false,
-        price: item.price,
-        presentation: item.presentation,
-        weightKg: item.weightKg,
-        image: item.image,
-        description: item.name,
-        stockByStore: { [currentStore.id]: 20 },
-        reservedStockByStore: { [currentStore.id]: 0 },
-        rating: 5,
-        reviewsCount: 10,
-        tags: [],
-      };
+    requestPurchase({ type: 'reorder', order });
+  };
 
-      setCartItems(prev => {
-        const existing = prev.find(i => i.product.id === prod.id);
-        if (existing) {
-          return prev.map(i => i.product.id === prod.id ? { ...i, quantity: i.quantity + item.quantity } : i);
-        }
-        return [...prev, { product: prod as Product, quantity: item.quantity }];
-      });
-    }
-    setIsCartOpen(true);
+  useEffect(() => {
+    if (!addressReady || isAddressModalOpen || isScheduledModalOpen || !pendingPurchase.current) return;
+    const intent = pendingPurchase.current;
+    pendingPurchase.current = null;
+    executePurchase(intent);
+  }, [addressReady, isAddressModalOpen, isScheduledModalOpen, products, currentStore.id]);
+
+  const forgetCustomerAddress = () => {
+    quoteRequestRef.current?.abort();
+    pendingPurchase.current = null;
+    acceptedAddress.current = false;
+    setAddressStorageWarning(saveCustomerDeliveryAddress(null) ? '' : 'Tu navegador no permitió borrar la dirección guardada. Podría reaparecer al recargar; puedes eliminar los datos de este sitio desde la configuración del navegador.');
+    setCustomerLocation(null);
+    setQuoteSnapshot(null);
+    setAddressValidationError('');
+    setSelectedScheduledWindow(null);
+    setScheduledWindowNeedsSelection(false);
+    setIsScheduledModalOpen(false);
+    setIsCheckoutOpen(false);
+    setIsAddressModalOpen(false);
+    setCartReviewMessage(cartItemsRef.current.length ? 'Tu carrito se conserva. Confirma una dirección para revisar su disponibilidad.' : '');
   };
 
   // Active customer orders
@@ -537,7 +644,7 @@ export default function App() {
     list = list.filter(p => !p.status || p.status === 'ACTIVE');
 
     // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
-    if (currentStore) {
+    if (customerLocation && currentStore) {
       const targetGid = currentStore.shopifyLocationGid;
       list = list.filter(p => {
         if (!p.bodegaIds) return true;
@@ -558,12 +665,12 @@ export default function App() {
     } else if (currentTab === 'favoritos') {
       list = list.filter(p => !!favorites[p.id]);
     } else if (currentTab === 'ofertas') {
-      list = list.filter(p => (p.discountPercent || 0) > 0);
+      list = list.filter(p => (p.discountPercent || 0) > 0 || !!(p as any).promotionLabel);
     } else if (selectedCategory !== 'Todo') {
       list = list.filter(p => p.category === selectedCategory || (p.pharmacySubcategory as any) === selectedCategory);
     }
     return list;
-  }, [products, currentStore, searchQuery, currentTab, selectedCategory, favorites]);
+  }, [products, currentStore, customerLocation, searchQuery, currentTab, selectedCategory, favorites]);
 
   // Apply advanced filters: price range, brands, weight range
   const filteredProducts = useMemo(() => {
@@ -595,7 +702,7 @@ export default function App() {
   }, [baseCategoryOrSearchProducts, productFilters]);
 
   // Rails data
-  const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [products]);
+  const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10 || !!(p as any).promotionLabel), [products]);
   const favoriteProducts = useMemo(() => products.filter(p => !!favorites[p.id]), [products, favorites]);
   const recommendedProducts = useMemo(() => products.filter(p => p.rating >= 4.8), [products]);
   const newProducts = useMemo(() => products.filter(p => p.isNew || p.category === 'Accesorios'), [products]);
@@ -621,10 +728,10 @@ export default function App() {
   // -------------------------------------------------------------
   if (currentPath === '/operacion') {
     return (
-      <OperationsDashboard
+      <Suspense fallback={<div className="p-8 text-center">Abriendo administración…</div>}><AdminPortal
         onBackToCustomer={() => navigateTo('/')}
         onViewOrderTracking={(orderId) => navigateTo(`/pedido/${orderId}`)}
-      />
+      /></Suspense>
     );
   }
 
@@ -655,7 +762,9 @@ export default function App() {
       <Header
         currentStore={currentStore}
         allStores={stores}
-        onSelectStore={(st) => setCurrentStore(st)}
+        onSelectStore={() => setIsAddressModalOpen(true)}
+        addressReady={addressReady}
+        deliveryAddressStatus={deliveryAddressStatus}
         selectedCategory={selectedCategory}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
@@ -690,7 +799,7 @@ export default function App() {
         onOpenAddressModal={() => setIsAddressModalOpen(true)}
         selectedDeliveryMode={selectedDeliveryMode}
         selectedScheduledWindow={selectedScheduledWindow}
-        onOpenScheduledModal={() => setIsScheduledModalOpen(true)}
+        onOpenScheduledModal={() => { if (deliveryQuote?.availableModes.scheduled) setIsScheduledModalOpen(true); else setIsAddressModalOpen(true); }}
         onOpenTour={handleRestartTour}
         onOpenWishlist={() => {
           setCurrentTab('deseos');
@@ -701,12 +810,15 @@ export default function App() {
 
       {/* Main Content Container */}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 pl-safe pr-safe pt-3 space-y-4 pb-28 sm:pb-32">
+        {(addressValidationError || (customerLocation && deliveryQuote && !activeDeliveryStore)) && <div role="status" className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-amber-950"><p>{addressValidationError || deliveryQuote?.message || 'Revisa la dirección y la disponibilidad de tu carrito.'}</p><div className="mt-2 flex gap-3"><button className="font-bold underline" onClick={() => setQuoteRevision(value => value + 1)}>Volver a verificar</button><button className="font-bold underline" onClick={() => setIsAddressModalOpen(true)}>Cambiar dirección</button></div></div>}
+        {addressStorageWarning && <p role="status" className="text-xs text-amber-900">{addressStorageWarning}</p>}
+        {visibleCartReview && <p role="status" className="rounded-xl border border-slate-200 bg-white p-3 text-xs text-slate-700">{visibleCartReview}</p>}
         {/* If user selected Listas de Deseos tab */}
         {currentTab === 'deseos' ? (
           <WishlistView
             collections={wishlistCollections}
             products={products}
-            selectedStoreId={currentStore.id}
+            selectedStoreId={currentStore.id} addressReady={addressReady}
             cartQuantities={cartQuantities}
             onAddToCart={handleAddToCart}
             onAddCollectionToCart={handleMoveCollectionToCart}
@@ -723,7 +835,7 @@ export default function App() {
         ) : selectedCategory === 'Farmacia' ? (
           <FarmaciaView
             products={products}
-            selectedStoreId={currentStore.id}
+            selectedStoreId={currentStore.id} addressReady={addressReady}
             cartQuantities={cartQuantities}
             onAddToCart={handleAddToCart}
             onUpdateQuantity={handleUpdateQuantity}
@@ -800,7 +912,7 @@ export default function App() {
                         isFavorite={!!favorites[prod.id]}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
-                        selectedStoreId={currentStore.id}
+                        selectedStoreId={currentStore.id} addressReady={addressReady}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
                         isInWishlist={wishlistProductIds.has(prod.id)}
@@ -998,7 +1110,7 @@ export default function App() {
                       isFavorite={!!favorites[prod.id]}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
-                      selectedStoreId={currentStore.id}
+                      selectedStoreId={currentStore.id} addressReady={addressReady}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
                       isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1038,7 +1150,7 @@ export default function App() {
                         isFavorite={!!favorites[prod.id]}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
-                        selectedStoreId={currentStore.id}
+                        selectedStoreId={currentStore.id} addressReady={addressReady}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
                         isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1083,7 +1195,7 @@ export default function App() {
                         isFavorite={!!favorites[prod.id]}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
-                        selectedStoreId={currentStore.id}
+                        selectedStoreId={currentStore.id} addressReady={addressReady}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
                         isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1120,7 +1232,7 @@ export default function App() {
                       isFavorite={!!favorites[prod.id]}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
-                      selectedStoreId={currentStore.id}
+                      selectedStoreId={currentStore.id} addressReady={addressReady}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
                       isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1156,7 +1268,7 @@ export default function App() {
                       isFavorite={!!favorites[prod.id]}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
-                      selectedStoreId={currentStore.id}
+                      selectedStoreId={currentStore.id} addressReady={addressReady}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
                       isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1176,11 +1288,12 @@ export default function App() {
         product={detailProduct}
         onClose={() => setDetailProduct(null)}
         quantityInCart={detailProduct ? (cartQuantities[detailProduct.id] || 0) : 0}
+        quantitiesByProductId={cartQuantities}
         onAddToCart={handleAddToCart}
         onUpdateQuantity={handleUpdateQuantity}
         isFavorite={detailProduct ? !!favorites[detailProduct.id] : false}
         onToggleFavorite={handleToggleFavorite}
-        selectedStoreId={currentStore.id}
+        selectedStoreId={currentStore.id} addressReady={addressReady}
         isCompared={detailProduct ? compareProducts.some(p => p.id === detailProduct.id) : false}
         onToggleCompare={handleToggleCompare}
         isInWishlist={detailProduct ? wishlistProductIds.has(detailProduct.id) : false}
@@ -1205,7 +1318,7 @@ export default function App() {
         cartQuantities={cartQuantities}
         onAddToCart={handleAddToCart}
         onUpdateQuantity={handleUpdateQuantity}
-        selectedStoreId={currentStore.id}
+        selectedStoreId={currentStore.id} addressReady={addressReady}
       />
 
       {/* Compare Limit Toast Notification */}
@@ -1221,16 +1334,17 @@ export default function App() {
         onClose={() => setIsCartOpen(false)}
         cartItems={cartItems}
         onUpdateQuantity={handleUpdateQuantity}
-        onClearCart={() => setCartItems([])}
-        onProceedToCheckout={() => {
-          setIsCartOpen(false);
-          setIsCheckoutOpen(true);
-        }}
+        onClearCart={() => { pendingPurchase.current = null; cartItemsRef.current = []; setCartItems([]); setCartReviewMessage(''); setCartPriceNotice(''); }}
+        onProceedToCheckout={() => requestPurchase({ type: 'checkout' })}
+        addressReady={addressReady}
+        cartReviewMessage={visibleCartReview}
         currentStore={currentStore}
       />
 
       {/* Checkout Modal */}
       <CheckoutModal
+        addressReady={addressReady}
+        cartReviewMessage={visibleCartReview}
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         cartItems={cartItems}
@@ -1238,18 +1352,26 @@ export default function App() {
         customerAddress={customerAddress}
         customerAddressDetails={customerAddressDetails}
         customerCoordinates={customerCoordinates}
+        onChangeAddressDetails={setCustomerAddressDetails}
         deliveryQuote={deliveryQuote}
+        catalogReady={catalogReady}
+        onRefreshDeliveryQuote={() => setQuoteRevision(previous => previous + 1)}
         selectedMode={selectedDeliveryMode}
         onSelectMode={setSelectedDeliveryMode}
         selectedScheduledWindow={selectedScheduledWindow}
-        onSelectScheduledWindow={setSelectedScheduledWindow}
+        onSelectScheduledWindow={(window) => { setSelectedScheduledWindow(window); setScheduledWindowNeedsSelection(false); }}
         onChangeAddress={() => {
           setIsCheckoutOpen(false);
           setIsAddressModalOpen(true);
         }}
         onOrderSuccess={(orderId) => {
           setIsCheckoutOpen(false);
+          pendingPurchase.current = null;
+          cartItemsRef.current = [];
           setCartItems([]);
+          setCartReviewMessage('');
+          setCartPriceNotice('');
+          api.getMyOrders().then(setOrders).catch(() => {});
           pushService.simulateOrderTransition('#BP-NUEVO', orderId, 'CONFIRMADO');
           navigateTo(`/pedido/${orderId}`);
         }}
@@ -1258,10 +1380,16 @@ export default function App() {
       {/* Address Confirmation & Coverage Modal */}
       <AddressConfirmationModal
         isOpen={isAddressModalOpen}
-        onClose={() => setIsAddressModalOpen(false)}
+        onClose={() => {
+          if (!acceptedAddress.current) pendingPurchase.current = null;
+          acceptedAddress.current = false;
+          setIsAddressModalOpen(false);
+        }}
         currentAddress={customerAddress}
         currentDetails={customerAddressDetails}
-        currentCoordinates={customerCoordinates}
+        currentCoordinates={customerCoordinates || null}
+        addressRemembered={!!customerLocation}
+        onForgetAddress={forgetCustomerAddress}
         onConfirmAddress={handleConfirmAddress}
         stores={stores}
         cartItems={cartItems}
@@ -1276,19 +1404,23 @@ export default function App() {
         selectedSlotId={selectedScheduledWindow?.slotId}
         onSelectSlot={(slot) => {
           setSelectedScheduledWindow(slot);
+          setScheduledWindowNeedsSelection(false);
           setSelectedDeliveryMode('PROGRAMADO');
           pushService.triggerNotification(
-            'Franja de Entrega Confirmada',
-            `Tu pedido llegará ${slot.dateLabel}, horario ${slot.displayWindowShort || slot.displayWindow}.`
+            'Franja de entrega seleccionada',
+            `Elegiste ${slot.dateLabel}, horario ${slot.displayWindowShort || slot.displayWindow}. La disponibilidad se confirma al crear el pedido.`
           );
         }}
         localityName={deliveryQuote?.detectedLocalityName || 'Bogotá'}
         isAutoSwitched={deliveryQuote?.autoSwitchedToScheduled}
         address={customerAddress}
+        assignment={deliveryQuote?.scheduledAssignment}
       />
 
       {/* Order History & Profile Modal */}
       <OrderHistoryModal
+        confirmedAddress={customerLocation ? { address: customerLocation.address, details: customerLocation.details } : null}
+        onChangeAddress={() => { setIsOrderHistoryOpen(false); setIsAddressModalOpen(true); }}
         isOpen={isOrderHistoryOpen}
         onClose={() => setIsOrderHistoryOpen(false)}
         orders={orders}

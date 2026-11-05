@@ -1,44 +1,78 @@
-import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint, DeliveryTracking } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
+import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint, OrderTrackingSnapshot } from '../types';
+import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_DRIVERS } from '../data/seedData';
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
+import { getAdminCsrfToken } from './adminApi';
 
 const BASE_URL = '/api/v1';
+const ORDER_KEYS = 'bolt_pets_order_access';
+const inMemoryAccess: Record<string, string> = {};
+function savedOrderAccess(): Record<string, string> { try { const stored = JSON.parse(localStorage.getItem(ORDER_KEYS) || '{}'); return { ...(stored && typeof stored === 'object' && !Array.isArray(stored) ? stored : {}), ...inMemoryAccess }; } catch { return inMemoryAccess; } }
+async function apiFetch(input: RequestInfo | URL, options: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(options.headers);
+  if (options.method && options.method !== 'GET' && getAdminCsrfToken()) headers.set('x-csrf-token', getAdminCsrfToken());
+  const match = String(input).match(/\/orders\/([^/?]+)/);
+  if (match) { const token = savedOrderAccess()[decodeURIComponent(match[1])]; if (token) headers.set('x-order-token', token); }
+  return fetch(input, { ...options, headers, credentials: 'same-origin' });
+}
+
+export class ApiRequestError extends Error {
+  constructor(message: string, public status: number, public nextSequenceNumber?: number) { super(message); }
+}
+
+export interface GeocodingCandidate {
+  address: string;
+  coordinates: { lat: number; lng: number } | null;
+  partialMatch?: boolean;
+  locationType?: string;
+  types?: string[];
+  placeId?: string;
+}
+
+function rethrowCancellation(error: unknown, signal?: AbortSignal) {
+  if (signal?.aborted) throw signal.reason || new DOMException('Operación cancelada', 'AbortError');
+  if (error instanceof Error && error.name === 'AbortError') throw error;
+}
 
 export const api = {
-  async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[]): Promise<DeliveryQuote> {
+  async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[], signal?: AbortSignal, options?: { authoritative?: boolean }): Promise<DeliveryQuote> {
     try {
-      const res = await fetch(`${BASE_URL}/delivery/quote`, {
+      const res = await apiFetch(`${BASE_URL}/delivery/quote`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(req),
+        signal,
       });
       if (!res.ok) {
         throw new Error('Error del servidor en cotización');
       }
       return await res.json();
-    } catch {
+    } catch (error) {
+      rethrowCancellation(error, signal);
+      if (options?.authoritative) throw new Error('No pudimos verificar la entrega. Comprueba la conexión e inténtalo de nuevo.');
       // Fallback local autoritativo
       return evaluateDeliveryQuote(req, localStores || INITIAL_STORES, localProducts || INITIAL_PRODUCTS);
     }
   },
 
-  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string } | null> {
+  async reverseGeocode(lat: number, lng: number, signal?: AbortSignal): Promise<{ address: string; formattedAddress?: string; candidates?: GeocodingCandidate[] } | null> {
     try {
-      const res = await fetch(`${BASE_URL}/geocode/reverse?lat=${lat}&lng=${lng}`);
+      const res = await apiFetch(`${BASE_URL}/geocode/reverse?lat=${lat}&lng=${lng}`, { signal });
       if (!res.ok) return null;
       return await res.json();
     } catch (e) {
+      rethrowCancellation(e, signal);
       console.warn('api.reverseGeocode request failed:', e);
       return null;
     }
   },
 
-  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string } | null> {
+  async forwardGeocode(address: string, signal?: AbortSignal): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string; candidates?: GeocodingCandidate[] } | null> {
     try {
-      const res = await fetch(`${BASE_URL}/geocode/forward?address=${encodeURIComponent(address)}`);
+      const res = await apiFetch(`${BASE_URL}/geocode/forward?address=${encodeURIComponent(address)}`, { signal });
       if (!res.ok) return null;
       return await res.json();
     } catch (e) {
+      rethrowCancellation(e, signal);
       console.warn('api.forwardGeocode request failed:', e);
       return null;
     }
@@ -46,7 +80,7 @@ export const api = {
 
   async getStores(): Promise<Store[]> {
     try {
-      const res = await fetch(`${BASE_URL}/stores`);
+      const res = await apiFetch(`${BASE_URL}/stores`);
       if (!res.ok) throw new Error('Error al consultar sedes');
       return await res.json();
     } catch {
@@ -62,16 +96,16 @@ export const api = {
       if (params?.q) url.searchParams.append('q', params.q);
       if (params?.storeId) url.searchParams.append('storeId', params.storeId);
 
-      const res = await fetch(url.toString());
+      const res = await apiFetch(url.toString());
       if (!res.ok) throw new Error('Error al cargar catálogo');
       return await res.json();
     } catch {
-      return INITIAL_PRODUCTS;
+      throw new Error('No se pudo cargar el catálogo. Comprueba la conexión e inténtalo nuevamente.');
     }
   },
 
   async createOrder(payload: any): Promise<Order> {
-    const res = await fetch(`${BASE_URL}/orders`, {
+    const res = await apiFetch(`${BASE_URL}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(payload),
@@ -80,30 +114,45 @@ export const api = {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'No se pudo crear el pedido');
     }
-    return await res.json();
+    const order = await res.json();
+    if (order.customerAccessToken) {
+      const access = savedOrderAccess();
+      access[order.id] = order.customerAccessToken;
+      inMemoryAccess[order.id] = order.customerAccessToken;
+      try { localStorage.setItem(ORDER_KEYS, JSON.stringify(access)); } catch { console.warn('El navegador conservará el acceso al pedido solamente durante esta sesión.'); }
+      delete order.customerAccessToken;
+    }
+    return order;
   },
 
-  async getOrder(orderId: string): Promise<Order> {
-    const res = await fetch(`${BASE_URL}/orders/${orderId}`);
+  async getMyOrders(): Promise<Order[]> {
+    const orders = await Promise.all(Object.keys(savedOrderAccess()).map(id => api.getOrder(id).catch(() => null)));
+    return orders.filter((order): order is Order => !!order).sort((a, b) => Date.parse(b.createdAt) - Date.parse(a.createdAt));
+  },
+
+  async priceCart(storeId: string, items: { productId: string; quantity: number }[], signal?: AbortSignal): Promise<{ subtotal: number; discount: number; promotionName?: string; shipping: number; serviceFee: number; total: number }> {
+    const response = await apiFetch(`${BASE_URL}/cart/price`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ storeId, items }), signal });
+    if (!response.ok) throw new Error((await response.json()).error || 'No se pudo verificar el total.');
+    return response.json();
+  },
+
+  async getOrder(orderId: string, signal?: AbortSignal): Promise<Order> {
+    const res = await apiFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}`, { signal });
     if (!res.ok) throw new Error('Pedido no encontrado');
     return await res.json();
   },
 
   async getOrders(params?: { storeId?: string; status?: string }): Promise<Order[]> {
-    try {
-      const url = new URL(`${window.location.origin}${BASE_URL}/orders`);
-      if (params?.storeId) url.searchParams.append('storeId', params.storeId);
-      if (params?.status) url.searchParams.append('status', params.status);
-      const res = await fetch(url.toString());
-      if (!res.ok) throw new Error('Error al cargar pedidos');
-      return await res.json();
-    } catch {
-      return INITIAL_ORDERS;
-    }
+    const url = new URL(`${window.location.origin}${BASE_URL}/orders`);
+    if (params?.storeId) url.searchParams.append('storeId', params.storeId);
+    if (params?.status) url.searchParams.append('status', params.status);
+    const res = await apiFetch(url.toString());
+    if (!res.ok) throw new ApiRequestError('Error al cargar pedidos', res.status);
+    return await res.json();
   },
 
   async uploadPrescription(orderId: string, data: { documentUrl: string; documentName: string; vetName?: string; vetLicense?: string }): Promise<any> {
-    const res = await fetch(`${BASE_URL}/orders/${orderId}/prescription`, {
+    const res = await apiFetch(`${BASE_URL}/orders/${orderId}/prescription`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify(data),
@@ -112,14 +161,14 @@ export const api = {
     return await res.json();
   },
 
-  async getTracking(orderId: string, shipmentId?: string): Promise<DeliveryTracking> {
+  async getTracking(orderId: string, shipmentId?: string, signal?: AbortSignal): Promise<OrderTrackingSnapshot> {
     const url = shipmentId
-      ? `${BASE_URL}/orders/${orderId}/tracking?shipmentId=${encodeURIComponent(shipmentId)}`
-      : `${BASE_URL}/orders/${orderId}/tracking`;
-    const res = await fetch(url);
+      ? `${BASE_URL}/orders/${encodeURIComponent(orderId)}/tracking?shipmentId=${encodeURIComponent(shipmentId)}`
+      : `${BASE_URL}/orders/${encodeURIComponent(orderId)}/tracking`;
+    const res = await apiFetch(url, { signal });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Error al consultar rastreo');
+      throw new ApiRequestError(err.error || 'Error al consultar rastreo', res.status);
     }
     return await res.json();
   },
@@ -128,7 +177,7 @@ export const api = {
     const url = shipmentId
       ? `${BASE_URL}/orders/${orderId}/telemetry/history?shipmentId=${encodeURIComponent(shipmentId)}`
       : `${BASE_URL}/orders/${orderId}/telemetry/history`;
-    const res = await fetch(url);
+    const res = await apiFetch(url);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Error al consultar historial de telemetría');
@@ -137,7 +186,7 @@ export const api = {
   },
 
   async verifyDelivery(orderId: string, deliveryCode: string, shipmentId?: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/orders/${orderId}/verify-delivery`, {
+    const res = await apiFetch(`${BASE_URL}/orders/${orderId}/verify-delivery`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ deliveryCode, shipmentId }),
@@ -149,8 +198,8 @@ export const api = {
     return await res.json();
   },
 
-  async sendGpsTelemetry(telemetry: GPSTelemetry | GPSTrackingPoint, driverId?: string): Promise<{ status: string; point: any; count: number }> {
-    const res = await fetch(`${BASE_URL}/driver/gps`, {
+  async sendGpsTelemetry(telemetry: GPSTelemetry, driverId?: string, signal?: AbortSignal): Promise<{ status: string; point: GPSTelemetry; count: number }> {
+    const res = await apiFetch(`${BASE_URL}/driver/gps`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -158,10 +207,11 @@ export const api = {
         ...(driverId ? { 'x-driver-id': driverId } : {}),
       },
       body: JSON.stringify(telemetry),
+      signal,
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || `Error enviando telemetría GPS (${res.status})`);
+      throw new ApiRequestError(err.error || `Error enviando telemetría GPS (${res.status})`, res.status, err.nextSequenceNumber);
     }
     return await res.json();
   },
@@ -174,7 +224,7 @@ export const api = {
     deliveryCode?: string,
     role?: string
   ): Promise<any> {
-    const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/status`, {
+    const res = await apiFetch(`${BASE_URL}/operations/orders/${orderId}/status`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -190,13 +240,13 @@ export const api = {
   },
 
   async getOrderHistory(orderId: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/orders/${orderId}/history`);
+    const res = await apiFetch(`${BASE_URL}/orders/${orderId}/history`);
     if (!res.ok) throw new Error('Error al consultar historial del pedido');
     return await res.json();
   },
 
   async cancelOrder(orderId: string, reason?: string, role: string = 'CLIENTE'): Promise<any> {
-    const res = await fetch(`${BASE_URL}/orders/${orderId}/cancel`, {
+    const res = await apiFetch(`${BASE_URL}/orders/${orderId}/cancel`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
@@ -211,11 +261,11 @@ export const api = {
     return await res.json();
   },
 
-  async confirmPhysicalReturn(orderId: string, inspectorName: string, notes?: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/confirm-physical-return`, {
+  async confirmPhysicalReturn(orderId: string, inspectorName: string, notes?: string, shipmentId?: string): Promise<any> {
+    const res = await apiFetch(`${BASE_URL}/operations/orders/${orderId}/confirm-physical-return`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inspectorName, notes }),
+      body: JSON.stringify({ inspectorName, notes, shipmentId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -225,7 +275,7 @@ export const api = {
   },
 
   async reviewPrescription(orderId: string, status: 'APROBADA' | 'RECHAZADA', reviewNotes: string, reviewerName?: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/prescription/review`, {
+    const res = await apiFetch(`${BASE_URL}/operations/orders/${orderId}/prescription/review`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ status, reviewNotes, reviewerName }),
@@ -234,7 +284,7 @@ export const api = {
   },
 
   async assignDriver(orderId: string, driverId: string, shipmentId?: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/assign-driver`, {
+    const res = await apiFetch(`${BASE_URL}/operations/orders/${orderId}/assign-driver`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ driverId, shipmentId }),
@@ -248,7 +298,7 @@ export const api = {
 
   async getIntegrationsStatus(): Promise<any> {
     try {
-      const res = await fetch(`${BASE_URL}/integrations/status`);
+      const res = await apiFetch(`${BASE_URL}/integrations/status`);
       return await res.json();
     } catch {
       return {
@@ -261,7 +311,7 @@ export const api = {
   },
 
   async verifyStoreEntrance(storeId: string, coordinates: { lat: number; lng: number }, verifiedBy?: string): Promise<any> {
-    const res = await fetch(`${BASE_URL}/stores/${storeId}/verify-entrance`, {
+    const res = await apiFetch(`${BASE_URL}/stores/${storeId}/verify-entrance`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ coordinates, verifiedBy }),
@@ -272,7 +322,7 @@ export const api = {
 
   async getShopifyStatus(): Promise<any> {
     try {
-      const res = await fetch(`${BASE_URL}/shopify/status`);
+      const res = await apiFetch(`${BASE_URL}/shopify/status`);
       if (!res.ok) throw new Error('Error al consultar estado de Shopify');
       return await res.json();
     } catch {
@@ -284,7 +334,7 @@ export const api = {
 
   async syncShopifyInventory(): Promise<any> {
     try {
-      const res = await fetch(`${BASE_URL}/shopify/sync`, { method: 'POST' });
+      const res = await apiFetch(`${BASE_URL}/shopify/sync`, { method: 'POST' });
       if (!res.ok) throw new Error('Error al sincronizar inventario con Shopify');
       return await res.json();
     } catch {
@@ -295,7 +345,7 @@ export const api = {
   },
 
   async simulateShopifyWebhook(storeId: string, sku: string, newOnHand: number, committed: number = 0): Promise<any> {
-    const res = await fetch(`${BASE_URL}/shopify/simulate-webhook`, {
+    const res = await apiFetch(`${BASE_URL}/shopify/simulate-webhook`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({ storeId, sku, newOnHand, committed }),

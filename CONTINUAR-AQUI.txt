@@ -1,0 +1,241 @@
+BOLT PETS — DESARROLLO LOCAL ACTIVO
+
+Base: haroldbolt/BOLT, main, commit 6499e16ca351ecd6531fff9b1acc368c5688b6c1.
+Fecha de esa versión: 29 de octubre de 2026, 1:08 a. m. de Colombia.
+Se importaron los 79 archivos y se verificaron sus objetos Git antes de editar.
+Rama local de trabajo: codex/pedidos-gps.
+
+PRIMERA ACTUALIZACIÓN LOCAL
+- Se conserva el catálogo de 3.830 productos agrupados, 5.652 presentaciones,
+  cinco ubicaciones, nombres, fotos y asociaciones por bodega.
+- GPS sin posición inventada cuando no hay telemetría.
+- Seguimiento y contador independientes por envío hijo; reanudación desde el servidor.
+- Cola temporal de hasta 60 puntos y cinco minutos; reintentos sin duplicar lecturas.
+- Captura solo para un envío EN_CAMINO y con contexto confirmado.
+- Validación de campos GPS, fechas, secuencias, precisión y asignación.
+- PIN de entrega ingresado por el receptor; no se rellena automáticamente.
+- Una reserva por unidad, validando cantidades y líneas repetidas antes de modificar stock.
+- Precios y pesos tomados del catálogo del servidor; pago pendiente hasta confirmación real.
+- Pedidos, auditoría, conductores y GPS en un archivo privado con reemplazo atómico.
+- Datos importados conservados fuera de public/ y src/data.
+- Las pruebas se ejecutan en carpetas temporales para no tocar los pedidos locales.
+
+PENDIENTES QUE IMPIDEN DAR LOS PUNTOS 4 Y 5 POR FINALIZADOS
+- Validar con el usuario su primer administrador y sus datos operativos. El panel
+  integrado ya usa credenciales y sesiones reales; las cuentas separadas de empleados
+  y repartidores y sus permisos específicos corresponden a una siguiente etapa.
+- Completar precios, pesos y conteos reales por bodega desde el administrador. Los
+  datos importados siguen pendientes hasta registrarlos; no se inventan cantidades.
+- Preparar HTTPS, alojamiento privado de pruebas y respaldos externos para uso
+  desde otros dispositivos. La base SQLite y el respaldo local ya están implementados.
+- Prueba autorizada desde el teléfono del repartidor, incluyendo pérdida de señal,
+  segundo plano y pantalla bloqueada. Las pruebas automatizadas usan fixtures.
+- Conexiones externas de pagos y transporte, si el usuario decide activarlas después.
+
+EJECUCIÓN
+Para abrir la aplicación en Windows, usa el archivo Abrir Bolt Pets.cmd de esta
+carpeta. Prepara la compilación si hace falta, inicia el servidor local separado
+del terminal y abre http://127.0.0.1:4327/. También puede ejecutarse npm run local
+para iniciar o npm run open para iniciar y abrir el navegador. El equipo debe
+estar encendido; no es una publicación en Internet.
+
+Para abrir directamente el panel, usa Abrir administrador.cmd. Ambos accesos
+inician o reutilizan el mismo servidor antes de abrir la página correspondiente.
+Abrir solo un enlace en el navegador no inicia el servidor cuando está apagado.
+El arranque espera hasta 90 segundos y muestra progreso si el equipo tarda;
+conserva el PID del proceso nuevo desde el comienzo en el registro privado.
+Si el puerto corresponde a otra aplicación, informa el conflicto sin cerrarla.
+
+Desde esta carpeta, con Node y dependencias instaladas:
+  npm run dev
+  npm run lint
+  npm test
+  npm run build
+
+La vista local preparada en esta sesión usa http://127.0.0.1:4327/.
+El servidor escucha en 127.0.0.1 por defecto. PORT y HOST permiten configurarlo.
+BOLT_DATA_DIR permite indicar una carpeta privada persistente; el valor por defecto
+es .bolt-private/operations dentro de la carpeta desde la que se inicia el servidor.
+Conservar esa carpeta privada al mover la instalación; no subirla a GitHub ni adjuntarla
+en una entrega pública de código. Las claves deben permanecer en variables privadas.
+
+ESTADO DE PUBLICACIÓN
+Esta actualización se trabaja y comprueba localmente. No se publicó ni se alteró
+inventario Shopify, no se hicieron cobros ni se enviaron pedidos comerciales.
+La historia anterior de GitHub puede seguir conteniendo archivos retirados; quitar
+un archivo del árbol actual no borra sus versiones antiguas.
+
+ADMINISTRACIÓN INTEGRADA — ACTUALIZACIÓN DEL 30 DE OCTUBRE DE 2026
+- La administración amplía /operacion dentro de la misma aplicación.
+- Acceso mediante usuario y contraseña, sesiones privadas, verificación CSRF y
+  límites de intentos. No se crean credenciales públicas predeterminadas.
+- Crear administrador.cmd permite elegir localmente el primer usuario y clave.
+- Cuentas, catálogo administrable, cantidades por presentación/bodega,
+  promociones y auditoría usan SQLite privado: BOLT_DATA_DIR/admin.sqlite, por
+  defecto .bolt-private/operations/admin.sqlite.
+- Los datos desconocidos permanecen pendientes. Una cantidad cero confirmada
+  se diferencia de las existencias importadas todavía no verificadas.
+- Quitar un producto significa archivarlo conservando sus compras anteriores.
+- Las promociones no se acumulan y se validan en el servidor; se conserva la
+  política de envío gratis. Los horarios de la interfaz utilizan Bogotá.
+- Copia de seguridad.cmd crea un respaldo consistente en la carpeta privada.
+- Consulta ADMINISTRACION.txt para preparar el acceso y administrar el catálogo.
+- Esta actualización se verifica localmente. No constituye publicación ni
+  validación del GPS en un teléfono real, ni conexión con transportadoras.
+
+SINCRONIZACIÓN DE DIRECCIÓN Y MAPA — 2 DE NOVIEMBRE DE 2026
+- Dirección, coordenadas y cotización comparten una sesión de selección. Escribir,
+  mover el pin y cerrar invalidan las búsquedas y cotizaciones anteriores.
+- La confirmación espera la geocodificación y una cotización del mismo punto;
+  las coordenadas aproximadas por barrio/cuadrícula dejaron de aceptarse.
+- Los cambios de apartamento, carrito o catálogo no reinician la dirección escrita.
+- El checkout utiliza la ubicación confirmada del selector y comparte sus detalles;
+  no permite cambiar solamente el texto conservando coordenadas de otra dirección.
+- Google Maps conserva su configuración existente. Se validan precisión y resultados
+  parciales/ambiguos; el pin conserva el punto elegido al consultar su dirección.
+- 512 comprobaciones aprobadas (63 nuevas de dirección/geocodificación), revisión
+  de tipos y compilación de cliente y servidor correctas. Pruebas con datos aislados.
+- Una consulta real de geocodificación a Google para una dirección de prueba
+  respondió OK con un resultado de calle y sin coincidencia parcial.
+- Se observó el selector con el mapa cargado. La prueba visual completa de escribir
+  y arrastrar quedó pendiente: el control del navegador no pudo completar las
+  interacciones. El tamaño temporal de prueba se restauró.
+- Actualización local; no se envió a GitHub ni se publicó. Sin pedidos comerciales.
+
+PILOTO DE BODEGAS PARA PROGRAMADO — 2 DE NOVIEMBRE DE 2026
+- Guía operativa y de pruebas: PROGRAMADOS.txt.
+- Punto de recuperación local: codex/respaldo-programado-f161621. Se creó un
+  respaldo consistente de SQLite en almacenamiento privado. La base, los
+  respaldos y las credenciales no se incorporan al repositorio.
+- Asignación por localidad: Suba atiende Suba/Usaquén; Álamos atiende Engativá,
+  Fontibón, Barrios Unidos, Teusaquillo y Chapinero; Kennedy atiende las otras
+  doce localidades incluidas en la política. Sumapaz está fuera de Programado.
+- Centro nunca recibe pedidos programados nuevos ni funciona como alternativa.
+  Los pedidos históricos y sus bodegas permanecen intactos.
+- La localidad procede de polígonos oficiales SDP/IDECA ejecutados offline.
+  No se confía en el nombre escrito ni se asigna sede por defecto a un punto
+  no identificado. Fuente y licencia: src/data/geography/README.md.
+- Cotización, checkout y creación del pedido usan la misma asignación de
+  Programado, separada de Turbo. El servidor rechaza imponer otra bodega desde
+  el navegador y vuelve a comprobar inventario, precios, peso, franja y cupo.
+- SUGERIDA no reserva mercancía ni cupo. CONFIRMADA en una cotización confirma
+  disponibilidad de productos en la sede en ese momento; tampoco reserva cupo.
+  Los carritos fallidos no crean pedidos ni una nueva bandeja administrativa:
+  revisar los datos reales en Productos e Inventario antes de intentar de nuevo.
+- Administración agrupa Programados por bodega, fecha, franja y localidad.
+  Conserva autenticación y pedidos en vivo. No se implementaron traslados,
+  reasignaciones automáticas de pedidos reservados ni orden óptimo de paradas.
+- Se mantienen el cupo GLOBAL de 10 pedidos por fecha/franja, los tres horarios
+  y cortes originales, y las reglas de Turbo, Turbo Dividido y descuentos.
+- 666 comprobaciones aprobadas: 512 previas, 70 de geografía, 35 de política,
+  18 de integración HTTP y 31 de lógica de interfaz. Tipos sin errores y
+  compilación de cliente/servidor correctas; pruebas con datos aislados.
+- La demostración temporal con tres pedidos ficticios usó SQLite separado y
+  ya está apagada. No hubo facturas, cobros ni pedidos comerciales.
+- La revisión visual completa sigue pendiente por un fallo del control del
+  navegador; no se da por validada la interacción manual de cliente/admin.
+- La versión local en el puerto 4327 se reinició correctamente. No se publicó
+  la app ni se enviaron cambios a GitHub; no se alteró inventario Shopify.
+
+INSTRUCCIONES DE ENTREGA Y TARIFA DE SERVICIO — 2 DE NOVIEMBRE DE 2026
+- En compras nuevas solo se ofrecen Llamar al llegar y Dejar en portería.
+  El servidor rechaza Subir al apartamento antes de crear o reservar un pedido.
+  El tipo anterior se conserva exclusivamente para leer pedidos históricos.
+- Las cotizaciones y los pedidos nuevos tienen serviceFee igual a cero. El
+  carrito y checkout ya no muestran ni suman el cargo de servicio de $1.500.
+  Total = productos menos descuento más envío más propina voluntaria.
+- Se mantienen el envío de $4.900, su beneficio desde $70.000 antes de descuentos,
+  las promociones y las reglas de Turbo, Dividido, Programado, bodega y cupo.
+- Una cotización anterior con cargo de servicio se vuelve a consultar; el checkout
+  no permite usarla. El servidor exige revisar un total anterior antes de reservar.
+- Cliente y administrador muestran los importes guardados de cada pedido. Un
+  histórico puede conservar su instrucción de subir y su servicio original;
+  no se recalculan ni migran sus totales, pagos, reservas o inventario.
+- Punto de recuperación local: codex/respaldo-antes-tarifa-cero-642f1d7.
+  Se creó un respaldo consistente de SQLite en la carpeta privada de backups.
+- 697 comprobaciones aprobadas, incluidas 31 nuevas de HTTP y componentes.
+  Tipos sin errores; compilación de cliente y servidor correcta. Las pruebas
+  de compra utilizan SQLite temporal y puertos separados.
+- Verificado en navegador: carrito $24.900; checkout con ambas instrucciones,
+  $24.900 sin propina y $26.900 con propina de $2.000, sin cargo de servicio.
+  Esta interacción usó la demostración Nutra separada, sin enviar una compra.
+- Verificado en la app principal: el pedido anterior abierto conserva $28.400,
+  su recepción y pago pendiente tanto en cliente como en administración. La
+  comparación de todos los registros confirma que los 16 pedidos y los 3.830
+  productos administrables siguen idénticos; la reserva Nutra sigue intacta.
+- Servidor principal reiniciado en http://127.0.0.1:4327/. La demostración Nutra
+  también carga esta versión conservando su base separada. No se publicó ni
+  se enviaron cambios a GitHub, cobros ni operaciones externas.
+
+DIRECCIÓN CONFIRMADA Y GANCHO TURBO — 3 DE NOVIEMBRE DE 2026
+- La primera visita inicia sin domicilio, apartamento, coordenadas ni bodega
+  confirmados. Se puede explorar y buscar antes de elegir la entrega.
+- El mensaje «⚡ Turbo hasta 25 minutos» permanece visible con la indicación de
+  zonas habilitadas. Programado identifica por separado su fecha y franja reales.
+- Agregar, comprar desde una lista, repetir y continuar al checkout requieren
+  dirección y disponibilidad revalidadas. La acción pendiente se retoma una vez.
+- Se recuerda únicamente el destino elegido en este navegador. Recargar consulta
+  otra vez cobertura, bodega y catálogo; no restaura cotizaciones o cupos antiguos.
+- Dirección escrita, mapa y confirmación mantienen su sesión sincronizada. No se
+  solicita ubicación automáticamente y cancelar conserva la selección anterior.
+- Cambiar de domicilio limpia el apartamento anterior. Cambiar de bodega conserva
+  líneas y cantidades del carrito y avisa si cambian precios o disponibilidad.
+- Olvidar dirección elimina solo su propia clave. Si el navegador impide guardar
+  o borrar, se informa; los pedidos y sus autorizaciones no se eliminan.
+- Se mantienen las reglas de Turbo, Dividido, Programado, descuentos, propina,
+  recepción y servicio cero. No se modificaron el motor de despacho ni el catálogo.
+- Punto de recuperación: codex/respaldo-direccion-confirmada-26b615e y respaldo
+  consistente de SQLite en la carpeta privada, excluida de Git.
+- 776 comprobaciones aprobadas en 27 archivos de pruebas, incluidas 79 nuevas.
+  Validación de tipos y compilación de cliente/servidor correctas. Persisten los
+  avisos de tamaño del paquete y compatibilidad futura de la configuración Vite.
+- Revisión visual en móvil y escritorio: estado vacío, confirmación, recarga,
+  cancelar, olvidar, agregar una vez y paso automático a Programado. La compra
+  se revisó en una demostración con base separada, sin crear ni pagar pedidos.
+- Comparación privada antes/después: los 16 pedidos y 3.830 productos administrables
+  siguen idénticos, incluidas las reservas y la unidad Nutra existente.
+- Guía de revisión manual: DIRECCION-DE-ENTREGA.txt. Versión local en el puerto
+  4327; no se publicó ni se enviaron cambios a GitHub o a servicios comerciales.
+
+COPIA DE PRUEBA CON 100 EXISTENCIAS — 3 DE NOVIEMBRE DE 2026
+- Guía: INVENTARIO-DE-PRUEBA.txt. Accesos Abrir prueba inventario.cmd y Abrir
+  administrador de prueba.cmd. Tienda http://localhost:4330/ y panel /operacion;
+  usa las cuentas copiadas y pide iniciar sesión nuevamente.
+- Base independiente .bolt-private/inventory-100-test/data, respaldos e informes
+  excluidos de Git. Origen .bolt-private/operations abierto solo para lectura y
+  respaldo SQLite consistente; su catálogo, pedidos y promociones siguen iguales.
+- Se asignaron 100 físicas a las 5.652 presentaciones en las cuatro bodegas
+  activas asociadas (22.608 pares), sin excepciones. Fontibón no se activó.
+- Preservadas las reservas: Nutra en Kennedy tiene 100 físicas y 99 disponibles
+  en el ensayo. La unidad y los 16 pedidos de la instalación original no cambiaron.
+- Conservados precios, pesos, estados y asociaciones. Solo una presentación está
+  completa para comprar; el resto conserva pendientes comerciales. La carga de
+  cantidades no convierte datos de prueba en un inventario real verificado.
+- Utilidad manual prepare-inventory-test: guardas de rutas/manifest/identidad,
+  transacción, versiones, movimientos y auditoría. No se ejecuta al abrir la app.
+- Servidor local separado con banner amarillo; integra la misma tienda y panel,
+  bloquea rutas comerciales y conserva las reglas de Turbo y Programado.
+- Verificados reinicio, persistencia, catálogo HTTP y 22.608 cantidades. Las 797
+  comprobaciones aprobaron; tipos y compilación correctos. Ninguna compra o cobro
+  durante estas verificaciones. No se publicó ni se enviaron cambios a GitHub.
+
+RESPALDO PARA CONTINUAR EN LA NUBE — 4 DE NOVIEMBRE DE 2026
+- Rama de respaldo: codex/pedidos-gps en haroldbolt/BOLT. Consultar
+  CONTINUAR-EN-LA-NUBE.txt antes de arrancar una instalación nueva.
+- El propietario autorizó conservar en el repositorio 100 unidades físicas por
+  referencia y bodega activa asociada. src/data/inventario-autorizado.json contiene
+  3.830 productos, 5.652 presentaciones y 22.608 cantidades de 100, junto con los
+  precios y pesos confirmados disponibles. Nombres, fotos y bodegas siguen en
+  el catálogo local versionado. No se necesita conectar Shopify para recuperarlos.
+- npm run inventory:import reconstruye esas cantidades exclusivamente en una base
+  nueva. No requiere copiar SQLite desde este PC ni elimina o repone existencias
+  consumidas en una instalación que ya importó. Conserva estados y datos pendientes.
+- La importación nueva inicia sin pedidos ni reservas anteriores. Las cuentas,
+  sesiones, pedidos, GPS y configuración privada de este PC siguen separados del
+  archivo público. Crear el administrador en el entorno privado nuevo.
+- El respaldo del código no equivale a publicar la app ni confirma que pagos,
+  transportadoras o GPS de teléfonos estén listos para el lanzamiento.
+- Validación de esta entrega: 821 comprobaciones en 29 archivos, tipos y build
+  correctos. Recuperación comprobada en una base nueva: 3.830 productos, 5.652
+  presentaciones, 22.608 cantidades de 100 y ninguna cuenta o pedido anterior.
+  Repetir la importación no repone cantidades; la base original sigue intacta.

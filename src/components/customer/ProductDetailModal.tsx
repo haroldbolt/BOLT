@@ -2,16 +2,20 @@ import React from 'react';
 import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
+import { resolveCatalogProduct, type OperationalProduct } from '../../lib/catalogVariants';
+import { TurboPromise } from './TurboPromise';
 
 interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   quantityInCart: number;
+  quantitiesByProductId?: Record<string, number>;
   onAddToCart: (p: Product) => void;
   onUpdateQuantity: (p: Product, q: number) => void;
   isFavorite: boolean;
   onToggleFavorite: (p: Product) => void;
   selectedStoreId: string;
+  addressReady?: boolean;
   isCompared?: boolean;
   onToggleCompare?: (p: Product) => void;
   isInWishlist?: boolean;
@@ -22,46 +26,55 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   product,
   onClose,
   quantityInCart,
+  quantitiesByProductId,
   onAddToCart,
   onUpdateQuantity,
   isFavorite,
   onToggleFavorite,
   selectedStoreId,
+  addressReady = true,
   isCompared = false,
   onToggleCompare,
   isInWishlist = false,
   onOpenSaveToWishlist,
 }) => {
-  if (!product) return null;
-
   const [selectedVariantId, setSelectedVariantId] = React.useState<string>(() => {
-    return product.presentaciones?.[0]?.varianteId || product.id;
+    return product?.presentaciones?.[0]?.varianteId || product?.id || '';
   });
 
   React.useEffect(() => {
-    if (product.presentaciones?.[0]?.varianteId) {
-      setSelectedVariantId(product.presentaciones[0].varianteId);
-    }
-  }, [product.id]);
+    setSelectedVariantId(product?.presentaciones?.[0]?.varianteId || product?.id || '');
+  }, [product?.id]);
 
   const currentVariant = React.useMemo(() => {
-    return product.presentaciones?.find(v => v.varianteId === selectedVariantId) || product.presentaciones?.[0];
-  }, [product.presentaciones, selectedVariantId]);
+    return product?.presentaciones?.find(v => v.varianteId === selectedVariantId) || product?.presentaciones?.[0];
+  }, [product?.presentaciones, selectedVariantId]);
+
+  if (!product) return null;
+
+  const selectedProduct: OperationalProduct = resolveCatalogProduct([product], product.id, currentVariant?.varianteId) || product;
+  const selectedQuantity = quantitiesByProductId?.[selectedProduct.id] ?? (selectedProduct.id === product.id ? quantityInCart : 0);
 
   const displayImage = currentVariant?.foto || product.image;
   const displayPresentation = currentVariant?.nombre || product.presentation;
   const displaySku = currentVariant?.sku || product.sku;
 
-  const stock = product.stockByStore[selectedStoreId] || 0;
-  const reserved = product.reservedStockByStore[selectedStoreId] || 0;
+  const stock = selectedProduct.stockByStore[selectedStoreId] || 0;
+  const reserved = selectedProduct.reservedStockByStore[selectedStoreId] || 0;
   const availableToSell = Math.max(0, stock - reserved);
   const isOutOfStock = availableToSell <= 0;
+  const stockVerified = selectedProduct.inventoryVerifiedByStore?.[selectedStoreId] || stock > 0 || reserved > 0;
+  const pendingSaleData = selectedProduct.price <= 0 || selectedProduct.weightKg <= 0;
+  const unavailable = isOutOfStock || pendingSaleData || (!!selectedProduct.status && selectedProduct.status !== 'ACTIVE');
+  const promotionLabel = (currentVariant as any)?.promotionLabel || (selectedProduct as any).promotionLabel;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
       <div className="bg-white rounded-t-3xl sm:rounded-3xl max-w-lg min-[669px]:max-w-2xl w-full max-h-[90vh] overflow-y-auto shadow-2xl relative">
         {/* Sticky close and favorite header */}
-        <div className="sticky top-0 z-20 flex items-center justify-between p-4 bg-white/90 backdrop-blur-md border-b border-slate-100">
+        <div className="sticky top-0 z-20 p-3 space-y-2 bg-white/90 backdrop-blur-md border-b border-slate-100">
+          <TurboPromise/>
+          <div className="flex items-center justify-between gap-2 flex-wrap">
           <div className="flex items-center gap-2">
             <button
               onClick={() => onToggleFavorite(product)}
@@ -120,6 +133,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           </button>
         </div>
 
+        </div>
         {/* Contenedor responsivo: imagen y detalles lado a lado en modo desplegado */}
         <div className="min-[669px]:grid min-[669px]:grid-cols-2">
           {/* Product Image */}
@@ -129,9 +143,9 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               alt={product.name}
               className="w-full h-full object-cover transition-all duration-300"
             />
-            {product.discountPercent && product.discountPercent > 0 && (
+            {selectedProduct.discountPercent && selectedProduct.discountPercent > 0 && (
               <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
-                -{product.discountPercent}% DESCUENTO
+                -{selectedProduct.discountPercent}% DESCUENTO
               </span>
             )}
           </div>
@@ -141,14 +155,15 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
-                {product.price > 0 ? formatCOP(product.price) : 'Precio por confirmar'}
+                {selectedProduct.price > 0 ? formatCOP(selectedProduct.price) : 'Precio por confirmar'}
               </span>
-              {product.originalPrice && product.originalPrice > product.price && (
+              {selectedProduct.originalPrice && selectedProduct.originalPrice > selectedProduct.price && (
                 <span className="text-sm text-slate-400 line-through font-semibold">
-                  {formatCOP(product.originalPrice)}
+                  {formatCOP(selectedProduct.originalPrice)}
                 </span>
               )}
             </div>
+            {promotionLabel && <p className="mt-2 text-xs font-bold text-emerald-700">{promotionLabel} · descuento calculado al finalizar la compra</p>}
             <h2 className="text-lg font-black text-slate-900 mt-1 leading-snug">
               {product.name}
             </h2>
@@ -156,6 +171,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <span>Presentación: <strong className="text-slate-700">{displayPresentation}</strong></span>
               <span>•</span>
               <span>SKU: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">{displaySku}</code></span>
+              <span>Peso: <strong className="text-slate-700">{selectedProduct.weightKg > 0 ? `${selectedProduct.weightKg} kg` : 'por confirmar'}</strong></span>
             </div>
 
             {/* Selector de presentaciones agrupadas */}
@@ -250,7 +266,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             <div>
               <p className="text-[11px] text-slate-500">Stock disponible:</p>
               <p className="text-xs font-bold text-slate-800">
-                {isOutOfStock ? (
+                {!addressReady ? (
+                  <span className="text-slate-600">Consulta disponibilidad</span>
+                ) : !stockVerified ? (
+                  <span className="text-amber-700">Por confirmar</span>
+                ) : isOutOfStock ? (
                   <span className="text-red-600">Agotado</span>
                 ) : (
                   <span className="text-emerald-700">{availableToSell} unidades en sede</span>
@@ -258,27 +278,27 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               </p>
             </div>
 
-            {quantityInCart === 0 ? (
+            {selectedQuantity === 0 ? (
               <button
-                onClick={() => onAddToCart(product)}
-                disabled={isOutOfStock}
+                onClick={() => onAddToCart(selectedProduct)}
+                disabled={addressReady && unavailable}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-red-500/30 transition"
               >
                 <Plus className="w-4 h-4" />
-                Agregar a mi pedido
+                {addressReady ? 'Agregar a mi pedido' : 'Confirmar dirección'}
               </button>
             ) : (
               <div className="flex items-center gap-3 bg-red-600 text-white rounded-2xl px-3 py-2 shadow-md">
                 <button
-                  onClick={() => onUpdateQuantity(product, quantityInCart - 1)}
+                  onClick={() => onUpdateQuantity(selectedProduct, selectedQuantity - 1)}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 flex items-center justify-center transition"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
-                <span className="font-black text-sm px-2">{quantityInCart}</span>
+                <span className="font-black text-sm px-2">{selectedQuantity}</span>
                 <button
-                  onClick={() => onUpdateQuantity(product, quantityInCart + 1)}
-                  disabled={quantityInCart >= availableToSell}
+                  onClick={() => onUpdateQuantity(selectedProduct, selectedQuantity + 1)}
+                  disabled={addressReady && (unavailable || selectedQuantity >= availableToSell)}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 disabled:opacity-50 flex items-center justify-center transition"
                 >
                   <Plus className="w-4 h-4" />

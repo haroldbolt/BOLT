@@ -5,11 +5,24 @@ import {
   Edit3, Calendar, Sparkles, AlertTriangle, Truck
 } from 'lucide-react';
 import confetti from 'canvas-confetti';
-import { CartItem, Store, PaymentMethod, PorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
+import { CartItem, Store, PaymentMethod, NewOrderPorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
 import { DeliveryQuote, LatLng, ScheduledSlot } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
 import { api } from '../../lib/api';
 import { BenefitProgressBar } from './BenefitProgressBar';
+import { TurboPromise } from './TurboPromise';
+import { deliveryPricingContext, deliveryStore } from '../../lib/deliverySelection';
+import { NEW_ORDER_DELIVERY_OPTIONS, NEW_ORDER_SERVICE_FEE, isNewOrderPorteriaPolicy } from '../../lib/checkoutPolicy';
+
+/** A cached quote with the retired fee must be refreshed before checkout. */
+export function isCurrentCheckoutPrice(value: unknown): value is Awaited<ReturnType<typeof api.priceCart>> {
+  if (!value || typeof value !== 'object' || Array.isArray(value)) return false;
+  const price = value as Awaited<ReturnType<typeof api.priceCart>>;
+  return [price.subtotal, price.discount, price.shipping, price.serviceFee, price.total]
+    .every(amount => typeof amount === 'number' && Number.isFinite(amount) && amount >= 0) &&
+    price.discount <= price.subtotal && price.serviceFee === NEW_ORDER_SERVICE_FEE &&
+    price.total === price.subtotal - price.discount + price.shipping;
+}
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -20,7 +33,12 @@ interface CheckoutModalProps {
   customerAddress?: string;
   customerAddressDetails?: string;
   customerCoordinates?: LatLng;
+  onChangeAddressDetails: (details: string) => void;
   deliveryQuote?: DeliveryQuote | null;
+  catalogReady: boolean;
+  addressReady?: boolean;
+  cartReviewMessage?: string;
+  onRefreshDeliveryQuote?: () => void;
   onChangeAddress?: () => void;
   selectedMode?: DeliveryMode;
   onSelectMode?: (mode: DeliveryMode) => void;
@@ -37,23 +55,27 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   customerAddress,
   customerAddressDetails,
   customerCoordinates,
-  deliveryQuote,
+  onChangeAddressDetails,
+  deliveryQuote: suppliedDeliveryQuote,
+  catalogReady,
+  addressReady = true,
+  cartReviewMessage,
+  onRefreshDeliveryQuote,
   onChangeAddress,
   selectedMode: selectedModeProp,
   onSelectMode,
   selectedScheduledWindow: selectedScheduledWindowProp,
   onSelectScheduledWindow,
 }) => {
-  const [customerName, setCustomerName] = useState('Juan David Gómez');
-  const [customerPhone, setCustomerPhone] = useState('+57 312 890 1234');
-  const [customerEmail, setCustomerEmail] = useState('juan.gomez@ejemplo.com');
-  const [address, setAddress] = useState(
-    customerAddress || (currentStore.id === 'HUB_KENNEDY'
-      ? 'Calle 3 #78-20, Kennedy Central, Bogotá'
-      : currentStore.address)
-  );
-  const [addressDetails, setAddressDetails] = useState(customerAddressDetails || 'Apto 502, Torre 2');
-  const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
+  const deliveryQuote = addressReady ? suppliedDeliveryQuote : null;
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
+  // The selector owns the validated address/coordinate pair. Checkout cannot
+  // edit only its text and accidentally keep another delivery point.
+  const address = customerAddress ?? '';
+  const addressDetails = customerAddressDetails ?? '';
+  const [porteriaPolicy, setPorteriaPolicy] = useState<NewOrderPorteriaPolicy>('DEJAR_EN_PORTERIA');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WOMPI_CARD');
   const [tip, setTip] = useState(2000);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -65,7 +87,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Scheduled delivery slot state: solo mostrar franjas vigentes
   const availableSlots: ScheduledSlot[] = useMemo(() => {
-    return (deliveryQuote?.scheduledSlots || []).filter(s => !s.cutoffPassed);
+    return (deliveryQuote?.scheduledSlots || []).filter(s => !s.cutoffPassed && s.availableCapacity > 0);
   }, [deliveryQuote?.scheduledSlots]);
 
   // Agrupar franjas por fecha para visualización limpia
@@ -101,14 +123,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     return availableSlots[0]?.slotId || '';
   });
 
-  // Synchronize inputs when modal opens
-  useEffect(() => {
-    if (isOpen) {
-      if (customerAddress) setAddress(customerAddress);
-      if (customerAddressDetails) setAddressDetails(customerAddressDetails);
-    }
-  }, [isOpen, customerAddress, customerAddressDetails]);
-
   useEffect(() => {
     if (!isOpen) return;
     if (selectedModeProp) {
@@ -122,23 +136,65 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!isOpen) return;
     if (selectedScheduledWindowProp?.slotId && availableSlots.some(s => s.slotId === selectedScheduledWindowProp.slotId)) {
       setSelectedSlotId(selectedScheduledWindowProp.slotId);
-    } else if (!selectedSlotId && availableSlots.length > 0) {
-      setSelectedSlotId(availableSlots[0].slotId);
-      onSelectScheduledWindow?.(availableSlots[0]);
+    } else if (selectedSlotId && !availableSlots.some(slot => slot.slotId === selectedSlotId)) {
+      setSelectedSlotId('');
     }
   }, [isOpen, selectedScheduledWindowProp, availableSlots]);
 
   // Formula upload states
   const hasPrescriptionItems = cartItems.some(i => i.product.requiresPrescription);
-  const [uploadedFormulaName, setUploadedFormulaName] = useState<string>('receta_veterinaria_dr_martinez.pdf');
-  const [vetName, setVetName] = useState('Dr. Carlos Martínez - MP: 12904-COMVEZCOL');
+  const [uploadedFormulaName, setUploadedFormulaName] = useState<string>('');
+  const [vetName, setVetName] = useState('');
+  const [pricingSnapshot, setPricingSnapshot] = useState<{ key: string; price: Awaited<ReturnType<typeof api.priceCart>> } | null>(null);
+  const [pricingFailure, setPricingFailure] = useState<{ key: string; message: string } | null>(null);
+  const [pricingRevision, setPricingRevision] = useState(0);
+  const pricingKey = JSON.stringify(cartItems.map(item => ({ productId: item.product.id, quantity: item.quantity })));
+  const dispatch = deliveryStore(deliveryQuote, selectedMode);
+  const pricingStoreId = dispatch?.id;
+  const contextKey = deliveryPricingContext({ mode: selectedMode, storeId: pricingStoreId, address,
+    coordinates: customerCoordinates, items: JSON.parse(pricingKey) });
+  const modeSynchronized = !selectedModeProp || selectedModeProp === selectedMode;
+  const serverPrice = addressReady && catalogReady && modeSynchronized && pricingSnapshot?.key === contextKey &&
+    isCurrentCheckoutPrice(pricingSnapshot.price) ? pricingSnapshot.price : null;
+  const pricingError = pricingFailure?.key === contextKey ? pricingFailure.message : '';
+  useEffect(() => {
+    if (!isOpen || !addressReady || !pricingStoreId || !catalogReady || !modeSynchronized) return;
+    let stopped = false;
+    let sequence = 0;
+    let controller: AbortController | undefined;
+    const refresh = async () => {
+      controller?.abort();
+      const current = new AbortController();
+      controller = current;
+      const request = ++sequence;
+      setPricingSnapshot(null);
+      try {
+        let price = await api.priceCart(pricingStoreId, JSON.parse(pricingKey), current.signal);
+        if (!isCurrentCheckoutPrice(price)) {
+          // Re-read once during an update; never accept a cached fee or total.
+          price = await api.priceCart(pricingStoreId, JSON.parse(pricingKey), current.signal);
+        }
+        if (!isCurrentCheckoutPrice(price)) throw new Error('La cotización cambió. Recarga la página para confirmar el total actualizado sin tarifa de servicio.');
+        if (!stopped && request === sequence && !current.signal.aborted) {
+          setPricingSnapshot({ key: contextKey, price }); setPricingFailure(null);
+        }
+      } catch (error: any) {
+        if (!stopped && request === sequence && !current.signal.aborted) {
+          setPricingSnapshot(null); setPricingFailure({ key: contextKey, message: error.message });
+        }
+      }
+    };
+    refresh();
+    const interval = window.setInterval(refresh, 15000);
+    return () => { stopped = true; controller?.abort(); window.clearInterval(interval); };
+  }, [isOpen, addressReady, contextKey, catalogReady, modeSynchronized, pricingRevision]);
 
-  const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
+  const subtotal = serverPrice?.subtotal ?? cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
   const totalWeightKg = cartItems.reduce((acc, item) => acc + ((item.product.weightKg || 0.2) * item.quantity), 0);
   const totalWeightGrams = Math.round(totalWeightKg * 1000);
-  const shipping = subtotal >= 70000 ? 0 : 4900;
-  const serviceFee = 1500;
-  const total = subtotal + shipping + serviceFee + tip;
+  const shipping = serverPrice?.shipping ?? (subtotal >= 70000 ? 0 : 4900);
+  const discount = serverPrice?.discount ?? 0;
+  const total = subtotal - discount + shipping + tip;
 
   const selectedSlot = availableSlots.find(s => s.slotId === selectedSlotId);
 
@@ -148,6 +204,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setErrorMessage('');
 
     try {
+      if (!addressReady) throw new Error('Confirma tu dirección y espera la validación de cobertura antes de continuar.');
+      if (!isNewOrderPorteriaPolicy(porteriaPolicy)) throw new Error('Selecciona «Llamar al llegar» o «Dejar en portería».');
+      if (!address.trim() || !customerCoordinates || !Number.isFinite(customerCoordinates.lat) || !Number.isFinite(customerCoordinates.lng) || !deliveryQuote) {
+        throw new Error('Valida la dirección en el mapa y espera la cotización antes de continuar.');
+      }
+      if (!catalogReady || !modeSynchronized || !dispatch?.confirmed || dispatch.id !== currentStore.id) {
+        throw new Error(deliveryQuote.scheduledAssignment?.reason || 'Espera la validación de productos y bodega para esta modalidad.');
+      }
+      if (selectedMode === 'PROGRAMADO' && !selectedSlot) throw new Error('Selecciona una franja vigente antes de continuar.');
+      if (!serverPrice || pricingError) throw new Error(pricingError || 'Espera la verificación del total antes de continuar.');
       const scheduledWindowPayload: ScheduledDeliveryWindow | undefined =
         selectedMode === 'PROGRAMADO' && selectedSlot
           ? {
@@ -169,7 +235,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           : undefined;
 
       const payload = {
-        storeId: deliveryQuote?.assignedStoreId || currentStore.id,
+        storeId: dispatch.id,
         deliveryMode: selectedMode,
         scheduledWindow: scheduledWindowPayload,
         items: cartItems.map(item => ({
@@ -194,21 +260,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           address,
           details: addressDetails,
           porteriaPolicy,
-          coordinates: customerCoordinates || {
-            lat: 4.6365,
-            lng: -74.1448,
-          },
+          coordinates: { ...customerCoordinates },
         },
         paymentMethod,
         tip,
+        expectedTotal: total,
+        expectedDiscount: discount,
       };
 
       const newOrder = await api.createOrder(payload);
 
       // If prescription required, upload document data
-      if (hasPrescriptionItems) {
+      if (hasPrescriptionItems && uploadedFormulaName) {
         await api.uploadPrescription(newOrder.id, {
-          documentUrl: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=800&auto=format&fit=crop&q=80',
+          documentUrl: '',
           documentName: uploadedFormulaName,
           vetName,
         });
@@ -224,16 +289,19 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       onOrderSuccess(newOrder.id);
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al procesar el pedido. Por favor intente de nuevo.');
+      setPricingSnapshot(null);
+      setPricingRevision(previous => previous + 1);
+      onRefreshDeliveryQuote?.();
     } finally {
       setIsSubmitting(false);
     }
   };
 
-  const isEligibleForAny =
-    !deliveryQuote ||
-    deliveryQuote.availableModes.turbo ||
-    deliveryQuote.availableModes.turboDividido ||
-    deliveryQuote.availableModes.scheduled;
+  const isEligibleForAny = !!deliveryQuote && (selectedMode === 'PROGRAMADO'
+    ? deliveryQuote.availableModes.scheduled : selectedMode === 'TURBO'
+      ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido);
+  const dispatchReady = addressReady && !!dispatch?.confirmed && dispatch.id === currentStore.id && catalogReady && modeSynchronized;
+  const instructionReady = isNewOrderPorteriaPolicy(porteriaPolicy);
 
   if (!isOpen) return null;
 
@@ -244,6 +312,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         {/* Header */}
         <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-xs z-10">
           <div>
+            <TurboPromise/>
             <div className="flex items-center gap-2">
               <h3 className="font-black text-slate-900 text-lg">
                 {selectedMode === 'PROGRAMADO'
@@ -252,15 +321,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   ? 'Confirmar Turbo Dividido'
                   : 'Confirmar Pedido Turbo'}
               </h3>
-              {selectedMode !== 'PROGRAMADO' && (
+              {addressReady && selectedMode !== 'PROGRAMADO' && deliveryQuote?.estimatedMinutes && (
                 <span className="text-[11px] font-black bg-yellow-400 text-red-950 px-2 py-0.5 rounded-md flex items-center gap-1">
                   <Clock className="w-3 h-3" />
-                  ~{deliveryQuote?.estimatedMinutes || 25} min
+                  ~{deliveryQuote.estimatedMinutes} min
                 </span>
               )}
             </div>
             <p className="text-xs text-slate-500">
-              Sede asignada: {deliveryQuote?.assignedStoreName || currentStore.name} • Peso: {totalWeightKg.toFixed(1)} kg
+              {!addressReady ? 'Confirma tu dirección para validar la entrega' : dispatch?.name ? `${dispatch.confirmed ? 'Sede confirmada' : 'Sede sugerida'}: ${dispatch.name}` : 'Verificando sede de despacho…'} • Peso: {totalWeightKg.toFixed(1)} kg
             </p>
           </div>
           <button
@@ -272,6 +341,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmitOrder} className="p-5 space-y-4">
+          {cartReviewMessage && <p role="status" className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-900">{cartReviewMessage}</p>}
+          {!addressReady && <div role="status" className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs text-amber-900">Confirma tu dirección antes de continuar. <button type="button" onClick={onChangeAddress} className="font-bold underline">Agregar o revisar dirección</button></div>}
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -290,7 +361,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </h4>
 
             {/* Outside Turbo coverage banner or auto-switch notification */}
-            {(deliveryQuote?.autoSwitchedToScheduled || selectedMode === 'PROGRAMADO' || (!deliveryQuote?.availableModes.turbo && !deliveryQuote?.availableModes.turboDividido && deliveryQuote?.availableModes.scheduled)) && (
+            {deliveryQuote?.availableModes.scheduled && (deliveryQuote.autoSwitchedToScheduled || selectedMode === 'PROGRAMADO' || (!deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido)) && (
               <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl text-xs text-blue-950 space-y-1">
                 <p className="font-extrabold flex items-center gap-1.5 text-blue-900">
                   <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
@@ -301,6 +372,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   {deliveryQuote?.message || 'Selecciona a continuación la fecha y franja horaria para recibir tu compra.'}
                 </p>
               </div>
+            )}
+            {selectedMode === 'PROGRAMADO' && deliveryQuote?.scheduledAssignment && deliveryQuote.scheduledAssignment.status !== 'CONFIRMADA' && (
+              <p role="status" className="p-3 bg-amber-50 border border-amber-200 text-amber-900 rounded-xl text-xs">
+                {deliveryQuote.scheduledAssignment.reason || 'La sede sugerida está pendiente de validar inventario y disponibilidad para tu pedido.'}
+              </p>
             )}
 
             {/* Mode selection buttons */}
@@ -530,7 +606,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               type="text"
               placeholder="Dirección completa (ej. Calle 3 #78-20, Kennedy)"
               value={address}
-              onChange={e => setAddress(e.target.value)}
+              readOnly
+              aria-label="Dirección de entrega confirmada"
+              onClick={onChangeAddress}
               required
               className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
             />
@@ -538,7 +616,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               type="text"
               placeholder="Detalles (Apto, Torre, Conjunto)"
               value={addressDetails}
-              onChange={e => setAddressDetails(e.target.value)}
+              aria-label="Detalles de la dirección"
+              onChange={e => onChangeAddressDetails(e.target.value)}
               className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
             />
 
@@ -547,18 +626,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <label className="text-[11px] font-bold text-slate-700 block mb-1.5">
                 Política de entrega en conjunto / edificio:
               </label>
-              <div className="grid grid-cols-3 gap-2 text-xs">
-                {[
-                  { id: 'DEJAR_EN_PORTERIA', label: 'Dejar en portería' },
-                  { id: 'SUBIR_A_PUERTA', label: 'Subir al apto' },
-                  { id: 'LLAMAR_AL_LLEGAR', label: 'Llamar al llegar' },
-                ].map(p => (
+              <div className="grid grid-cols-2 gap-2 text-xs">
+                {NEW_ORDER_DELIVERY_OPTIONS.map(p => (
                   <button
-                    key={p.id}
+                    key={p.value}
                     type="button"
-                    onClick={() => setPorteriaPolicy(p.id as PorteriaPolicy)}
+                    onClick={() => setPorteriaPolicy(p.value)}
                     className={`py-2 px-2 rounded-xl border text-center font-bold text-[11px] transition ${
-                      porteriaPolicy === p.id
+                      porteriaPolicy === p.value
                         ? 'border-red-600 bg-red-50 text-red-700'
                         : 'border-slate-200 bg-white text-slate-600 hover:border-slate-300'
                     }`}
@@ -567,6 +642,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                   </button>
                 ))}
               </div>
+              {!instructionReady && <p role="alert" className="text-xs text-red-600 mt-1">Elige una de las instrucciones de entrega disponibles.</p>}
             </div>
           </div>
 
@@ -700,15 +776,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div className="bg-slate-50 p-4 rounded-2xl space-y-2 border border-slate-100 text-xs text-slate-600">
             <div className="flex justify-between">
               <span>Subtotal:</span>
-              <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
+              <span className="font-bold text-slate-900">{serverPrice ? formatCOP(subtotal) : 'Por verificar'}</span>
             </div>
+            {discount > 0 && <div className="flex justify-between text-emerald-700"><span>{serverPrice?.promotionName || 'Promoción'}:</span><strong>−{formatCOP(discount)}</strong></div>}
+            {pricingError && <p role="alert" className="text-red-600">{pricingError}</p>}
+            {!serverPrice && !pricingError && <p>Verificando precios y promociones…</p>}
+            {!catalogReady && <p role="status">Actualizando productos de la sede seleccionada…</p>}
             <div className="flex justify-between">
               <span>Envío ({selectedMode === 'PROGRAMADO' ? 'Programado' : selectedMode === 'TURBO_DIVIDIDO' ? 'Turbo Dividido' : 'Turbo'}):</span>
-              <span className="font-bold text-emerald-600">{shipping === 0 ? '¡GRATIS!' : formatCOP(shipping)}</span>
-            </div>
-            <div className="flex justify-between">
-              <span>Tarifa de servicio:</span>
-              <span className="font-bold text-slate-900">{formatCOP(serviceFee)}</span>
+              <span className="font-bold text-emerald-600">{!addressReady ? 'Por confirmar' : shipping === 0 ? '¡GRATIS!' : formatCOP(shipping)}</span>
             </div>
             {tip > 0 && (
               <div className="flex justify-between">
@@ -718,19 +794,23 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             )}
             <div className="border-t border-slate-200 pt-2 flex justify-between text-base font-black text-slate-900">
               <span>Total final:</span>
-              <span className="text-red-600">{formatCOP(total)}</span>
+              <span className="text-red-600">{serverPrice ? formatCOP(total) : 'Por verificar'}</span>
             </div>
           </div>
 
           <button
             type="submit"
-            disabled={isSubmitting || !isEligibleForAny}
+            disabled={!addressReady || isSubmitting || !isEligibleForAny || !dispatchReady || !instructionReady || !serverPrice || !!pricingError || (selectedMode === 'PROGRAMADO' && !selectedSlot)}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition active:scale-98 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (
-              <span>Procesando pago seguro...</span>
+              <span>Creando pedido…</span>
+            ) : !addressReady ? (
+              <span>Confirma tu dirección para continuar</span>
             ) : !isEligibleForAny ? (
               <span>Dirección fuera de cobertura</span>
+            ) : !dispatchReady || !serverPrice ? (
+              <span>Verificando sede y disponibilidad…</span>
             ) : selectedMode === 'PROGRAMADO' ? (
               <>
                 <span>Confirmar y Programar Entrega ({formatCOP(total)})</span>

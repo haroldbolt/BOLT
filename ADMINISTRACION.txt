@@ -1,0 +1,108 @@
+BOLT PETS — ADMINISTRACIÓN INTEGRADA
+
+El panel de administración pertenece a la misma aplicación y utiliza los mismos
+productos y pedidos que la tienda del cliente. Ruta local:
+http://127.0.0.1:4327/operacion
+
+PREPARAR EL PRIMER ACCESO
+
+1. Abre Crear administrador.cmd dentro de la carpeta del proyecto.
+2. También puedes abrir una terminal allí y ejecutar: npm run admin:create
+3. Escribe el usuario y una contraseña de 12 a 128 caracteres. La contraseña no se
+   muestra mientras la escribes. No hay una contraseña predeterminada.
+4. Abre Bolt Pets e inicia sesión en el panel con los datos que elegiste.
+
+No envíes la contraseña al chat. La creación de cuentas se hace localmente: no hay
+un formulario público que permita convertir un visitante en administrador.
+
+El proyecto requiere Node.js 24 o superior para usar SQLite integrado. Los accesos
+de Windows utilizan automáticamente el Node preparado en este equipo.
+
+Si Node no está incluido en PATH, usa el ejecutable Node preparado en este equipo:
+  %USERPROFILE%\.cache\codex-runtimes\codex-primary-runtime\dependencies\node\bin\node.exe scripts\admin-account.mjs create
+
+También se admite configurar BOLT_ADMIN_USERNAME, BOLT_ADMIN_PASSWORD y
+BOLT_ADMIN_DISPLAY_NAME en un entorno privado, sin escribir la contraseña en el
+comando. BOLT_DATA_DIR selecciona la carpeta privada de datos.
+
+GESTIÓN DE PRODUCTOS
+
+- Agrega y edita productos, nombres, descripciones, categorías, fotos mediante URL
+  HTTPS, precios, pesos y presentaciones.
+- Cada bodega mantiene sus cantidades físicas y reservadas independientes. Para
+  ajustar cantidades, introduce un motivo. No se permite reducir el inventario
+  físico por debajo de las reservas existentes.
+- Una cantidad cero confirmada se diferencia de una cantidad que todavía no ha
+  sido verificada. Los productos importados no reciben existencias inventadas.
+- La presentación principal conserva compatibilidad con los pedidos anteriores.
+  Las demás presentaciones mantienen su precio, peso e inventario independientes.
+- Archivar retira el producto de nuevas compras y conserva su historial. Reactivar
+  permite volver a venderlo cuando sus datos e inventario estén completos.
+- Si otra operación cambió el producto mientras lo editabas, vuelve a cargarlo y
+  revisa la información antes de guardar. No se sobrescriben cambios a ciegas.
+
+PROMOCIONES
+
+Define un descuento porcentual o fijo, productos o presentaciones participantes,
+bodegas, compra mínima e intervalo de vigencia. Las fechas de la interfaz se
+interpretan con la hora de Bogotá. Puedes pausar y volver a activar la promoción.
+
+Los descuentos no se acumulan: el servidor selecciona la promoción válida que
+ofrezca el mayor descuento para ese pedido. Nunca descuenta más que el valor de
+los productos participantes. El beneficio de envío gratis conserva su regla.
+El checkout verifica nuevamente precios y promociones antes de crear el pedido.
+Si el precio cambia, pide revisar el nuevo total; no acepta el total del navegador
+como una confirmación de pago.
+
+SEGURIDAD Y GUARDADO
+
+Las cuentas, sesiones, productos editables, movimientos y promociones se guardan
+en .bolt-private/operations/admin.sqlite, o dentro de BOLT_DATA_DIR si se configuró.
+Esta carpeta privada no forma parte de GitHub ni de los archivos del sitio.
+Pedidos, reservas, auditoría y GPS se migran desde el JSON privado anterior sin
+borrarlo, y las nuevas operaciones se confirman junto con el inventario en SQLite.
+Los pedidos anteriores conservan su historial en el panel. Los nuevos compradores
+reciben acceso privado al pedido en el navegador donde lo crean; no se comparte
+una lista pública de pedidos ni el PIN con el personal operativo.
+
+El catálogo base de src/data/catalogo-local conserva los archivos importados.
+Los cambios operativos se guardan por separado en la base de datos privada.
+
+El botón de cambio de contraseña cierra todas las sesiones anteriores. Si olvidaste
+la contraseña, utiliza localmente: npm run admin:reset-password
+
+Para crear una copia privada consistente de la base de datos:
+  npm run admin:backup
+Se crea dentro de la subcarpeta backups de la carpeta privada de datos.
+
+El acceso local funciona por HTTP en este equipo. Para acceso desde otros equipos
+se necesita preparar HTTPS y BOLT_PUBLIC_ORIGIN. Esta implementación no publica la
+aplicación ni contrata servicios externos. La validación real de GPS en teléfonos
+y la conexión comercial con transportadoras se verifican por separado.
+
+INSTRUCCIONES Y TOTALES — ACTUALIZACIÓN DEL 2 DE NOVIEMBRE DE 2026
+
+Las compras nuevas permiten Llamar al llegar o Dejar en portería. No se ofrece
+subir al apartamento. No tienen cargo adicional por servicio; el envío conserva
+su precio y beneficio de envío gratis, y la propina continúa siendo voluntaria.
+
+El detalle del pedido separa productos, descuento, envío, propina y total. Si un
+pedido anterior incluía un cargo por servicio, el panel conserva y muestra ese
+importe original. También mantiene su instrucción de recepción anterior. Esta
+actualización no recalcula pedidos guardados ni modifica reservas o existencias.
+
+DIRECCIÓN DEL COMPRADOR — ACTUALIZACIÓN DEL 3 DE NOVIEMBRE DE 2026
+
+La tienda solicita un destino confirmado antes de comprar. Recordar o cambiar
+esa selección en el navegador no modifica el destino de pedidos ya creados.
+El administrador continúa viendo la dirección y los importes guardados de cada
+pedido. Consultar cobertura o agregar al carrito no reserva inventario. La guía
+del nuevo flujo está en DIRECCION-DE-ENTREGA.txt.
+
+COPIA PARA ENSAYAR INVENTARIO — 3 DE NOVIEMBRE DE 2026
+
+Abrir administrador de prueba.cmd inicia el panel de la copia con cantidades
+ficticias de 100 unidades por presentación y bodega activa asociada. Se utiliza
+tu mismo acceso local, con una sesión nueva. Verifica siempre el banner amarillo
+INVENTARIO DE PRUEBA. Los cambios de esta copia no llegan a la base del puerto
+4327. Consulta INVENTARIO-DE-PRUEBA.txt para los enlaces y datos pendientes.

@@ -1,0 +1,156 @@
+BOLT PETS — PILOTO DE ASIGNACIÓN DE ENVÍOS PROGRAMADOS
+Actualización local: 2 de noviembre de 2026
+
+QUÉ HACE ESTA ETAPA
+
+Cada pedido programado nuevo tiene una bodega responsable según la localidad
+del punto de entrega confirmado. El servidor identifica la localidad con límites
+oficiales de Bogotá y vuelve a validar la asignación al crear el pedido.
+El texto de la dirección y la bodega enviada por el navegador no pueden imponer
+otra localidad o sede.
+
+La asignación es propia de Programado: elegir esta modalidad puede cambiar la
+bodega respecto de Turbo. El checkout debe comprobar los productos y el total
+de esa sede antes de permitir confirmar.
+
+DISTRIBUCIÓN INICIAL
+
+Suba:
+  Suba y Usaquén.
+
+Álamos:
+  Engativá, Fontibón, Barrios Unidos, Teusaquillo y Chapinero.
+
+Kennedy:
+  Kennedy, Bosa, Puente Aranda, Antonio Nariño, Los Mártires, Santa Fe,
+  La Candelaria, San Cristóbal, Rafael Uribe Uribe, Tunjuelito,
+  Ciudad Bolívar y Usme.
+
+Sumapaz no tiene envío programado. No se ofrecen franjas ni se aceptan pedidos
+programados para esa localidad. El mensaje es:
+  «Por ahora no tenemos cobertura de envío programado en esta ubicación».
+
+La bodega Centro nunca participa en pedidos programados nuevos, ni como
+alternativa. Esto no excluye a los clientes de Santa Fe, Los Mártires o
+La Candelaria: su sede responsable es Kennedy. Las bodegas inactivas tampoco
+reciben nuevas asignaciones.
+
+La tabla no amplía la cobertura a todo el territorio rural de cada localidad.
+Se conserva el límite de cobertura programada y se comprueba la distancia
+desde la bodega responsable. Si el punto está fuera de Bogotá o sobre un límite
+que no permite identificar una localidad única, se solicita validar la ubicación;
+no se asigna una bodega por defecto.
+
+QUÉ SIGNIFICAN LAS INDICACIONES
+
+Sugerida: la localidad indica una bodega responsable. Todavía no se han
+confirmado todos los datos operativos de una compra. No reserva mercancía
+ni cupo en una franja.
+
+Confirmada en una cotización: los productos tienen disponibilidad verificada,
+precio y peso válidos en la bodega responsable en ese momento. No constituye
+una reserva de inventario ni de cupo; el servidor vuelve a comprobar todo al
+crear el pedido. «Bodega confirmada» no significa «pago confirmado».
+
+Revisión requerida: hay datos, disponibilidad o condiciones pendientes en la
+sede responsable. El checkout no permite completar la compra en ese estado.
+El administrador debe revisar Productos e Inventario antes de intentar de nuevo.
+Un carrito que no pudo confirmar no crea un pedido ni aparece en una bandeja
+nueva de solicitudes administrativas.
+
+Un pedido creado guarda su bodega y la clasificación de despacho utilizada.
+Los pedidos anteriores conservan sus bodegas y datos; pueden aparecer como
+«Histórico / sin clasificación» cuando no tenían esos nuevos campos.
+
+DÓNDE VER LOS PEDIDOS
+
+1. Abrir «Abrir administrador.cmd» e iniciar sesión con la cuenta existente.
+   La administración local está en http://127.0.0.1:4327/operacion.
+2. Entrar a Pedidos y seleccionar Programado en Modalidad de entrega.
+3. Filtrar por bodega, fecha de entrega, localidad y franja según sea necesario.
+4. Consultar «Programados por preparar y entregar». Agrupa pedidos por bodega,
+   fecha, franja y localidad; los entregados y cancelados no participan en esos
+   grupos, aunque se conservan en el historial y la lista correspondiente.
+5. Abrir un pedido para revisar su detalle. La actualización de pedidos en vivo
+   y la autenticación administrativa siguen funcionando con sus reglas actuales.
+
+Esta entrega agrupa pedidos para preparar el reparto. No calcula el orden óptimo
+de las paradas, no contrata transportadoras y no hace traslados de inventario.
+Tampoco reasigna automáticamente pedidos ya reservados o históricos. Una
+excepción que requiera otra sede queda para una revisión administrativa segura;
+no se resuelve tomando existencias de otra bodega silenciosamente.
+
+HORARIOS Y CAPACIDAD
+
+Se conserva la zona horaria America/Bogota:
+  09:00–14:00, corte de recepción 10:00.
+  14:00–18:00, corte de recepción 12:00.
+  18:00–22:00, corte de recepción 16:00.
+
+El límite actual sigue siendo global: 10 pedidos por fecha/franja entre todas
+las sedes. No se multiplicó a 10 por cada bodega. La disponibilidad y los cortes
+se verifican de nuevo al crear el pedido. Los cancelados liberan su cupo según
+la regla existente.
+
+Turbo y Turbo Dividido conservan sus localidades autorizadas, 6 km y 25 minutos,
+y las reglas actuales de peso y empaques. Los descuentos, promociones y el
+beneficio de envío gratis siguen siendo validados por el servidor.
+
+CÓMO PROBAR SIN PEDIDOS COMERCIALES
+
+Desde la carpeta activa del proyecto, el equipo técnico puede ejecutar:
+  npm run lint
+  npm test
+  npm run build
+
+Las pruebas usan datos ficticios y almacenamiento temporal separado. Comprueban
+las 19 asignaciones, Sumapaz, Centro, coordenadas inválidas y límites, inventario
+por sede, manipulación de la bodega, cupos globales, checkout y conservación de
+pedidos anteriores. No necesitan crear compras reales desde la tienda.
+
+Para una prueba visual con pedidos de ensayo, preparar una copia aislada con
+su propio BOLT_DATA_DIR, productos y compradores ficticios, sin conexiones de
+pagos ni transportadoras. No usar la base operativa ni registrar existencias
+ficticias en la instalación de trabajo.
+
+Se ejecutó una demostración temporal con tres pedidos ficticios en un SQLite
+aislado; esa demostración ya está apagada. No emitió facturas ni realizó cobros.
+
+VERIFICACIÓN DE ESTA ACTUALIZACIÓN
+
+  666 comprobaciones aprobadas:
+    512 previas.
+     70 de geografía oficial.
+     35 de política de despacho programado.
+     18 de integración HTTP de Programado.
+     31 de selección, precios y agrupación de la interfaz.
+  Revisión de tipos: 0 errores.
+  Compilación de cliente y servidor: correctas.
+
+La revisión visual completa de cliente y administración sigue pendiente porque
+el control del navegador no permitió completar las interacciones. Las pruebas
+de lógica y compilación no sustituyen esa comprobación manual.
+
+La instalación local de http://127.0.0.1:4327/ se reinició con esta actualización.
+El equipo debe permanecer encendido para abrirla. No se publicó la aplicación
+ni se enviaron estos cambios a GitHub.
+
+RESPALDO Y DATOS
+
+La versión anterior tiene un punto de recuperación local en la rama
+codex/respaldo-programado-f161621. También se creó un respaldo privado consistente
+de SQLite. «Copia de seguridad.cmd» permite crear respaldos posteriores.
+Las bases, respaldos y credenciales se mantienen en almacenamiento privado,
+fuera del repositorio y de la compilación pública.
+
+Los nombres, fotos y asociaciones del catálogo no equivalen a cantidades,
+precios o pesos verificados. Revisar esos datos en administración antes de
+recibir pedidos operativos. No se modificó inventario Shopify.
+
+ACTUALIZACIÓN DE LÍMITES GEOGRÁFICOS
+
+La fuente, licencia, fecha de descarga, precisión y hashes están documentados
+en src/data/geography/README.md. Para renovar el archivo, el equipo técnico
+debe seguir esa guía, comprobar las 20 localidades y ejecutar otra vez las
+pruebas geográficas y de despacho. No dibujar cajas aproximadas ni reemplazar
+la clasificación por palabras presentes en una dirección.

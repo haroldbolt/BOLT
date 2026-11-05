@@ -22,6 +22,8 @@
  */
 
 import { Store, Product, DeliveryMode, ScheduledDeliveryWindow, SCHEDULED_DELIVERY_CONFIG } from '../types';
+import { resolveBogotaLocality, BOGOTA_LOCALITY_NAMES } from './bogotaLocalities';
+import { getScheduledAssignment, isScheduledWarehouse, type ScheduledAssignment } from './scheduledDispatch';
 import {
   getCurrentBogotaTime,
   getAvailableScheduledWindows,
@@ -44,145 +46,15 @@ export const TURBO_ALLOWED_LOCALITIES = ['KENNEDY', 'SUBA', 'ENGATIVA'] as const
 export type TurboLocality = typeof TURBO_ALLOWED_LOCALITIES[number];
 
 /**
- * Detecta la localidad de Bogotá mediante análisis de texto de dirección y coordenadas geográficas.
+ * Resuelve la localidad con límites oficiales; el texto nunca reemplaza el punto.
  */
-export function detectBogotaLocality(coords?: { lat: number; lng: number } | null, addressText?: string): string {
-  const clean = (addressText || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-  // 1. Detección por texto y barrios conocidos con precedencia
-  if (
-    clean.includes('kennedy') || clean.includes('castilla') || clean.includes('timiza') || 
-    clean.includes('tintal') || clean.includes('patio bonito') || clean.includes('carvajal') || 
-    clean.includes('mandalay') || clean.includes('bavaria') || clean.includes('villa alsacia')
-  ) {
-    return 'KENNEDY';
-  }
-  if (
-    clean.includes('suba') || clean.includes('rincon') || clean.includes('tibabuyes') || 
-    clean.includes('pinar') || clean.includes('lombardia') || clean.includes('niza') || 
-    clean.includes('colina campestre') || clean.includes('colina') || clean.includes('mazuren') || 
-    clean.includes('prado veraniego') || clean.includes('san jose de baviera')
-  ) {
-    return 'SUBA';
-  }
-  if (
-    clean.includes('engativa') || clean.includes('alamos') || clean.includes('villas') || 
-    clean.includes('minuto de dios') || clean.includes('quirigua') || clean.includes('normandia') || 
-    clean.includes('boyaca real') || clean.includes('santa cecilia') || clean.includes('garces navas') ||
-    clean.includes('calle 72')
-  ) {
-    return 'ENGATIVA';
-  }
-  if (
-    clean.includes('usaquen') || clean.includes('cedritos') || clean.includes('santa barbara') || 
-    clean.includes('san patricio') || clean.includes('calle 140') || clean.includes('calle 116') || 
-    clean.includes('calle 127') || clean.includes('unicentro') || clean.includes('torca') ||
-    clean.includes('santa ana') || clean.includes('la carolina')
-  ) {
-    return 'USAQUEN';
-  }
-  if (
-    clean.includes('chapinero') || clean.includes('lourdes') || clean.includes('rosales') || 
-    clean.includes('chico') || clean.includes('antiguo country') || clean.includes('marly') || 
-    clean.includes('javeriana') || clean.includes('el retiro')
-  ) {
-    return 'CHAPINERO';
-  }
-  if (
-    clean.includes('teusaquillo') || clean.includes('salitre') || clean.includes('palermo') || 
-    clean.includes('la soledad') || clean.includes('quinta paredes') || clean.includes('ciudad salitre')
-  ) {
-    return 'TEUSAQUILLO';
-  }
-  if (
-    clean.includes('fontibon') || clean.includes('modelia') || clean.includes('hayuelos') || 
-    clean.includes('capellania') || clean.includes('aeropuerto') || clean.includes('zona franca')
-  ) {
-    return 'FONTIBON';
-  }
-  if (
-    clean.includes('candelaria') || clean.includes('centro') || clean.includes('santa fe') || 
-    clean.includes('martires') || clean.includes('las cruces') || clean.includes('plaza de bolivar')
-  ) {
-    return 'CENTRO_HISTORICO';
-  }
-  if (clean.includes('bosa') || clean.includes('el recreo') || clean.includes('san pablo')) {
-    return 'BOSA';
-  }
-  if (clean.includes('barrios unidos') || clean.includes('castellana') || clean.includes('alcazares') || clean.includes('polo')) {
-    return 'BARRIOS_UNIDOS';
-  }
-  if (clean.includes('puente aranda') || clean.includes('ciudad montes')) {
-    return 'PUENTE_ARANDA';
-  }
-
-  // 2. Detección por polígonos/cuadrícula de coordenadas geográficas
-  if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number' && !isNaN(coords.lat) && !isNaN(coords.lng)) {
-    const { lat, lng } = coords;
-
-    // Kennedy: lat ~4.590 - 4.665, lng ~ -74.195 - -74.135
-    if (lat >= 4.590 && lat <= 4.665 && lng >= -74.195 && lng <= -74.135) {
-      return 'KENNEDY';
-    }
-    // Suba: lat ~4.710 - 4.825, lng ~ -74.135 - -74.045
-    if (lat >= 4.710 && lat <= 4.825 && lng >= -74.135 && lng <= -74.045) {
-      return 'SUBA';
-    }
-    // Engativá: lat ~4.670 - 4.730, lng ~ -74.148 - -74.085
-    if (lat >= 4.670 && lat <= 4.730 && lng >= -74.148 && lng <= -74.085) {
-      return 'ENGATIVA';
-    }
-    // Fontibón: lat ~4.640 - 4.685, lng ~ -74.165 - -74.110
-    if (lat >= 4.640 && lat <= 4.685 && lng >= -74.165 && lng <= -74.110) {
-      return 'FONTIBON';
-    }
-    // Usaquén: lat ~4.680 - 4.800, lng >= -74.055 && lng <= -74.010
-    if (lat >= 4.680 && lat <= 4.800 && lng >= -74.055 && lng <= -74.010) {
-      return 'USAQUEN';
-    }
-    // Chapinero: lat ~4.625 - 4.685, lng >= -74.070 && lng <= -74.030
-    if (lat >= 4.625 && lat <= 4.685 && lng >= -74.070 && lng <= -74.030) {
-      return 'CHAPINERO';
-    }
-    // Teusaquillo: lat ~4.620 - 4.665, lng >= -74.095 && lng <= -74.065
-    if (lat >= 4.620 && lat <= 4.665 && lng >= -74.095 && lng <= -74.065) {
-      return 'TEUSAQUILLO';
-    }
-    // Centro / La Candelaria / Santa Fe: lat ~4.585 - 4.620, lng >= -74.085 && lng <= -74.050
-    if (lat >= 4.585 && lat <= 4.620 && lng >= -74.085 && lng <= -74.050) {
-      return 'CENTRO_HISTORICO';
-    }
-    // Bosa: lat ~4.580 - 4.630, lng >= -74.210 && lng <= -74.165
-    if (lat >= 4.580 && lat <= 4.630 && lng >= -74.210 && lng <= -74.165) {
-      return 'BOSA';
-    }
-    // Barrios Unidos: lat ~4.650 - 4.690, lng >= -74.090 && lng <= -74.055
-    if (lat >= 4.650 && lat <= 4.690 && lng >= -74.090 && lng <= -74.055) {
-      return 'BARRIOS_UNIDOS';
-    }
-  }
-
-  return 'OTRA_LOCALIDAD_BOGOTA';
+export function detectBogotaLocality(coords?: { lat: number; lng: number } | null, _addressText?: string): string {
+  return resolveBogotaLocality(coords)?.code || 'OTRA_LOCALIDAD_BOGOTA';
 }
 
-/**
- * Obtiene el nombre amigable de la localidad de Bogotá.
- */
+/** Text never overrides the locality resolved from coordinates. */
 export function getBogotaLocalityName(localityCode: string): string {
-  switch (localityCode) {
-    case 'KENNEDY': return 'Kennedy';
-    case 'SUBA': return 'Suba';
-    case 'ENGATIVA': return 'Engativá';
-    case 'USAQUEN': return 'Usaquén';
-    case 'CHAPINERO': return 'Chapinero';
-    case 'TEUSAQUILLO': return 'Teusaquillo';
-    case 'FONTIBON': return 'Fontibón';
-    case 'CENTRO_HISTORICO': return 'La Candelaria / Centro';
-    case 'BOSA': return 'Bosa';
-    case 'BARRIOS_UNIDOS': return 'Barrios Unidos';
-    case 'PUENTE_ARANDA': return 'Puente Aranda';
-    default: return 'Bogotá D.C.';
-  }
+  return BOGOTA_LOCALITY_NAMES[localityCode as keyof typeof BOGOTA_LOCALITY_NAMES] || 'Ubicación por validar';
 }
 
 export const DELIVERY_CONFIG = {
@@ -433,6 +305,7 @@ export interface DeliveryQuote {
   turboDividido?: TurboDivididoDetails;
 
   // Detalles Entrega Programada
+  scheduledAssignment?: ScheduledAssignment;
   scheduledEligible: boolean;
   scheduledSlots: ScheduledSlot[];
   scheduledExplanation?: string;
@@ -876,10 +749,24 @@ export function generateSplitDeliveryPlan(
   const discreteUnits: DiscreteUnit[] = [];
   let totalOrderWeightGrams = 0;
 
+  // Cuatro motos de 25 kg no pueden transportar más de 100 kg simultáneos.
+  // Se comprueba antes de expandir unidades para que una cotización de carga
+  // grande continúe a Programado sin crear millones de objetos en memoria.
+  for (const item of rawItems) {
+    if (!Number.isSafeInteger(item.quantity) || item.quantity < 1) throw new RangeError('La cantidad de unidades no es válida.');
+    const product = catalogProducts.find(p => p.id === item.productId);
+    const unitGrams = Math.max(1, Math.round((product?.weightKg || 0.2) * 1000));
+    totalOrderWeightGrams += unitGrams * item.quantity;
+    if (!Number.isSafeInteger(totalOrderWeightGrams)) throw new RangeError('El peso del pedido supera el rango permitido.');
+  }
+  if (totalOrderWeightGrams > maxVehicleCapacityGrams * 4) {
+    return { totalWeightKg: totalOrderWeightGrams / 1000, totalWeightGrams: totalOrderWeightGrams, thresholdGrams: HEAVY_ORDER_THRESHOLD_GRAMS, shipmentCount: 0, maxWeightPerVehicleKg: maxVehicleCapacityGrams / 1000, shipments: [], commonDeadlineSeconds: DELIVERY_CONFIG.maxDeliverySeconds, allShipmentsMeetDeadline: false, feasible: false, explanation: 'El peso supera la capacidad simultánea de cuatro motos. Continuamos con Envío Programado en vehículo de carga.' };
+  }
+
   for (const item of rawItems) {
     const prod = catalogProducts.find(p => p.id === item.productId);
     const unitWeightKg = prod?.weightKg || 0.2;
-    const unitWeightGrams = Math.round(unitWeightKg * 1000);
+    const unitWeightGrams = Math.max(1, Math.round(unitWeightKg * 1000));
     const unitPrice = prod?.price || 0;
     const name = prod?.name || `Producto ${item.productId}`;
 
@@ -891,7 +778,6 @@ export function generateSplitDeliveryPlan(
         weightGrams: unitWeightGrams,
         price: unitPrice,
       });
-      totalOrderWeightGrams += unitWeightGrams;
     }
   }
 
@@ -1015,7 +901,7 @@ export function generateSplitDeliveryPlan(
  * 3. Condición Envío Programado: hasta 25 km de cobertura metropolitana de Bogotá.
  * 4. Selección automática de la bodega óptima sin intervención del cliente.
  */
-export function evaluateDeliveryQuote(
+function evaluateBaseDeliveryQuote(
   req: QuoteRequest,
   stores: Store[] = BOGOTA_TURBO_WAREHOUSES,
   catalogProducts: Product[] = []
@@ -1043,8 +929,9 @@ export function evaluateDeliveryQuote(
     !destination.coordinates ||
     typeof destination.coordinates.lat !== 'number' ||
     typeof destination.coordinates.lng !== 'number' ||
-    isNaN(destination.coordinates.lat) ||
-    isNaN(destination.coordinates.lng)
+    !Number.isFinite(destination.coordinates.lat) ||
+    !Number.isFinite(destination.coordinates.lng) ||
+    Math.abs(destination.coordinates.lat) > 90 || Math.abs(destination.coordinates.lng) > 180
   ) {
     return {
       quoteId,
@@ -1080,7 +967,7 @@ export function evaluateDeliveryQuote(
 
   // Distancia mínima global a cualquier bodega activa de Bogotá
   let minGlobalGeoDistance = Infinity;
-  for (const s of stores.filter(st => st.isActive)) {
+  for (const s of stores.filter(isScheduledWarehouse)) {
     const d = haversine(getStoreDispatchCoordinates(s), destination.coordinates);
     if (d < minGlobalGeoDistance) minGlobalGeoDistance = d;
   }
@@ -1517,6 +1404,54 @@ export function evaluateDeliveryQuote(
     totalWeightKg,
     totalWeightGrams,
   };
+}
+
+/** Add the independent scheduled dispatch policy to every quote branch. */
+export function evaluateDeliveryQuote(
+  req: QuoteRequest,
+  stores: Store[] = BOGOTA_TURBO_WAREHOUSES,
+  catalogProducts: Product[] = [],
+): DeliveryQuote {
+  const quote = evaluateBaseDeliveryQuote(req, stores, catalogProducts);
+  const assignment = getScheduledAssignment(req.destination?.coordinates, stores, catalogProducts, req.items, DELIVERY_CONFIG.scheduledCoverageRadiusMeters);
+  const responsible = stores.find(store => store.id === assignment.storeId);
+  const available = assignment.status !== 'SIN_COBERTURA' && assignment.status !== 'DIRECCION_PENDIENTE' &&
+    !!responsible && isScheduledWarehouse(responsible);
+  quote.scheduledAssignment = assignment;
+  quote.scheduledEligible = available;
+  quote.availableModes.scheduled = available;
+  if (!available) quote.scheduledSlots = [];
+  if (assignment.localityCode) {
+    quote.detectedLocality = assignment.localityCode;
+    quote.detectedLocalityName = assignment.localityName;
+  }
+  const forbiddenLocation = assignment.status === 'SIN_COBERTURA' || assignment.status === 'DIRECCION_PENDIENTE';
+  if (forbiddenLocation) {
+    quote.availableModes = { turbo: false, turboDividido: false, scheduled: false };
+    quote.recommendedMode = null;
+    quote.autoSwitchedToScheduled = false;
+    quote.eligibilityStatus = assignment.status === 'DIRECCION_PENDIENTE' ? DeliveryStatus.ADDRESS_NEEDS_CONFIRMATION : DeliveryStatus.OUT_OF_COVERAGE;
+    quote.reasonCode = assignment.status === 'DIRECCION_PENDIENTE' ? 'LOCALITY_NEEDS_CONFIRMATION' : 'SCHEDULED_LOCALITY_OUT_OF_COVERAGE';
+    quote.message = assignment.reason!;
+    delete quote.assignedStoreId;
+    delete quote.assignedStoreName;
+    delete quote.assignedStoreAddress;
+    delete quote.assignedStoreCoordinates;
+  } else if (!quote.availableModes.turbo && !quote.availableModes.turboDividido) {
+    if (available) {
+      quote.recommendedMode = 'PROGRAMADO';
+      quote.eligibilityStatus = DeliveryStatus.SCHEDULED_ONLY;
+      quote.assignedStoreId = assignment.storeId;
+      quote.assignedStoreName = assignment.storeName;
+      quote.assignedStoreAddress = assignment.storeAddress;
+      quote.assignedStoreCoordinates = assignment.storeCoordinates;
+    } else {
+      quote.recommendedMode = null;
+      quote.message = assignment.reason || 'La bodega responsable requiere revisión administrativa.';
+      quote.eligibilityStatus = DeliveryStatus.ADDRESS_NEEDS_CONFIRMATION;
+    }
+  }
+  return quote;
 }
 
 // Alias funcional

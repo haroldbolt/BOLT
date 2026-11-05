@@ -3,14 +3,21 @@
   "private": true,
   "version": "0.0.0",
   "type": "module",
+  "engines": { "node": ">=24.0.0" },
   "scripts": {
     "dev": "tsx server.ts",
     "start": "node server.js",
+    "local": "node scripts/start-local.mjs",
+    "open": "node scripts/start-local.mjs --open",
+    "admin:create": "node scripts/admin-account.mjs create",
+    "admin:reset-password": "node scripts/admin-account.mjs reset-password",
+    "admin:backup": "node scripts/admin-account.mjs backup",
+    "inventory:import": "node --import tsx scripts/import-authorized-inventory.mjs --apply",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts"
+    "test": "node scripts/run-tests.mjs"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

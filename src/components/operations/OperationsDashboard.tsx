@@ -6,10 +6,12 @@ import {
   Building2, ShoppingBag, Navigation, Radio, Play, Square, Battery,
   Compass, Crosshair, Activity, Smartphone
 } from 'lucide-react';
-import { Order, Product, Store, DriverProfile, OperationRole, FulfillmentStatus, GPSTelemetry, GPSTrackingPoint } from '../../types';
+import { Order, ChildShipment, Product, Store, DriverProfile, OperationRole, FulfillmentStatus, GPSTelemetry, GPSTrackingPoint } from '../../types';
 import { formatCOP, formatTimeBogota, formatDateBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
+import { adminRequest } from '../../lib/adminApi';
 import { pushService } from '../../lib/notifications';
+import { GpsTelemetrySession, gpsContextFromTracking } from '../../lib/gpsTelemetry';
 import { WarehouseManagerTab } from './WarehouseManagerTab';
 import { ShopifySyncTab } from './ShopifySyncTab';
 
@@ -22,7 +24,8 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   onBackToCustomer,
   onViewOrderTracking,
 }) => {
-  const [currentRole, setCurrentRole] = useState<OperationRole>('ADMINISTRADOR');
+  // El servidor verifica la sesión; esta etiqueta no concede permisos.
+  const currentRole: OperationRole = 'ADMINISTRADOR';
   const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR'>('PEDIDOS');
   const [deliveryModeFilter, setDeliveryModeFilter] = useState<'TODOS' | 'TURBO' | 'TURBO_DIVIDIDO' | 'PROGRAMADO'>('TODOS');
   
@@ -32,6 +35,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [selectedStoreId, setSelectedStoreId] = useState<string>('ALL_ACTIVE');
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
+  const [assignmentTarget, setAssignmentTarget] = useState<{ orderId: string; shipmentId?: string } | null>(null);
+  const [assignmentDrivers, setAssignmentDrivers] = useState<DriverProfile[]>([]);
+  const [assignmentDriverId, setAssignmentDriverId] = useState('');
+  const [assigningDriver, setAssigningDriver] = useState(false);
 
   // Pharmacy review state
   const [reviewNotes, setReviewNotes] = useState('');
@@ -47,7 +54,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [gpsTrackingActive, setGpsTrackingActive] = useState<boolean>(false);
   const [gpsActiveOrderId, setGpsActiveOrderId] = useState<string | null>(null);
   const [gpsActiveShipmentId, setGpsActiveShipmentId] = useState<string | null>(null);
-  const [gpsActiveDriverId, setGpsActiveDriverId] = useState<string>('DRV-CARLOS-01');
+  const [gpsActiveDriverId, setGpsActiveDriverId] = useState<string>('');
   const [gpsPermissionStatus, setGpsPermissionStatus] = useState<'prompt' | 'granted' | 'denied' | 'unsupported'>('prompt');
   const [gpsCountdown, setGpsCountdown] = useState<number>(5);
   const [gpsLastPoint, setGpsLastPoint] = useState<GPSTrackingPoint | null>(null);
@@ -70,8 +77,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const gpsSequenceRef = useRef<number>(1);
   const gpsIntervalRef = useRef<any>(null);
   const gpsCountdownIntervalRef = useRef<any>(null);
-  const gpsActiveOrderRef = useRef<string | null>(null);
-  gpsActiveOrderRef.current = gpsActiveOrderId;
+  const gpsSessionRef = useRef<GpsTelemetrySession | null>(null);
+  const gpsStartTokenRef = useRef(0);
+  const gpsStopRef = useRef<(reason?: string) => void>(() => {});
+  const gpsPermissionRef = useRef<PermissionStatus | null>(null);
 
   // Verificación reactiva de permisos del navegador
   const checkGpsPermission = useCallback(async () => {
@@ -83,8 +92,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       try {
         const queryStatus = await navigator.permissions.query({ name: 'geolocation' });
         setGpsPermissionStatus(queryStatus.state as any);
+        if (gpsPermissionRef.current) gpsPermissionRef.current.onchange = null;
+        gpsPermissionRef.current = queryStatus;
         queryStatus.onchange = () => {
           setGpsPermissionStatus(queryStatus.state as any);
+          if (queryStatus.state === 'denied') gpsStopRef.current('Permiso de ubicación revocado. Transmisión detenida.');
         };
         return queryStatus.state;
       } catch {
@@ -95,23 +107,26 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   }, []);
 
   const stopGpsTelemetry = useCallback((reason?: string) => {
-    if (gpsIntervalRef.current) {
-      clearInterval(gpsIntervalRef.current);
-      gpsIntervalRef.current = null;
-    }
-    if (gpsCountdownIntervalRef.current) {
-      clearInterval(gpsCountdownIntervalRef.current);
-      gpsCountdownIntervalRef.current = null;
-    }
+    gpsStartTokenRef.current++;
+    gpsSessionRef.current?.stop();
+    gpsSessionRef.current = null;
+    if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
+    if (gpsCountdownIntervalRef.current) clearInterval(gpsCountdownIntervalRef.current);
+    gpsIntervalRef.current = null;
+    gpsCountdownIntervalRef.current = null;
     setGpsTrackingActive(false);
     setGpsActiveOrderId(null);
     setGpsActiveShipmentId(null);
     setGpsCountdown(5);
-    if (reason) {
-      setGpsSuccessNotice(reason);
-      setTimeout(() => setGpsSuccessNotice(null), 6000);
-    }
+    if (reason) setGpsSuccessNotice(reason);
   }, []);
+  gpsStopRef.current = stopGpsTelemetry;
+
+  const activeGpsDeliveries = orders.flatMap<{ order: Order; target: Order | ChildShipment; shipmentId?: string }>(order => order.isSplitOrder
+    ? (order.childShipments || []).map(child => ({ order, target: child, shipmentId: child.shipmentId }))
+    : [{ order, target: order }]
+  ).filter(({ target }) => target.fulfillmentStatus === 'EN_CAMINO' || target.fulfillmentStatus === 'REPARTIDOR_ASIGNADO');
+  const activeGpsDriver = activeGpsDeliveries.find(({ order, shipmentId }) => order.id === gpsActiveOrderId && shipmentId === (gpsActiveShipmentId || undefined))?.target.driver;
 
   const loadData = async () => {
     try {
@@ -126,15 +141,19 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       setStores(storeList);
       setIntegrations(integ);
 
-      // Verificación de fin de ciclo para entrega rastreada
-      if (gpsActiveOrderRef.current) {
-        const tracked = ordList.find(o => o.id === gpsActiveOrderRef.current);
-        if (tracked && (tracked.fulfillmentStatus === 'ENTREGADO' || tracked.fulfillmentStatus === 'CANCELADO')) {
-          stopGpsTelemetry(`El pedido ${tracked.orderNumber} pasó a ${tracked.fulfillmentStatus}. Transmisión GPS finalizada automáticamente.`);
+      // Verify the actual active child, driver and assignment, not only the parent.
+      const active = gpsSessionRef.current?.context;
+      if (active) {
+        const tracked = ordList.find(o => o.id === active.orderId);
+        const target = active.shipmentId ? tracked?.childShipments?.find(s => s.shipmentId === active.shipmentId) : tracked;
+        if (!target || target.fulfillmentStatus !== 'EN_CAMINO' || target.driver?.id !== active.driverId ||
+            target.assignmentId !== active.assignmentId || target.tripId !== active.tripId) {
+          stopGpsTelemetry('La entrega, su conductor o recorrido cambiaron. Transmisión detenida.');
         }
       }
     } catch (e) {
       console.error('Error loading operations data:', e);
+      setErrorMessage('No fue posible actualizar los datos de despacho. Comprueba la conexión y vuelve a actualizar.');
     } finally {
       setLoading(false);
     }
@@ -157,6 +176,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     const interval = setInterval(loadData, 6000);
     return () => {
       clearInterval(interval);
+      gpsStartTokenRef.current++;
+      gpsSessionRef.current?.stop();
+      gpsSessionRef.current = null;
+      if (gpsPermissionRef.current) gpsPermissionRef.current.onchange = null;
       if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
       if (gpsCountdownIntervalRef.current) clearInterval(gpsCountdownIntervalRef.current);
     };
@@ -202,22 +225,21 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       setErrorMessage(null);
       const targetOrder = orders.find(o => o.id === orderId);
 
-      // Si es entrega física, requiere PIN
+      // The recipient provides the PIN; never copy a downloaded secret into the request.
       let finalCode = deliveryCode;
       if (status === 'ENTREGADO' && !finalCode) {
-        if (shipmentId && targetOrder?.childShipments) {
-          const child = targetOrder.childShipments.find(c => c.shipmentId === shipmentId);
-          finalCode = child?.secretDeliveryCode;
-        } else {
-          finalCode = targetOrder?.secretDeliveryCode;
-        }
+        const entered = window.prompt('Solicita al receptor el PIN de 4 dígitos para confirmar la entrega:');
+        if (entered === null) return;
+        finalCode = entered.trim();
+        if (!/^\d{4}$/.test(finalCode)) throw new Error('Ingresa el PIN de 4 dígitos entregado por el receptor.');
       }
 
       await api.updateOrderStatus(orderId, status, shipmentId, reason, finalCode, currentRole);
 
       // Si el pedido finaliza o se cancela, detener transmisión GPS activa si correspondía a este pedido
       if (status === 'ENTREGADO' || status === 'CANCELADO') {
-        if (gpsActiveOrderId === orderId) {
+        const active = gpsSessionRef.current?.context;
+        if (active?.orderId === orderId && (!shipmentId || active.shipmentId === shipmentId)) {
           stopGpsTelemetry(`El pedido ${targetOrder?.orderNumber || orderId} fue marcado como ${status}. Transmisión GPS finalizada.`);
         }
       }
@@ -233,223 +255,127 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   };
 
   const startGpsTelemetry = async (orderId: string, shipmentId?: string) => {
+    stopGpsTelemetry();
+    const token = gpsStartTokenRef.current;
+    const isCurrent = () => token === gpsStartTokenRef.current;
     setGpsError(null);
     setGpsSuccessNotice(null);
-
-    // 1. Validar que la orden existe y está EXCLUSIVAMENTE en estado EN_CAMINO
-    const targetOrder = orders.find(o => o.id === orderId);
-    if (!targetOrder) {
-      setGpsError('Pedido no encontrado en la base de datos.');
-      return;
-    }
-
-    let isEnCamino = false;
-    let driverAssignedId = gpsActiveDriverId;
-
-    if (shipmentId && targetOrder.childShipments) {
-      const child = targetOrder.childShipments.find(c => c.shipmentId === shipmentId);
-      if (!child) {
-        setGpsError(`Envío parcial ${shipmentId} no encontrado.`);
-        return;
-      }
-      isEnCamino = child.fulfillmentStatus === 'EN_CAMINO';
-      if (child.driver?.id) driverAssignedId = child.driver.id;
-
-      if (!isEnCamino) {
-        if (child.fulfillmentStatus === 'REPARTIDOR_ASIGNADO') {
-          await handleUpdateStatus(orderId, 'EN_CAMINO', shipmentId);
-          isEnCamino = true;
-        } else {
-          setGpsError(`El envío ${shipmentId} está en estado '${child.fulfillmentStatus}'. La telemetría GPS está restringida exclusivamente a entregas en 'EN_CAMINO'.`);
-          return;
-        }
-      }
-    } else {
-      isEnCamino = targetOrder.fulfillmentStatus === 'EN_CAMINO';
-      if (targetOrder.driver?.id) driverAssignedId = targetOrder.driver.id;
-
-      if (!isEnCamino) {
-        if (targetOrder.fulfillmentStatus === 'REPARTIDOR_ASIGNADO' || targetOrder.fulfillmentStatus === 'LISTO_PARA_DESPACHO') {
-          await handleUpdateStatus(orderId, 'EN_CAMINO');
-          isEnCamino = true;
-        } else {
-          setGpsError(`El pedido ${targetOrder.orderNumber} está en estado '${targetOrder.fulfillmentStatus}'. La telemetría GPS está restringida exclusivamente a entregas en 'EN_CAMINO'.`);
-          return;
-        }
-      }
-    }
-
-    // 2. Validar soporte de geolocalización en navegador
-    if (typeof window === 'undefined' || !('geolocation' in navigator)) {
-      setGpsError('El navegador o dispositivo no soporta la API de geolocalización.');
+    setGpsLastPoint(null);
+    if (typeof navigator === 'undefined' || !navigator.geolocation) {
       setGpsPermissionStatus('unsupported');
+      setGpsError('El navegador o dispositivo no soporta ubicación GPS.');
       return;
     }
-
-    // 3. Captura inicial y comprobación de permisos de ubicación
     try {
-      const initialPos = await new Promise<GeolocationPosition>((resolve, reject) => {
-        navigator.geolocation.getCurrentPosition(resolve, reject, {
-          enableHighAccuracy: true,
-          timeout: 10000,
-          maximumAge: 0,
-        });
-      });
+      let snapshot = await api.getTracking(orderId, shipmentId);
+      if (!isCurrent()) return;
+      if (snapshot.status === 'REPARTIDOR_ASIGNADO') {
+        await api.updateOrderStatus(orderId, 'EN_CAMINO', shipmentId, 'Inicio del recorrido confirmado por conductor', undefined, currentRole);
+        if (!isCurrent()) return;
+        snapshot = await api.getTracking(orderId, shipmentId);
+      }
+      if (!isCurrent()) return;
+      if (snapshot.orderId !== orderId || snapshot.shipmentId !== shipmentId) throw new Error('El servidor devolvió un envío diferente al seleccionado.');
+      const context = gpsContextFromTracking(snapshot);
+      const initialPos = await new Promise<GeolocationPosition>((resolve, reject) =>
+        navigator.geolocation.getCurrentPosition(resolve, reject, { enableHighAccuracy: true, timeout: 10000, maximumAge: 0 }));
+      if (!isCurrent()) return;
       setGpsPermissionStatus('granted');
-
-      // Limpiar temporizadores anteriores si los hubiera
-      if (gpsIntervalRef.current) clearInterval(gpsIntervalRef.current);
-      if (gpsCountdownIntervalRef.current) clearInterval(gpsCountdownIntervalRef.current);
-
+      gpsSequenceRef.current = context.nextSequenceNumber;
+      const recordLog = (point: GPSTelemetry, status: 'OK' | 'ERROR', message?: string) => {
+        setGpsHistoryLog(prev => [{
+          seq: point.sequenceNumber, lat: point.latitude, lng: point.longitude, accuracy: point.accuracy,
+          speed: point.speed, heading: point.heading,
+          time: new Date(point.timestamp).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota' }), status, message,
+        }, ...prev.slice(0, 49)]);
+      };
+      const session = new GpsTelemetrySession(context, {
+        send: (point, signal) => api.sendGpsTelemetry(point, context.driverId, signal),
+        onSent: point => {
+          setGpsError(null);
+          setGpsLastPoint({ ...point, driverId: context.driverId, driverName: snapshot.driver?.name });
+          setGpsPointsSent(prev => prev + 1);
+          gpsSequenceRef.current = session.nextSequenceNumber;
+          recordLog(point, 'OK');
+        },
+        onError: (message, point) => { setGpsError(message); if (point) recordLog(point, 'ERROR', message); },
+        onFatal: message => stopGpsTelemetry(message),
+      });
+      gpsSessionRef.current = session;
       setGpsTrackingActive(true);
       setGpsActiveOrderId(orderId);
       setGpsActiveShipmentId(shipmentId || null);
-      setGpsActiveDriverId(driverAssignedId);
-      gpsSequenceRef.current = 1;
+      setGpsActiveDriverId(context.driverId);
       setGpsPointsSent(0);
       setGpsCountdown(5);
-
-      const transmitPoint = async (pos: GeolocationPosition) => {
-        const seq = gpsSequenceRef.current++;
-        const pointData: GPSTelemetry = {
-          orderId,
-          shipmentId: shipmentId || undefined,
-          driverId: driverAssignedId,
-          assignmentId: targetOrder.assignmentId || `ASG-${orderId.substring(0, 8)}`,
-          tripId: targetOrder.tripId || `TRIP-${orderId.substring(0, 8)}`,
-          latitude: pos.coords.latitude,
-          longitude: pos.coords.longitude,
-          accuracy: Math.round(pos.coords.accuracy || 5),
-          heading: pos.coords.heading ?? 0,
-          speed: pos.coords.speed ?? 0,
-          batteryLevel: gpsBatteryPercent ?? 85,
-          timestamp: Date.now(),
-          sequenceNumber: seq,
-        };
-
-        const trackingPoint: GPSTrackingPoint = {
-          orderId,
-          shipmentId: shipmentId || undefined,
-          driverId: driverAssignedId,
-          driverName: targetOrder.driver?.name || 'Conductor Bolt',
-          latitude: pointData.latitude,
-          longitude: pointData.longitude,
-          accuracy: pointData.accuracy,
-          heading: pointData.heading,
-          speed: pointData.speed,
-          batteryLevel: pointData.batteryLevel,
-          timestamp: pointData.timestamp,
-          sequenceNumber: seq,
-        };
-
-        setGpsLastPoint(trackingPoint);
-
-        try {
-          await api.sendGpsTelemetry(pointData, driverAssignedId);
-          setGpsPointsSent(prev => prev + 1);
-          setGpsHistoryLog(prev => [
-            {
-              seq,
-              lat: pointData.latitude,
-              lng: pointData.longitude,
-              accuracy: pointData.accuracy,
-              speed: pointData.speed,
-              heading: pointData.heading,
-              time: new Date().toLocaleTimeString('es-CO', { timeZone: 'America/Bogota' }),
-              status: 'OK',
-            },
-            ...prev.slice(0, 49),
-          ]);
-        } catch (err: any) {
-          const errMsg = err.message || 'Error en endpoint /api/v1/driver/gps';
-          setGpsHistoryLog(prev => [
-            {
-              seq,
-              lat: pointData.latitude,
-              lng: pointData.longitude,
-              accuracy: pointData.accuracy,
-              speed: pointData.speed,
-              heading: pointData.heading,
-              time: new Date().toLocaleTimeString('es-CO', { timeZone: 'America/Bogota' }),
-              status: 'ERROR',
-              message: errMsg,
-            },
-            ...prev.slice(0, 49),
-          ]);
-
-          if (errMsg.toLowerCase().includes('no está en camino') || errMsg.toLowerCase().includes('finalizada')) {
-            stopGpsTelemetry(errMsg);
-          } else {
-            setGpsError(errMsg);
+      let capturePending = false;
+      const capture = () => {
+        if (!session.isActive || capturePending) return;
+        capturePending = true;
+        navigator.geolocation.getCurrentPosition(pos => {
+          capturePending = false;
+          if (!session.isActive || !isCurrent()) return;
+          session.enqueue(pos, gpsBatteryPercent);
+          gpsSequenceRef.current = session.nextSequenceNumber;
+          void session.flush();
+        }, err => {
+          capturePending = false;
+          if (!session.isActive || !isCurrent()) return;
+          setGpsError('Señal GPS: ' + err.message);
+          if (err.code === 1) {
+            setGpsPermissionStatus('denied');
+            stopGpsTelemetry('Permiso de ubicación denegado. Transmisión detenida.');
           }
-        }
+        }, { enableHighAccuracy: true, timeout: 4800, maximumAge: 0 });
       };
-
-      // Transmisión inmediata del primer punto
-      await transmitPoint(initialPos);
-
-      // Temporizador de cuenta regresiva visual cada segundo (5 -> 0)
+      session.enqueue(initialPos, gpsBatteryPercent);
+      void session.flush();
       let count = 5;
-      gpsCountdownIntervalRef.current = setInterval(() => {
-        count = count <= 1 ? 5 : count - 1;
-        setGpsCountdown(count);
-      }, 1000);
-
-      // Ciclo estricto de transmisión recurrente cada 5 segundos (5000ms)
-      gpsIntervalRef.current = setInterval(() => {
-        navigator.geolocation.getCurrentPosition(
-          async (pos) => {
-            await transmitPoint(pos);
-          },
-          (err) => {
-            console.warn('Advertencia al consultar GPS en intervalo:', err.message);
-            setGpsError(`Señal GPS: ${err.message}`);
-          },
-          {
-            enableHighAccuracy: true,
-            timeout: 4800,
-            maximumAge: 0,
-          }
-        );
-      }, 5000);
-
-      setGpsSuccessNotice(`Transmisión GPS iniciada para pedido ${targetOrder.orderNumber} cada 5 segundos.`);
-      setTimeout(() => setGpsSuccessNotice(null), 5000);
-
+      gpsCountdownIntervalRef.current = setInterval(() => { count = count <= 1 ? 5 : count - 1; setGpsCountdown(count); }, 1000);
+      gpsIntervalRef.current = setInterval(() => { if (session.isActive) { void session.flush(); capture(); } }, 5000);
+      setGpsSuccessNotice('Captura GPS iniciada. Los puntos se confirman al recibirlos el servidor.');
     } catch (err: any) {
-      if (err.code === 1) {
-        setGpsPermissionStatus('denied');
-        setGpsError('Permiso de ubicación denegado en el navegador. Por favor otorgue acceso de ubicación para transmitir telemetría.');
-      } else if (err.code === 2) {
-        setGpsError('Ubicación física no disponible en este dispositivo.');
-      } else if (err.code === 3) {
-        setGpsError('Tiempo de espera agotado al consultar coordenadas satelitales GPS.');
-      } else {
-        setGpsError(err.message || 'Error al iniciar captura GPS.');
-      }
+      if (!isCurrent()) return;
+      if (err.code === 1) setGpsPermissionStatus('denied');
+      setGpsError(err.code === 1 ? 'Permiso de ubicación denegado.' : err.message || 'No se pudo iniciar el seguimiento.');
     }
   };
-
-  // Handle driver assign (supports whole order or specific child shipment)
   const handleAssignDriver = async (orderId: string, shipmentId?: string) => {
+    if (assigningDriver) return;
     try {
       setErrorMessage(null);
-      await api.assignDriver(orderId, 'DRV-CARLOS-01', shipmentId);
+      setAssigningDriver(true);
+      const registered = await adminRequest<DriverProfile[]>('/drivers');
+      setAssignmentDrivers(registered);
+      setAssignmentDriverId('');
+      setAssignmentTarget({ orderId, shipmentId });
+    } catch (e: any) {
+      setErrorMessage(e.message || 'No fue posible consultar los conductores registrados.');
+    } finally { setAssigningDriver(false); }
+  };
+  const confirmDriverAssignment = async () => {
+    if (!assignmentTarget || !assignmentDrivers.some(driver => driver.id === assignmentDriverId)) return;
+    setAssigningDriver(true);
+    try {
+      const { orderId, shipmentId } = assignmentTarget;
+      setErrorMessage(null);
+      await api.assignDriver(orderId, assignmentDriverId, shipmentId);
       await loadData();
       if (selectedOrder && selectedOrder.id === orderId) {
         const updated = await api.getOrder(orderId);
         setSelectedOrder(updated);
       }
+      setAssignmentTarget(null);
     } catch (e: any) {
       setErrorMessage(e.message || 'Error al asignar conductor');
-    }
+    } finally { setAssigningDriver(false); }
   };
 
   // Handle physical return confirmation
-  const handleConfirmPhysicalReturn = async (orderId: string) => {
+  const handleConfirmPhysicalReturn = async (orderId: string, shipmentId?: string) => {
     try {
       setErrorMessage(null);
-      await api.confirmPhysicalReturn(orderId, `Operador Bodega (${currentRole})`);
+      await api.confirmPhysicalReturn(orderId, `Operador Bodega (${currentRole})`, undefined, shipmentId);
       await loadData();
       if (selectedOrder && selectedOrder.id === orderId) {
         const updated = await api.getOrder(orderId);
@@ -671,7 +597,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
             >
               <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver a Bolt Pets</span>
+              <span>Volver al panel</span>
             </button>
             <div className="flex items-center gap-2">
               <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
@@ -723,22 +649,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               </select>
             </div>
 
-            {/* Role Switcher */}
+            {/* Identidad administrativa comprobada antes de abrir esta consola. */}
             <div className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-xl text-xs font-semibold">
-              <span className="text-slate-400">Rol:</span>
-              <select
-                value={currentRole}
-                onChange={e => setCurrentRole(e.target.value as OperationRole)}
-                className="bg-transparent text-yellow-300 font-bold focus:outline-none cursor-pointer"
-              >
-                <option value="ADMINISTRADOR" className="bg-slate-800">Administrador</option>
-                <option value="COORDINADOR" className="bg-slate-800">Coordinador Operativo</option>
-                <option value="ALISTADOR" className="bg-slate-800">Alistador / Picker</option>
-                <option value="DESPACHADOR" className="bg-slate-800">Despachador</option>
-                <option value="REVISOR_FARMACEUTICO" className="bg-slate-800">Revisor Farmacéutico</option>
-                <option value="FINANZAS" className="bg-slate-800">Finanzas & Caja</option>
-                <option value="SOPORTE" className="bg-slate-800">Soporte al Cliente</option>
-              </select>
+              <ShieldCheck className="w-3.5 h-3.5 text-yellow-300" />
+              <span className="text-yellow-300">Administrador autenticado</span>
             </div>
           </div>
         </div>
@@ -753,13 +667,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             { id: 'BODEGAS', label: 'Bodegas y Mapas', count: stores.filter(s => s.turboEnabled).length, icon: Building2 },
             { id: 'SHOPIFY', label: 'Shopify Agrocentro', icon: ShoppingBag },
             { id: 'FARMACIA', label: 'Fórmulas Veterinarias', count: pendingPrescriptionOrders.length, icon: FileText, alert: pendingPrescriptionOrders.length > 0 },
-            { id: 'FLOTA', label: 'Flota & Repartidores', icon: Bike },
             { id: 'INVENTARIO', label: 'Inventario & Lotes', count: products.length, icon: Settings },
-            { id: 'EFECTIVO', label: 'Recaudo de Efectivo', icon: DollarSign },
-            { id: 'INFORMES', label: 'Métricas & SLA', icon: BarChart3 },
             { 
               id: 'CONDUCTOR', 
-              label: gpsTrackingActive ? 'Bolt Conductor (GPS Activo)' : 'Bolt Conductor & API', 
+              label: gpsTrackingActive ? 'Conductor (GPS activo)' : 'Conductor y GPS',
               icon: gpsTrackingActive ? Radio : Download,
               alert: gpsTrackingActive,
               count: gpsTrackingActive ? gpsPointsSent : undefined,
@@ -804,7 +715,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <span className="relative inline-flex rounded-full h-3 w-3 bg-emerald-500"></span>
               </span>
               <div className="flex items-center gap-2">
-                <span className="font-black text-emerald-400 uppercase tracking-wider text-[11px]">GPS EN VIVO (5s):</span>
+                <span className="font-black text-emerald-400 uppercase tracking-wider text-[11px]">CAPTURA GPS (5s):</span>
                 <strong className="text-white font-mono bg-slate-800 px-2 py-0.5 rounded">
                   {orders.find(o => o.id === gpsActiveOrderId)?.orderNumber || gpsActiveOrderId}
                 </strong>
@@ -1124,7 +1035,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               {/* Column 3: En Camino */}
               <div className="bg-slate-200/60 p-3 rounded-2xl flex flex-col space-y-3">
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
-                  <span>3. EN CAMINO (GPS ACTIVO)</span>
+                  <span>3. EN CAMINO</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
                     {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length}
                   </span>
@@ -1179,7 +1090,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                                     </span>
                                   </div>
                                   <div className="flex justify-between items-center text-[10px] text-slate-500">
-                                    <span>PIN: <strong className="text-red-600 font-mono">{child.secretDeliveryCode}</strong></span>
+<span>PIN: solicitar al receptor</span>
                                     <span>{child.driver?.name?.split(' ')[0]} ({child.driver?.vehiclePlate})</span>
                                   </div>
 
@@ -1231,7 +1142,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                                 Vehículo: <strong className="text-slate-800">{order.driver?.vehiclePlate}</strong>
                               </p>
                               <p className="text-slate-600 text-[11px]">
-                                Código Secreto: <strong className="text-red-600 font-black">{order.secretDeliveryCode}</strong>
+PIN de entrega: <strong className="text-red-600 font-black">Solicitar al receptor</strong>
                               </p>
                             </div>
 
@@ -1244,7 +1155,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                                     <span className="relative inline-flex rounded-full h-2.5 w-2.5 bg-emerald-600"></span>
                                   </span>
                                   <div>
-                                    <p className="font-bold text-[11px]">GPS Transmitiendo cada 5s</p>
+                                    <p className="font-bold text-[11px]">Captura GPS activa (cada 5s)</p>
                                     <p className="text-[10px] text-emerald-700 font-mono">
                                       {gpsLastPoint ? `${gpsLastPoint.latitude.toFixed(4)}, ${gpsLastPoint.longitude.toFixed(4)}` : 'Obteniendo GPS...'}
                                     </p>
@@ -1333,7 +1244,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             </div>
 
             {/* Cancelled Orders & Physical Returns Queue */}
-            {filteredStoreOrders.some(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending) && (
+            {filteredStoreOrders.some(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending || o.childShipments?.some(child => child.physicalReturnPending)) && (
               <div className="bg-rose-50/70 border border-rose-200 rounded-3xl p-4 md:p-5 space-y-3 shadow-xs">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-black text-rose-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -1347,7 +1258,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
                   {filteredStoreOrders
-                    .filter(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending)
+                    .filter(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending || o.childShipments?.some(child => child.physicalReturnPending))
                     .map(order => (
                       <div key={order.id} className="bg-white p-3.5 rounded-2xl border border-rose-200 text-xs space-y-2 shadow-xs">
                         <div className="flex items-center justify-between">
@@ -1371,7 +1282,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                           </p>
                         )}
 
-                        {order.physicalReturnPending ? (
+                        {order.physicalReturnPending || order.childShipments?.some(child => child.physicalReturnPending) ? (
                           <div className="bg-amber-50 border border-amber-200 p-2.5 rounded-xl space-y-1.5">
                             <p className="text-[11px] font-extrabold text-amber-900">
                               ⚠️ Mercancía despachada: Retorno físico pendiente de verificación
@@ -1379,12 +1290,22 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             <p className="text-[10px] text-amber-700">
                               El stock reservado permanece en cuarentena y NO está disponible para la venta hasta confirmación de inspección física en sede.
                             </p>
-                            <button
-                              onClick={() => handleConfirmPhysicalReturn(order.id)}
-                              className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition shadow-xs"
-                            >
-                              Confirmar Inspección Física y Reingreso de Stock ✓
-                            </button>
+                            {order.isSplitOrder ? order.childShipments?.filter(child => child.physicalReturnPending).map(child => (
+                              <button
+                                key={child.shipmentId}
+                                onClick={() => handleConfirmPhysicalReturn(order.id, child.shipmentId)}
+                                className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition shadow-xs"
+                              >
+                                Confirmar Inspección Física del Envío {child.shipmentIndex} ✓
+                              </button>
+                            )) : (
+                              <button
+                                onClick={() => handleConfirmPhysicalReturn(order.id)}
+                                className="w-full bg-amber-600 hover:bg-amber-700 text-white font-bold text-[10px] py-1.5 rounded-lg transition shadow-xs"
+                              >
+                                Confirmar Inspección Física y Reingreso de Stock ✓
+                              </button>
+                            )}
                           </div>
                         ) : order.physicalReturnConfirmedAt ? (
                           <div className="text-[10px] text-emerald-700 font-bold bg-emerald-50 p-2 rounded-xl border border-emerald-100">
@@ -1637,7 +1558,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             <div>
               <h2 className="text-xl font-black text-slate-900">Flota Propia Bolt Conductor</h2>
               <p className="text-xs text-slate-500">
-                Monitoreo de disponibilidad, capacidad de carga (máx 25 kg) y telemetría en tiempo real.
+                Vista histórica de demostración. Sus perfiles y cifras no representan una flota operativa.
               </p>
             </div>
 
@@ -1868,7 +1789,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             <div>
               <h2 className="text-xl font-black text-slate-900">Liquidación y Cuadre de Caja (Efectivo)</h2>
               <p className="text-xs text-slate-500">
-                Conciliación entre dinero en efectivo recaudado por conductores y caja física de sede.
+                Demostración histórica sin conciliación de dinero real.
               </p>
             </div>
 
@@ -1899,7 +1820,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
           <div className="space-y-4">
             <div>
               <h2 className="text-xl font-black text-slate-900">Reportes Operativos & Cumplimiento SLA</h2>
-              <p className="text-xs text-slate-500">Métricas reales calculadas en Bogotá.</p>
+              <p className="text-xs text-slate-500">Demostración histórica: estas cifras no son métricas operativas.</p>
             </div>
 
             <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
@@ -1936,7 +1857,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                     <span>Consola de Transmisión GPS en Vivo — Bolt Conductor</span>
                   </h2>
                   <p className="text-xs text-slate-500">
-                    Captura y transmisión satelital con cadencia estricta de 5 segundos vinculada exclusivamente a entregas en <strong className="text-slate-800">EN_CAMINO</strong>.
+                    Captura de ubicación de este dispositivo con envío de lecturas cada 5 segundos, vinculada a entregas en <strong className="text-slate-800">EN_CAMINO</strong>. Requiere validación en el móvil del repartidor.
                   </p>
                 </div>
 
@@ -1962,9 +1883,9 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                     🏍️
                   </div>
                   <div>
-                    <h4 className="font-black text-sm text-slate-900">Carlos Rodríguez</h4>
-                    <p className="text-xs text-slate-500">ID: <strong className="font-mono text-slate-700">DRV-CARLOS-01</strong></p>
-                    <p className="text-[11px] text-slate-400">Moto Yamaha FZ 2.0 • TPK-44E</p>
+                    <h4 className="font-black text-sm text-slate-900">{activeGpsDriver?.name || 'Selecciona una entrega'}</h4>
+                    <p className="text-xs text-slate-500">{activeGpsDriver ? `Conductor: ${activeGpsDriver.id}` : 'El conductor se toma de la asignación confirmada.'}</p>
+                    {activeGpsDriver && <p className="text-[11px] text-slate-400">{activeGpsDriver.vehicleType} · {activeGpsDriver.vehiclePlate}</p>}
                   </div>
                 </div>
 
@@ -2019,7 +1940,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                   <div className="flex items-center justify-between">
                     <span className="text-slate-600">Batería móvil:</span>
                     <strong className="text-emerald-600 font-mono text-sm">
-                      {gpsBatteryPercent !== null ? `${gpsBatteryPercent}%` : '85% (Est.)'}
+                      {gpsBatteryPercent !== null ? `${gpsBatteryPercent}%` : 'No disponible'}
                     </strong>
                   </div>
                   <div className="flex items-center justify-between text-[11px] text-slate-500">
@@ -2041,7 +1962,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                   </span>
                 </div>
 
-                {orders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length === 0 ? (
+                {activeGpsDeliveries.length === 0 ? (
                   <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-2">
                     <p className="font-bold flex items-center gap-1.5">
                       <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
@@ -2053,13 +1974,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                   </div>
                 ) : (
                   <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {orders
-                      .filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')
-                      .map(ord => {
-                        const isThisOrderActive = gpsTrackingActive && gpsActiveOrderId === ord.id;
+                    {activeGpsDeliveries.map(({ order: ord, target, shipmentId }) => {
+                        const isThisOrderActive = gpsTrackingActive && gpsActiveOrderId === ord.id && gpsActiveShipmentId === (shipmentId || null);
                         return (
                           <div
-                            key={ord.id}
+                            key={ord.id + ':' + (shipmentId || 'pedido')}
                             className={`p-4 rounded-2xl border-2 transition text-xs space-y-2.5 ${
                               isThisOrderActive
                                 ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
@@ -2068,24 +1987,22 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                           >
                             <div className="flex items-start justify-between">
                               <div>
-                                <span className="font-black text-slate-900 text-sm">{ord.orderNumber}</span>
+                                <span className="font-black text-slate-900 text-sm">{ord.orderNumber}{shipmentId ? ' · ' + shipmentId : ''}</span>
                                 <p className="text-[11px] text-slate-500 font-medium truncate">{ord.customer.name}</p>
                               </div>
                               <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                ord.fulfillmentStatus === 'EN_CAMINO'
+                                target.fulfillmentStatus === 'EN_CAMINO'
                                   ? 'bg-yellow-400 text-red-950'
                                   : 'bg-blue-100 text-blue-800'
                               }`}>
-                                {ord.fulfillmentStatus}
+                                {target.fulfillmentStatus}
                               </span>
                             </div>
 
                             <div className="text-[11px] text-slate-600 space-y-0.5">
                               <p className="truncate">📍 {ord.deliveryAddress.address}</p>
-                              <p>⚖️ {ord.totals.totalWeightKg} kg • {ord.deliveryMode}</p>
-                              {ord.secretDeliveryCode && (
-                                <p>🔑 PIN: <strong className="text-red-600 font-mono font-bold">{ord.secretDeliveryCode}</strong></p>
-                              )}
+                              <p>⚖️ {'weightKg' in target ? target.weightKg : ord.totals.totalWeightKg} kg • {ord.deliveryMode}</p>
+                              <p>🔑 PIN: solicitar al receptor</p>
                             </div>
 
                             <div className="pt-2 border-t border-slate-200 flex items-center gap-2">
@@ -2099,11 +2016,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                                 </button>
                               ) : (
                                 <button
-                                  onClick={() => startGpsTelemetry(ord.id)}
+                                  onClick={() => startGpsTelemetry(ord.id, shipmentId)}
                                   className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
                                 >
                                   <Play className="w-3.5 h-3.5 fill-current text-yellow-400" />
-                                  <span>{ord.fulfillmentStatus === 'EN_CAMINO' ? 'Iniciar GPS (5s)' : 'Marcar En Ruta y Transmitir'}</span>
+                                  <span>{target.fulfillmentStatus === 'EN_CAMINO' ? 'Iniciar GPS (5s)' : 'Marcar En Ruta y Transmitir'}</span>
                                 </button>
                               )}
                             </div>
@@ -2138,12 +2055,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                   </div>
 
                   <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Coordenadas Actuales</span>
+                    <span className="text-[10px] font-bold text-slate-400 uppercase">Última Ubicación Confirmada</span>
                     <p className="text-xs font-mono font-bold text-slate-800 mt-1 truncate">
                       {gpsLastPoint ? `${gpsLastPoint.latitude.toFixed(5)}, ${gpsLastPoint.longitude.toFixed(5)}` : 'Sin transmisión'}
                     </p>
                     <p className="text-[10px] text-slate-400 mt-0.5">
-                      {gpsLastPoint ? 'Bogotá D.C., Colombia' : 'Presione Iniciar'}
+                      {gpsLastPoint ? new Date(gpsLastPoint.timestamp).toLocaleTimeString('es-CO', { timeZone: 'America/Bogota' }) : 'Presione Iniciar'}
                     </p>
                   </div>
 
@@ -2153,7 +2070,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       {gpsLastPoint ? `±${gpsLastPoint.accuracy} m` : '--'}
                     </p>
                     <p className="text-[10px] text-slate-500 mt-0.5">
-                      {gpsLastPoint?.speed ? `${(gpsLastPoint.speed * 3.6).toFixed(1)} km/h` : '0 km/h en moto'}
+                      {typeof gpsLastPoint?.speed === 'number' ? `${(gpsLastPoint.speed * 3.6).toFixed(1)} km/h` : 'Velocidad no disponible'}
                     </p>
                   </div>
 
@@ -2292,6 +2209,23 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
           </div>
         )}
       </main>
+      {assignmentTarget && (
+        <div className="fixed inset-0 z-[80] bg-black/60 flex items-center justify-center p-4">
+          <form className="bg-white rounded-2xl p-6 shadow-2xl max-w-md w-full space-y-4" role="dialog" aria-modal="true" aria-label="Asignar repartidor" onSubmit={event => { event.preventDefault(); void confirmDriverAssignment(); }}>
+            <h2 className="text-lg font-black text-slate-900">Asignar repartidor</h2>
+            <p className="text-xs text-slate-500">Selecciona un perfil registrado localmente. Confirma su disponibilidad antes de asignarlo a esta entrega.</p>
+            {errorMessage && <p className="text-xs text-red-700 bg-red-50 border border-red-200 rounded-lg p-3" role="alert">{errorMessage}</p>}
+            <label className="text-sm font-semibold text-slate-700 block">Repartidor
+              <select autoFocus required className="w-full mt-2 rounded-lg border border-slate-300 p-3 text-sm" value={assignmentDriverId} onChange={event => setAssignmentDriverId(event.target.value)}>
+                <option value="">Selecciona un repartidor</option>
+                {assignmentDrivers.map(driver => <option key={driver.id} value={driver.id}>{driver.name} · {driver.vehiclePlate} · {driver.id}</option>)}
+              </select>
+            </label>
+            {!assignmentDrivers.length && <p className="text-xs text-amber-800">No hay perfiles de repartidor registrados en esta instalación.</p>}
+            <div className="flex justify-end gap-2 pt-2"><button type="button" className="px-4 py-2 rounded-lg bg-slate-100 font-semibold text-sm" disabled={assigningDriver} onClick={() => setAssignmentTarget(null)}>Cancelar</button><button className="px-4 py-2 rounded-lg bg-red-600 text-white font-semibold text-sm disabled:opacity-40" disabled={!assignmentDriverId || assigningDriver}>{assigningDriver ? 'Asignando…' : 'Confirmar asignación'}</button></div>
+          </form>
+        </div>
+      )}
 
       {/* Modal de Auditoría y Trazabilidad de Estados del Servidor */}
       {historyModalOrder && (

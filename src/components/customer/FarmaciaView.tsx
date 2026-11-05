@@ -4,6 +4,7 @@ import { Product, PharmacySubcategory } from '../../types';
 import { ProductCard } from './ProductCard';
 
 interface FarmaciaViewProps {
+  addressReady?: boolean;
   products: Product[];
   selectedStoreId: string;
   cartQuantities: Record<string, number>;
@@ -31,6 +32,7 @@ const PHARMACY_SUBCATEGORIES: PharmacySubcategory[] = [
 ];
 
 export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
+  addressReady = true,
   products,
   selectedStoreId,
   cartQuantities,
@@ -155,7 +157,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
             isFavorite={!!favorites[prod.id]}
             onToggleFavorite={onToggleFavorite}
             onOpenDetails={onOpenDetails}
-            selectedStoreId={selectedStoreId}
+              selectedStoreId={selectedStoreId}
+              addressReady={addressReady}
             isCompared={compareProducts.some(p => p.id === prod.id)}
             onToggleCompare={onToggleCompare}
             isInWishlist={wishlistProductIds?.has(prod.id)}

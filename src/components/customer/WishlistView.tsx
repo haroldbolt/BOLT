@@ -8,6 +8,7 @@ import { Product, WishlistCollection, WishlistItem } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
 interface WishlistViewProps {
+  addressReady?: boolean;
   collections: WishlistCollection[];
   products: Product[];
   selectedStoreId: string;
@@ -23,6 +24,7 @@ interface WishlistViewProps {
 }
 
 export const WishlistView: React.FC<WishlistViewProps> = ({
+  addressReady = true,
   collections,
   products,
   selectedStoreId,
@@ -209,7 +211,7 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
           ) : (
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-3.5">
               {collectionProducts.map(({ item, product }) => {
-                const isOutOfStock = (product.stockByStore[selectedStoreId] || 0) <= 0;
+                const isOutOfStock = addressReady && (product.stockByStore[selectedStoreId] || 0) <= 0;
                 const inCartCount = cartQuantities[product.id] || 0;
                 const isEditingNote = editingNoteProductId === product.id;
 
@@ -316,10 +318,10 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
                     {/* Bottom Actions Row */}
                     <div className="mt-3 pt-2.5 border-t border-slate-100 flex items-center justify-between">
                       <div className="text-[10px]">
-                        {isOutOfStock ? (
+                        {!addressReady ? <span className="text-slate-600 font-bold">Consulta disponibilidad</span> : isOutOfStock ? (
                           <span className="text-rose-600 font-bold">Agotado en sede</span>
                         ) : (
-                          <span className="text-emerald-700 font-bold">✓ Disponible Turbo 25 min</span>
+                          <span className="text-emerald-700 font-bold">✓ Disponible en esta sede</span>
                         )}
                       </div>
 

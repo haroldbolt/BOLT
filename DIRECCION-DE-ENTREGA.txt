@@ -1,0 +1,69 @@
+BOLT PETS — DIRECCIÓN DE ENTREGA
+Actualización local del 3 de noviembre de 2026
+
+CÓMO FUNCIONA
+
+Al entrar por primera vez, la tienda muestra «⚡ Turbo hasta 25 minutos» y solicita
+la dirección. Se puede consultar el catálogo sin asignar una sede al cliente.
+El mensaje general conserva la condición de cobertura. Si la modalidad elegida
+es Programado, su entrega se identifica mediante fecha y franja, separadas de la
+oferta Turbo. No se presenta 25 minutos como plazo del pedido programado.
+
+Para comprar, escribe la dirección o pulsa voluntariamente Usar mi ubicación.
+Revisa el punto en el mapa y confirma. La ubicación del centro visual del mapa no
+se toma como domicilio. Si el navegador rechaza el permiso, puedes escribirla.
+No se conservan respuestas antiguas cuando escribes, mueves el pin o cancelas.
+
+La selección confirmada se recuerda en este navegador, junto con el apartamento
+o referencia que hayas elegido. Cada recarga verifica nuevamente cobertura,
+bodega, catálogo y disponibilidad con el servidor. No equivale a una cuenta de
+cliente ni sincroniza domicilios entre dispositivos.
+
+Cambiar permite elegir otro destino; Cancelar conserva el anterior. Al elegir
+otro domicilio se limpian sus detalles anteriores para evitar entregar en un
+apartamento equivocado. Olvidar dirección retira solo la selección de entrega,
+sin borrar pedidos ni sus autorizaciones. Si el navegador no permite guardarla
+o borrarla, la tienda muestra el aviso correspondiente.
+
+El carrito conserva sus líneas al cambiar de sede. La tienda actualiza precios y
+existencias, muestra qué debes revisar y el servidor vuelve a validar la compra.
+La asociación histórica de un producto con una bodega no garantiza stock real.
+
+PASOS PARA REVISARLO
+
+1. Abre Abrir Bolt Pets.cmd. Entra a http://127.0.0.1:4327/. Si el navegador tenía
+   una versión anterior abierta, recarga la página.
+2. Sin dirección guardada, comprueba que no aparece un domicilio ni apartamento
+   de muestra y que el gancho de 25 minutos sigue visible.
+3. Busca un producto. Al intentar agregarlo, confirma la dirección y verifica
+   que se retoma una sola vez la acción, sujeto al inventario de esa sede.
+4. Recarga: la dirección debe reaparecer y la tienda debe verificarla de nuevo.
+5. Abre Cambiar, escribe otro destino y cancela: debe mantenerse el anterior.
+6. Confirma una dirección de otra localidad cubierta por Programado: revisa la
+   fecha y franja, la bodega asignada y las advertencias de tu carrito.
+7. Usa Olvidar dirección: debe volver el estado inicial sin borrar tus pedidos.
+8. Puedes detener la revisión antes de confirmar una compra. Agregar al carrito
+   y consultar la entrega no reservan mercancía ni acreditan pagos.
+
+COMPROBACIONES REALIZADAS
+
+- 776 comprobaciones aprobadas en los 27 archivos del ejecutor de pruebas.
+  Las 79 nuevas cubren persistencia, carrito, API autoritativa y componentes.
+- Tipos sin errores y compilación de cliente y servidor correcta.
+- Revisión en navegador de los estados anteriores en móvil y escritorio,
+  utilizando una demostración aislada para el carrito y checkout.
+- Sin cambios en los 16 pedidos y 3.830 productos administrables de la base local;
+  la comparación también incluye pagos, reservas y existencias.
+- Respaldo de código y base de datos anterior al cambio, guardados localmente.
+
+ALCANCE Y PENDIENTES
+
+Esta actualización no publica la app ni conecta pagos o transportadoras. Las
+pruebas de GPS en un teléfono real y los pendientes generales de operación se
+mantienen en CONTINUAR-AQUI.txt. No se solicitaron permisos reales de ubicación
+durante las pruebas automatizadas. Los ensayos de geolocalización usan datos
+ficticios y no validan el funcionamiento en segundo plano de un repartidor.
+
+La compilación conserva avisos de tamaño del paquete y compatibilidad futura
+de Vite; no impidieron compilar. La optimización de carga sigue siendo una tarea
+separada. No se necesitan credenciales Shopify para utilizar el catálogo local.

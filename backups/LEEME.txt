@@ -1,0 +1,21 @@
+BOLT PETS — HISTORIAL LOCAL RESPALDADO
+4 de noviembre de 2026
+
+El archivo bolt-pets-historial-2026-11-04.bundle conserva los commits locales
+desde la base de GitHub 6499e16 hasta d45b210, incluida la recuperación del
+inventario autorizado. Contiene código versionado; no incluye la carpeta
+.bolt-private, las bases SQLite, las credenciales ni los archivos .env.
+
+La rama codex/pedidos-gps contiene la versión completa lista para retomar.
+CONTINUAR-EN-LA-NUBE.txt explica instalación e importación de las 100 unidades.
+El archivo bundle permite conservar además los identificadores e historia de
+los commits originales de este PC. No es necesario importarlo para usar la app.
+
+Para revisar el historial original en un clon de haroldbolt/BOLT que contiene
+el commit base 6499e16:
+
+  git bundle verify backups/bolt-pets-historial-2026-11-04.bundle
+  git fetch backups/bolt-pets-historial-2026-11-04.bundle refs/heads/codex/pedidos-gps:refs/heads/codex/historial-local-20261104
+
+No cambies de rama ni sustituyas datos durante una operación de la tienda.
+El respaldo del historial no publica la aplicación ni acredita pagos.

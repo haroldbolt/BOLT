@@ -6,3 +6,8 @@ coverage/
 *.log
 .env*
 !.env.example
+
+# Datos operativos y copias privadas; no forman parte del sitio ni del repositorio.
+.bolt-private/
+*.tmp
+/server.js

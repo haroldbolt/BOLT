@@ -7,6 +7,7 @@ import {
 } from 'lucide-react';
 import { Order, Product } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
+import { TurboPromise } from './TurboPromise';
 
 interface OrderHistoryModalProps {
   isOpen: boolean;
@@ -16,6 +17,8 @@ interface OrderHistoryModalProps {
   onViewOrderTracking: (orderId: string) => void;
   onReorder: (order: Order) => void;
   initialTab?: 'history' | 'profile';
+  confirmedAddress?: { address: string; details: string } | null;
+  onChangeAddress?: () => void;
 }
 
 export type OrderStatusFilter = 'ALL' | 'PENDING' | 'COMPLETED' | 'CANCELLED';
@@ -28,6 +31,8 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
   onViewOrderTracking,
   onReorder,
   initialTab = 'history',
+  confirmedAddress = null,
+  onChangeAddress,
 }) => {
   const [activeTab, setActiveTab] = useState<'history' | 'profile'>(initialTab);
   const [statusFilter, setStatusFilter] = useState<OrderStatusFilter>('ALL');
@@ -158,6 +163,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
       <div className="bg-white rounded-3xl max-w-xl w-full max-h-[92vh] flex flex-col shadow-2xl overflow-hidden animate-in zoom-in-95">
         {/* Header with Navigation Tabs */}
         <div className="p-4 border-b border-slate-100 bg-white sticky top-0 z-10 space-y-3">
+          <TurboPromise/>
           <div className="flex items-center justify-between">
             <div className="flex items-center gap-2.5">
               <div className="w-10 h-10 rounded-2xl bg-red-50 text-red-600 flex items-center justify-center font-bold">
@@ -484,7 +490,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
                   </div>
                   <div className="flex items-center gap-2">
                     <MapPin className="w-4 h-4 text-slate-400" />
-                    <span>Bogotá D.C., Colombia (Zona Kennedy)</span>
+                    <span>{confirmedAddress?.address || 'Dirección de entrega por confirmar'}</span>
                   </div>
                 </div>
               </div>
@@ -496,26 +502,14 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
                   Direcciones Guardadas
                 </h4>
 
-                <div className="space-y-2 text-xs">
-                  <div className="p-3 bg-white rounded-2xl border-2 border-red-200 flex items-start justify-between">
-                    <div>
-                      <div className="flex items-center gap-1.5">
-                        <strong className="text-slate-900">Casa (Predeterminada)</strong>
-                        <span className="text-[10px] bg-red-100 text-red-700 px-1.5 py-0.2 rounded font-bold">Principal</span>
-                      </div>
-                      <p className="text-slate-600 mt-0.5">Calle 3 #78-20, Apto 502, Torre 2</p>
-                      <p className="text-[11px] text-slate-400">Kennedy Central, Bogotá</p>
-                    </div>
-                    <CheckCircle2 className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
-                  </div>
-
-                  <div className="p-3 bg-white rounded-2xl border border-slate-200 flex items-start justify-between text-slate-600">
-                    <div>
-                      <strong className="text-slate-800">Oficina / Trabajo</strong>
-                      <p className="text-slate-600 mt-0.5">Carrera 79A #2-05, Piso 3</p>
-                      <p className="text-[11px] text-slate-400">Kennedy, Bogotá</p>
-                    </div>
-                  </div>
+                <div className="space-y-2 text-xs p-3 bg-white rounded-2xl border border-slate-200">
+                  {confirmedAddress ? <>
+                    <strong className="text-slate-900">Dirección elegida</strong>
+                    <p className="text-slate-600">{confirmedAddress.address}</p>
+                    {confirmedAddress.details && <p className="text-slate-600">{confirmedAddress.details}</p>}
+                    <p className="text-[11px] text-slate-400">Recordada en este dispositivo. La cobertura se valida al comprar.</p>
+                  </> : <p className="text-slate-600">Todavía no has confirmado una dirección en este dispositivo.</p>}
+                  {onChangeAddress && <button type="button" onClick={onChangeAddress} className="font-bold text-red-700 underline">{confirmedAddress ? 'Cambiar dirección' : 'Agregar dirección'}</button>}
                 </div>
               </div>
 

@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark } from 'lucide-react';
 import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
 import { DeliveryQuote } from '../../lib/deliveryService';
+import { TurboPromise } from './TurboPromise';
 
 interface HeaderProps {
   currentStore: Store;
@@ -22,6 +23,8 @@ interface HeaderProps {
   isCompact?: boolean;
   customerAddress?: string;
   customerAddressDetails?: string;
+  addressReady?: boolean;
+  deliveryAddressStatus?: 'missing' | 'checking' | 'ready' | 'error';
   deliveryQuote?: DeliveryQuote | null;
   onOpenAddressModal?: () => void;
   selectedDeliveryMode?: DeliveryMode;
@@ -64,6 +67,8 @@ export const Header: React.FC<HeaderProps> = ({
   isCompact = false,
   customerAddress,
   customerAddressDetails,
+  addressReady = true,
+  deliveryAddressStatus,
   deliveryQuote,
   onOpenAddressModal,
   selectedDeliveryMode,
@@ -80,6 +85,7 @@ export const Header: React.FC<HeaderProps> = ({
   const isScheduledDelivery =
     selectedDeliveryMode === 'PROGRAMADO' ||
     (!!deliveryQuote && !deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && !!deliveryQuote.availableModes.scheduled);
+  const addressStatus = deliveryAddressStatus || (!customerAddress ? 'missing' : addressReady ? 'ready' : 'checking');
 
   const formatHeaderWindow = (win: ScheduledDeliveryWindow): string => {
     let day = 'Hoy';
@@ -218,11 +224,11 @@ export const Header: React.FC<HeaderProps> = ({
                     </button>
 
                     <button
-                      onClick={() => { setShowAccountMenu(false); setShowStoreModal(true); }}
+                      onClick={() => { setShowAccountMenu(false); if (onOpenAddressModal) onOpenAddressModal(); else setShowStoreModal(true); }}
                       className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-semibold transition"
                     >
                       <MapPin className="w-4 h-4 text-red-600" />
-                      <span>Direcciones & Sedes</span>
+                      <span>Dirección de entrega</span>
                     </button>
 
                     <button
@@ -276,10 +282,12 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* ROW 2: PROMINENT DELIVERY-TIME CAPSULE (INSPIRED BY RAPPI TURBO) */}
-          <div className="flex justify-center">
+          <div className="flex flex-col items-center gap-1 text-center">
+            <TurboPromise inverse/>
+            {addressStatus !== 'missing' && (
             <button
               onClick={() => {
-                if (isScheduledDelivery && onOpenScheduledModal) {
+                if (addressReady && isScheduledDelivery && onOpenScheduledModal) {
                   onOpenScheduledModal();
                 } else if (onOpenAddressModal) {
                   onOpenAddressModal();
@@ -292,9 +300,11 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-blue-900/95 hover:bg-blue-900 text-blue-100 border-blue-400/50 shadow-blue-950/20'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/25'
               }`}
-              title={isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Entrega ultra-rápida Turbo en Bogotá'}
+              title={!addressReady ? 'Confirma tu dirección para consultar la entrega' : isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Modalidad de entrega para tu dirección'}
             >
-              {isScheduledDelivery ? (
+              {!addressReady ? (
+                <span>{addressStatus === 'checking' ? 'Validando cobertura para tu dirección…' : addressStatus === 'error' ? 'Revisa tu dirección de entrega' : 'Consulta la entrega para tu dirección'}</span>
+              ) : isScheduledDelivery ? (
                 <>
                   <Calendar className="w-4 h-4 text-yellow-300 shrink-0" />
                   <span className="font-bold">
@@ -316,7 +326,7 @@ export const Header: React.FC<HeaderProps> = ({
                     ⚡
                   </span>
                   <span className="tracking-wide">
-                    Turbo <span className="font-black text-white text-sm sm:text-base">{deliveryQuote?.estimatedMinutes || 25} min</span>
+                    Entrega Turbo {deliveryQuote?.estimatedMinutes ? <span className="font-black text-white text-sm sm:text-base">· aprox. {deliveryQuote.estimatedMinutes} min</span> : null}
                   </span>
                   {deliveryQuote?.detectedLocalityName && (
                     <span className="text-[10px] bg-emerald-800 text-emerald-100 font-bold px-1.5 py-0.5 rounded-full ml-0.5">
@@ -326,6 +336,7 @@ export const Header: React.FC<HeaderProps> = ({
                 </>
               )}
             </button>
+            )}
           </div>
 
           {/* ROW 3: WIDER, CLEANER CUSTOMER DELIVERY-ADDRESS BAR */}
@@ -341,7 +352,7 @@ export const Header: React.FC<HeaderProps> = ({
                   {customerAddress ? (
                     <span className="font-bold text-white tracking-wide">
                       {customerAddress}
-                      {deliveryQuote?.detectedLocalityName && (
+                      {addressReady && deliveryQuote?.detectedLocalityName && (
                         <span className="text-red-200 text-xs font-normal ml-1">
                           · {deliveryQuote.detectedLocalityName}
                         </span>

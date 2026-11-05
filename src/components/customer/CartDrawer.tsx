@@ -2,6 +2,7 @@ import React from 'react';
 import { X, Trash2, Plus, Minus, FileText, ArrowRight, ShoppingBag, ShieldAlert } from 'lucide-react';
 import { CartItem, Product, Store } from '../../types';
 import { formatCOP } from '../../lib/formatters';
+import { TurboPromise } from './TurboPromise';
 
 interface CartDrawerProps {
   isOpen: boolean;
@@ -11,6 +12,8 @@ interface CartDrawerProps {
   onClearCart: () => void;
   onProceedToCheckout: () => void;
   currentStore: Store;
+  addressReady?: boolean;
+  cartReviewMessage?: string;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -21,14 +24,15 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClearCart,
   onProceedToCheckout,
   currentStore,
+  addressReady = true,
+  cartReviewMessage,
 }) => {
   if (!isOpen) return null;
 
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
   const totalWeightKg = cartItems.reduce((acc, item) => acc + ((item.product.weightKg || 0.2) * item.quantity), 0);
   const shipping = subtotal >= 70000 ? 0 : 4900;
-  const serviceFee = 1500;
-  const total = subtotal + (cartItems.length > 0 ? (shipping + serviceFee) : 0);
+  const total = subtotal + (cartItems.length > 0 ? shipping : 0);
 
   const hasPrescriptionItems = cartItems.some(i => i.product.requiresPrescription);
   const exceedsWeight = totalWeightKg > currentStore.vehicleMaxWeightKg;
@@ -37,14 +41,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
       <div className="bg-white w-full max-w-md h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200">
         {/* Header */}
-        <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-          <div className="flex items-center gap-2">
+        <div className="p-4 border-b border-slate-100 flex items-start justify-between bg-slate-50/50">
+          <div className="space-y-2"><TurboPromise/><div className="flex items-center gap-2">
             <ShoppingBag className="w-5 h-5 text-red-600" />
             <h3 className="font-extrabold text-slate-900 text-base">Mi Carrito Bolt Pets</h3>
             <span className="text-xs bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full">
               {cartItems.reduce((a, b) => a + b.quantity, 0)} items
             </span>
-          </div>
+          </div></div>
           <button
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
@@ -55,6 +59,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Item List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
+          {cartReviewMessage && <p role="status" className="p-3 rounded-xl border border-amber-200 bg-amber-50 text-xs text-amber-900">{cartReviewMessage}</p>}
           {cartItems.length === 0 ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-3">
               <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
@@ -81,7 +86,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               )}
 
               {/* Weight warning if over 25 kg */}
-              {exceedsWeight && (
+              {addressReady && exceedsWeight && (
                 <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
                   <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
                   <div>
@@ -147,16 +152,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span>Envío Turbo ({currentStore.name.replace('Sede ', '')}):</span>
-                {shipping === 0 ? (
+                <span>{addressReady ? `Envío (${currentStore.name.replace('Sede ', '')}):` : 'Envío:'}</span>
+                {!addressReady ? <span>Por confirmar con tu dirección</span> : shipping === 0 ? (
                   <span className="font-bold text-emerald-600">¡GRATIS!</span>
                 ) : (
                   <span className="font-bold text-slate-900">{formatCOP(shipping)}</span>
                 )}
-              </div>
-              <div className="flex justify-between">
-                <span>Tarifa de servicio y embalaje:</span>
-                <span className="font-bold text-slate-900">{formatCOP(serviceFee)}</span>
               </div>
               <div className="flex justify-between text-[11px] text-slate-400">
                 <span>Peso total estimado:</span>
@@ -164,16 +165,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
               </div>
               <div className="border-t border-slate-200 pt-1.5 flex justify-between text-sm font-black text-slate-900">
                 <span>Total a pagar:</span>
-                <span className="text-red-600 text-base">{formatCOP(total)}</span>
+                <span className="text-red-600 text-base">{addressReady ? formatCOP(total) : 'Por confirmar'}</span>
               </div>
             </div>
 
             <button
               onClick={onProceedToCheckout}
-              disabled={exceedsWeight}
+              disabled={addressReady && exceedsWeight}
               className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 active:scale-98 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition"
             >
-              <span>Continuar con el pedido</span>
+              <span>{addressReady ? 'Continuar con el pedido' : 'Confirmar dirección'}</span>
               <ArrowRight className="w-4 h-4" />
             </button>
           </div>

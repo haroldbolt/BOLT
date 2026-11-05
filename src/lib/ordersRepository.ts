@@ -1,6 +1,6 @@
 import fs from 'fs';
 import path from 'path';
-import { fileURLToPath } from 'url';
+import { randomUUID } from 'crypto';
 import { 
   Order, 
   ChildShipment, 
@@ -12,16 +12,12 @@ import {
   OperationRole,
   GPSTelemetry
 } from '../types';
-import { INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 
-const __filename = fileURLToPath(import.meta.url);
-const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, '../data');
-
-const ORDERS_FILE = path.join(DATA_DIR, 'persisted-orders.json');
-const DRIVERS_FILE = path.join(DATA_DIR, 'persisted-drivers.json');
-const AUDIT_FILE = path.join(DATA_DIR, 'persisted-audit.json');
-const TELEMETRY_FILE = path.join(DATA_DIR, 'persisted-telemetry.json');
+export interface OrdersRepositoryOptions {
+  dataDir?: string;
+  initialOrders?: Order[];
+  initialDrivers?: DriverProfile[];
+}
 
 // Matriz autorizada de transiciones permitidas por estado
 const ALLOWED_TRANSITIONS: Record<FulfillmentStatus, FulfillmentStatus[]> = {
@@ -54,8 +50,56 @@ export class OrdersRepository {
   private auditHistory: OrderStatusHistoryEntry[] = [];
   private telemetryHistory: Record<string, GPSTelemetry[]> = {};
   private initialized = false;
+  private readonly dataDir: string;
+  private readonly stateFile: string;
+  private readonly initialOrders: Order[];
+  private readonly initialDrivers: DriverProfile[];
+  private mutationDepth = 0;
+  private persistencePending = false;
+  private persistenceAdapter?: { read: () => any; write: (state: unknown) => void };
+  private listeners = new Set<() => void>();
 
-  constructor() {
+  /** Migra el estado privado existente una sola vez al mismo SQLite que el inventario. */
+  public connectPersistence(adapter: { read: () => any; write: (state: unknown) => void }) {
+    const stored = adapter.read();
+    if (stored) {
+      if (stored.version !== 1 || !Array.isArray(stored.orders) || !Array.isArray(stored.drivers) || !Array.isArray(stored.auditHistory) || !stored.telemetryHistory) throw new Error('La base de datos operativa no es válida.');
+      this.orders = stored.orders;
+      this.drivers = stored.drivers;
+      this.auditHistory = stored.auditHistory;
+      this.telemetryHistory = stored.telemetryHistory;
+    }
+    this.persistenceAdapter = adapter;
+    this.saveState();
+  }
+
+  public subscribe(listener: () => void): () => void { this.listeners.add(listener); return () => { this.listeners.delete(listener); }; }
+
+  public updateOrder(id: string, update: (order: Order) => void): Order | undefined {
+    return this.mutate(() => {
+      const order = this.getOrderById(id);
+      if (!order) return undefined;
+      update(order);
+      this.saveState();
+      return order;
+    });
+  }
+
+  public updateDriver(id: string, update: (driver: DriverProfile) => void): DriverProfile | undefined {
+    return this.mutate(() => {
+      const driver = this.getDriverById(id);
+      if (!driver) return undefined;
+      update(driver);
+      this.saveState();
+      return driver;
+    });
+  }
+
+  constructor(options: OrdersRepositoryOptions = {}) {
+    this.dataDir = path.resolve(options.dataDir || process.env.BOLT_DATA_DIR || path.join(process.cwd(), '.bolt-private/operations'));
+    this.stateFile = path.join(this.dataDir, 'operations-state.json');
+    this.initialOrders = options.initialOrders ?? [];
+    this.initialDrivers = options.initialDrivers ?? [];
     this.init();
   }
 
@@ -63,74 +107,36 @@ export class OrdersRepository {
    * Carga los datos desde el almacenamiento persistente en disco o desde los datos semilla
    */
   public init() {
-    if (!fs.existsSync(DATA_DIR)) {
-      try {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
-      } catch (e) {
-        console.error('[OrdersRepository] No se pudo crear directorio de datos:', e);
+    fs.mkdirSync(this.dataDir, { recursive: true, mode: 0o700 });
+    if (fs.existsSync(this.stateFile)) {
+      const state = JSON.parse(fs.readFileSync(this.stateFile, 'utf-8'));
+      if (state.version !== 1 || !Array.isArray(state.orders) || !Array.isArray(state.drivers) || !Array.isArray(state.auditHistory) || !state.telemetryHistory || typeof state.telemetryHistory !== 'object') {
+        throw new Error('Estado operativo inválido. Se conserva el archivo para recuperación; no se reemplaza por datos de demostración.');
       }
-    }
-
-    // 1. Cargar o Inicializar Pedidos
-    if (fs.existsSync(ORDERS_FILE)) {
-      try {
-        const raw = fs.readFileSync(ORDERS_FILE, 'utf-8');
-        this.orders = JSON.parse(raw);
-      } catch (err) {
-        console.error('[OrdersRepository] Error leyendo persisted-orders.json, usando semillas:', err);
-        this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
-        this.saveOrders();
-      }
+      this.orders = state.orders;
+      this.drivers = state.drivers;
+      this.auditHistory = state.auditHistory;
+      this.telemetryHistory = state.telemetryHistory;
     } else {
-      this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
-      this.saveOrders();
-    }
-
-    // 2. Cargar o Inicializar Conductores
-    if (fs.existsSync(DRIVERS_FILE)) {
-      try {
-        const raw = fs.readFileSync(DRIVERS_FILE, 'utf-8');
-        this.drivers = JSON.parse(raw);
-      } catch (err) {
-        console.error('[OrdersRepository] Error leyendo persisted-drivers.json, usando semillas:', err);
-        this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
-        this.saveDrivers();
+      // Migración únicamente desde la carpeta privada configurada, nunca desde public o src/data.
+      const readLegacy = <T,>(name: string, initial: T): T => {
+        const file = path.join(this.dataDir, name);
+        return fs.existsSync(file) ? JSON.parse(fs.readFileSync(file, 'utf-8')) : structuredClone(initial);
+      };
+      this.orders = readLegacy('persisted-orders.json', this.initialOrders);
+      this.drivers = readLegacy('persisted-drivers.json', this.initialDrivers);
+      this.auditHistory = readLegacy('persisted-audit.json', []);
+      this.telemetryHistory = readLegacy('persisted-telemetry.json', {});
+      if (!Array.isArray(this.orders) || !Array.isArray(this.drivers) || !Array.isArray(this.auditHistory) || !this.telemetryHistory || typeof this.telemetryHistory !== 'object') {
+        throw new Error('Los archivos privados de migración tienen una estructura inválida.');
       }
-    } else {
-      this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
-      this.saveDrivers();
     }
-
-    // 3. Cargar o Inicializar Auditoría
-    if (fs.existsSync(AUDIT_FILE)) {
-      try {
-        const raw = fs.readFileSync(AUDIT_FILE, 'utf-8');
-        this.auditHistory = JSON.parse(raw);
-      } catch (err) {
-        this.auditHistory = [];
-        this.saveAudit();
-      }
-    } else {
-      this.auditHistory = [];
-      this.saveAudit();
+    // Una clave de padre de versiones anteriores podía contener puntos de distintos hijos.
+    for (const order of this.orders) {
+      if (order.isSplitOrder && order.childShipments?.length) delete this.telemetryHistory[order.id];
     }
-
-    // 4. Cargar o Inicializar Telemetría GPS Persistente
-    if (fs.existsSync(TELEMETRY_FILE)) {
-      try {
-        const raw = fs.readFileSync(TELEMETRY_FILE, 'utf-8');
-        this.telemetryHistory = JSON.parse(raw);
-      } catch (err) {
-        this.telemetryHistory = {};
-        this.saveTelemetry();
-      }
-    } else {
-      this.telemetryHistory = {};
-      this.saveTelemetry();
-    }
-
-    // Normalizar IDs estables y estructuras iniciales si faltan
     this.normalizeInitialState();
+    this.saveState();
     this.initialized = true;
   }
 
@@ -172,35 +178,73 @@ export class OrdersRepository {
     }
   }
 
-  private saveOrders() {
+  private saveState() {
+    if (this.mutationDepth > 0) {
+      this.persistencePending = true;
+      return;
+    }
+    this.writeState();
+  }
+
+  private writeState() {
+    if (this.persistenceAdapter) {
+      this.persistenceAdapter.write({ version: 1, orders: this.orders, drivers: this.drivers, auditHistory: this.auditHistory, telemetryHistory: this.telemetryHistory });
+      for (const listener of this.listeners) { try { listener(); } catch { /* Un visor desconectado no revierte una operación confirmada. */ } }
+      return;
+    }
+    // Un solo reemplazo atómico mantiene pedidos, auditoría y GPS en la misma versión.
+    const temporary = path.join(this.dataDir, `.operations-${process.pid}-${randomUUID()}.tmp`);
     try {
-      fs.writeFileSync(ORDERS_FILE, JSON.stringify(this.orders, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('[OrdersRepository] Error guardando pedidos en disco:', e);
+      fs.writeFileSync(temporary, JSON.stringify({
+        version: 1,
+        orders: this.orders,
+        drivers: this.drivers,
+        auditHistory: this.auditHistory,
+        telemetryHistory: this.telemetryHistory,
+      }, null, 2), { encoding: 'utf-8', mode: 0o600 });
+      fs.renameSync(temporary, this.stateFile);
+    } finally {
+      if (fs.existsSync(temporary)) fs.unlinkSync(temporary);
     }
   }
 
-  private saveDrivers() {
-    try {
-      fs.writeFileSync(DRIVERS_FILE, JSON.stringify(this.drivers, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('[OrdersRepository] Error guardando conductores en disco:', e);
-    }
-  }
+  private saveOrders() { this.saveState(); }
 
-  private saveAudit() {
+  private mutate<T>(operation: () => T, catalogProducts?: Product[]): T {
+    const previous = structuredClone({ orders: this.orders, drivers: this.drivers, auditHistory: this.auditHistory, telemetryHistory: this.telemetryHistory });
+    const inventory = catalogProducts?.map(product => ({ product, stock: structuredClone(product.stockByStore), reserved: structuredClone(product.reservedStockByStore) }));
+    const previousPending = this.persistencePending;
+    const restore = () => {
+      this.orders = previous.orders;
+      this.drivers = previous.drivers;
+      this.auditHistory = previous.auditHistory;
+      this.telemetryHistory = previous.telemetryHistory;
+      this.persistencePending = previousPending;
+      for (const entry of inventory || []) {
+        for (const key of Object.keys(entry.product.stockByStore)) delete entry.product.stockByStore[key];
+        Object.assign(entry.product.stockByStore, entry.stock);
+        for (const key of Object.keys(entry.product.reservedStockByStore)) delete entry.product.reservedStockByStore[key];
+        Object.assign(entry.product.reservedStockByStore, entry.reserved);
+      }
+    };
+    this.mutationDepth++;
     try {
-      fs.writeFileSync(AUDIT_FILE, JSON.stringify(this.auditHistory, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('[OrdersRepository] Error guardando historial de auditoría en disco:', e);
-    }
-  }
-
-  private saveTelemetry() {
-    try {
-      fs.writeFileSync(TELEMETRY_FILE, JSON.stringify(this.telemetryHistory, null, 2), 'utf-8');
-    } catch (e) {
-      console.error('[OrdersRepository] Error guardando telemetría en disco:', e);
+      const result = operation();
+      if (result && typeof result === 'object' && 'success' in result && result.success === false) {
+        restore();
+        return result;
+      }
+      // Métodos anidados solo marcan dirty: un único rename confirma la operación exterior.
+      if (this.mutationDepth === 1 && this.persistencePending) {
+        this.writeState();
+        this.persistencePending = false;
+      }
+      return result;
+    } catch (error) {
+      restore();
+      throw error;
+    } finally {
+      this.mutationDepth--;
     }
   }
 
@@ -244,23 +288,44 @@ export class OrdersRepository {
   // ==========================================
 
   public createOrder(orderData: Order, catalogProducts?: Product[]): { success: boolean; order?: Order; error?: string } {
+    return this.mutate(() => this.createOrderMutation(orderData, catalogProducts), catalogProducts);
+  }
+
+  private createOrderMutation(orderData: Order, catalogProducts?: Product[]): { success: boolean; order?: Order; error?: string } {
     // 1. Validar que no exista un pedido con el mismo ID
     if (this.orders.some(o => o.id === orderData.id)) {
       return { success: false, error: `Pedido duplicado: ya existe un pedido con ID ${orderData.id}` };
     }
 
-    // 2. Comprobar y reservar inventario si se proporciona catálogo
-    if (catalogProducts && orderData.items) {
-      for (const item of orderData.items) {
-        const prod = catalogProducts.find(p => p.id === item.productId);
+    if (!Array.isArray(orderData.items) || orderData.items.length === 0) {
+      return { success: false, error: 'El pedido debe contener al menos un producto.' };
+    }
+    const quantities = new Map<string, number>();
+    for (const item of orderData.items) {
+      if (!item.productId || !Number.isSafeInteger(item.quantity) || item.quantity <= 0) {
+        return { success: false, error: 'Cada cantidad debe ser un entero positivo válido.' };
+      }
+      const total = (quantities.get(item.productId) || 0) + item.quantity;
+      if (!Number.isSafeInteger(total)) return { success: false, error: 'Cantidad total fuera del rango permitido.' };
+      quantities.set(item.productId, total);
+    }
+
+    // Comprobar todas las líneas agrupadas antes de aplicar una sola reserva por producto.
+    if (catalogProducts) {
+      for (const [productId, quantity] of quantities) {
+        const prod = catalogProducts.find(p => p.id === productId);
         if (!prod) {
-          return { success: false, error: `Producto no encontrado en catálogo: ${item.productId}` };
+          return { success: false, error: `Producto no encontrado en catálogo: ${productId}` };
         }
-        const currentStock = prod.stockByStore[orderData.storeId] || 0;
-        const currentReserved = prod.reservedStockByStore[orderData.storeId] || 0;
+        const currentStock = prod.stockByStore[orderData.storeId] ?? 0;
+        const currentReserved = prod.reservedStockByStore?.[orderData.storeId] ?? 0;
+        if (prod.status && prod.status !== 'ACTIVE') return { success: false, error: `El producto ${prod.name} está retirado de la venta.` };
+        if (!Number.isSafeInteger(currentStock) || !Number.isSafeInteger(currentReserved) || currentStock < 0 || currentReserved < 0) {
+          return { success: false, error: `Inventario inválido para ${prod.name}.` };
+        }
         const availableToSell = currentStock - currentReserved;
 
-        if (availableToSell - item.quantity < 0) {
+        if (availableToSell < quantity) {
           return {
             success: false,
             error: `Inventario insuficiente para ${prod.name} en la bodega seleccionada. Disponibles: ${Math.max(0, availableToSell)}`,
@@ -269,10 +334,10 @@ export class OrdersRepository {
       }
 
       // Aplicar reserva atómica en los productos
-      for (const item of orderData.items) {
-        const prod = catalogProducts.find(p => p.id === item.productId)!;
+      for (const [productId, quantity] of quantities) {
+        const prod = catalogProducts.find(p => p.id === productId)!;
         if (!prod.reservedStockByStore) prod.reservedStockByStore = {};
-        prod.reservedStockByStore[orderData.storeId] = (prod.reservedStockByStore[orderData.storeId] || 0) + item.quantity;
+        prod.reservedStockByStore[orderData.storeId] = (prod.reservedStockByStore[orderData.storeId] || 0) + quantity;
       }
     }
 
@@ -318,8 +383,7 @@ export class OrdersRepository {
 
     // 5. Guardar pedido en colección y persistir a disco
     this.orders.unshift(orderData);
-    this.saveOrders();
-    this.saveAudit();
+    this.saveState();
 
     return { success: true, order: orderData };
   }
@@ -340,6 +404,21 @@ export class OrdersRepository {
       notes?: string;
     }
   ): { success: boolean; order?: Order; childShipment?: ChildShipment; error?: string; code?: number } {
+    return this.mutate(() => this.transitionStatusMutation(orderId, newStatus, actor, options), options?.catalogProducts);
+  }
+
+  private transitionStatusMutation(
+    orderId: string,
+    newStatus: FulfillmentStatus,
+    actor: OrderActor,
+    options?: {
+      shipmentId?: string;
+      reason?: string;
+      deliveryCode?: string;
+      catalogProducts?: Product[];
+      notes?: string;
+    }
+  ): { success: boolean; order?: Order; childShipment?: ChildShipment; error?: string; code?: number } {
     const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
     if (!order) {
       return { success: false, error: `Pedido no encontrado: ${orderId}`, code: 404 };
@@ -347,6 +426,9 @@ export class OrdersRepository {
 
     const { shipmentId, reason, deliveryCode, catalogProducts, notes } = options || {};
     const nowIso = new Date().toISOString();
+    if (order.isSplitOrder && order.childShipments?.length && !shipmentId && newStatus !== 'CANCELADO') {
+      return { success: false, code: 400, error: 'Los estados de un pedido dividido se confirman por envío hijo.' };
+    }
 
     // -------------------------------------------------------------
     // CASO A: TRANSICIÓN DE ENVÍO HIJO EN PEDIDO DIVIDIDO (>60 KG)
@@ -488,8 +570,7 @@ export class OrdersRepository {
       // Sincronizar estado del pedido padre con base en el conjunto de hijos
       this.recalculateParentOrderStatus(order, nowIso);
 
-      this.saveOrders();
-      this.saveAudit();
+      this.saveState();
 
       return { success: true, order, childShipment: child };
     }
@@ -567,10 +648,8 @@ export class OrdersRepository {
         };
       }
       order.timestamps.deliveredAt = nowIso;
-      if (order.payment.method === 'CASH_ON_DELIVERY') {
-        order.payment.cashSettled = true;
-        order.payment.status = 'APROBADO';
-      }
+      // El PIN confirma la entrega. La conciliación del efectivo necesita una
+      // confirmación de cobro independiente; entregar no acredita un pago.
 
       // Descontar inventario físico definitivo
       if (catalogProducts) {
@@ -593,34 +672,28 @@ export class OrdersRepository {
       order.timestamps.cancelledAt = nowIso;
       order.cancelReason = reason || 'Cancelación de pedido';
 
-      const wasDispatchedOrPacked = ['LISTO_PARA_DESPACHO', 'REPARTIDOR_ASIGNADO', 'EN_CAMINO', 'CON_INCIDENCIA'].includes(currentStatus);
-      if (wasDispatchedOrPacked) {
-        order.physicalReturnPending = true;
-        // Mercancía ya empacada o en tránsito: NO retornar a disponible sin confirmación física
-      } else {
-        // Pre-despacho: liberar stock reservado inmediatamente
-        if (catalogProducts) {
-          for (const item of order.items) {
-            const prod = catalogProducts.find(p => p.id === item.productId);
-            if (prod && prod.reservedStockByStore) {
-              prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
-            }
-          }
+      const requiresPhysicalReturn = (status: FulfillmentStatus) => ['LISTO_PARA_DESPACHO', 'REPARTIDOR_ASIGNADO', 'EN_CAMINO', 'CON_INCIDENCIA'].includes(status);
+      const release = (items: Order['items']) => {
+        for (const item of items) {
+          const prod = catalogProducts?.find(product => product.id === item.productId);
+          if (prod?.reservedStockByStore) prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
         }
-      }
-
-      // Si tiene hijos, cancelar hijos no entregados
-      if (order.childShipments) {
-        order.childShipments.forEach(c => {
-          if (c.fulfillmentStatus !== 'ENTREGADO') {
-            c.fulfillmentStatus = 'CANCELADO';
-            c.timestamps.cancelledAt = nowIso;
-            c.cancelReason = order.cancelReason;
-            if (wasDispatchedOrPacked) {
-              c.physicalReturnPending = true;
-            }
-          }
-        });
+      };
+      if (order.isSplitOrder && order.childShipments?.length) {
+        // Cada hijo conserva sus unidades y su situación física, incluso al cancelar el padre.
+        for (const child of order.childShipments) {
+          if (child.fulfillmentStatus === 'ENTREGADO' || child.fulfillmentStatus === 'CANCELADO') continue;
+          const returnPending = requiresPhysicalReturn(child.fulfillmentStatus);
+          if (!returnPending) release(child.items);
+          child.fulfillmentStatus = 'CANCELADO';
+          child.timestamps.cancelledAt = nowIso;
+          child.cancelReason = order.cancelReason;
+          child.physicalReturnPending = returnPending;
+        }
+        order.physicalReturnPending = order.childShipments.some(child => child.physicalReturnPending);
+      } else {
+        order.physicalReturnPending = requiresPhysicalReturn(currentStatus);
+        if (!order.physicalReturnPending) release(order.items);
       }
     }
 
@@ -654,8 +727,7 @@ export class OrdersRepository {
     order.statusHistory.push(auditEntry);
     this.auditHistory.push(auditEntry);
 
-    this.saveOrders();
-    this.saveAudit();
+    this.saveState();
 
     return { success: true, order };
   }
@@ -668,7 +740,18 @@ export class OrdersRepository {
     orderId: string,
     inspectorName: string,
     catalogProducts: Product[],
-    notes?: string
+    notes?: string,
+    shipmentId?: string
+  ): { success: boolean; order?: Order; error?: string } {
+    return this.mutate(() => this.confirmPhysicalReturnMutation(orderId, inspectorName, catalogProducts, notes, shipmentId), catalogProducts);
+  }
+
+  private confirmPhysicalReturnMutation(
+    orderId: string,
+    inspectorName: string,
+    catalogProducts: Product[],
+    notes?: string,
+    shipmentId?: string
   ): { success: boolean; order?: Order; error?: string } {
     const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
     if (!order) return { success: false, error: 'Pedido no encontrado' };
@@ -678,13 +761,31 @@ export class OrdersRepository {
     }
 
     const nowIso = new Date().toISOString();
-    order.physicalReturnPending = false;
-    order.physicalReturnConfirmedAt = nowIso;
-    order.physicalReturnConfirmedBy = inspectorName;
+    let returnedItems = order.items;
+    if (order.isSplitOrder && order.childShipments?.length) {
+      const pending = order.childShipments.filter(child => child.physicalReturnPending && child.fulfillmentStatus === 'CANCELADO');
+      const child = shipmentId ? pending.find(child => child.shipmentId === shipmentId) : pending.length === 1 ? pending[0] : undefined;
+      if (!child) return { success: false, error: shipmentId ? 'El envío seleccionado no tiene una devolución cancelada pendiente.' : 'Seleccione el envío cuya devolución física fue inspeccionada.' };
+      returnedItems = child.items;
+      child.physicalReturnPending = false;
+      child.physicalReturnConfirmedAt = nowIso;
+      child.physicalReturnConfirmedBy = inspectorName;
+      order.physicalReturnPending = order.childShipments.some(entry => entry.physicalReturnPending);
+      if (order.fulfillmentStatus === 'CANCELADO' && !order.physicalReturnPending) {
+        order.physicalReturnConfirmedAt = nowIso;
+        order.physicalReturnConfirmedBy = inspectorName;
+      }
+      shipmentId = child.shipmentId;
+    } else {
+      if (order.fulfillmentStatus !== 'CANCELADO') return { success: false, error: 'Solo se puede confirmar el retorno de un pedido cancelado.' };
+      order.physicalReturnPending = false;
+      order.physicalReturnConfirmedAt = nowIso;
+      order.physicalReturnConfirmedBy = inspectorName;
+    }
 
     // Liberar reserva física en catálogo tras corroborar inspección de estado del producto
     if (catalogProducts) {
-      for (const item of order.items) {
+      for (const item of returnedItems) {
         const prod = catalogProducts.find(p => p.id === item.productId);
         if (prod && prod.reservedStockByStore) {
           prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
@@ -692,17 +793,10 @@ export class OrdersRepository {
       }
     }
 
-    if (order.childShipments) {
-      order.childShipments.forEach(c => {
-        c.physicalReturnPending = false;
-        c.physicalReturnConfirmedAt = nowIso;
-        c.physicalReturnConfirmedBy = inspectorName;
-      });
-    }
-
     const auditEntry: OrderStatusHistoryEntry = {
       id: `HIST-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
       orderId: order.id,
+      shipmentId,
       previousStatus: order.fulfillmentStatus,
       newStatus: order.fulfillmentStatus,
       timestamp: nowIso,
@@ -714,8 +808,7 @@ export class OrdersRepository {
     order.statusHistory?.push(auditEntry);
     this.auditHistory.push(auditEntry);
 
-    this.saveOrders();
-    this.saveAudit();
+    this.saveState();
 
     return { success: true, order };
   }
@@ -733,7 +826,16 @@ export class OrdersRepository {
     const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
     if (!order) return { success: false, error: 'Pedido no encontrado', code: 404 };
 
-    const driver = this.drivers.find(d => d.id === driverId) || this.drivers[0];
+    const driver = this.drivers.find(d => d.id === driverId);
+    if (!driver) return { success: false, error: 'Conductor no encontrado.', code: 404 };
+    if (!this.validateRolePermission(actor, 'REPARTIDOR_ASIGNADO')) return { success: false, error: 'Rol no autorizado para asignar conductores.', code: 403 };
+    const target = order.isSplitOrder && order.childShipments?.length
+      ? order.childShipments.find(child => child.shipmentId === shipmentId)
+      : order;
+    if (!target) return { success: false, error: 'Seleccione un envío hijo válido para asignar conductor.', code: 400 };
+    if (target.fulfillmentStatus !== 'REPARTIDOR_ASIGNADO' && !ALLOWED_TRANSITIONS[target.fulfillmentStatus]?.includes('REPARTIDOR_ASIGNADO')) {
+      return { success: false, error: 'El envío no está listo para asignar un conductor.', code: 400 };
+    }
     const driverPayload = {
       id: driver.id,
       name: driver.name,
@@ -744,22 +846,17 @@ export class OrdersRepository {
       photo: driver.photo,
     };
 
-    const nowIso = new Date().toISOString();
-
-    if (order.isSplitOrder && order.childShipments && shipmentId) {
-      const child = order.childShipments.find(s => s.shipmentId === shipmentId);
-      if (!child) return { success: false, error: `Envío hijo no encontrado: ${shipmentId}`, code: 404 };
-
-      child.driver = driverPayload;
-      return this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
+    return this.mutate(() => {
+      const previousDriver = target.driver;
+      target.driver = driverPayload;
+      const alreadyAssigned = target.fulfillmentStatus === 'REPARTIDOR_ASIGNADO';
+      const result = this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
         shipmentId,
-        reason: `Conductor ${driver.name} asignado al envío hijo ${child.shipmentIndex}`,
+        reason: `Conductor ${driver.name} asignado al pedido ${order.orderNumber}`,
       });
-    }
-
-    order.driver = driverPayload;
-    return this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
-      reason: `Conductor ${driver.name} asignado al pedido ${order.orderNumber}`,
+      if (!result.success) target.driver = previousDriver;
+      if (result.success && alreadyAssigned) this.saveState();
+      return result;
     });
   }
 
@@ -808,23 +905,21 @@ export class OrdersRepository {
     description: string,
     shipmentId?: string
   ): { success: boolean; order?: Order; error?: string } {
-    const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
-    if (!order) return { success: false, error: 'Pedido no encontrado' };
-
-    const incident = {
-      id: `INC-${Date.now()}`,
-      type: incidentType,
-      description,
-      createdAt: new Date().toISOString(),
-      resolved: false,
-    };
-
-    if (!order.incidents) order.incidents = [];
-    order.incidents.push(incident);
-
-    return this.transitionStatus(orderId, 'CON_INCIDENCIA', actor, {
-      shipmentId,
-      reason: `Novedad reportada: [${incidentType}] ${description}`,
+    return this.mutate(() => {
+      const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
+      if (!order) return { success: false, error: 'Pedido no encontrado' };
+      if (typeof incidentType !== 'string' || !incidentType.trim() || incidentType.length > 100 || typeof description !== 'string' || !description.trim() || description.length > 2000) return { success: false, error: 'Describe la incidencia con textos válidos.' };
+      const incident = { id: `INC-${randomUUID()}`, type: incidentType, description, createdAt: new Date().toISOString(), resolved: false };
+      if (!order.incidents) order.incidents = [];
+      order.incidents.push(incident);
+      const result = this.transitionStatus(orderId, 'CON_INCIDENCIA', actor, {
+        shipmentId,
+        reason: `Novedad reportada: [${incidentType}] ${description}`,
+      });
+      // Una incidencia nueva también se guarda si el envío ya estaba en
+      // CON_INCIDENCIA y la transición de estado fue idempotente.
+      if (result.success) this.saveState();
+      return result;
     });
   }
 
@@ -842,10 +937,8 @@ export class OrdersRepository {
     if (allDelivered) {
       order.fulfillmentStatus = 'ENTREGADO';
       order.timestamps.deliveredAt = nowIso;
-      if (order.payment.method === 'CASH_ON_DELIVERY') {
-        order.payment.cashSettled = true;
-        order.payment.status = 'APROBADO';
-      }
+      // También en envíos divididos el efectivo permanece pendiente de
+      // conciliación; los códigos de entrega no acreditan pagos.
     } else if (allCancelled) {
       order.fulfillmentStatus = 'CANCELADO';
       order.timestamps.cancelledAt = nowIso;
@@ -875,199 +968,116 @@ export class OrdersRepository {
   public recordTelemetry(
     point: GPSTelemetry,
     actor: OrderActor
-  ): { success: boolean; code?: number; error?: string; point?: GPSTelemetry } {
-    if (!point || !point.orderId) {
-      return { success: false, code: 400, error: 'Identificador de pedido obligatorio en telemetría' };
-    }
+  ): { success: boolean; code?: number; error?: string; point?: GPSTelemetry; nextSequenceNumber?: number; duplicate?: boolean } {
+    return this.mutate(() => this.recordTelemetryMutation(point, actor));
+  }
 
-    const order = this.orders.find(o => o.id === point.orderId || o.orderNumber === point.orderId);
-    if (!order) {
-      return { success: false, code: 404, error: `Pedido no encontrado: ${point.orderId}` };
+  private recordTelemetryMutation(
+    point: GPSTelemetry,
+    actor: OrderActor
+  ): { success: boolean; code?: number; error?: string; point?: GPSTelemetry; nextSequenceNumber?: number; duplicate?: boolean } {
+    const nonEmpty = (value: unknown): value is string => typeof value === 'string' && value.trim().length > 0 && value.length <= 160;
+    if (!point || !nonEmpty(point.orderId) || !nonEmpty(point.pointId) || !nonEmpty(point.driverId) || !nonEmpty(point.assignmentId) || !nonEmpty(point.tripId)) {
+      return { success: false, code: 400, error: 'Telemetría incompleta: se requieren pointId, orderId, driverId, assignmentId y tripId.' };
     }
-
-    // Identificar la entidad objetivo (pedido completo o envío hijo de orden dividida)
-    let targetStatus: FulfillmentStatus = order.fulfillmentStatus;
-    let expectedDriverId = order.driver?.id;
-    let expectedAssignmentId = order.assignmentId;
-    let expectedTripId = order.tripId;
-
-    if (point.shipmentId && order.childShipments && order.childShipments.length > 0) {
-      const child = order.childShipments.find(c => c.shipmentId === point.shipmentId);
-      if (!child) {
-        return { success: false, code: 404, error: `Envío hijo no encontrado: ${point.shipmentId}` };
-      }
-      targetStatus = child.fulfillmentStatus;
-      expectedDriverId = child.driver?.id || expectedDriverId;
-      expectedAssignmentId = child.assignmentId || expectedAssignmentId;
-      expectedTripId = child.tripId || expectedTripId;
+    if (!Number.isSafeInteger(point.sequenceNumber) || point.sequenceNumber <= 0 || !Number.isFinite(point.timestamp) || point.timestamp <= 0) {
+      return { success: false, code: 400, error: 'La secuencia debe ser un entero positivo y la fecha de captura debe ser válida.' };
     }
-
-    // 1. Validación de ciclo de vida: Solo se permite telemetría activa en estado EN_CAMINO
-    if (targetStatus === 'ENTREGADO') {
-      return {
-        success: false,
-        code: 400,
-        error: 'No se puede registrar telemetría de un pedido ya entregado. El recorrido ha finalizado.',
-      };
+    const order = this.orders.find(entry => entry.id === point.orderId || entry.orderNumber === point.orderId);
+    if (!order) return { success: false, code: 404, error: 'Pedido no encontrado.' };
+    let target: Order | ChildShipment = order;
+    if (order.isSplitOrder && order.childShipments?.length) {
+      if (!nonEmpty(point.shipmentId)) return { success: false, code: 400, error: 'Seleccione el envío hijo que transmite su ubicación.' };
+      const child = order.childShipments.find(entry => entry.shipmentId === point.shipmentId);
+      if (!child) return { success: false, code: 404, error: 'Envío hijo no encontrado.' };
+      target = child;
+    } else if (point.shipmentId) {
+      return { success: false, code: 400, error: 'Este pedido no tiene el envío hijo indicado.' };
     }
-    if (targetStatus === 'CANCELADO') {
-      return {
-        success: false,
-        code: 400,
-        error: 'El pedido fue cancelado. El recorrido ha finalizado.',
-      };
+    if (!target.driver?.id || point.driverId !== target.driver.id) {
+      return { success: false, code: 403, error: 'El conductor del punto no coincide con el conductor asignado.' };
     }
-    if (targetStatus !== 'EN_CAMINO') {
-      return {
-        success: false,
-        code: 400,
-        error: `El pedido está en estado ${targetStatus}. La transmisión GPS solo se permite en estado EN_CAMINO.`,
-      };
+    if (!actor || !['CONDUCTOR', 'SISTEMA', 'ADMINISTRADOR', 'COORDINADOR'].includes(actor.role)) {
+      return { success: false, code: 403, error: 'Rol no autorizado para emitir telemetría.' };
     }
-
-    // 2. Validación de autorización del conductor
-    if (actor.role === 'CONDUCTOR') {
-      const currentActorId = actor.id || point.driverId;
-      if (currentActorId && expectedDriverId && currentActorId !== expectedDriverId) {
-        return {
-          success: false,
-          code: 403,
-          error: `Conductor no autorizado (${currentActorId}). El envío está asignado a ${expectedDriverId}.`,
-        };
-      }
-    } else if (actor.role !== 'SISTEMA' && actor.role !== 'ADMINISTRADOR' && actor.role !== 'COORDINADOR') {
-      return {
-        success: false,
-        code: 403,
-        error: `Rol no autorizado (${actor.role}) para emitir coordenadas de telemetría.`,
-      };
+    if (actor.role === 'CONDUCTOR' && (!nonEmpty(actor.id) || actor.id !== target.driver.id)) {
+      return { success: false, code: 403, error: 'El actor no corresponde al conductor asignado.' };
     }
-
-    // Validar asignación y viaje si están definidos
-    if (expectedAssignmentId && point.assignmentId && point.assignmentId !== expectedAssignmentId) {
-      return {
-        success: false,
-        code: 400,
-        error: `Asignación no coincide: recibido ${point.assignmentId}, esperado ${expectedAssignmentId}.`,
-      };
+    // Estas comprobaciones no sustituyen la autenticación del actor en el servidor HTTP.
+    if (!target.assignmentId || point.assignmentId !== target.assignmentId || !target.tripId || point.tripId !== target.tripId) {
+      return { success: false, code: 400, error: 'La asignación o el recorrido no corresponden al envío seleccionado.' };
     }
-    if (expectedTripId && point.tripId && point.tripId !== expectedTripId) {
-      return {
-        success: false,
-        code: 400,
-        error: `Identificador de viaje no coincide: recibido ${point.tripId}, esperado ${expectedTripId}.`,
-      };
+    if (!Number.isFinite(point.latitude) || !Number.isFinite(point.longitude) || point.latitude < 4.40 || point.latitude > 4.90 || point.longitude < -74.30 || point.longitude > -73.90) {
+      return { success: false, code: 400, error: 'Coordenadas GPS fuera del perímetro de cobertura de Bogotá.' };
     }
-
-    // 3. Validación de coordenadas dentro de la cobertura metropolitana de Bogotá
-    // Límites estrictos: Latitud 4.4000 a 4.9000, Longitud -74.3000 a -73.9000
-    if (
-      typeof point.latitude !== 'number' ||
-      typeof point.longitude !== 'number' ||
-      isNaN(point.latitude) ||
-      isNaN(point.longitude) ||
-      point.latitude < 4.40 ||
-      point.latitude > 4.90 ||
-      point.longitude < -74.30 ||
-      point.longitude > -73.90
-    ) {
-      return {
-        success: false,
-        code: 400,
-        error: `Coordenadas GPS (${point.latitude}, ${point.longitude}) fuera del perímetro de cobertura de Bogotá (4.40 a 4.90 lat, -74.30 a -73.90 lng).`,
-      };
+    if (!Number.isFinite(point.accuracy) || point.accuracy < 0 || point.accuracy > 200) {
+      return { success: false, code: 400, error: 'Precisión GPS insuficiente o inválida (máximo 200 metros).' };
     }
-
-    // 4. Validación de precisión del sensor GPS
-    if (typeof point.accuracy !== 'number' || isNaN(point.accuracy) || point.accuracy < 0 || point.accuracy > 200) {
-      return {
-        success: false,
-        code: 400,
-        error: `Precisión GPS insuficiente (${point.accuracy}m). Se rechazan lecturas con error superior a 200m.`,
-      };
+    for (const key of ['speed', 'heading', 'altitude', 'batteryLevel'] as const) {
+      if (point[key] !== undefined && !Number.isFinite(point[key])) return { success: false, code: 400, error: 'La medición opcional de GPS debe ser finita.' };
     }
-
-    // 5. Validación de orden cronológico y secuencia ascendente
+    if ((point.speed !== undefined && point.speed < 0) || (point.heading !== undefined && (point.heading < 0 || point.heading > 360)) || (point.batteryLevel !== undefined && (point.batteryLevel < 0 || point.batteryLevel > 100))) {
+      return { success: false, code: 400, error: 'Medición GPS opcional fuera de rango.' };
+    }
+    const canonical: GPSTelemetry = { ...point, orderId: order.id };
+    const identity = (entry: GPSTelemetry) => JSON.stringify([
+      entry.pointId, entry.orderId, entry.shipmentId ?? null, entry.driverId, entry.assignmentId, entry.tripId,
+      entry.latitude, entry.longitude, entry.accuracy, entry.timestamp, entry.sequenceNumber,
+      entry.heading ?? null, entry.speed ?? null, entry.altitude ?? null, entry.batteryLevel ?? null,
+    ]);
+    const duplicate = Object.values(this.telemetryHistory).flat().find(entry => entry.pointId === point.pointId);
+    if (duplicate) {
+      if (identity(duplicate) !== identity(canonical)) return { success: false, code: 409, error: 'El identificador de punto ya se utilizó con otros datos.', nextSequenceNumber: this.getNextTelemetrySequence(order.id, point.shipmentId) };
+      // Una confirmación perdida puede reintentarse después del cierre; nunca añade otro punto.
+      return { success: true, point: duplicate, duplicate: true, nextSequenceNumber: this.getNextTelemetrySequence(order.id, point.shipmentId) };
+    }
+    if (target.fulfillmentStatus !== 'EN_CAMINO') {
+      return { success: false, code: 400, error: 'La transmisión GPS solo se permite durante una entrega EN_CAMINO.' };
+    }
+    const now = Date.now();
+    if (point.timestamp < now - 5 * 60_000 || point.timestamp > now + 30_000) {
+      return { success: false, code: 400, error: 'La lectura GPS tiene más de cinco minutos o una fecha futura inválida.' };
+    }
     const streamKey = point.shipmentId ? `${order.id}:${point.shipmentId}` : order.id;
     const history = this.telemetryHistory[streamKey] || [];
-
-    if (history.length > 0) {
-      const lastPoint = history[history.length - 1];
-
-      // Rechazar secuencias fuera de orden o duplicadas
-      if (point.sequenceNumber <= lastPoint.sequenceNumber) {
-        return {
-          success: false,
-          code: 409,
-          error: `Número de secuencia duplicado o retrasado: recibido #${point.sequenceNumber}, último registrado #${lastPoint.sequenceNumber}.`,
-        };
-      }
-
-      // Rechazar marcas temporales regresivas
-      if (point.timestamp < lastPoint.timestamp) {
-        return {
-          success: false,
-          code: 400,
-          error: `Marca temporal regresiva: timestamp recibido (${point.timestamp}) es anterior al último registrado (${lastPoint.timestamp}).`,
-        };
-      }
+    const lastPoint = history[history.length - 1];
+    if (lastPoint && point.sequenceNumber <= lastPoint.sequenceNumber) {
+      return { success: false, code: 409, error: 'Secuencia de GPS duplicada o retrasada.', nextSequenceNumber: this.getNextTelemetrySequence(order.id, point.shipmentId) };
     }
-
-    const pointWithId: GPSTelemetry = {
-      ...point,
-      pointId: point.pointId || `GPS-${Date.now()}-${point.sequenceNumber}`,
-      driverId: point.driverId || expectedDriverId || 'DRV-CARLOS-01',
-      assignmentId: point.assignmentId || expectedAssignmentId || `ASG-${order.id}`,
-      tripId: point.tripId || expectedTripId || `TRP-${order.id}`,
-    };
-
-    if (!this.telemetryHistory[streamKey]) {
-      this.telemetryHistory[streamKey] = [];
+    if (lastPoint && point.timestamp < lastPoint.timestamp) {
+      return { success: false, code: 400, error: 'La fecha de captura es anterior a la última lectura de este recorrido.' };
     }
-    this.telemetryHistory[streamKey].push(pointWithId);
-
-    // Si es un envío hijo, guardar también bajo la orden general para compatibilidad
-    if (point.shipmentId && !this.telemetryHistory[order.id]) {
-      this.telemetryHistory[order.id] = [pointWithId];
-    } else if (point.shipmentId) {
-      this.telemetryHistory[order.id].push(pointWithId);
-    }
-
-    // Actualizar ubicación física del conductor en su perfil
-    const driverIdToUpdate = pointWithId.driverId;
-    const driver = this.drivers.find(d => d.id === driverIdToUpdate);
-    if (driver) {
-      driver.currentLocation = {
-        lat: pointWithId.latitude,
-        lng: pointWithId.longitude,
-        heading: pointWithId.heading,
-        speed: pointWithId.speed,
-        updatedAt: new Date(pointWithId.timestamp || Date.now()).toISOString(),
-      };
-      this.saveDrivers();
-    }
-
-    this.saveTelemetry();
-    return { success: true, point: pointWithId };
+    this.telemetryHistory[streamKey] = [...history, canonical];
+    const driver = this.drivers.find(entry => entry.id === point.driverId);
+    if (driver) driver.currentLocation = { lat: point.latitude, lng: point.longitude, heading: point.heading, speed: point.speed, updatedAt: new Date(point.timestamp).toISOString() };
+    this.saveState();
+    return { success: true, point: canonical, nextSequenceNumber: point.sequenceNumber + 1 };
   }
 
   public getLatestTelemetry(orderId: string, shipmentId?: string): GPSTelemetry | null {
-    const streamKey = shipmentId ? `${orderId}:${shipmentId}` : orderId;
-    const history = this.telemetryHistory[streamKey];
-    if (history && history.length > 0) {
-      return history[history.length - 1];
+    const history = this.getTelemetryHistory(orderId, shipmentId);
+    const order = this.getOrderById(orderId);
+    const target = shipmentId ? order?.childShipments?.find(child => child.shipmentId === shipmentId) : order;
+    if (!target?.driver?.id || !target.assignmentId || !target.tripId) return null;
+    for (let index = history.length - 1; index >= 0; index--) {
+      const point = history[index];
+      if (point.driverId === target.driver.id && point.assignmentId === target.assignmentId && point.tripId === target.tripId) return point;
     }
     return null;
   }
 
+  public getNextTelemetrySequence(orderId: string, shipmentId?: string): number {
+    const history = this.getTelemetryHistory(orderId, shipmentId);
+    return history.reduce((max, point) => Number.isSafeInteger(point.sequenceNumber) && point.sequenceNumber > max ? point.sequenceNumber : max, 0) + 1;
+  }
+
   public getTelemetryHistory(orderId: string, shipmentId?: string): GPSTelemetry[] {
-    const streamKey = shipmentId ? `${orderId}:${shipmentId}` : orderId;
-    const history = this.telemetryHistory[streamKey];
-    if (history && history.length > 0) {
-      return [...history];
-    }
-    return [];
+    const order = this.getOrderById(orderId);
+    if (!order) return [];
+    if (order.isSplitOrder && order.childShipments?.length) {
+      if (!shipmentId || !order.childShipments.some(child => child.shipmentId === shipmentId)) return [];
+    } else if (shipmentId) return [];
+    const streamKey = shipmentId ? `${order.id}:${shipmentId}` : order.id;
+    return [...(this.telemetryHistory[streamKey] || [])];
   }
 }
-
-export const ordersRepository = new OrdersRepository();

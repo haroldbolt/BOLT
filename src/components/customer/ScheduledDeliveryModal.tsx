@@ -1,6 +1,7 @@
 import React, { useState, useMemo } from 'react';
 import { X, Calendar, Clock, CheckCircle2, Sparkles, AlertCircle, Info, ChevronRight, Truck } from 'lucide-react';
-import { ScheduledSlot } from '../../lib/deliveryService';
+import { DeliveryQuote, ScheduledSlot } from '../../lib/deliveryService';
+import { TurboPromise } from './TurboPromise';
 
 interface ScheduledDeliveryModalProps {
   isOpen: boolean;
@@ -11,6 +12,7 @@ interface ScheduledDeliveryModalProps {
   localityName?: string;
   isAutoSwitched?: boolean;
   address?: string;
+  assignment?: DeliveryQuote['scheduledAssignment'];
 }
 
 export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
@@ -22,11 +24,13 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
   localityName = 'Bogotá',
   isAutoSwitched = true,
   address,
+  assignment,
 }) => {
   // Solo franjas vigentes
   const validSlots = useMemo(() => {
-    return scheduledSlots.filter(s => !s.cutoffPassed);
-  }, [scheduledSlots]);
+    if (!address?.trim() || !assignment || ['SIN_COBERTURA', 'DIRECCION_PENDIENTE'].includes(assignment.status)) return [];
+    return scheduledSlots.filter(s => !s.cutoffPassed && s.availableCapacity > 0);
+  }, [scheduledSlots, assignment, address]);
 
   // Agrupar franjas por fecha
   const slotsByDate = useMemo(() => {
@@ -100,6 +104,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
       >
         {/* Header */}
         <div className="p-5 md:p-6 border-b border-slate-100 relative bg-slate-50/70">
+          <div className="pr-10 mb-3"><TurboPromise/></div>
           <button
             onClick={onClose}
             className="absolute top-5 right-5 p-2 rounded-full text-slate-400 hover:text-slate-600 hover:bg-slate-200/60 transition"
@@ -127,11 +132,13 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
               <Info className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
               <div>
                 <p className="font-extrabold text-blue-900">
-                  Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido
+                  {!address?.trim() || !assignment || assignment.status === 'DIRECCION_PENDIENTE' ? 'Valida tu dirección en el mapa para continuar' : assignment.status === 'SIN_COBERTURA' ? 'Por ahora no tenemos cobertura de envío programado en esta ubicación' : 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido'}
                 </p>
                 <p className="text-blue-800 text-[11px] mt-0.5">
-                  {address ? `${address} · ` : ''}Localidad: <strong>{localityName}</strong>. Despacho seguro en camioneta o flota programada de Bogotá.
+                  {address ? <>{address} · Localidad: <strong>{localityName}</strong>.</> : 'Consulta cobertura y horarios para tu dirección.'}
                 </p>
+                {address?.trim() && assignment?.storeName && !['SIN_COBERTURA', 'DIRECCION_PENDIENTE'].includes(assignment.status) && <p className="text-blue-800 text-[11px]">{assignment.status === 'CONFIRMADA' ? 'Sede confirmada' : 'Sede sugerida'}: <strong>{assignment.storeName}</strong>. La disponibilidad se valida al confirmar el pedido.</p>}
+                {assignment?.reason && assignment.status === 'REVISION_REQUERIDA' && <p className="text-amber-800 text-[11px]">{assignment.reason}</p>}
               </div>
             </div>
           </div>
@@ -187,7 +194,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
             </div>
           ) : (
             <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-amber-900 text-xs">
-              No hay franjas disponibles en este momento. Por favor verifica más tarde.
+              {!assignment ? 'Verificando la ubicación y las franjas disponibles…' : assignment.status === 'SIN_COBERTURA' ? 'Por ahora no tenemos cobertura de envío programado en esta ubicación' : assignment.status === 'DIRECCION_PENDIENTE' ? 'Valida el punto de entrega en el mapa para continuar.' : 'No hay franjas disponibles en este momento. Por favor verifica más tarde.'}
             </div>
           )}
 
@@ -253,7 +260,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
                         Sin recargo
                       </span>
                       <span className="text-[10px] text-slate-400 font-medium block">
-                        Cupos: {slot.availableCapacity}/10
+                        Cupos: {slot.availableCapacity}/{slot.maxCapacity}
                       </span>
                     </div>
                   </button>
@@ -292,7 +299,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
               disabled={!selectedSlot}
               className="px-5 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 disabled:bg-slate-300 text-white text-xs font-black transition flex items-center gap-1.5 shadow-xs"
             >
-              <span>Confirmar Franja</span>
+              <span>Elegir franja</span>
               <ChevronRight className="w-3.5 h-3.5" />
             </button>
           </div>

@@ -164,6 +164,8 @@ export interface ShopifySyncState {
 }
 
 export type PorteriaPolicy = 'DEJAR_EN_PORTERIA' | 'SUBIR_A_PUERTA' | 'LLAMAR_AL_LLEGAR';
+// La instrucción retirada se conserva para leer pedidos históricos.
+export type NewOrderPorteriaPolicy = Exclude<PorteriaPolicy, 'SUBIR_A_PUERTA'>;
 
 export type PaymentMethod = 'WOMPI_CARD' | 'WOMPI_PSE' | 'WOMPI_BANCOLOMBIA' | 'CASH_ON_DELIVERY';
 
@@ -308,6 +310,13 @@ export interface Order {
   storeName: string;
   deliveryMode?: DeliveryMode;
   scheduledWindow?: ScheduledDeliveryWindow;
+  /** Present only for new orders confirmed by the locality dispatch policy. */
+  scheduledDispatch?: {
+    localityCode: string;
+    localityName: string;
+    policyVersion: string;
+    status: 'CONFIRMADA';
+  };
   isSplitOrder?: boolean;
   parentOrderId?: string;
   shipmentId?: string;
@@ -431,8 +440,31 @@ export interface GPSTelemetry {
   heading?: number;
   speed?: number;
   batteryLevel?: number;
+  altitude?: number;
   timestamp: number;
   sequenceNumber: number;
+}
+
+/** Actual response of GET /orders/:id/tracking, scoped to one shipment. */
+export interface OrderTrackingSnapshot {
+  orderId: string;
+  orderNumber?: string;
+  shipmentId?: string;
+  assignmentId?: string;
+  tripId?: string;
+  nextSequenceNumber: number;
+  serverTimestamp: number;
+  status: FulfillmentStatus;
+  deliveryMode?: Order['deliveryMode'];
+  scheduledWindow?: Order['scheduledWindow'];
+  isSplitOrder?: boolean;
+  shipmentCount?: number;
+  childShipments?: ChildShipment[];
+  estimatedMinutes?: number;
+  driver: (Pick<DriverProfile, 'id' | 'name'> & Partial<DriverProfile>) | null;
+  telemetry: (GPSTelemetry & { secondsAgo?: number }) | null;
+  hubCoordinates: { lat: number; lng: number };
+  customerCoordinates: { lat: number; lng: number };
 }
 
 export type GPSTrackingPoint = {

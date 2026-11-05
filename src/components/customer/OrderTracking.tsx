@@ -1,21 +1,40 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useCallback } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { 
   ArrowLeft, Phone, ShieldCheck, Clock, CheckCircle2, 
   MapPin, AlertTriangle, Navigation, RefreshCw, Key, ChevronUp, ChevronDown,
   Calendar, Layers, Truck
 } from 'lucide-react';
-import { Order, GPSTelemetry, ChildShipment } from '../../types';
+import { Order, ChildShipment, OrderTrackingSnapshot } from '../../types';
 import { formatCOP, formatTimeBogota, timeAgoSpanish } from '../../lib/formatters';
 import { api } from '../../lib/api';
 import { pushService } from '../../lib/notifications';
 import { useFoldable } from '../../hooks/useFoldable';
+import { gpsDisplayState } from '../../lib/gpsTelemetry';
+import { TurboPromise } from './TurboPromise';
 
 declare const google: any;
 
 interface OrderTrackingProps {
   orderId: string;
   onBack: () => void;
+}
+
+/** Read the saved amounts so older orders keep their original invoice. */
+export function StoredOrderBreakdown({ totals }: { totals: Order['totals'] }) {
+  return <div className="space-y-2 pt-2">
+    <p className="text-[11px] font-bold text-slate-700">Resumen del pedido</p>
+    <dl className="space-y-1 text-xs text-slate-600">
+      <div className="flex justify-between"><dt>Productos:</dt><dd>{formatCOP(totals.subtotal)}</dd></div>
+      {totals.discount > 0 && <div className="flex justify-between"><dt>Descuento:</dt><dd>−{formatCOP(totals.discount)}</dd></div>}
+      <div className="flex justify-between"><dt>Envío:</dt><dd>{formatCOP(totals.shipping)}</dd></div>
+      {totals.serviceFee > 0 && <div className="flex justify-between"><dt>Servicio:</dt><dd>{formatCOP(totals.serviceFee)}</dd></div>}
+      {totals.tip > 0 && <div className="flex justify-between"><dt>Propina:</dt><dd>{formatCOP(totals.tip)}</dd></div>}
+    </dl>
+    <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
+      <span>Total del pedido:</span><span className="text-red-600">{formatCOP(totals.total)}</span>
+    </div>
+  </div>;
 }
 
 // Sub-component to manage map bounds and center smoothly
@@ -35,20 +54,25 @@ const MapController: React.FC<{
     bounds.extend(customer);
     if (driver) bounds.extend(driver);
     map.fitBounds(bounds, {
-      top: 60,
+      top: isDualScreen ? 60 : 145,
       right: 60,
       bottom: isDualScreen ? 60 : 220,
       left: 60,
     });
-  }, [map, hub, customer, driver, recenterTrigger, isDualScreen]);
+  }, [map, hub.lat, hub.lng, customer.lat, customer.lng, driver?.lat, driver?.lng, recenterTrigger, isDualScreen]);
 
   return null;
 };
 
 export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack }) => {
   const [order, setOrder] = useState<Order | null>(null);
-  const [trackingData, setTrackingData] = useState<any>(null);
+  const [trackingData, setTrackingData] = useState<OrderTrackingSnapshot | null>(null);
+  const [displayNow, setDisplayNow] = useState(Date.now());
+  const trackingRequest = useRef<AbortController | null>(null);
+  const trackingRequestVersion = useRef(0);
+  const activeShipmentIndexRef = useRef(0);
   const [loading, setLoading] = useState(true);
+  const [accessError, setAccessError] = useState('');
   const [recenterCount, setRecenterCount] = useState(0);
   const [sheetExpanded, setSheetExpanded] = useState(false);
   const [cancelling, setCancelling] = useState(false);
@@ -57,28 +81,66 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   const isSplitLayout = foldable.isExpanded || foldable.isDualScreen;
 
   // Multi-shipment tab state for split orders
-  const [activeShipmentIndex, setActiveShipmentIndex] = useState(0);
+  const [activeShipmentIndex, setActiveShipmentIndexState] = useState(0);
+  const setActiveShipmentIndex = (index: number) => {
+    activeShipmentIndexRef.current = index;
+    trackingRequestVersion.current++;
+    trackingRequest.current?.abort();
+    setTrackingData(null);
+    setActiveShipmentIndexState(index);
+  };
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+  const apiKey = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
 
-  const loadData = async () => {
+  useEffect(() => {
+    activeShipmentIndexRef.current = 0;
+    setActiveShipmentIndexState(0);
+    setOrder(null);
+    setTrackingData(null);
+    setLoading(true);
+    setAccessError('');
+  }, [orderId]);
+
+  const loadData = useCallback(async () => {
+    const version = ++trackingRequestVersion.current;
+    trackingRequest.current?.abort();
+    const controller = new AbortController();
+    trackingRequest.current = controller;
+    const index = activeShipmentIndexRef.current;
     try {
-      const ord = await api.getOrder(orderId);
+      const ord = await api.getOrder(orderId, controller.signal);
+      if (controller.signal.aborted || version !== trackingRequestVersion.current) return;
       setOrder(ord);
-      const tracking = await api.getTracking(orderId);
+      setAccessError('');
+      const shipmentId = ord.isSplitOrder ? ord.childShipments?.[index]?.shipmentId : undefined;
+      if (ord.isSplitOrder && !shipmentId) {
+        setTrackingData(null);
+        return;
+      }
+      const tracking = await api.getTracking(orderId, shipmentId, controller.signal);
+      if (controller.signal.aborted || version !== trackingRequestVersion.current || index !== activeShipmentIndexRef.current) return;
       setTrackingData(tracking);
     } catch (e) {
-      console.error('Error fetching tracking:', e);
+      if (!controller.signal.aborted) { setAccessError('No se pudo abrir el seguimiento. Usa el navegador donde creaste el pedido o entra al panel con tu cuenta administrativa.'); }
     } finally {
-      setLoading(false);
+      if (!controller.signal.aborted && version === trackingRequestVersion.current) setLoading(false);
     }
-  };
+  }, [orderId]);
 
   useEffect(() => {
     loadData();
     const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
-  }, [orderId]);
+    return () => {
+      clearInterval(interval);
+      trackingRequestVersion.current++;
+      trackingRequest.current?.abort();
+    };
+  }, [orderId, activeShipmentIndex, loadData]);
+
+  useEffect(() => {
+    const timer = setInterval(() => setDisplayNow(Date.now()), 1000);
+    return () => clearInterval(timer);
+  }, []);
 
   const handleCancelOrder = async () => {
     if (!order) return;
@@ -94,9 +156,11 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
     }
   };
 
+  if (!loading && !order && accessError) return <div className="relative min-h-screen bg-slate-50 flex flex-col items-center justify-center p-6 text-center"><div className="absolute top-0 inset-x-0 bg-white px-3 py-2"><TurboPromise/></div><p className="max-w-md text-slate-700">{accessError}</p><button onClick={onBack} className="mt-5 bg-red-600 text-white rounded-xl px-5 py-3 font-bold">Volver</button></div>;
   if (loading || !order) {
     return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+      <div className="relative min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
+        <div className="absolute top-0 inset-x-0 bg-white px-3 py-2"><TurboPromise/></div>
         <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
         <p className="mt-4 text-xs font-bold text-slate-300">Cargando seguimiento en tiempo real...</p>
       </div>
@@ -111,18 +175,22 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   const deliveredCount = childShipments.filter(s => s.fulfillmentStatus === 'ENTREGADO').length;
 
   const effectiveStatus = currentChild ? currentChild.fulfillmentStatus : order.fulfillmentStatus;
-  const effectiveDriver = currentChild?.driver || order.driver;
-  const effectiveSecretCode = currentChild?.secretDeliveryCode || order.secretDeliveryCode;
+  const effectiveDriver = currentChild ? currentChild.driver : order.driver;
+  const effectiveSecretCode = currentChild ? currentChild.secretDeliveryCode : order.secretDeliveryCode;
 
   const hubCoords = trackingData?.hubCoordinates || { lat: 4.6284, lng: -74.1539 };
   const customerCoords = trackingData?.customerCoordinates || order.deliveryAddress.coordinates;
-  const driverCoords = trackingData?.telemetry
-    ? { lat: trackingData.telemetry.latitude, lng: trackingData.telemetry.longitude }
-    : (effectiveDriver ? { lat: 4.6312, lng: -74.1485 } : undefined);
-
-  const secondsAgo = trackingData?.telemetry?.secondsAgo ?? 4;
-  const isStale = secondsAgo > 30 && secondsAgo <= 60;
-  const isLost = secondsAgo > 60;
+  const point = trackingData?.telemetry;
+  const selectedTelemetry = order.id === orderId && trackingData?.orderId === order.id && trackingData.shipmentId === currentChild?.shipmentId &&
+    point?.shipmentId === currentChild?.shipmentId && point?.driverId === effectiveDriver?.id &&
+    point?.assignmentId === (currentChild ? currentChild.assignmentId : order.assignmentId) &&
+    point?.tripId === (currentChild ? currentChild.tripId : order.tripId) ? point : null;
+  const gpsDisplay = gpsDisplayState(selectedTelemetry, displayNow);
+  const driverCoords = gpsDisplay.coordinates;
+  const secondsAgo = gpsDisplay.secondsAgo;
+  const isPending = gpsDisplay.state === 'pending';
+  const isStale = gpsDisplay.state === 'stale';
+  const isLost = gpsDisplay.state === 'lost';
 
   const getStatusBadge = () => {
     if (effectiveStatus === 'CANCELADO') {
@@ -159,7 +227,9 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
         {/* Panel izquierdo: Información, repartidor, PIN y productos */}
         <div className="w-[45%] max-w-md xl:max-w-lg h-full flex flex-col bg-white border-r border-slate-200 z-10 shadow-2xl overflow-y-auto">
           {/* Cabecera del panel izquierdo */}
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
+          <div className="p-3 border-b border-slate-100 sticky top-0 bg-white/95 backdrop-blur-md z-10 space-y-2">
+            <TurboPromise/>
+            <div className="flex items-center justify-between gap-2">
             <button
               onClick={onBack}
               className="bg-slate-100 text-slate-800 p-2 rounded-full hover:bg-slate-200 transition active:scale-95"
@@ -181,6 +251,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
             )}
           </div>
 
+          </div>
           <div className="p-5 space-y-4 flex-1">
             {/* Multi-Shipment Tabs for Split Orders */}
             {isSplitOrder && (
@@ -325,10 +396,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                 ))}
               </div>
 
-              <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
-                <span>Total del pedido:</span>
-                <span className="text-red-600">{formatCOP(order.totals.total)}</span>
-              </div>
+            <StoredOrderBreakdown totals={order.totals}/>
 
               {(order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.fulfillmentStatus === 'CONFIRMADO') && (
                 <div className="pt-2 border-t border-slate-100">
@@ -354,13 +422,15 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
             {effectiveStatus === 'EN_CAMINO' ? (
               <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
-                <span className={`w-2 h-2 rounded-full ${isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-                {isLost ? (
+                <span className={`w-2 h-2 rounded-full ${isPending || isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+                {isPending ? (
+                  <span className="text-red-300">Ubicación pendiente</span>
+                ) : isLost ? (
                   <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
                 ) : isStale ? (
                   <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
                 ) : (
-                  <span>GPS en vivo ({timeAgoSpanish(trackingData?.telemetry?.timestamp || Date.now())})</span>
+                  <span>GPS en vivo ({timeAgoSpanish(selectedTelemetry!.timestamp)})</span>
                 )}
                 <button
                   onClick={loadData}
@@ -457,7 +527,9 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
     <div className="relative w-full h-screen overflow-hidden flex flex-col bg-slate-900">
       
       {/* Top Floating Header */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
+      <div className="absolute top-0 left-0 right-0 z-20 pointer-events-none space-y-2">
+        <div className="bg-white/95 backdrop-blur-md px-3 py-2 border-b border-slate-200/80"><TurboPromise/></div>
+        <div className="mx-4 flex items-center justify-between gap-1">
         <button
           onClick={onBack}
           className="pointer-events-auto bg-white/95 backdrop-blur-md text-slate-800 p-2.5 rounded-full shadow-lg border border-slate-200/80 hover:bg-slate-50 transition active:scale-95"
@@ -487,17 +559,20 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
         </button>
       </div>
 
+      </div>
       {/* GPS Telemetry Pill or Scheduled Banner */}
       {effectiveStatus === 'EN_CAMINO' ? (
-        <div className="absolute top-16 left-4 right-4 z-20 flex justify-center pointer-events-none">
+        <div className="absolute top-28 left-4 right-4 z-20 flex justify-center pointer-events-none">
           <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
-            <span className={`w-2 h-2 rounded-full ${isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-            {isLost ? (
+            <span className={`w-2 h-2 rounded-full ${isPending || isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+            {isPending ? (
+              <span className="text-red-300">Ubicación pendiente</span>
+            ) : isLost ? (
               <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
             ) : isStale ? (
               <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
             ) : (
-              <span>Ubicación GPS en vivo ({timeAgoSpanish(trackingData?.telemetry?.timestamp || Date.now())})</span>
+              <span>Ubicación GPS en vivo ({timeAgoSpanish(selectedTelemetry!.timestamp)})</span>
             )}
             <button
               onClick={loadData}
@@ -510,7 +585,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           </div>
         </div>
       ) : order.deliveryMode === 'PROGRAMADO' && (
-        <div className="absolute top-16 left-4 right-4 z-20 flex justify-center pointer-events-none">
+        <div className="absolute top-28 left-4 right-4 z-20 flex justify-center pointer-events-none">
           <div className="pointer-events-auto bg-blue-900/90 backdrop-blur-md text-white text-[11px] font-bold px-4 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-blue-700">
             <Calendar className="w-3.5 h-3.5 text-blue-300" />
             <span>Entrega programada para el {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}</span>
@@ -744,10 +819,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               ))}
             </div>
 
-            <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
-              <span>Total del pedido:</span>
-              <span className="text-red-600">{formatCOP(order.totals.total)}</span>
-            </div>
+            <StoredOrderBreakdown totals={order.totals}/>
 
             {(order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.fulfillmentStatus === 'CONFIRMADO') && (
               <div className="pt-2 border-t border-slate-100">

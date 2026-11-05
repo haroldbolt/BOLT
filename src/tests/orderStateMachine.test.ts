@@ -16,7 +16,7 @@
 
 import { OrdersRepository } from '../lib/ordersRepository';
 import { Order, Product, FulfillmentStatus, OrderActor } from '../types';
-import { INITIAL_PRODUCTS, INITIAL_ORDERS } from '../data/seedData';
+import { INITIAL_PRODUCTS, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -43,7 +43,7 @@ async function runStateMachineTests() {
   console.log('=============================================================\n');
 
   // Repositorio aislado de prueba
-  const repo = new OrdersRepository();
+  const repo = new OrdersRepository({ initialDrivers: structuredClone(INITIAL_DRIVERS) });
   const testProducts: Product[] = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
   const testStoreId = 'HUB_KENNEDY';
 
