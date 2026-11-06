@@ -1,3 +1,4 @@
+import { resolveOrderWarehouse } from '../../lib/warehouseAssignment';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
   X, ShoppingBag, Clock, ArrowRight, RotateCcw, 
@@ -75,7 +76,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
       if (searchQuery.trim()) {
         const query = searchQuery.toLowerCase().trim();
         const matchesNumber = order.orderNumber.toLowerCase().includes(query);
-        const matchesStore = order.storeName.toLowerCase().includes(query);
+        const matchesStore = (resolveOrderWarehouse(order)?.customerName || '').toLowerCase().includes(query);
         const matchesAddress = order.deliveryAddress.address.toLowerCase().includes(query) ||
           (order.deliveryAddress.details && order.deliveryAddress.details.toLowerCase().includes(query));
         const matchesItems = order.items.some(
@@ -365,7 +366,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
                               </span>
                             </div>
                             <p className="text-[11px] text-slate-500 mt-0.5">
-                              {formatDateBogota(order.createdAt)} • {formatTimeBogota(order.createdAt)} • {order.storeName}
+                              {formatDateBogota(order.createdAt)} • {formatTimeBogota(order.createdAt)} • {resolveOrderWarehouse(order)?.customerName || 'Sede pendiente de confirmar'}
                             </p>
                           </div>
 

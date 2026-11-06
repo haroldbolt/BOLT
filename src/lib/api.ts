@@ -3,6 +3,7 @@ import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } fro
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
 
 const BASE_URL = '/api/v1';
+let pendingCheckoutRequest: {fingerprint:string;requestId:string} | undefined;
 
 export const api = {
   async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[]): Promise<DeliveryQuote> {
@@ -62,16 +63,27 @@ export const api = {
   },
 
   async createOrder(payload: any): Promise<Order> {
+    const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(payload))))).map(b=>b.toString(16).padStart(2,'0')).join('');
+    let requestId=pendingCheckoutRequest?.fingerprint===fingerprint ? pendingCheckoutRequest.requestId : crypto.randomUUID();
+    try {
+      const previous=JSON.parse(sessionStorage.getItem('bolt_checkout_request') || 'null');
+      if(previous?.fingerprint===fingerprint) requestId=previous.requestId;
+      sessionStorage.setItem('bolt_checkout_request',JSON.stringify({fingerprint,requestId}));
+    } catch {}
+    pendingCheckoutRequest={fingerprint,requestId};
     const res = await fetch(`${BASE_URL}/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'Idempotency-Key':requestId },
       body: JSON.stringify(payload),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'No se pudo crear el pedido');
     }
-    return await res.json();
+    const created:Order=await res.json();
+    pendingCheckoutRequest=undefined;
+    try {sessionStorage.removeItem('bolt_checkout_request')} catch {}
+    return created;
   },
 
   async getOrder(orderId: string): Promise<Order> {

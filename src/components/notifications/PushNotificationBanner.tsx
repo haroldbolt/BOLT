@@ -1,6 +1,6 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useRef } from 'react';
 import { X, ArrowRight, Zap, CheckCircle2, Bike, Package, AlertCircle, FileText } from 'lucide-react';
-import { PushNotification, pushService } from '../../lib/notifications';
+import { PushNotification, pushService, notificationLifetime } from '../../lib/notifications';
 
 interface PushNotificationBannerProps {
   onNavigateToOrder: (orderId: string) => void;
@@ -9,21 +9,18 @@ interface PushNotificationBannerProps {
 export const PushNotificationBanner: React.FC<PushNotificationBannerProps> = ({
   onNavigateToOrder,
 }) => {
-  const [activeNotification, setActiveNotification] = useState<PushNotification | null>(null);
+  const [activeNotification, setActiveNotification] = useState<PushNotification | null>(()=>pushService.getActiveNotification());
 
+  const timerRef=useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
-    const unsubscribe = pushService.subscribe(notification => {
+    const show=(notification:PushNotification)=>{
       setActiveNotification(notification);
-
-      // Auto dismiss after 7 seconds
-      const timer = setTimeout(() => {
-        setActiveNotification(prev => (prev?.id === notification.id ? null : prev));
-      }, 7000);
-
-      return () => clearTimeout(timer);
-    });
-
-    return unsubscribe;
+      if(timerRef.current) clearTimeout(timerRef.current);
+      timerRef.current=setTimeout(()=>setActiveNotification(null),Math.max(0,notificationLifetime(notification)-(Date.now()-notification.timestamp)));
+    };
+    const current=pushService.getActiveNotification(); if(current) show(current);
+    const unsubscribe=pushService.subscribe(show);
+    return ()=>{unsubscribe();if(timerRef.current)clearTimeout(timerRef.current)};
   }, []);
 
   if (!activeNotification) return null;
@@ -46,7 +43,7 @@ export const PushNotificationBanner: React.FC<PushNotificationBannerProps> = ({
   };
 
   return (
-    <div className="fixed top-4 left-4 right-4 z-50 flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">
+    <div role="status" aria-live="polite" aria-atomic="true" className="fixed top-4 left-4 right-4 z-50 flex justify-center pointer-events-none animate-in slide-in-from-top-4 duration-300">
       <div className="pointer-events-auto max-w-md w-full bg-slate-900/95 backdrop-blur-md text-white rounded-3xl p-4 shadow-2xl border border-slate-700/80 flex flex-col gap-2.5">
         {/* App Title & Time */}
         <div className="flex items-center justify-between text-xs text-slate-400 border-b border-slate-800 pb-2">
@@ -63,7 +60,7 @@ export const PushNotificationBanner: React.FC<PushNotificationBannerProps> = ({
             <button
               onClick={() => setActiveNotification(null)}
               className="w-5 h-5 rounded-full hover:bg-slate-800 flex items-center justify-center text-slate-400 hover:text-white transition"
-              title="Descartar notificación"
+              title="Descartar notificación" aria-label="Descartar notificación"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -94,7 +91,7 @@ export const PushNotificationBanner: React.FC<PushNotificationBannerProps> = ({
             }}
             className="w-full bg-red-600 hover:bg-red-700 active:scale-98 text-white text-xs font-black py-2.5 px-4 rounded-xl flex items-center justify-center gap-1.5 shadow-md shadow-red-600/30 transition mt-1"
           >
-            <span>Ver seguimiento en mapa en vivo</span>
+            <span>Ver pedido</span>
             <ArrowRight className="w-3.5 h-3.5" />
           </button>
         )}

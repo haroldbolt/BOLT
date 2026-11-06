@@ -1,3 +1,5 @@
+import { WarehouseSummary } from './WarehouseSummary';
+import { resolveOrderWarehouse } from '../../lib/warehouseAssignment';
 import React, { useEffect, useState, useRef } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { 
@@ -65,6 +67,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
     try {
       const ord = await api.getOrder(orderId);
       setOrder(ord);
+      pushService.notifyWarehouseAssignment(ord);
       const tracking = await api.getTracking(orderId);
       setTrackingData(tracking);
     } catch (e) {
@@ -114,7 +117,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   const effectiveDriver = currentChild?.driver || order.driver;
   const effectiveSecretCode = currentChild?.secretDeliveryCode || order.secretDeliveryCode;
 
-  const hubCoords = trackingData?.hubCoordinates || { lat: 4.6284, lng: -74.1539 };
+  const hubCoords = trackingData?.hubCoordinates || order.deliveryAddress.coordinates;
   const customerCoords = trackingData?.customerCoordinates || order.deliveryAddress.coordinates;
   const driverCoords = trackingData?.telemetry
     ? { lat: trackingData.telemetry.latitude, lng: trackingData.telemetry.longitude }
@@ -151,6 +154,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   };
 
   const statusBadge = getStatusBadge();
+  const warehouse=resolveOrderWarehouse(order);
+  const warehouseLabel=warehouse?.customerName || 'Sede pendiente de confirmar';
 
   // Vista de doble panel para iPhone Duo desplegado (951px o pantalla amplia)
   if (isSplitLayout) {
@@ -182,6 +187,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           </div>
 
           <div className="p-5 space-y-4 flex-1">
+            <WarehouseSummary order={order} />
             {/* Multi-Shipment Tabs for Split Orders */}
             {isSplitOrder && (
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
@@ -408,16 +414,16 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               />
 
               {/* Sede / Hub Marker */}
-              <AdvancedMarker position={hubCoords} title={`Sede ${order.storeName}`}>
+              {warehouse && (<AdvancedMarker position={hubCoords} title={`Sede ${warehouseLabel}`}>
                 <div className="flex flex-col items-center">
                   <div className="bg-[#DC2626] text-white p-2 rounded-2xl shadow-xl border-2 border-white flex items-center justify-center">
                     <span className="text-base font-black">⚡</span>
                   </div>
                   <span className="bg-white text-slate-900 font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap">
-                    {order.storeName.replace('Sede ', '')}
+                    {warehouseLabel}
                   </span>
                 </div>
-              </AdvancedMarker>
+              </AdvancedMarker>)}
 
               {/* Customer Destination Marker */}
               <AdvancedMarker position={customerCoords} title="Dirección de Entrega">
@@ -539,16 +545,16 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
             />
 
             {/* Sede / Hub Marker */}
-            <AdvancedMarker position={hubCoords} title={`Sede ${order.storeName}`}>
+            {warehouse && (<AdvancedMarker position={hubCoords} title={`Sede ${warehouseLabel}`}>
               <div className="flex flex-col items-center">
                 <div className="bg-[#DC2626] text-white p-2 rounded-2xl shadow-xl border-2 border-white flex items-center justify-center">
                   <span className="text-base font-black">⚡</span>
                 </div>
                 <span className="bg-white text-slate-900 font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap">
-                  {order.storeName.replace('Sede ', '')}
+                  {warehouseLabel}
                 </span>
               </div>
-            </AdvancedMarker>
+            </AdvancedMarker>)}
 
             {/* Customer Destination Marker */}
             <AdvancedMarker position={customerCoords} title="Dirección de Entrega">
@@ -665,6 +671,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
             Entrega a {order.customer.name} en {order.deliveryAddress.address}
           </p>
         </div>
+
+        <div className="mx-5 mb-3"><WarehouseSummary order={order} /></div>
 
         {/* Assigned Driver Profile Card */}
         {effectiveDriver && (

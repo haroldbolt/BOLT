@@ -1,3 +1,5 @@
+import type { Order } from '../types';
+import { assignmentMessage } from './warehouseAssignment';
 export interface PushNotification {
   id: string;
   orderId: string;
@@ -5,6 +7,8 @@ export interface PushNotification {
   title: string;
   message: string;
   type:
+    | 'WAREHOUSE_ASSIGNED'
+    | 'WAREHOUSE_CHANGED'
     | 'ORDER_CONFIRMED'
     | 'ORDER_PREPARING'
     | 'DRIVER_ASSIGNED'
@@ -20,8 +24,9 @@ export interface PushNotification {
 }
 
 type NotificationListener = (notification: PushNotification) => void;
+export const notificationLifetime = (notification:PushNotification) => notification.type==='WAREHOUSE_ASSIGNED' || notification.type==='WAREHOUSE_CHANGED' ? 15000 : 7000;
 
-class PushNotificationService {
+export class PushNotificationService {
   private listeners: Set<NotificationListener> = new Set();
   private notifications: PushNotification[] = [
     {
@@ -50,6 +55,37 @@ class PushNotificationService {
     },
   ];
 
+  private seenAssignments = new Set<string>();
+  private assignmentRevisions: Record<string,number> = {};
+  private latestLiveNotification: PushNotification | null = null;
+  private storage?: Pick<Storage,'getItem'|'setItem'>;
+  private readonly storageKey='bolt_pets_notifications_v1';
+  constructor(storage?: Pick<Storage,'getItem'|'setItem'>) {
+    try {this.storage=storage || (typeof window!=='undefined' ? window.localStorage : undefined)} catch {}
+    this.restore();
+  }
+  private restore() {
+    try {
+      const data=JSON.parse(this.storage?.getItem(this.storageKey) || 'null');
+      if(data && Array.isArray(data.notifications)) this.notifications=data.notifications;
+      if(data && Array.isArray(data.seenAssignments)) for(const id of data.seenAssignments) this.seenAssignments.add(id);
+      if(data?.assignmentRevisions) for(const [id,revision] of Object.entries(data.assignmentRevisions)) this.assignmentRevisions[id]=Math.max(this.assignmentRevisions[id] || 0,Number(revision) || 0);
+    } catch {}
+  }
+  private persist() {
+    try {this.storage?.setItem(this.storageKey,JSON.stringify({notifications:this.notifications,seenAssignments:[...this.seenAssignments],assignmentRevisions:this.assignmentRevisions}))} catch {}
+  }
+  getActiveNotification() {return this.latestLiveNotification && Date.now()-this.latestLiveNotification.timestamp<notificationLifetime(this.latestLiveNotification) ? this.latestLiveNotification : null}
+  notifyWarehouseAssignment(order: Order): PushNotification | null {
+    const event=order.warehouseAssignment;
+    if(!event?.id || !event.store?.customerName || event.store.id!==order.storeId) return null;
+    this.restore();
+    if(this.seenAssignments.has(event.id) || event.revision <= (this.assignmentRevisions[order.id] || 0)) return null;
+    this.seenAssignments.add(event.id);
+    this.assignmentRevisions[order.id]=event.revision;
+    return this.send({orderId:order.id,orderNumber:order.orderNumber,title:event.kind==='CHANGED'?'Sede actualizada':'Sede de preparación y despacho',message:assignmentMessage(event),type:event.kind==='CHANGED'?'WAREHOUSE_CHANGED':'WAREHOUSE_ASSIGNED',actionUrl:'/pedido/'+order.id},event.id);
+  }
+
   subscribe(listener: NotificationListener): () => void {
     this.listeners.add(listener);
     return () => {
@@ -67,10 +103,12 @@ class PushNotificationService {
 
   markAllAsRead(): void {
     this.notifications = this.notifications.map(n => ({ ...n, read: true }));
+    this.persist();
   }
 
   markAsRead(id: string): void {
     this.notifications = this.notifications.map(n => n.id === id ? { ...n, read: true } : n);
+    this.persist();
   }
 
   // Play gentle push notification chime using Web Audio API
@@ -102,10 +140,10 @@ class PushNotificationService {
   }
 
   // Dispatch a simulated push notification
-  send(notification: Omit<PushNotification, 'id' | 'timestamp' | 'read'>): PushNotification {
+  send(notification: Omit<PushNotification, 'id' | 'timestamp' | 'read'>, stableId?:string): PushNotification {
     const fullNotification: PushNotification = {
       ...notification,
-      id: `notif-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
+      id: stableId || `notif-${Date.now()}-${Math.floor(Math.random() * 1000)}`,
       timestamp: Date.now(),
       read: false,
     };
@@ -115,6 +153,8 @@ class PushNotificationService {
       this.notifications.pop();
     }
 
+    this.latestLiveNotification=fullNotification;
+    this.persist();
     this.playChime();
 
     // Notify all active subscribers

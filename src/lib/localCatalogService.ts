@@ -47,23 +47,6 @@ export interface RawLocalBodega {
   address: any;
 }
 
-const STORE_ID_TO_GID: Record<string, string> = {
-  HUB_KENNEDY: 'gid://shopify/Location/115617857816',
-  HUB_ALAMOS: 'gid://shopify/Location/115617890584',
-  HUB_SUBA: 'gid://shopify/Location/115617923352',
-  HUB_CENTRO: 'gid://shopify/Location/115676021016',
-  HUB_FONTIBON: 'gid://shopify/Location/99059073304',
-};
-
-const GID_TO_STORE_ID: Record<string, string> = {
-  'gid://shopify/Location/115617857816': 'HUB_KENNEDY',
-  'gid://shopify/Location/115617890584': 'HUB_ALAMOS',
-  'gid://shopify/Location/115617923352': 'HUB_SUBA',
-  'gid://shopify/Location/115676021016': 'HUB_CENTRO',
-  'gid://shopify/Location/115617999999': 'HUB_CENTRO',
-  'gid://shopify/Location/99059073304': 'HUB_FONTIBON',
-};
-
 class LocalCatalogService {
   private rawProducts: RawLocalProduct[] = [];
   private rawBodegas: RawLocalBodega[] = [];
@@ -117,7 +100,7 @@ class LocalCatalogService {
       return {
         ...baseStore,
         // Conservar deshabilitada la ubicación inactiva
-        isActive: match ? match.isActive : baseStore.isActive,
+        isActive: baseStore.isActive && (match ? match.isActive : true),
         shopifyLocationGid: match ? match.id : baseStore.shopifyLocationGid,
         name: match ? (baseStore.id === 'HUB_FONTIBON' ? 'Carrera 73a #2-27 (Inactiva)' : baseStore.name) : baseStore.name,
       };
@@ -337,7 +320,7 @@ class LocalCatalogService {
 
     // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
     if (storeId) {
-      const targetGid = STORE_ID_TO_GID[storeId] || storeId;
+      const targetGid = this.storesCache.find(store=>store.id===storeId)?.shopifyLocationGid || storeId;
       list = list.filter(p => {
         const bIds = p.bodegaIds || [];
         if (bIds.length === 0) return false; // Lista vacía NO significa disponibilidad en todas las bodegas

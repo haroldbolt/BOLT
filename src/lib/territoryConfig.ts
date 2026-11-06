@@ -1,3 +1,4 @@
+import { WAREHOUSES } from '../data/warehouseConfig';
 /**
  * @license
  * SPDX-License-Identifier: Apache-2.0
@@ -43,55 +44,21 @@
  */
 
 export const TERRITORIAL_WAREHOUSES = {
-  KENNEDY: {
-    id: 'HUB_KENNEDY',
-    name: 'Bolt Pets Kennedy',
-    address: 'Carrera 79A #2-05, Bogotá, Colombia',
-  },
-  ALAMOS: {
-    id: 'HUB_ALAMOS',
-    name: 'Bolt Pets Álamos',
-    address: 'Calle 72 #97A-18, Bogotá, Colombia',
-  },
-  SUBA: {
-    id: 'HUB_SUBA',
-    name: 'Bolt Pets Suba',
-    address: 'Carrera 107 #143-31, Bogotá, Colombia',
-  },
-} as const;
+  KENNEDY: WAREHOUSES.find(s=>s.id==='HUB_KENNEDY')!,
+  ALAMOS: WAREHOUSES.find(s=>s.id==='HUB_ALAMOS')!,
+  SUBA: WAREHOUSES.find(s=>s.id==='HUB_SUBA')!,
+};
 
-export type TerritorialWarehouseId = 'HUB_KENNEDY' | 'HUB_ALAMOS' | 'HUB_SUBA';
+export type TerritorialWarehouseId = string;
 
 // 12 Localidades oficiales de Bogotá asignadas a Kennedy
-export const KENNEDY_LOCALITIES = [
-  'Kennedy',
-  'Bosa',
-  'Ciudad Bolívar',
-  'Tunjuelito',
-  'Usme',
-  'Rafael Uribe Uribe',
-  'San Cristóbal',
-  'Antonio Nariño',
-  'Puente Aranda',
-  'Los Mártires',
-  'Santa Fe',
-  'La Candelaria',
-] as const;
+export const KENNEDY_LOCALITIES = WAREHOUSES.find(s=>s.id==='HUB_KENNEDY')!.scheduledLocalities!;
 
 // 5 Localidades oficiales de Bogotá asignadas a Álamos
-export const ALAMOS_LOCALITIES = [
-  'Engativá',
-  'Fontibón',
-  'Teusaquillo',
-  'Barrios Unidos',
-  'Chapinero',
-] as const;
+export const ALAMOS_LOCALITIES = WAREHOUSES.find(s=>s.id==='HUB_ALAMOS')!.scheduledLocalities!;
 
 // 2 Localidades oficiales de Bogotá asignadas a Suba
-export const SUBA_LOCALITIES = [
-  'Suba',
-  'Usaquén',
-] as const;
+export const SUBA_LOCALITIES = WAREHOUSES.find(s=>s.id==='HUB_SUBA')!.scheduledLocalities!;
 
 // Localidades de Bogotá no cubiertas
 export const EXCLUDED_BOGOTA_LOCALITIES = [
@@ -298,11 +265,12 @@ export function resolveTerritorialAssignment(input: {
   const extracted = extractTerritoryFromInput(input);
 
   // 1. Validación de Soacha
-  if (extracted.municipality === 'Soacha') {
+  const municipalStore=WAREHOUSES.find(s=>s.scheduledMunicipalities?.includes(extracted.municipality));
+  if (extracted.municipality === 'Soacha' && municipalStore) {
     return {
       status: 'ASSIGNED',
-      assignedStoreId: TERRITORIAL_WAREHOUSES.KENNEDY.id,
-      assignedStoreName: TERRITORIAL_WAREHOUSES.KENNEDY.name,
+      assignedStoreId: municipalStore.id,
+      assignedStoreName: municipalStore.name,
       municipality: 'Soacha',
       locality: undefined,
       isCovered: true,
@@ -352,44 +320,8 @@ export function resolveTerritorialAssignment(input: {
     };
   }
 
-  // 5. Asignación a Bodega Kennedy (12 localidades)
-  if ((KENNEDY_LOCALITIES as readonly string[]).includes(canonicalLoc)) {
-    return {
-      status: 'ASSIGNED',
-      assignedStoreId: TERRITORIAL_WAREHOUSES.KENNEDY.id,
-      assignedStoreName: TERRITORIAL_WAREHOUSES.KENNEDY.name,
-      municipality: 'Bogotá D.C.',
-      locality: canonicalLoc,
-      isCovered: true,
-      reason: `Localidad ${canonicalLoc} asignada autoritativamente a Bodega Kennedy.`,
-    };
-  }
-
-  // 6. Asignación a Bodega Álamos (5 localidades)
-  if ((ALAMOS_LOCALITIES as readonly string[]).includes(canonicalLoc)) {
-    return {
-      status: 'ASSIGNED',
-      assignedStoreId: TERRITORIAL_WAREHOUSES.ALAMOS.id,
-      assignedStoreName: TERRITORIAL_WAREHOUSES.ALAMOS.name,
-      municipality: 'Bogotá D.C.',
-      locality: canonicalLoc,
-      isCovered: true,
-      reason: `Localidad ${canonicalLoc} asignada autoritativamente a Bodega Álamos.`,
-    };
-  }
-
-  // 7. Asignación a Bodega Suba (2 localidades)
-  if ((SUBA_LOCALITIES as readonly string[]).includes(canonicalLoc)) {
-    return {
-      status: 'ASSIGNED',
-      assignedStoreId: TERRITORIAL_WAREHOUSES.SUBA.id,
-      assignedStoreName: TERRITORIAL_WAREHOUSES.SUBA.name,
-      municipality: 'Bogotá D.C.',
-      locality: canonicalLoc,
-      isCovered: true,
-      reason: `Localidad ${canonicalLoc} asignada autoritativamente a Bodega Suba.`,
-    };
-  }
+  const store=WAREHOUSES.find(s=>s.scheduledLocalities?.includes(canonicalLoc));
+  if(store) return {status:'ASSIGNED',assignedStoreId:store.id,assignedStoreName:store.name,municipality:'Bogotá D.C.',locality:canonicalLoc,isCovered:true,reason:`Localidad ${canonicalLoc} asignada a ${store.name}.`};
 
   return {
     status: 'NEEDS_CONFIRMATION',
@@ -404,26 +336,6 @@ export function resolveTerritorialAssignment(input: {
 /**
  * Lista consolidada de todas las localidades y municipios para selectores en UI
  */
-export const TERRITORY_OPTIONS = [
-  {
-    group: 'Bodega Kennedy (12 localidades + Soacha)',
-    storeId: 'HUB_KENNEDY',
-    storeName: 'Bolt Pets Kennedy',
-    items: [
-      { municipality: 'Soacha', locality: '', label: 'Soacha (Municipio)' },
-      ...KENNEDY_LOCALITIES.map(loc => ({ municipality: 'Bogotá D.C.', locality: loc, label: `${loc} (Bogotá)` })),
-    ],
-  },
-  {
-    group: 'Bodega Álamos (5 localidades)',
-    storeId: 'HUB_ALAMOS',
-    storeName: 'Bolt Pets Álamos',
-    items: ALAMOS_LOCALITIES.map(loc => ({ municipality: 'Bogotá D.C.', locality: loc, label: `${loc} (Bogotá)` })),
-  },
-  {
-    group: 'Bodega Suba (2 localidades)',
-    storeId: 'HUB_SUBA',
-    storeName: 'Bolt Pets Suba',
-    items: SUBA_LOCALITIES.map(loc => ({ municipality: 'Bogotá D.C.', locality: loc, label: `${loc} (Bogotá)` })),
-  },
-];
+export const TERRITORY_OPTIONS = WAREHOUSES.filter(s=>s.scheduledLocalities?.length || s.scheduledMunicipalities?.length).map(store=>({
+ group:store.name,storeId:store.id,storeName:store.name,items:[...(store.scheduledMunicipalities || []).map(m=>({municipality:m,locality:'',label:m+' (Municipio)'})),...(store.scheduledLocalities || []).map(locality=>({municipality:'Bogotá D.C.',locality,label:locality+' (Bogotá)'}))]
+}));

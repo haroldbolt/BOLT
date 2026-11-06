@@ -1,3 +1,6 @@
+import { makeWarehouseAssignment } from './warehouseAssignment';
+import { WAREHOUSES } from '../data/warehouseConfig';
+import type { Store } from '../types';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -192,9 +195,12 @@ export class OrdersRepository {
 
   private saveOrders() {
     try {
-      fs.writeFileSync(this.ordersFile, JSON.stringify(this.orders, null, 2), 'utf-8');
+      const temp=this.ordersFile+'.tmp';
+      fs.writeFileSync(temp, JSON.stringify(this.orders, null, 2), 'utf-8');
+      fs.renameSync(temp,this.ordersFile);
     } catch (e) {
       console.error('[OrdersRepository] Error guardando pedidos en disco:', e);
+      throw e;
     }
   }
 
@@ -234,6 +240,26 @@ export class OrdersRepository {
     return this.orders.find(o => o.id === id || o.orderNumber === id);
   }
 
+  public getOrderByCreationRequest(id:string): Order | undefined {return this.orders.find(o=>o.creationRequestId===id)}
+
+  // No automatic reassignment and no public mutation endpoint. Authorized
+  // operations must call this method explicitly, with a configured active store.
+  public recordWarehouseAssignment(orderId:string, warehouse:Store, actor:OrderActor): Order {
+    if(!['ADMINISTRADOR','COORDINADOR'].includes(actor.role)) throw Error('Operación no autorizada');
+    const configured=WAREHOUSES.find(store=>store.id===warehouse.id);
+    if(!configured) throw Error('Sede no configurada');
+    warehouse=configured;
+    if(!warehouse.isActive) throw Error('Sede inactiva');
+    const order=this.getOrderById(orderId); if(!order) throw Error('Pedido no encontrado');
+    if(order.storeId===warehouse.id) return order;
+    const previous={...order};
+    const initial=order.warehouseAssignment || { ...makeWarehouseAssignment(order.id,{id:order.storeId,name:order.storeName,customerName:order.storeName} as Store),revision:1};
+    order.warehouseAssignment=makeWarehouseAssignment(order.id,warehouse,initial);
+    order.storeId=warehouse.id; order.storeName=warehouse.name;
+    try {this.saveOrders()} catch(error){Object.assign(order,previous);throw error}
+    return order;
+  }
+
   public getOrdersByStore(storeId: string): Order[] {
     return this.orders.filter(o => o.storeId === storeId);
   }
@@ -261,7 +287,11 @@ export class OrdersRepository {
   // CREACIÓN DE PEDIDO CON RESERVA ATÓMICA
   // ==========================================
 
-  public createOrder(orderData: Order, catalogProducts?: Product[]): { success: boolean; order?: Order; error?: string } {
+  public createOrder(orderData: Order, catalogProducts?: Product[], warehouse?: Store): { success: boolean; order?: Order; error?: string } {
+    if(orderData.creationRequestId) {
+      const prior=this.orders.find(o=>o.creationRequestId===orderData.creationRequestId);
+      if(prior) return prior.creationRequestFingerprint===orderData.creationRequestFingerprint ? {success:true,order:prior} : {success:false,error:'La solicitud ya fue utilizada con otros datos.'};
+    }
     // 1. Validar que no exista un pedido con el mismo ID
     if (this.orders.some(o => o.id === orderData.id)) {
       return { success: false, error: `Pedido duplicado: ya existe un pedido con ID ${orderData.id}` };
@@ -313,6 +343,8 @@ export class OrdersRepository {
       });
     }
 
+    if(warehouse && warehouse.id===orderData.storeId) orderData.warehouseAssignment=makeWarehouseAssignment(orderData.id,warehouse);
+
     // 4. Registrar evento de auditoría inicial
     const initialActor: OrderActor = { role: 'CLIENTE', id: orderData.customer.email, name: orderData.customer.name };
     const historyEntry: OrderStatusHistoryEntry = {
@@ -336,7 +368,15 @@ export class OrdersRepository {
 
     // 5. Guardar pedido en colección y persistir a disco
     this.orders.unshift(orderData);
-    this.saveOrders();
+    try {this.saveOrders()} catch(error) {
+      this.orders=this.orders.filter(o=>o!==orderData);
+      this.auditHistory=this.auditHistory.filter(h=>h!==historyEntry);
+      for(const item of orderData.items || []) {
+        const p=catalogProducts?.find(p=>p.id===item.productId);
+        if(p) p.reservedStockByStore[orderData.storeId]-=item.quantity;
+      }
+      throw error;
+    }
     this.saveAudit();
 
     return { success: true, order: orderData };

@@ -1,3 +1,4 @@
+import { describeWarehouse } from './src/lib/warehouseAssignment';
 import { enrichDestination } from './src/lib/serverGeography';
 import { parseAddressComponents } from './src/lib/addressGeography';
 // Set DISABLE_HMR per AI Studio environment constraints
@@ -245,10 +246,18 @@ async function startServer() {
     res.json(filtered);
   });
 
+  const presentOrder = (order: Order) => {
+    const warehouse=stores.find(store=>store.id===order.storeId);
+    return {...order, warehouseAssignment:order.warehouseAssignment,
+      storeName:order.warehouseAssignment?.store.name || warehouse?.name || '',
+      warehouse:order.warehouseAssignment?.store || describeWarehouse(warehouse)};
+  };
+
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
-    return res.json(evaluateDeliveryQuote({...req.body, destination: enrichDestination(req.body.destination)}, stores, products, ordersRepository.getAllOrders()));
+    const quote=evaluateDeliveryQuote({...req.body, destination: enrichDestination(req.body.destination)}, stores, products, ordersRepository.getAllOrders());
+    return res.json({...quote,warehouse:describeWarehouse(stores.find(store=>store.id===quote.assignedStoreId))});
   });
 
   // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
@@ -343,6 +352,14 @@ async function startServer() {
   // Create Order with transactional stock reservation & delivery policy validation
   app.post('/api/v1/orders', (req: Request, res: Response) => {
     try {
+      const creationRequestId=req.get('Idempotency-Key');
+      const creationRequestFingerprint=crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
+      if(creationRequestId) {
+        if(creationRequestId.length>150) return res.status(400).json({error:'Identificador de solicitud inválido'});
+        const previous=ordersRepository.getOrderByCreationRequest(creationRequestId);
+        if(previous) return previous.creationRequestFingerprint===creationRequestFingerprint
+          ? res.status(200).json(presentOrder(previous)) : res.status(409).json({error:'La solicitud ya fue utilizada con otros datos.'});
+      }
       const {
         storeId,
         items,
@@ -421,7 +438,7 @@ async function startServer() {
           }
 
           // Para Turbo, se usa la bodega ganadora de Turbo
-          assignedStoreId = evaluatedQuote.assignedStoreId || storeId || 'HUB_KENNEDY';
+          assignedStoreId = evaluatedQuote.assignedStoreId;
         }
       } else {
         return res.status(400).json({code:'ADDRESS_INCOMPLETE',error:'Confirma las coordenadas del destino antes de crear el pedido.'});
@@ -566,6 +583,7 @@ async function startServer() {
       }
 
       const newOrder: Order = {
+        creationRequestId, creationRequestFingerprint,
         id: newOrderId,
         orderNumber: newOrderNum,
         createdAt: new Date().toISOString(),
@@ -626,11 +644,11 @@ async function startServer() {
         },
       };
 
-      const createResult = ordersRepository.createOrder(newOrder, products);
+      const createResult = ordersRepository.createOrder(newOrder, products, assignedStore);
       if (!createResult.success) {
         return res.status(400).json({ error: createResult.error });
       }
-      return res.status(201).json(createResult.order);
+      return res.status(201).json(presentOrder(createResult.order!));
     } catch (e: any) {
       console.error('Error creating order:', e);
       return res.status(500).json({ error: e.message || 'Error interno del servidor' });
@@ -643,14 +661,14 @@ async function startServer() {
     let list = ordersRepository.getAllOrders();
     if (storeId) list = list.filter(o => o.storeId === storeId);
     if (status) list = list.filter(o => o.fulfillmentStatus === status);
-    res.json(list);
+    res.json(list.map(presentOrder));
   });
 
   // Get specific order
   app.get('/api/v1/orders/:orderId', (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-    res.json(order);
+    res.json(presentOrder(order));
   });
 
   // Get audit history of an order
@@ -714,6 +732,8 @@ async function startServer() {
       orderNumber: order.orderNumber,
       status: order.fulfillmentStatus,
       deliveryMode: order.deliveryMode || 'TURBO',
+      warehouse:presentOrder(order).warehouse,
+      warehouseAssignment:order.warehouseAssignment,
       scheduledWindow: order.scheduledWindow,
       isSplitOrder: !!order.isSplitOrder,
       shipmentCount: order.shipmentCount || (order.childShipments ? order.childShipments.length : 1),
@@ -743,7 +763,7 @@ async function startServer() {
         sequenceNumber: latestTelemetry.sequenceNumber,
         secondsAgo: Math.max(0, Math.floor((Date.now() - latestTelemetry.timestamp) / 1000)),
       } : null,
-      hubCoordinates: stores.find(s => s.id === order.storeId)?.coordinates || { lat: 4.6284, lng: -74.1539 },
+      hubCoordinates: stores.find(s => s.id === order.storeId)?.coordinates || null,
       customerCoordinates: order.deliveryAddress.coordinates,
     });
   });

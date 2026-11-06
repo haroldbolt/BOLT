@@ -619,10 +619,13 @@ export default function App() {
   // -------------------------------------------------------------
   if (currentPath.startsWith('/pedido') && trackingOrderId) {
     return (
+      <>
       <OrderTracking
         orderId={trackingOrderId}
         onBack={() => navigateTo('/')}
       />
+      <PushNotificationBanner onNavigateToOrder={(id)=>navigateTo('/pedido/'+id)} />
+      </>
     );
   }
 
@@ -1260,7 +1263,7 @@ export default function App() {
         onOrderSuccess={(orderId) => {
           setIsCheckoutOpen(false);
           setCartItems([]);
-          pushService.simulateOrderTransition('#BP-NUEVO', orderId, 'CONFIRMADO');
+
           navigateTo(`/pedido/${orderId}`);
         }}
       />
