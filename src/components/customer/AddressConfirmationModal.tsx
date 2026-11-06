@@ -1,3 +1,5 @@
+import { TERRITORY_OPTIONS } from '../../lib/territoryConfig';
+import { AddressTerritory } from '../../lib/addressGeography';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { 
@@ -52,67 +54,6 @@ function formatCleanBogotaAddress(raw: string): string {
   return cleaned;
 }
 
-/**
- * Geocodificador inteligente de respaldo para Bogotá:
- * Mapea calles, carreras y barrios representativos cuando se escribe manualmente
- */
-function geocodeBogotaAddress(addressStr: string): LatLng | null {
-  const clean = addressStr.toLowerCase().trim();
-  if (!clean) return null;
-
-  // Reconocimiento de sectores y vías conocidas de Bogotá
-  if (clean.includes('kennedy') || clean.includes('castilla') || clean.includes('timiza')) {
-    return { lat: 4.6365, lng: -74.1448 };
-  }
-  if (clean.includes('alamos') || clean.includes('álamos') || clean.includes('engativa') || clean.includes('engativá') || clean.includes('villas')) {
-    return { lat: 4.6934, lng: -74.1192 };
-  }
-  if (clean.includes('suba') || clean.includes('rincon') || clean.includes('rincón') || clean.includes('pinar') || clean.includes('tibabuyes')) {
-    return { lat: 4.7450, lng: -74.0920 };
-  }
-  if (clean.includes('chapinero') || clean.includes('lourdes') || clean.includes('javeriana')) {
-    return { lat: 4.6438, lng: -74.0621 };
-  }
-  if (clean.includes('usaquen') || clean.includes('usaquén') || clean.includes('santa barbara') || clean.includes('cedritos') || clean.includes('calle 140')) {
-    return { lat: 4.7120, lng: -74.0320 };
-  }
-  if (clean.includes('salitre') || clean.includes('calle 26') || clean.includes('terminal') || clean.includes('modelia')) {
-    return { lat: 4.6580, lng: -74.1150 };
-  }
-  if (clean.includes('fontibon') || clean.includes('fontibón')) {
-    return { lat: 4.6730, lng: -74.1420 };
-  }
-  if (clean.includes('centro') || clean.includes('candelaria') || clean.includes('bolivar') || clean.includes('bolívar')) {
-    return { lat: 4.6028, lng: -74.0754 };
-  }
-  if (clean.includes('chia') || clean.includes('chía') || clean.includes('cota') || clean.includes('cajica')) {
-    return { lat: 4.8620, lng: -74.0580 };
-  }
-
-  // Heurística de cuadrícula bogotana (Calles y Carreras)
-  const calleMatch = clean.match(/(?:calle|clle|cl|c)\.?\s*(\d+)/i);
-  const carreraMatch = clean.match(/(?:carrera|cra|cr|kra|k)\.?\s*(\d+)/i);
-
-  if (calleMatch || carreraMatch) {
-    const calleNum = calleMatch ? parseInt(calleMatch[1], 10) : 60;
-    const craNum = carreraMatch ? parseInt(carreraMatch[1], 10) : 50;
-
-    // Calles en Bogotá aumentan de Sur (lat ~4.50) a Norte (Calle 200: lat ~4.78)
-    const baseLat = 4.580;
-    const latPerCalle = (4.780 - 4.580) / 200;
-    const estLat = Number((baseLat + Math.min(220, calleNum) * latPerCalle).toFixed(4));
-
-    // Carreras en Bogotá aumentan de Oriente (Cra 1: lng ~-74.04) a Occidente (Cra 130: lng ~-74.18)
-    const baseLng = -74.045;
-    const lngPerCra = (-74.180 - -74.045) / 120;
-    const estLng = Number((baseLng + Math.min(130, craNum) * lngPerCra).toFixed(4));
-
-    return { lat: estLat, lng: estLng };
-  }
-
-  return null;
-}
-
 export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> = ({
   isOpen,
   onClose,
@@ -129,6 +70,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const [pinCoordinates, setPinCoordinates] = useState<LatLng>(
     currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 }
   );
+  const [territory, setTerritory] = useState<AddressTerritory>({});
+  const requestSeq = useRef(0);
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
@@ -144,7 +87,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
 
   // Request authoritative quote from backend
-  const evaluateAddressQuote = useCallback(async (coords: LatLng, addr: string) => {
+  const evaluateAddressQuote = useCallback(async (coords: LatLng, addr: string, geo: AddressTerritory = {}) => {
+    const seq = ++requestSeq.current;
+    setQuote(null);
     setIsEvaluating(true);
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -158,21 +103,24 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             address: addr,
             details: detailsInput,
             coordinates: coords,
+            ...geo,
           },
           items: cartItems?.map(i => ({ productId: i.product.id, quantity: i.quantity })),
         },
         stores,
         products
       );
-      setQuote(q);
+      if(seq === requestSeq.current) setQuote(q);
     } catch (e: any) {
       if (e.name !== 'AbortError') {
-        console.error('Error fetching delivery quote:', e);
+        if(seq === requestSeq.current) setGeocodeError('No fue posible validar la entrega con el servidor. Intenta nuevamente.');
       }
     } finally {
-      setIsEvaluating(false);
+      if(seq === requestSeq.current) setIsEvaluating(false);
     }
   }, [detailsInput, cartItems, stores, products]);
+
+  useEffect(()=>()=>{++requestSeq.current; ++reverseGeocodeReqSeqRef.current; if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current)},[]);
 
   // Synchronize inputs when modal opens
   useEffect(() => {
@@ -191,7 +139,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
       evaluateAddressQuote(initialCoords, initialAddr);
     }
-  }, [isOpen, currentAddress, currentDetails, currentCoordinates, evaluateAddressQuote]);
+  }, [isOpen]);
 
   /**
    * Ejecuta la geocodificación inversa para las coordenadas del pin.
@@ -199,103 +147,18 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
    * Mantiene en sincronía el pin, la dirección y la cotización.
    */
   const triggerReverseGeocode = useCallback((newCoords: LatLng) => {
-    // Requisito 7: Si el usuario mueve el pin varias veces, utiliza únicamente el resultado de la última ubicación
     const reqId = ++reverseGeocodeReqSeqRef.current;
-
-    // Requisito 6: Muestra un indicador durante la consulta y evita confirmar una dirección anterior asociada a coordenadas nuevas
-    setIsReverseGeocoding(true);
-    setIsAddressSynced(false);
-    setGeocodeError(null);
-
-    // Cancelar cualquier debounce de entrada de texto pendiente
-    if (debounceTimeoutRef.current) {
-      clearTimeout(debounceTimeoutRef.current);
-    }
-
-    const execute = async () => {
-      let resolvedAddress: string | null = null;
-
-      try {
-        // 1. Intentar Geocoder nativo del SDK de Google Maps si está cargado
-        if (typeof google !== 'undefined' && google.maps) {
-          try {
-            let geocoderInstance: any = null;
-            if (google.maps.Geocoder) {
-              geocoderInstance = new google.maps.Geocoder();
-            } else if (typeof google.maps.importLibrary === 'function') {
-              const geocodingLib = await google.maps.importLibrary('geocoding') as any;
-              if (geocodingLib?.Geocoder) {
-                geocoderInstance = new geocodingLib.Geocoder();
-              }
-            }
-
-            if (geocoderInstance) {
-              const results = await new Promise<any[]>((resolve, reject) => {
-                geocoderInstance.geocode(
-                  { location: { lat: newCoords.lat, lng: newCoords.lng } },
-                  (res: any, status: any) => {
-                    if (status === 'OK' && res && res.length > 0) {
-                      resolve(res);
-                    } else {
-                      reject(new Error(status || 'ZERO_RESULTS'));
-                    }
-                  }
-                );
-              });
-
-              if (results && results[0]?.formatted_address) {
-                resolvedAddress = formatCleanBogotaAddress(results[0].formatted_address);
-              }
-            }
-          } catch (sdkErr) {
-            console.warn('Geocodificación inversa SDK falló, intentando proxy:', sdkErr);
-          }
-        }
-
-        // 2. Respaldo autoritativo con proxy del backend a Google Maps Geocoding API
-        if (!resolvedAddress) {
-          try {
-            const proxyRes = await api.reverseGeocode(newCoords.lat, newCoords.lng);
-            if (proxyRes?.address) {
-              resolvedAddress = proxyRes.address;
-            }
-          } catch (proxyErr) {
-            console.warn('Error en proxy de geocodificación inversa:', proxyErr);
-          }
-        }
-
-        // Requisito 7: Si llegó un nuevo movimiento mientras esta petición corría, descartar resultado
-        if (reqId !== reverseGeocodeReqSeqRef.current) {
-          return;
-        }
-
-        if (resolvedAddress) {
-          // Requisito 2: Actualiza addressInput con setAddressInput usando la dirección real obtenida
-          setAddressInput(resolvedAddress);
-          setIsAddressSynced(true);
-          setGeocodeError(null);
-
-          // Requisito 4: Mantén sincronizados el pin, la dirección y la cotización de domicilio
-          evaluateAddressQuote(newCoords, resolvedAddress);
-        } else {
-          // Requisito 6: Si falla, informa al usuario y evita confirmar una dirección anterior asociada a coordenadas nuevas
-          setIsAddressSynced(false);
-          setGeocodeError('No fue posible identificar la dirección de este punto en Bogotá. Por favor mueve el pin a una vía reconocida o digita la dirección manualmente.');
-        }
-      } catch (err: any) {
-        if (reqId === reverseGeocodeReqSeqRef.current) {
-          setIsAddressSynced(false);
-          setGeocodeError('Error al consultar la dirección en el mapa. Intenta mover el pin nuevamente.');
-        }
-      } finally {
-        if (reqId === reverseGeocodeReqSeqRef.current) {
-          setIsReverseGeocoding(false);
-        }
-      }
-    };
-
-    execute();
-  }, [evaluateAddressQuote]);
+    ++requestSeq.current; setQuote(null); setTerritory({});
+    setIsReverseGeocoding(true); setIsAddressSynced(false); setGeocodeError(null);
+    if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    api.reverseGeocode(newCoords.lat,newCoords.lng).then(result=>{
+      if(reqId!==reverseGeocodeReqSeqRef.current) return;
+      if(result?.address) {
+        setAddressInput(result.address); setTerritory(result); setIsAddressSynced(true);
+        evaluateAddressQuote(newCoords,result.address,result);
+      } else setGeocodeError('No se pudo identificar la dirección del pin. Conservamos tu dirección; confirma sus datos o intenta de nuevo.');
+    }).finally(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setIsReverseGeocoding(false)});
+  },[evaluateAddressQuote]);
 
   // Requisito 1: En handlePinDragEnd, al soltar el pin, actualiza sus coordenadas y consulta la dirección mediante geocodificación inversa de Google Maps
   const handlePinDragEnd = (e: any) => {
@@ -342,73 +205,31 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
   // Manejo de escritura manual de la dirección
   const handleAddressInputChange = (val: string) => {
-    setAddressInput(val);
-    setGeocodeError(null);
-    setIsAddressSynced(true);
-
-    // Cancelar solicitudes de geocodificación inversa en curso
-    reverseGeocodeReqSeqRef.current++;
-    setIsReverseGeocoding(false);
-
-    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-
-    debounceTimeoutRef.current = setTimeout(async () => {
-      if (!val.trim()) return;
-      setIsGeocoding(true);
-
-      let foundCoords: LatLng | null = null;
-
-      // 1. Intentar Geocoder nativo de Google Maps
-      if (typeof google !== 'undefined' && google.maps && google.maps.Geocoder) {
-        try {
-          const geocoder = new google.maps.Geocoder();
-          const searchTarget = val.toLowerCase().includes('bogot') ? val : `${val}, Bogotá, Colombia`;
-          const results = await new Promise<any[]>((resolve, reject) => {
-            geocoder.geocode({ address: searchTarget }, (res: any, status: any) => {
-              if (status === 'OK' && res && res.length > 0) resolve(res);
-              else reject(status);
-            });
-          });
-          if (results?.[0]?.geometry?.location) {
-            foundCoords = {
-              lat: Number(results[0].geometry.location.lat().toFixed(6)),
-              lng: Number(results[0].geometry.location.lng().toFixed(6)),
-            };
-          }
-        } catch {
-          // Continuar con respaldo
-        }
-      }
-
-      // 2. Intentar backend forward geocode proxy
-      if (!foundCoords) {
-        try {
-          const forwardRes = await api.forwardGeocode(val);
-          if (forwardRes?.coordinates) {
-            foundCoords = forwardRes.coordinates;
-          }
-        } catch {
-          // Continuar con cuadrícula heurística
-        }
-      }
-
-      // 3. Fallback a cuadrícula de Bogotá
-      if (!foundCoords) {
-        foundCoords = geocodeBogotaAddress(val);
-      }
-
+    setAddressInput(val); setQuote(null); setTerritory({}); setGeocodeError(null); setIsAddressSynced(false);
+    ++requestSeq.current;
+    const seq=++reverseGeocodeReqSeqRef.current;
+    setIsReverseGeocoding(false); setIsGeocoding(true);
+    if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    debounceTimeoutRef.current=setTimeout(async()=>{
+      const result=val.trim() ? await api.forwardGeocode(val) : null;
+      if(seq!==reverseGeocodeReqSeqRef.current) return;
       setIsGeocoding(false);
-
-      if (foundCoords) {
-        setPinCoordinates(foundCoords);
-        evaluateAddressQuote(foundCoords, val);
-      }
-    }, 500);
+      if(result?.coordinates) {
+        setPinCoordinates(result.coordinates); setTerritory(result); setIsAddressSynced(true);
+        evaluateAddressQuote(result.coordinates,val,result);
+      } else setGeocodeError('Dirección pendiente de ubicar. Completa la dirección o confirma las coordenadas del destino; no es una exclusión de cobertura.');
+    },500);
+  };
+  const confirmDestinationPoint = () => {
+    ++reverseGeocodeReqSeqRef.current;
+    if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    setIsGeocoding(false); setIsReverseGeocoding(false); setIsAddressSynced(true); setGeocodeError(null);
+    evaluateAddressQuote(pinCoordinates,addressInput,territory);
   };
 
   // Requisito 4: Al confirmar, onConfirmAddress debe recibir los datos de esa misma ubicación
   const canConfirm = 
-    !isEvaluating && 
+    !isEvaluating && !isGeocoding && 
     !isReverseGeocoding && 
     isAddressSynced && 
     !geocodeError &&
@@ -426,33 +247,29 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const isTurbo = !!quote?.availableModes?.turbo;
   const isTurboDividido = !!quote?.availableModes?.turboDividido;
   const isScheduledOnly = !isTurbo && !isTurboDividido && !!quote?.availableModes?.scheduled;
-  const isOutOfAllCoverage = !isTurbo && !isTurboDividido && !quote?.availableModes?.scheduled;
+  const isOutOfAllCoverage = quote?.eligibilityStatus === 'OUT_OF_COVERAGE';
 
   const detectedLocality = useMemo(() => {
-    return quote?.detectedLocality || detectBogotaLocality(pinCoordinates, addressInput);
+    return quote?.locality || ''; 
   }, [quote?.detectedLocality, pinCoordinates, addressInput]);
-  const localityName = quote?.detectedLocalityName || getBogotaLocalityName(detectedLocality);
-  const isTurboLocality = (TURBO_ALLOWED_LOCALITIES as readonly string[]).includes(detectedLocality);
+  const localityName = quote?.locality || 'Pendiente de identificar';
+  const isTurboLocality = (TURBO_ALLOWED_LOCALITIES as readonly string[]).includes(detectedLocality.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
   const isAutoSwitchedToScheduled =
     !!quote?.autoSwitchedToScheduled ||
     isScheduledOnly ||
     (!isTurboLocality && !!quote?.availableModes?.scheduled);
 
   const PRESET_LOCATIONS = [
-    { label: 'Kennedy', locality: 'Kennedy', address: 'Calle 3 #78-20, Kennedy Central, Bogotá', coords: { lat: 4.6365, lng: -74.1448 }, turbo: true },
-    { label: 'Suba', locality: 'Suba', address: 'Carrera 107 #143-31, Suba Pinar, Bogotá', coords: { lat: 4.7450, lng: -74.0920 }, turbo: true },
-    { label: 'Engativá', locality: 'Engativá', address: 'Calle 64 #70-30, Álamos, Engativá, Bogotá', coords: { lat: 4.6934, lng: -74.1192 }, turbo: true },
-    { label: 'Usaquén', locality: 'Usaquén', address: 'Calle 140 #11-45, Cedritos, Usaquén, Bogotá', coords: { lat: 4.7120, lng: -74.0320 }, turbo: false },
-    { label: 'Chapinero', locality: 'Chapinero', address: 'Carrera 7 #53-20, Chapinero, Bogotá', coords: { lat: 4.6438, lng: -74.0621 }, turbo: false },
-    { label: 'Centro', locality: 'Santa Fe', address: 'Calle 11 #15-53, La Candelaria / Centro, Bogotá', coords: { lat: 4.6028, lng: -74.0754 }, turbo: false },
+    { label: 'Kennedy', locality: 'Kennedy', address: 'Calle 3 #78-20, Kennedy Central, Bogotá', turbo: true },
+    { label: 'Suba', locality: 'Suba', address: 'Carrera 107 #143-31, Suba Pinar, Bogotá', turbo: true },
+    { label: 'Engativá', locality: 'Engativá', address: 'Calle 64 #70-30, Álamos, Engativá, Bogotá', turbo: true },
+    { label: 'Usaquén', locality: 'Usaquén', address: 'Calle 140 #11-45, Cedritos, Usaquén, Bogotá', turbo: false },
+    { label: 'Chapinero', locality: 'Chapinero', address: 'Carrera 7 #53-20, Chapinero, Bogotá', turbo: false },
+    { label: 'Centro', locality: 'Santa Fe', address: 'Calle 11 #15-53, La Candelaria / Centro, Bogotá', turbo: false },
   ];
 
   const handleSelectPreset = (preset: typeof PRESET_LOCATIONS[0]) => {
-    setAddressInput(preset.address);
-    setPinCoordinates(preset.coords);
-    setIsAddressSynced(true);
-    setGeocodeError(null);
-    evaluateAddressQuote(preset.coords, preset.address);
+    handleAddressInputChange(preset.address);
   };
 
   if (!isOpen) return null;
@@ -472,7 +289,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 ¿Dónde entregamos tu pedido?
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
-                Validación de localidad, distancia máxima 6 km y ETA ≤ 25 min en Bogotá
+                Cobertura urbana por localidad · Turbo hasta 6 km y 25 min
               </p>
             </div>
           </div>
@@ -575,6 +392,24 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
               />
             </div>
           </div>
+
+          <details className="p-3 rounded-xl border border-slate-200 space-y-2">
+            <summary className="text-xs font-bold cursor-pointer">Completar o confirmar el punto de entrega</summary>
+            <label className="block text-xs font-bold">Localidad (si falta identificarla)
+              <select aria-label="Localidad de entrega" value={territory.locality || ''} onChange={e=>{
+                const next={...territory, municipality:'Bogotá D.C.',locality:e.target.value};
+                setTerritory(next); evaluateAddressQuote(pinCoordinates,addressInput,next);
+              }} className="block w-full p-2 border rounded-lg">
+                <option value="">Identificar por el punto de entrega</option>
+                {TERRITORY_OPTIONS.flatMap(g=>g.items).filter(i=>i.locality).map(i=><option key={i.locality} value={i.locality}>{i.label}</option>)}
+              </select>
+            </label>
+            <p className="text-xs">También puedes confirmar el punto exacto del destino. El servidor valida su localidad y cobertura urbana.</p>
+            <div className="flex gap-2">
+              {(['lat','lng'] as const).map(axis=><label key={axis} className="text-xs min-w-0">{axis==='lat'?'Latitud del destino':'Longitud del destino'}<input aria-label={axis==='lat'?'Latitud del destino':'Longitud del destino'} type="number" step="any" value={pinCoordinates[axis]} onChange={e=>{++requestSeq.current;setQuote(null);setIsAddressSynced(false);setPinCoordinates({...pinCoordinates,[axis]:Number(e.target.value)})}} className="w-full border rounded p-2" /></label>)}
+            </div>
+            <button onClick={confirmDestinationPoint} className="text-xs font-bold text-red-700 underline">Validar este destino</button>
+          </details>
 
           {/* Banner obligatorio de transición a Envío Programado */}
           {isAutoSwitchedToScheduled && (
@@ -855,7 +690,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             ) : isScheduledOnly ? (
               <span className="text-blue-800 font-bold">✓ Disponible para Envío Programado en Bogotá</span>
             ) : (
-              <span className="text-rose-700 font-bold">Ubicación fuera de cobertura en Bogotá</span>
+              <span className="text-rose-700 font-bold">{quote?.eligibilityStatus === 'OUT_OF_COVERAGE' ? 'Ubicación fuera de cobertura' : quote?.message || 'Completa y valida tu dirección'}</span>
             )}
           </div>
 

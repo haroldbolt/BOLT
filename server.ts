@@ -1,3 +1,5 @@
+import { enrichDestination } from './src/lib/serverGeography';
+import { parseAddressComponents } from './src/lib/addressGeography';
 // Set DISABLE_HMR per AI Studio environment constraints
 if (process.env.DISABLE_HMR === undefined) {
   process.env.DISABLE_HMR = 'true';
@@ -245,7 +247,8 @@ async function startServer() {
 
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
-    return deliveryQuoteEndpoint(req, res, stores, products);
+    res.set('Cache-Control', 'no-store');
+    return res.json(evaluateDeliveryQuote({...req.body, destination: enrichDestination(req.body.destination)}, stores, products, ordersRepository.getAllOrders()));
   });
 
   // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
@@ -271,34 +274,16 @@ async function startServer() {
           .replace(/,\s*Cundinamarca/gi, '')
           .trim();
 
-        let municipality = 'Bogotá D.C.';
-        let locality: string | undefined = undefined;
-
-        for (const comp of first.address_components || []) {
-          const types = comp.types || [];
-          if (types.includes('locality') || types.includes('administrative_area_level_2')) {
-            if (isSoachaMunicipality(comp.long_name)) {
-              municipality = 'Soacha';
-            }
-          }
-          if (types.includes('sublocality_level_1') || types.includes('sublocality') || types.includes('neighborhood')) {
-            const canon = canonicalizeBogotaLocality(comp.long_name);
-            if (canon) {
-              locality = canon;
-            }
-          }
-        }
-
-        if (isSoachaMunicipality(address)) {
-          municipality = 'Soacha';
-        }
+        const territory = parseAddressComponents(first.address_components);
+        const resolved = enrichDestination({...territory, coordinates: first.geometry?.location});
 
         return res.json({
           address,
           formattedAddress: address,
           rawAddress: raw,
-          municipality,
-          locality,
+          municipality: resolved.municipality,
+          locality: resolved.locality,
+          neighborhood: territory.neighborhood,
           status: 'OK',
         });
       } else {
@@ -335,33 +320,15 @@ async function startServer() {
           .replace(/,\s*Cundinamarca/gi, '')
           .trim();
 
-        let municipality = 'Bogotá D.C.';
-        let locality: string | undefined = undefined;
-
-        for (const comp of first.address_components || []) {
-          const types = comp.types || [];
-          if (types.includes('locality') || types.includes('administrative_area_level_2')) {
-            if (isSoachaMunicipality(comp.long_name)) {
-              municipality = 'Soacha';
-            }
-          }
-          if (types.includes('sublocality_level_1') || types.includes('sublocality') || types.includes('neighborhood')) {
-            const canon = canonicalizeBogotaLocality(comp.long_name);
-            if (canon) {
-              locality = canon;
-            }
-          }
-        }
-
-        if (isSoachaMunicipality(formatted) || isSoachaMunicipality(String(address))) {
-          municipality = 'Soacha';
-        }
+        const territory = parseAddressComponents(first.address_components);
+        const resolved = enrichDestination({...territory, coordinates: first.geometry?.location});
 
         return res.json({
           coordinates: location ? { lat: Number(location.lat.toFixed(6)), lng: Number(location.lng.toFixed(6)) } : null,
           formattedAddress: formatted,
-          municipality,
-          locality,
+          municipality: resolved.municipality,
+          locality: resolved.locality,
+          neighborhood: territory.neighborhood,
           status: 'OK',
         });
       } else {
@@ -380,13 +347,14 @@ async function startServer() {
         storeId,
         items,
         customer,
-        deliveryAddress,
+        deliveryAddress: rawDeliveryAddress,
         paymentMethod,
         tip = 0,
         deliveryMode: requestedDeliveryMode,
         scheduledWindow,
       } = req.body;
 
+      const deliveryAddress = enrichDestination(rawDeliveryAddress);
       if (!items || !items.length || !customer || !deliveryAddress || !paymentMethod) {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
       }
@@ -399,38 +367,17 @@ async function startServer() {
         coordinates: deliveryAddress.coordinates,
       });
 
-      // Validar cobertura territorial estricta en pedidos programados
-      if (requestedDeliveryMode === 'PROGRAMADO') {
-        if (territoryAssignment.status === 'OUT_OF_COVERAGE') {
-          return res.status(400).json({
-            error: territoryAssignment.reason || 'Zona fuera de la cobertura estándar habilitada.',
-            code: 'OUT_OF_COVERAGE',
-          });
-        }
-        if (territoryAssignment.status === 'NEEDS_CONFIRMATION') {
-          return res.status(400).json({
-            error: territoryAssignment.reason || 'Debes seleccionar la localidad o municipio de entrega antes de confirmar el pedido.',
-            code: 'LOCALITY_NEEDS_CONFIRMATION',
-          });
-        }
-      }
-
       // Validar cobertura y límite de tiempo con el motor autoritativo si hay coordenadas
       let assignedStoreId = storeId;
       let evaluatedQuote: any = null;
 
       if (deliveryAddress.coordinates && !isNaN(deliveryAddress.coordinates.lat) && !isNaN(deliveryAddress.coordinates.lng)) {
         evaluatedQuote = evaluateDeliveryQuote({
-          destination: {
-            address: deliveryAddress.address,
-            details: deliveryAddress.details,
-            coordinates: deliveryAddress.coordinates,
-            municipality: deliveryAddress.municipality,
-            locality: deliveryAddress.locality,
-          },
+          destination: deliveryAddress,
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
           requestedMode: requestedDeliveryMode,
-        }, stores, products);
+          scheduledWindow,
+        }, stores, products, ordersRepository.getAllOrders());
 
         // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
         if (requestedDeliveryMode === 'PROGRAMADO') {
@@ -445,27 +392,19 @@ async function startServer() {
           // Regla autoritativa: La bodega para pedidos programados es ESTRICTAMENTE la territorial (previene manipulación del navegador)
           assignedStoreId = territoryAssignment.assignedStoreId!;
 
+          if (!scheduledWindow) return res.status(400).json({code:'MODE_UNAVAILABLE',error:'Selecciona una franja de entrega programada.'});
           if (scheduledWindow) {
+            const canonicalSlot = evaluatedQuote.scheduledSlots.find((slot: any) =>
+              slot.date === scheduledWindow.date &&
+              (!scheduledWindow.slotId || slot.slotId === scheduledWindow.slotId) &&
+              (!scheduledWindow.startTime || slot.startTime === scheduledWindow.startTime) &&
+              (!scheduledWindow.windowId || slot.windowId === scheduledWindow.windowId));
+            Object.assign(scheduledWindow, canonicalSlot);
             const bookingVal = validateScheduledBooking(scheduledWindow);
             if (!bookingVal.valid) {
               return res.status(400).json({
                 error: bookingVal.reason || 'La franja de entrega programada seleccionada ya no está disponible.',
                 code: 'CUTOFF_EXPIRED',
-              });
-            }
-
-            // Validar capacidad de la franja (máximo 10 pedidos por franja en la bodega territorial asignada)
-            const currentSlotOrders = ordersRepository.getAllOrders().filter(
-              (o: Order) => o.deliveryMode === 'PROGRAMADO' &&
-              o.scheduledWindow &&
-              o.scheduledWindow.date === scheduledWindow.date &&
-              (o.scheduledWindow.slotId === scheduledWindow.slotId || o.scheduledWindow.startTime === scheduledWindow.startTime) &&
-              o.storeId === assignedStoreId
-            );
-            if (currentSlotOrders.length >= 10) {
-              return res.status(400).json({
-                error: 'La franja seleccionada ha alcanzado su capacidad máxima (10 pedidos). Por favor selecciona otro horario.',
-                code: 'SLOT_CAPACITY_EXCEEDED',
               });
             }
           }
@@ -475,6 +414,7 @@ async function startServer() {
             return res.status(400).json({
               error: evaluatedQuote.message,
               eligibilityStatus: evaluatedQuote.eligibilityStatus,
+              code: evaluatedQuote.reasonCode || 'MODE_UNAVAILABLE',
               geographicDistanceMeters: evaluatedQuote.geographicDistanceMeters,
               roadDistanceMeters: evaluatedQuote.roadDistanceMeters,
             });
@@ -483,11 +423,11 @@ async function startServer() {
           // Para Turbo, se usa la bodega ganadora de Turbo
           assignedStoreId = evaluatedQuote.assignedStoreId || storeId || 'HUB_KENNEDY';
         }
-      } else if (requestedDeliveryMode === 'PROGRAMADO' && territoryAssignment.assignedStoreId) {
-        assignedStoreId = territoryAssignment.assignedStoreId;
+      } else {
+        return res.status(400).json({code:'ADDRESS_INCOMPLETE',error:'Confirma las coordenadas del destino antes de crear el pedido.'});
       }
 
-      const assignedStore = stores.find(s => s.id === assignedStoreId) || stores[0];
+      const assignedStore = stores.find(s => s.id === assignedStoreId);
       if (!assignedStore || !assignedStore.isActive) {
         return res.status(400).json({
           error: `La bodega territorial asignada (${territoryAssignment?.assignedStoreName || assignedStoreId}) se encuentra inactiva. No es posible trasladar el pedido a otra bodega sin autorización.`,

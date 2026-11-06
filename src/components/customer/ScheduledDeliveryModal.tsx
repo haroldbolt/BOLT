@@ -25,7 +25,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
 }) => {
   // Solo franjas vigentes
   const validSlots = useMemo(() => {
-    return scheduledSlots.filter(s => !s.cutoffPassed);
+    return scheduledSlots.filter(s => !s.cutoffPassed && s.availableCapacity > 0);
   }, [scheduledSlots]);
 
   // Agrupar franjas por fecha

@@ -93,7 +93,7 @@ async function runTests() {
   const quoteAlamos = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Transversal 93 #65-10, Álamos Norte, Bogotá',
+        address: 'Transversal 93 #65-10, Álamos Norte, Bogotá', locality:'Engativá', municipality:'Bogotá D.C.',
         coordinates: alamosClient,
       },
     },
@@ -108,7 +108,7 @@ async function runTests() {
   const quoteSuba = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Carrera 91 #130-45, Suba Rincón, Bogotá',
+        address: 'Carrera 91 #130-45, Suba Rincón, Bogotá', locality:'Suba', municipality:'Bogotá D.C.',
         coordinates: subaClient,
       },
     },
@@ -137,7 +137,7 @@ async function runTests() {
   const quoteFar = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Avenida Pradilla #4-12, Chía',
+        address: 'Avenida Pradilla #4-12, Chía', municipality:'Chía',
         coordinates: farClient,
       },
     },
@@ -145,15 +145,15 @@ async function runTests() {
     INITIAL_PRODUCTS
   );
   assert(quoteFar.availableModes.turbo === false, 'Destino > 6.000m o fuera de Kennedy/Suba/Engativá deshabilita Turbo');
-  assert(quoteFar.autoSwitchedToScheduled === true, 'Conmuta automáticamente a Envío Programado');
-  assert(quoteFar.message === 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido', 'Mensaje de transición obligatorio presente');
-  assert(quoteFar.geographicDistanceMeters > 6000, `Distancia reportada > 6000m: ${quoteFar.geographicDistanceMeters}m`);
+  assert(quoteFar.availableModes.scheduled === false, 'Chía permanece fuera del territorio habilitado');
+  assert(quoteFar.eligibilityStatus === 'OUT_OF_COVERAGE', 'Municipio excluido tiene rechazo geográfico explícito');
+  assert(quoteFar.reasonCode === 'TERRITORY_OUT_OF_COVERAGE', 'La exclusión de Chía es territorial, no un radio ampliado');
 
   // Test 10: Strict 1,500s Time Boundary Test
   // Create an artificial candidate store at distance where total seconds exceeds 1500s but distance is <= 6000m
   const customStore = {
     ...kennedyHub,
-    id: 'TEST_HUB',
+    id: 'HUB_KENNEDY',
     coordinates: { lat: 4.6284, lng: -74.1539 },
   };
   // Distance 5.8 km (5800m <= 6000m), road distance 5800 * 1.32 = 7656m, travel = 7656 / (23000/3600) = 1198s
@@ -162,7 +162,7 @@ async function runTests() {
   const quoteTimeExceeded = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Punto Borde Tiempo',
+        address: 'Calle 1 #1-1 (fixture sintético de ETA)', locality:'Kennedy', municipality:'Bogotá D.C.',
         coordinates: edgeCoords,
       },
     },
@@ -446,8 +446,8 @@ async function runTests() {
   // Simular ajuste por administrador de entrada de cargue 100m al norte
   modKennedy.verifiedEntrance = { lat: 4.633000, lng: -74.1516306 };
   const clientCoord = { lat: 4.6365, lng: -74.1448 };
-  const quoteOriginal = evaluateDeliveryQuote({ destination: { address: 'Calle 3 #78-20', coordinates: clientCoord } }, INITIAL_STORES);
-  const quoteUpdated = evaluateDeliveryQuote({ destination: { address: 'Calle 3 #78-20', coordinates: clientCoord } }, modifiedStores);
+  const quoteOriginal = evaluateDeliveryQuote({ destination: { address: 'Calle 3 #78-20', locality:'Kennedy', municipality:'Bogotá D.C.', coordinates: clientCoord } }, INITIAL_STORES);
+  const quoteUpdated = evaluateDeliveryQuote({ destination: { address: 'Calle 3 #78-20', locality:'Kennedy', municipality:'Bogotá D.C.', coordinates: clientCoord } }, modifiedStores);
   assert(quoteUpdated.assignedStoreCoordinates?.lat === 4.633000, 'Cotización utiliza las coordenadas de entrada verificadas como origen');
   assert(quoteUpdated.roadDistanceMeters !== quoteOriginal.roadDistanceMeters, 'Recalcula la distancia vial al modificar la entrada física');
 
@@ -478,7 +478,7 @@ async function runTests() {
     zeroStockKennedyCatalog
   );
   assert(quoteOutOfStock.availableModes.turbo === false, 'No permite compra Turbo si el producto está agotado en la sede asignada');
-  assert(quoteOutOfStock.autoSwitchedToScheduled === true && quoteOutOfStock.availableModes.scheduled === true, 'Conmuta a Envío Programado sin tomar existencias de Suba');
+  assert(quoteOutOfStock.reasonCode === 'INSUFFICIENT_STOCK' && quoteOutOfStock.availableModes.scheduled === false, 'No ofrece Programados sin stock territorial ni toma existencias de Suba');
 
   // Test 41: Advanced Search Filters (Price range, Specific brand, Weight range)
   const allProds = INITIAL_PRODUCTS;

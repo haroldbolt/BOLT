@@ -1,0 +1,120 @@
+[
+  {
+    "name": "Cedritos",
+    "address": "Calle 150 #16-56, Cedritos, Bogotá",
+    "expectedLocality": "Usaquén",
+    "expectedStoreId": "HUB_SUBA",
+    "coordinates": {
+      "lat": 4.731531,
+      "lng": -74.041785
+    },
+    "formattedAddress": "Cl. 150 # 16-56, Usaquén, Bogotá, Colombia",
+    "municipality": "Bogotá D.C.",
+    "locality": "Usaquén",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "Usaquen",
+    "address": "Carrera 6 #118-05, Bogotá",
+    "expectedLocality": "Usaquén",
+    "expectedStoreId": "HUB_SUBA",
+    "coordinates": {
+      "lat": 4.694713,
+      "lng": -74.03077
+    },
+    "formattedAddress": "Cra. 6 #118-5, Bogotá, Colombia",
+    "municipality": "Bogotá D.C.",
+    "locality": "Usaquén",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "Suba",
+    "address": "Carrera 107 #143-31, Suba, Bogotá",
+    "expectedLocality": "Suba",
+    "expectedStoreId": "HUB_SUBA",
+    "coordinates": {
+      "lat": 4.747154,
+      "lng": -74.098137
+    },
+    "formattedAddress": "Cra. 107 # 143-31, Suba, Bogotá, Colombia",
+    "municipality": "Bogotá D.C.",
+    "locality": "Suba",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "Chapinero",
+    "address": "Carrera 7 #53-20, Chapinero, Bogotá",
+    "expectedLocality": "Chapinero",
+    "expectedStoreId": "HUB_ALAMOS",
+    "coordinates": {
+      "lat": 4.639695,
+      "lng": -74.062916
+    },
+    "formattedAddress": "Ak 7 #53-20, Bogotá, Colombia",
+    "municipality": "Bogotá D.C.",
+    "locality": "Chapinero",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "SantaFe",
+    "address": "Carrera 7 #22-79, Bogotá",
+    "expectedLocality": "Santa Fe",
+    "expectedStoreId": "HUB_KENNEDY",
+    "coordinates": {
+      "lat": 4.608881,
+      "lng": -74.070672
+    },
+    "formattedAddress": "Cra. 7 #22-79, Bogotá, Colombia",
+    "municipality": "Bogotá D.C.",
+    "locality": "Santa Fe",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "Candelaria",
+    "address": "Carrera 4 #10-18, Bogotá",
+    "expectedLocality": "La Candelaria",
+    "expectedStoreId": "HUB_KENNEDY",
+    "coordinates": {
+      "lat": 4.595844,
+      "lng": -74.073112
+    },
+    "formattedAddress": "Cra. 4 #10-18, La Candelaria, Bogotá, Colombia",
+    "municipality": "Bogotá D.C.",
+    "locality": "La Candelaria",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "Soacha",
+    "address": "Carrera 7 #14-62, Soacha, Cundinamarca",
+    "expectedLocality": "",
+    "expectedStoreId": "HUB_KENNEDY",
+    "coordinates": {
+      "lat": 4.581935,
+      "lng": -74.217598
+    },
+    "formattedAddress": "Cra. 7 #14 62, Soacha, Colombia",
+    "municipality": "Soacha",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  },
+  {
+    "name": "Chia",
+    "address": "Carrera 11 #11-29, Chía, Cundinamarca",
+    "expectedLocality": "",
+    "expectedStoreId": null,
+    "coordinates": {
+      "lat": 4.861376,
+      "lng": -74.060706
+    },
+    "formattedAddress": "Cra. 11 #11-29, Chía, Colombia",
+    "municipality": "Bogotá D.C.",
+    "status": "OK",
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+  }
+]

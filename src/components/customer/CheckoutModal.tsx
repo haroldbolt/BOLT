@@ -65,7 +65,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   // Scheduled delivery slot state: solo mostrar franjas vigentes
   const availableSlots: ScheduledSlot[] = useMemo(() => {
-    return (deliveryQuote?.scheduledSlots || []).filter(s => !s.cutoffPassed);
+    return (deliveryQuote?.scheduledSlots || []).filter(s => !s.cutoffPassed && s.availableCapacity > 0);
   }, [deliveryQuote?.scheduledSlots]);
 
   // Agrupar franjas por fecha para visualización limpia
@@ -122,7 +122,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!isOpen) return;
     if (selectedScheduledWindowProp?.slotId && availableSlots.some(s => s.slotId === selectedScheduledWindowProp.slotId)) {
       setSelectedSlotId(selectedScheduledWindowProp.slotId);
-    } else if (!selectedSlotId && availableSlots.length > 0) {
+    } else if (!availableSlots.some(s=>s.slotId===selectedSlotId) && availableSlots.length > 0) {
       setSelectedSlotId(availableSlots[0].slotId);
       onSelectScheduledWindow?.(availableSlots[0]);
     }
@@ -166,6 +166,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             }
           : undefined;
 
+      if(!deliveryQuote || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido)) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
       const payload = {
         storeId: deliveryQuote?.assignedStoreId || currentStore.id,
         deliveryMode: selectedMode,
@@ -190,6 +191,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         },
         deliveryAddress: {
           address,
+          municipality: deliveryQuote?.municipality,
+          locality: deliveryQuote?.locality,
+          neighborhood: deliveryQuote?.destination.neighborhood,
           details: addressDetails,
           porteriaPolicy,
           coordinates: customerCoordinates || {
@@ -519,7 +523,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               type="text"
               placeholder="Dirección completa (ej. Calle 3 #78-20, Kennedy)"
               value={address}
-              onChange={e => setAddress(e.target.value)}
+              readOnly
+              onClick={onChangeAddress}
               required
               className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
             />
