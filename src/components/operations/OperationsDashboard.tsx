@@ -4,7 +4,7 @@ import {
   Settings, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, UserCheck, 
   Search, RefreshCw, Key, Download, Sparkles, Phone, MapPin, Calendar,
   Building2, ShoppingBag, Navigation, Radio, Play, Square, Battery,
-  Compass, Crosshair, Activity, Smartphone
+  Compass, Crosshair, Activity, Smartphone, Layers, Lock, LogOut
 } from 'lucide-react';
 import { Order, Product, Store, DriverProfile, OperationRole, FulfillmentStatus, GPSTelemetry, GPSTrackingPoint } from '../../types';
 import { formatCOP, formatTimeBogota, formatDateBogota } from '../../lib/formatters';
@@ -12,6 +12,8 @@ import { api } from '../../lib/api';
 import { pushService } from '../../lib/notifications';
 import { WarehouseManagerTab } from './WarehouseManagerTab';
 import { ShopifySyncTab } from './ShopifySyncTab';
+import { CatalogManagerTab } from './CatalogManagerTab';
+import { AdminAuthModal } from './AdminAuthModal';
 
 interface OperationsDashboardProps {
   onBackToCustomer: () => void;
@@ -23,8 +25,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   onViewOrderTracking,
 }) => {
   const [currentRole, setCurrentRole] = useState<OperationRole>('ADMINISTRADOR');
-  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR'>('PEDIDOS');
+  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'CATALOGO' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR'>('PEDIDOS');
   const [deliveryModeFilter, setDeliveryModeFilter] = useState<'TODOS' | 'TURBO' | 'TURBO_DIVIDIDO' | 'PROGRAMADO'>('TODOS');
+  
+  // Seguridad y sesión administrativa
+  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
+  const [adminUser, setAdminUser] = useState<any>(null);
   
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
@@ -143,6 +149,11 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   useEffect(() => {
     loadData();
     checkGpsPermission();
+
+    // Comprobar si existe sesión administrativa activa
+    api.getAdminMe().then(res => {
+      if (res?.user) setAdminUser(res.user);
+    }).catch(() => {});
 
     // Obtener nivel de batería si el dispositivo lo soporta
     if (typeof navigator !== 'undefined' && (navigator as any).getBattery) {
@@ -723,12 +734,45 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               </select>
             </div>
 
+            {/* Admin Session Security Indicator */}
+            {adminUser ? (
+              <div className="flex items-center gap-1.5 bg-slate-800/90 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs font-semibold">
+                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
+                <span className="text-emerald-300 font-mono text-[11px] truncate max-w-[130px]">{adminUser.email}</span>
+                <button
+                  onClick={async () => {
+                    await api.logoutAdmin();
+                    setAdminUser(null);
+                  }}
+                  className="text-slate-400 hover:text-white p-0.5 rounded transition"
+                  title="Cerrar sesión de administrador"
+                >
+                  <LogOut className="w-3 h-3" />
+                </button>
+              </div>
+            ) : (
+              <button
+                onClick={() => setIsAdminAuthModalOpen(true)}
+                className="flex items-center gap-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 border border-red-500/40 px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer"
+                title="Iniciar sesión de administrador verificada"
+              >
+                <Lock className="w-3 h-3" />
+                <span>Acceso Admin</span>
+              </button>
+            )}
+
             {/* Role Switcher */}
             <div className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-xl text-xs font-semibold">
               <span className="text-slate-400">Rol:</span>
               <select
                 value={currentRole}
-                onChange={e => setCurrentRole(e.target.value as OperationRole)}
+                onChange={e => {
+                  const newRole = e.target.value as OperationRole;
+                  setCurrentRole(newRole);
+                  if (newRole === 'ADMINISTRADOR' && !adminUser) {
+                    setIsAdminAuthModalOpen(true);
+                  }
+                }}
                 className="bg-transparent text-yellow-300 font-bold focus:outline-none cursor-pointer"
               >
                 <option value="ADMINISTRADOR" className="bg-slate-800">Administrador</option>
@@ -751,6 +795,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             { id: 'PEDIDOS', label: 'Tablero de Pedidos', count: storeOrders.length, icon: Boxes },
             { id: 'PROGRAMADAS', label: 'Entregas Programadas', count: scheduledOrders.length, icon: Calendar },
             { id: 'BODEGAS', label: 'Bodegas y Mapas', count: stores.filter(s => s.turboEnabled).length, icon: Building2 },
+            { id: 'CATALOGO', label: 'Gestión de Catálogo & Precios', icon: Layers, alert: false },
             { id: 'SHOPIFY', label: 'Shopify Agrocentro', icon: ShoppingBag },
             { id: 'FARMACIA', label: 'Fórmulas Veterinarias', count: pendingPrescriptionOrders.length, icon: FileText, alert: pendingPrescriptionOrders.length > 0 },
             { id: 'FLOTA', label: 'Flota & Repartidores', icon: Bike },
@@ -1508,6 +1553,17 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             products={products}
             orders={orders}
             onRefreshStores={loadData}
+          />
+        )}
+
+        {/* ============================================================== */}
+        {/* TAB: ADMINISTRADOR DE CATÁLOGO & PRECIOS */}
+        {/* ============================================================== */}
+        {activeTab === 'CATALOGO' && (
+          <CatalogManagerTab
+            currentAdminUser={adminUser}
+            onOpenAuthModal={() => setIsAdminAuthModalOpen(true)}
+            onRefreshCatalog={loadData}
           />
         )}
 
@@ -2372,6 +2428,16 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
           </div>
         </div>
       )}
+
+      {/* Modal de Autenticación Administrativa */}
+      <AdminAuthModal
+        isOpen={isAdminAuthModalOpen}
+        onClose={() => setIsAdminAuthModalOpen(false)}
+        onAuthenticated={(user) => {
+          setAdminUser(user);
+          setCurrentRole('ADMINISTRADOR');
+        }}
+      />
     </div>
   );
 };

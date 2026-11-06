@@ -1,6 +1,13 @@
+// Set DISABLE_HMR per AI Studio environment constraints
+if (process.env.DISABLE_HMR === undefined) {
+  process.env.DISABLE_HMR = 'true';
+}
+
 import express, { Request, Response } from 'express';
 import cors from 'cors';
 import path from 'path';
+import fs from 'fs';
+import crypto from 'crypto';
 import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, INITIAL_STORES } from './src/data/seedData';
@@ -10,6 +17,14 @@ import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
 import { ordersRepository } from './src/lib/ordersRepository';
+import { adminAuthService } from './src/lib/adminAuthService';
+import { catalogRepository } from './src/lib/catalogRepository';
+import {
+  resolveTerritorialAssignment,
+  canonicalizeBogotaLocality,
+  isSoachaMunicipality,
+  TerritorialAssignmentResult,
+} from './src/lib/territoryConfig';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -26,12 +41,12 @@ function extractActor(req: Request, defaultRole: ActorRole = 'BODEGA'): OrderAct
   return { role, id, name };
 }
 
-// Authoritative in-memory state initialized from local catalog (3.830 productos agrupados, 5.652 variantes, 5 bodegas)
+// Authoritative in-memory state initialized from local catalog repository (persisted overrides + 3.830 productos agrupados)
 let stores: Store[] = localCatalogService.getStores().length > 0 ? localCatalogService.getStores() : JSON.parse(JSON.stringify(INITIAL_STORES));
-let products: Product[] = localCatalogService.getAllGroupedProducts().length > 0 ? localCatalogService.getAllGroupedProducts() : JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+let products: Product[] = catalogRepository.getAllProducts(true);
 
 // Registro de carga de catálogo local
-console.log(`[Catálogo Local] Iniciado con ${products.length} productos agrupados, ${localCatalogService.getTotalVariantsCount()} variantes y ${stores.length} bodegas.`);
+console.log(`[Catálogo Local] Iniciado con ${products.length} productos agrupados (${products.filter(p => p.status === 'ACTIVE').length} activos), ${localCatalogService.getTotalVariantsCount()} variantes y ${stores.length} bodegas.`);
 
 // Comprobación de inventario privado (.bolt-private/shopify/snapshot.json no bloqueante)
 const privateInventoryStatus: PrivateInventoryResult = loadPrivateInventorySnapshot();
@@ -45,6 +60,97 @@ async function startServer() {
 
   app.use(cors());
   app.use(express.json({ limit: '15mb' }));
+  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+
+  // Función para validar encabezados binarios y guardar imagen en public/uploads/catalog
+  function saveBase64Image(dataUrl: string, originalFilename?: string): { url: string; filename: string; size: number } {
+    const match = dataUrl.match(/^data:(image\/[a-zA-Z0-9.+_-]+);base64,(.+)$/);
+    if (!match) {
+      throw new Error('Formato de imagen inválido. Debe ser una imagen en Base64 (data:image/...).');
+    }
+
+    const mimeType = match[1].toLowerCase();
+    const base64Data = match[2];
+    const buffer = Buffer.from(base64Data, 'base64');
+
+    // Validar tamaño máximo 5 MB
+    const maxSizeBytes = 5 * 1024 * 1024;
+    if (buffer.length > maxSizeBytes) {
+      throw new Error('La imagen excede el límite permitido de 5 MB.');
+    }
+
+    // Validar encabezados binarios (Magic Bytes) según el tipo de archivo
+    let ext = 'jpg';
+    if (mimeType === 'image/jpeg' || mimeType === 'image/jpg') {
+      if (buffer.length < 3 || buffer[0] !== 0xFF || buffer[1] !== 0xD8 || buffer[2] !== 0xFF) {
+        throw new Error('Encabezado de imagen JPEG corrupto o no válido.');
+      }
+      ext = 'jpg';
+    } else if (mimeType === 'image/png') {
+      if (buffer.length < 8 || buffer[0] !== 0x89 || buffer[1] !== 0x50 || buffer[2] !== 0x4E || buffer[3] !== 0x47) {
+        throw new Error('Encabezado de imagen PNG corrupto o no válido.');
+      }
+      ext = 'png';
+    } else if (mimeType === 'image/webp') {
+      const riff = buffer.subarray(0, 4).toString('ascii');
+      const webp = buffer.subarray(8, 12).toString('ascii');
+      if (riff !== 'RIFF' || webp !== 'WEBP') {
+        throw new Error('Encabezado de imagen WEBP corrupto o no válido.');
+      }
+      ext = 'webp';
+    } else if (mimeType === 'image/gif') {
+      const gif = buffer.subarray(0, 3).toString('ascii');
+      if (gif !== 'GIF') {
+        throw new Error('Encabezado de imagen GIF corrupto o no válido.');
+      }
+      ext = 'gif';
+    } else {
+      throw new Error(`Tipo de imagen no admitido (${mimeType}). Formatos soportados: JPEG, PNG, WEBP, GIF.`);
+    }
+
+    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'catalog');
+    if (!fs.existsSync(uploadDir)) {
+      fs.mkdirSync(uploadDir, { recursive: true });
+    }
+
+    const cleanBaseName = originalFilename
+      ? path.basename(originalFilename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 25)
+      : 'foto';
+    const uniqueFilename = `img-${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${cleanBaseName}.${ext}`;
+    const filePath = path.join(uploadDir, uniqueFilename);
+
+    fs.writeFileSync(filePath, buffer);
+
+    return {
+      url: `/uploads/catalog/${uniqueFilename}`,
+      filename: uniqueFilename,
+      size: buffer.length,
+    };
+  }
+
+  // Middleware estricto de autenticación administrativa (no permite bypass por x-actor-role sin token válido)
+  function requireAdminAuth(req: Request, res: Response, next: () => void) {
+    const authHeader = req.headers.authorization;
+    if (!authHeader || !authHeader.startsWith('Bearer ')) {
+      return res.status(401).json({
+        error: 'Acceso denegado: Se requiere un token de sesión de administrador válido.',
+        code: 'UNAUTHORIZED',
+      });
+    }
+
+    const token = authHeader.substring(7).trim();
+    const session = adminAuthService.verifySession(token);
+
+    if (!session || session.role !== 'ADMINISTRADOR') {
+      return res.status(403).json({
+        error: 'Sesión administrativa inválida o expirada. Por favor inicia sesión nuevamente.',
+        code: 'FORBIDDEN',
+      });
+    }
+
+    (req as any).adminSession = session;
+    next();
+  }
 
   // ==========================================
   // /api/v1 ROUTES
@@ -96,6 +202,7 @@ async function startServer() {
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
     const { category, species, storeId, q, all } = req.query;
+    products = catalogRepository.getAllProducts(true);
     let filtered = [...products];
 
     // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
@@ -156,16 +263,42 @@ async function startServer() {
       const data: any = await response.json();
 
       if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const raw = data.results[0].formatted_address;
+        const first = data.results[0];
+        const raw = first.formatted_address;
         let address = raw
           .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
           .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
           .replace(/,\s*Cundinamarca/gi, '')
           .trim();
+
+        let municipality = 'Bogotá D.C.';
+        let locality: string | undefined = undefined;
+
+        for (const comp of first.address_components || []) {
+          const types = comp.types || [];
+          if (types.includes('locality') || types.includes('administrative_area_level_2')) {
+            if (isSoachaMunicipality(comp.long_name)) {
+              municipality = 'Soacha';
+            }
+          }
+          if (types.includes('sublocality_level_1') || types.includes('sublocality') || types.includes('neighborhood')) {
+            const canon = canonicalizeBogotaLocality(comp.long_name);
+            if (canon) {
+              locality = canon;
+            }
+          }
+        }
+
+        if (isSoachaMunicipality(address)) {
+          municipality = 'Soacha';
+        }
+
         return res.json({
           address,
           formattedAddress: address,
           rawAddress: raw,
+          municipality,
+          locality,
           status: 'OK',
         });
       } else {
@@ -201,9 +334,34 @@ async function startServer() {
           .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
           .replace(/,\s*Cundinamarca/gi, '')
           .trim();
+
+        let municipality = 'Bogotá D.C.';
+        let locality: string | undefined = undefined;
+
+        for (const comp of first.address_components || []) {
+          const types = comp.types || [];
+          if (types.includes('locality') || types.includes('administrative_area_level_2')) {
+            if (isSoachaMunicipality(comp.long_name)) {
+              municipality = 'Soacha';
+            }
+          }
+          if (types.includes('sublocality_level_1') || types.includes('sublocality') || types.includes('neighborhood')) {
+            const canon = canonicalizeBogotaLocality(comp.long_name);
+            if (canon) {
+              locality = canon;
+            }
+          }
+        }
+
+        if (isSoachaMunicipality(formatted) || isSoachaMunicipality(String(address))) {
+          municipality = 'Soacha';
+        }
+
         return res.json({
           coordinates: location ? { lat: Number(location.lat.toFixed(6)), lng: Number(location.lng.toFixed(6)) } : null,
           formattedAddress: formatted,
+          municipality,
+          locality,
           status: 'OK',
         });
       } else {
@@ -233,6 +391,30 @@ async function startServer() {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
       }
 
+      // 1. Resolución y validación territorial autoritativa
+      const territoryAssignment = resolveTerritorialAssignment({
+        municipality: deliveryAddress.municipality,
+        locality: deliveryAddress.locality,
+        address: deliveryAddress.address,
+        coordinates: deliveryAddress.coordinates,
+      });
+
+      // Validar cobertura territorial estricta en pedidos programados
+      if (requestedDeliveryMode === 'PROGRAMADO') {
+        if (territoryAssignment.status === 'OUT_OF_COVERAGE') {
+          return res.status(400).json({
+            error: territoryAssignment.reason || 'Zona fuera de la cobertura estándar habilitada.',
+            code: 'OUT_OF_COVERAGE',
+          });
+        }
+        if (territoryAssignment.status === 'NEEDS_CONFIRMATION') {
+          return res.status(400).json({
+            error: territoryAssignment.reason || 'Debes seleccionar la localidad o municipio de entrega antes de confirmar el pedido.',
+            code: 'LOCALITY_NEEDS_CONFIRMATION',
+          });
+        }
+      }
+
       // Validar cobertura y límite de tiempo con el motor autoritativo si hay coordenadas
       let assignedStoreId = storeId;
       let evaluatedQuote: any = null;
@@ -243,8 +425,11 @@ async function startServer() {
             address: deliveryAddress.address,
             details: deliveryAddress.details,
             coordinates: deliveryAddress.coordinates,
+            municipality: deliveryAddress.municipality,
+            locality: deliveryAddress.locality,
           },
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
+          requestedMode: requestedDeliveryMode,
         }, stores, products);
 
         // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
@@ -253,8 +438,12 @@ async function startServer() {
             return res.status(400).json({
               error: evaluatedQuote.message || 'Dirección fuera de la zona de cobertura metropolitana de entrega programada.',
               eligibilityStatus: evaluatedQuote.eligibilityStatus,
+              code: evaluatedQuote.reasonCode,
             });
           }
+
+          // Regla autoritativa: La bodega para pedidos programados es ESTRICTAMENTE la territorial (previene manipulación del navegador)
+          assignedStoreId = territoryAssignment.assignedStoreId!;
 
           if (scheduledWindow) {
             const bookingVal = validateScheduledBooking(scheduledWindow);
@@ -265,16 +454,17 @@ async function startServer() {
               });
             }
 
-            // Validar capacidad de la franja (máximo 10 pedidos por franja)
+            // Validar capacidad de la franja (máximo 10 pedidos por franja en la bodega territorial asignada)
             const currentSlotOrders = ordersRepository.getAllOrders().filter(
               (o: Order) => o.deliveryMode === 'PROGRAMADO' &&
               o.scheduledWindow &&
               o.scheduledWindow.date === scheduledWindow.date &&
-              (o.scheduledWindow.slotId === scheduledWindow.slotId || o.scheduledWindow.startTime === scheduledWindow.startTime)
+              (o.scheduledWindow.slotId === scheduledWindow.slotId || o.scheduledWindow.startTime === scheduledWindow.startTime) &&
+              o.storeId === assignedStoreId
             );
             if (currentSlotOrders.length >= 10) {
               return res.status(400).json({
-                error: 'La franja seleccionada ha alcanzado su capacidad máxima. Por favor selecciona otro horario.',
+                error: 'La franja seleccionada ha alcanzado su capacidad máxima (10 pedidos). Por favor selecciona otro horario.',
                 code: 'SLOT_CAPACITY_EXCEEDED',
               });
             }
@@ -289,20 +479,31 @@ async function startServer() {
               roadDistanceMeters: evaluatedQuote.roadDistanceMeters,
             });
           }
-        }
 
-        // Asignación automática de bodega autoritativa
-        assignedStoreId = evaluatedQuote.assignedStoreId || storeId || 'HUB_KENNEDY';
+          // Para Turbo, se usa la bodega ganadora de Turbo
+          assignedStoreId = evaluatedQuote.assignedStoreId || storeId || 'HUB_KENNEDY';
+        }
+      } else if (requestedDeliveryMode === 'PROGRAMADO' && territoryAssignment.assignedStoreId) {
+        assignedStoreId = territoryAssignment.assignedStoreId;
       }
 
       const assignedStore = stores.find(s => s.id === assignedStoreId) || stores[0];
+      if (!assignedStore || !assignedStore.isActive) {
+        return res.status(400).json({
+          error: `La bodega territorial asignada (${territoryAssignment?.assignedStoreName || assignedStoreId}) se encuentra inactiva. No es posible trasladar el pedido a otra bodega sin autorización.`,
+          code: 'STORE_INACTIVE',
+        });
+      }
       assignedStoreId = assignedStore.id;
 
       // Check stock availability in assigned warehouse and reserve
       for (const item of items) {
-        const prod = products.find(p => p.id === item.productId);
+        const prod = products.find(p => p.id === item.productId || p.productoId === item.productId || p.sku === item.productId);
         if (!prod) {
           return res.status(400).json({ error: `Producto no encontrado: ${item.productId}` });
+        }
+        if (prod.price <= 0) {
+          return res.status(400).json({ error: `El producto "${prod.name}" es del catálogo referencial y no está habilitado para compra directa en línea.` });
         }
         const currentStock = prod.stockByStore[assignedStoreId] || 0;
         const currentReserved = prod.reservedStockByStore[assignedStoreId] || 0;
@@ -318,7 +519,7 @@ async function startServer() {
 
       // Apply reservation
       for (const item of items) {
-        const prod = products.find(p => p.id === item.productId)!;
+        const prod = products.find(p => p.id === item.productId || p.productoId === item.productId || p.sku === item.productId)!;
         prod.reservedStockByStore[assignedStoreId] = (prod.reservedStockByStore[assignedStoreId] || 0) + item.quantity;
       }
 
@@ -436,7 +637,12 @@ async function startServer() {
         shipmentCount: childShipments ? childShipments.length : undefined,
         childShipments,
         customer,
-        deliveryAddress,
+        deliveryAddress: {
+          ...deliveryAddress,
+          municipality: territoryAssignment?.municipality || deliveryAddress.municipality || 'Bogotá D.C.',
+          locality: territoryAssignment?.locality || deliveryAddress.locality,
+          territoryInfo: territoryAssignment || undefined,
+        },
         items,
         totals: {
           subtotal,
@@ -455,7 +661,9 @@ async function startServer() {
           transactionId: paymentMethod !== 'CASH_ON_DELIVERY' ? `TXN-WMP-${Date.now().toString().slice(-7)}` : undefined,
         },
         prescriptionReview: {
-          status: hasPrescriptionItem ? 'PENDIENTE_REVISION' : 'NO_REQUIERE',
+          status: hasPrescriptionItem ? 'APROBADA' : 'NO_REQUIERE',
+          reviewedBy: hasPrescriptionItem ? 'Farmacia Bolt Pets (Despacho Directo)' : undefined,
+          reviewedAt: hasPrescriptionItem ? new Date().toISOString() : undefined,
         },
         fulfillmentStatus: 'CONFIRMADO',
         secretDeliveryCode: random4DigitCode,
@@ -1020,12 +1228,188 @@ async function startServer() {
   });
 
   // ==========================================
+  // RUTAS DE AUTENTICACIÓN Y SEGURIDAD ADMINISTRATIVA
+  // ==========================================
+
+  app.get('/api/v1/auth/status', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : undefined;
+    const session = adminAuthService.verifySession(token);
+    res.json({
+      isSetupRequired: adminAuthService.isSetupRequired(),
+      isAuthenticated: !!session,
+      user: session ? { id: session.userId, email: session.email, name: session.name, role: session.role } : null,
+    });
+  });
+
+  app.post('/api/v1/auth/setup-admin', (req: Request, res: Response) => {
+    const { email, password, name } = req.body || {};
+    const result = adminAuthService.setupMasterAdmin({ email, password, name });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    res.status(201).json({
+      message: 'Administrador principal configurado exitosamente.',
+      token: result.token,
+      user: { id: result.user!.id, email: result.user!.email, name: result.user!.name, role: result.user!.role },
+    });
+  });
+
+  app.post('/api/v1/auth/login', (req: Request, res: Response) => {
+    const { email, password } = req.body || {};
+    if (!email || !password) {
+      return res.status(400).json({ error: 'Proporciona correo y contraseña.' });
+    }
+    const result = adminAuthService.login(email, password);
+    if (!result.success) {
+      return res.status(401).json({ error: result.error });
+    }
+    res.json({
+      message: 'Inicio de sesión administrativo exitoso.',
+      token: result.token,
+      user: result.user,
+    });
+  });
+
+  app.get('/api/v1/auth/me', requireAdminAuth, (req: Request, res: Response) => {
+    const session = (req as any).adminSession;
+    res.json({ user: session });
+  });
+
+  app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
+    const authHeader = req.headers.authorization;
+    const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : undefined;
+    if (token) {
+      adminAuthService.logout(token);
+    }
+    res.json({ message: 'Sesión cerrada correctamente.' });
+  });
+
+  // ==========================================
+  // RUTAS DE GESTIÓN DE CATÁLOGO (PROTEGIDAS POR TOKEN)
+  // ==========================================
+
+  app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
+    const { q, category, status } = req.query;
+    let all = catalogRepository.getAllProducts(true);
+
+    if (status && status !== 'TODOS') {
+      all = all.filter(p => (p.status || 'ACTIVE') === status);
+    }
+    if (category && category !== 'Todo') {
+      all = all.filter(p => p.category === category);
+    }
+    if (q) {
+      const query = String(q).toLowerCase();
+      all = all.filter(p =>
+        p.name.toLowerCase().includes(query) ||
+        p.brand.toLowerCase().includes(query) ||
+        p.sku.toLowerCase().includes(query)
+      );
+    }
+
+    res.json(all);
+  });
+
+  app.post('/api/v1/admin/catalog/products', requireAdminAuth, (req: Request, res: Response) => {
+    const session = (req as any).adminSession;
+    const result = catalogRepository.createProduct(req.body, {
+      email: session.email,
+      name: session.name,
+    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    products = catalogRepository.getAllProducts(true);
+    res.status(201).json({
+      message: 'Producto creado exitosamente.',
+      product: result.product,
+    });
+  });
+
+  app.put('/api/v1/admin/catalog/products/:id', requireAdminAuth, (req: Request, res: Response) => {
+    const session = (req as any).adminSession;
+    const result = catalogRepository.updateProduct(req.params.id, req.body, {
+      email: session.email,
+      name: session.name,
+    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    products = catalogRepository.getAllProducts(true);
+    res.json({
+      message: 'Producto actualizado exitosamente.',
+      product: result.product,
+    });
+  });
+
+  app.patch('/api/v1/admin/catalog/products/:id/status', requireAdminAuth, (req: Request, res: Response) => {
+    const session = (req as any).adminSession;
+    const result = catalogRepository.toggleProductStatus(req.params.id, {
+      email: session.email,
+      name: session.name,
+    });
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    products = catalogRepository.getAllProducts(true);
+    res.json({
+      message: `Estado del producto actualizado a ${result.newStatus}.`,
+      product: result.product,
+      newStatus: result.newStatus,
+    });
+  });
+
+  app.patch('/api/v1/admin/catalog/products/:id/pricing-stock', requireAdminAuth, (req: Request, res: Response) => {
+    const session = (req as any).adminSession;
+    const { variantId, priceCOP, stockByStore, presentationName } = req.body;
+    const result = catalogRepository.updateVariantPriceAndStock(
+      req.params.id,
+      { variantId, priceCOP, stockByStore, presentationName },
+      { email: session.email, name: session.name }
+    );
+    if (!result.success) {
+      return res.status(400).json({ error: result.error });
+    }
+    products = catalogRepository.getAllProducts(true);
+    res.json({
+      message: 'Precio e inventario actualizados exitosamente.',
+      product: result.product,
+    });
+  });
+
+  app.post('/api/v1/admin/catalog/upload-image', requireAdminAuth, (req: Request, res: Response) => {
+    const { dataUrl, filename } = req.body || {};
+    if (!dataUrl) {
+      return res.status(400).json({ error: 'Se requiere el parámetro dataUrl con la imagen en base64.' });
+    }
+    try {
+      const uploadResult = saveBase64Image(dataUrl, filename);
+      res.status(201).json({
+        message: 'Imagen subida y validada exitosamente.',
+        ...uploadResult,
+      });
+    } catch (err: any) {
+      res.status(400).json({ error: err.message || 'Error al procesar la imagen.' });
+    }
+  });
+
+  app.get('/api/v1/admin/catalog/audit', requireAdminAuth, (req: Request, res: Response) => {
+    const { productId } = req.query;
+    const logs = catalogRepository.getAuditLog(productId ? String(productId) : undefined);
+    res.json(logs);
+  });
+
+  // ==========================================
   // FRONTEND MOUNTING (VITE IN DEV / STATIC IN PROD)
   // ==========================================
 
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false,
+      },
       appType: 'spa',
     });
     app.use(vite.middlewares);

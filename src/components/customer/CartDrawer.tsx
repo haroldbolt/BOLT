@@ -1,5 +1,5 @@
 import React from 'react';
-import { X, Trash2, Plus, Minus, FileText, ArrowRight, ShoppingBag, ShieldAlert } from 'lucide-react';
+import { X, Trash2, Plus, Minus, FileText, ArrowRight, ShoppingBag, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { CartItem, Product, Store } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -67,14 +67,14 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             </div>
           ) : (
             <>
-              {/* Prescription warning notice if applicable */}
+              {/* Informative notice for veterinary medicines */}
               {hasPrescriptionItems && (
-                <div className="p-3 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-2.5 text-xs text-red-900">
-                  <FileText className="w-4 h-4 text-red-600 shrink-0 mt-0.5" />
+                <div className="p-3 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900">
+                  <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
                   <div>
-                    <span className="font-extrabold">Contiene medicamentos con fórmula:</span>
-                    <p className="text-[11px] text-red-700 mt-0.5">
-                      Se solicitará foto o PDF de la fórmula médica en el siguiente paso para revisión farmacéutica.
+                    <span className="font-extrabold">Medicamento veterinario incluido:</span>
+                    <p className="text-[11px] text-blue-700 mt-0.5">
+                      Compra directa sin adjuntar archivos. Sigue las indicaciones y dosificación de tu médico veterinario.
                     </p>
                   </div>
                 </div>

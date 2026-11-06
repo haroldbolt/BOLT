@@ -1,5 +1,5 @@
 import React from 'react';
-import { Heart, Plus, Minus, FileText, Scale, Check, Bookmark } from 'lucide-react';
+import { Heart, Plus, Minus, FileText, Scale, Check, Bookmark, ShieldCheck } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -35,8 +35,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const stock = product.stockByStore[selectedStoreId] || 0;
   const reserved = product.reservedStockByStore[selectedStoreId] || 0;
   const availableToSell = Math.max(0, stock - reserved);
-  const isOutOfStock = availableToSell <= 0;
-  const isLowStock = availableToSell > 0 && availableToSell <= 2;
+  const isReferenceOnly = product.price <= 0;
+  const isOutOfStock = availableToSell <= 0 || isReferenceOnly;
+  const isLowStock = !isReferenceOnly && availableToSell > 0 && availableToSell <= 2;
 
   return (
     <div className="bg-white rounded-3xl p-3 shadow-xs border border-slate-100 flex flex-col justify-between relative group hover:shadow-md transition">
@@ -49,9 +50,9 @@ export const ProductCard: React.FC<ProductCardProps> = ({
             </span>
           )}
           {product.requiresPrescription && (
-            <span className="bg-red-600 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1">
-              <FileText className="w-2.5 h-2.5" />
-              Fórmula
+            <span className="bg-blue-600 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1">
+              <ShieldCheck className="w-2.5 h-2.5" />
+              Rx Vet
             </span>
           )}
         </div>
@@ -197,7 +198,11 @@ export const ProductCard: React.FC<ProductCardProps> = ({
 
         {/* Stock / Warning notice */}
         <div className="mt-1.5 flex items-center gap-1 text-[10px]">
-          {isOutOfStock ? (
+          {isReferenceOnly ? (
+            <span className="text-slate-500 font-bold bg-slate-100 px-1.5 py-0.5 rounded">
+              Catálogo de referencia
+            </span>
+          ) : isOutOfStock ? (
             <span className="text-red-600 font-bold bg-red-50 px-1.5 py-0.5 rounded">
               Agotado en esta sede
             </span>

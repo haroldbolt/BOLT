@@ -3,6 +3,23 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover" />
+    <script>
+      // Ignore WebSocket and Vite HMR errors in preview environment per system guidelines
+      window.addEventListener('unhandledrejection', function (e) {
+        var msg = (e.reason && (e.reason.message || e.reason.stack || '')) || '';
+        if (typeof msg === 'string' && (msg.includes('WebSocket') || msg.includes('@vite/client') || msg.includes('vite:ws'))) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      });
+      window.addEventListener('error', function (e) {
+        var msg = (e.message || (e.error && (e.error.message || e.error.stack)) || '') + '';
+        if (msg.includes('WebSocket') || msg.includes('@vite/client') || msg.includes('vite:ws')) {
+          e.preventDefault();
+          e.stopImmediatePropagation();
+        }
+      });
+    </script>
     <title>Bolt Pets Colombia</title>
     <meta name="description" content="Entrega ultra-rápida de alimentos, farmacia veterinaria y accesorios para mascotas en Bogotá. App de clientes y operaciones." />
     <meta property="og:title" content="Bolt Pets Colombia" />

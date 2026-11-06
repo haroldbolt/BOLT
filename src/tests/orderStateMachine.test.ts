@@ -42,10 +42,13 @@ async function runStateMachineTests() {
   console.log('BOLT PETS — TEST SUITE: MÁQUINA DE ESTADOS OPERATIVA PERSISTENTE');
   console.log('=============================================================\n');
 
-  // Repositorio aislado de prueba
-  const repo = new OrdersRepository();
-  const testProducts: Product[] = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
-  const testStoreId = 'HUB_KENNEDY';
+  // Directorio temporal aislado para pruebas para no contaminar datos persistentes reales
+  const tempTestDir = fs.mkdtempSync(path.join(path.resolve(__dirname, '../data'), 'tmp-test-'));
+
+  try {
+    const repo = new OrdersRepository({ dataDir: tempTestDir });
+    const testProducts: Product[] = JSON.parse(JSON.stringify(INITIAL_PRODUCTS));
+    const testStoreId = 'HUB_KENNEDY';
 
   // -------------------------------------------------------------
   // TEST GROUP 1: CREACIÓN DE PEDIDO Y RESERVA ATÓMICA DE INVENTARIO
@@ -128,6 +131,95 @@ async function runStateMachineTests() {
   // Duplicado de pedido con el mismo ID debe fallar
   const duplicateRes = repo.createOrder(testOrder1, testProducts);
   assert(!duplicateRes.success, 'Rechazo estricto de pedido con ID duplicado');
+
+  // -------------------------------------------------------------
+  // TEST GROUP 1.1: COMPRA DE MEDICAMENTO SIN ARCHIVO DE RECETA
+  // -------------------------------------------------------------
+  console.log('\n--- 1.1 Compra de Medicamento Sin Archivo de Receta ---');
+
+  const apoquelProd = testProducts.find(p => p.requiresPrescription) || testProducts[7];
+  const initialApoquelReserved = apoquelProd.reservedStockByStore[testStoreId] || 0;
+
+  const testMedicineOrderId = `ORD-TEST-${Date.now()}-MED`;
+  const testMedicineOrder: Order = {
+    id: testMedicineOrderId,
+    orderNumber: '#BP-MED-01',
+    createdAt: new Date().toISOString(),
+    storeId: testStoreId,
+    storeName: 'Sede Kennedy',
+    deliveryMode: 'TURBO',
+    customer: {
+      name: 'Santiago Botero',
+      phone: '3118904567',
+      email: 'santiago.botero@test.co',
+      isGuest: false,
+    },
+    deliveryAddress: {
+      address: 'Carrera 78 #3-45',
+      details: 'Casa 12',
+      porteriaPolicy: 'DEJAR_EN_PORTERIA',
+      coordinates: { lat: 4.6340, lng: -74.1500 },
+    },
+    items: [
+      {
+        productId: apoquelProd.id,
+        sku: apoquelProd.sku,
+        name: apoquelProd.name,
+        brand: apoquelProd.brand,
+        presentation: apoquelProd.presentation || 'Caja 20 tabs',
+        price: apoquelProd.price,
+        quantity: 1,
+        image: apoquelProd.image || '',
+        weightKg: apoquelProd.weightKg || 0.1,
+        requiresPrescription: true,
+      },
+    ],
+    totals: {
+      subtotal: apoquelProd.price,
+      discount: 0,
+      shipping: 4900,
+      serviceFee: 1500,
+      tip: 0,
+      total: apoquelProd.price + 4900 + 1500,
+      totalWeightKg: apoquelProd.weightKg || 0.1,
+    },
+    payment: {
+      method: 'CASH_ON_DELIVERY',
+      status: 'PENDIENTE',
+      cashToCollect: apoquelProd.price + 4900 + 1500,
+    },
+    prescriptionReview: {
+      status: 'APROBADA',
+      reviewedBy: 'Farmacia Bolt Pets (Despacho Directo)',
+      reviewedAt: new Date().toISOString(),
+    },
+    fulfillmentStatus: 'CONFIRMADO',
+    secretDeliveryCode: '8520',
+    estimatedDeliveryMinutes: 18,
+    originalPromiseWindow: {
+      start: new Date().toISOString(),
+      end: new Date(Date.now() + 18 * 60000).toISOString(),
+    },
+    timestamps: {
+      confirmedAt: new Date().toISOString(),
+    },
+  };
+
+  const medicineCreateRes = repo.createOrder(testMedicineOrder, testProducts);
+  assert(medicineCreateRes.success, 'Pedido con medicamento se crea exitosamente sin adjuntar archivo de receta');
+  assert(!testMedicineOrder.prescriptionReview.documentUrl, 'Pedido no contiene URL de archivo de receta obligatorio');
+  assert(!testMedicineOrder.prescriptionReview.documentName, 'Pedido no contiene nombre de archivo de receta adjunto');
+  assert(
+    apoquelProd.reservedStockByStore[testStoreId] === initialApoquelReserved + 1,
+    'Stock de medicamento reservado correctamente en bodega'
+  );
+
+  // Operación: Avanzar medicamento directamente a alistamiento sin bloqueo por falta de archivo
+  const medStep1 = repo.transitionStatus(testMedicineOrderId, 'EN_ALISTAMIENTO', { role: 'ALISTADOR', name: 'Alistador Bodega' }, { catalogProducts: testProducts });
+  assert(medStep1.success && medStep1.order?.fulfillmentStatus === 'EN_ALISTAMIENTO', 'Pedido de medicamento avanza directamente a EN_ALISTAMIENTO sin requerir validación previa de archivo');
+
+  const medStep2 = repo.transitionStatus(testMedicineOrderId, 'LISTO_PARA_DESPACHO', { role: 'ALISTADOR', name: 'Alistador Bodega' }, { catalogProducts: testProducts });
+  assert(medStep2.success && medStep2.order?.fulfillmentStatus === 'LISTO_PARA_DESPACHO', 'Pedido de medicamento se empaca exitosamente (LISTO_PARA_DESPACHO) sin trabas documentales');
 
   // -------------------------------------------------------------
   // TEST GROUP 2: PERMISOS DE ROL Y SALTOS INVÁLIDOS
@@ -395,8 +487,8 @@ async function runStateMachineTests() {
   // -------------------------------------------------------------
   console.log('\n--- 7. Persistencia Real en Disco al Reiniciar ---');
 
-  // Simular apagado y arranque de un nuevo proceso del servidor instanciando un nuevo OrdersRepository
-  const restartedRepo = new OrdersRepository();
+  // Simular apagado y arranque de un nuevo proceso del servidor instanciando un nuevo OrdersRepository sobre el mismo directorio aislado
+  const restartedRepo = new OrdersRepository({ dataDir: tempTestDir });
   const recoveredOrder = restartedRepo.getOrderById(testOrder1Id);
 
   assert(!!recoveredOrder, 'Pedido recuperado de disco tras reinicio del servidor');
@@ -417,6 +509,13 @@ async function runStateMachineTests() {
 
   if (testsFailed > 0) {
     process.exit(1);
+  }
+  } finally {
+    try {
+      fs.rmSync(tempTestDir, { recursive: true, force: true });
+    } catch {
+      // Ignorar limpieza de archivos temporales
+    }
   }
 }
 

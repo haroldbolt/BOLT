@@ -128,10 +128,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     }
   }, [isOpen, selectedScheduledWindowProp, availableSlots]);
 
-  // Formula upload states
+  // Informative flag for veterinary medicines
   const hasPrescriptionItems = cartItems.some(i => i.product.requiresPrescription);
-  const [uploadedFormulaName, setUploadedFormulaName] = useState<string>('receta_veterinaria_dr_martinez.pdf');
-  const [vetName, setVetName] = useState('Dr. Carlos Martínez - MP: 12904-COMVEZCOL');
 
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
   const totalWeightKg = cartItems.reduce((acc, item) => acc + ((item.product.weightKg || 0.2) * item.quantity), 0);
@@ -204,15 +202,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       };
 
       const newOrder = await api.createOrder(payload);
-
-      // If prescription required, upload document data
-      if (hasPrescriptionItems) {
-        await api.uploadPrescription(newOrder.id, {
-          documentUrl: 'https://images.unsplash.com/photo-1584515979956-d9f6e5d09982?w=800&auto=format&fit=crop&q=80',
-          documentName: uploadedFormulaName,
-          vetName,
-        });
-      }
 
       // Celebrate
       confetti({
@@ -570,32 +559,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
 
-          {/* Prescription Upload Section if order contains restricted medicines */}
+          {/* Aviso informativo de uso veterinario responsable */}
           {hasPrescriptionItems && (
-            <div className="p-4 bg-red-50/70 border border-red-200 rounded-2xl space-y-2.5">
-              <div className="flex items-center gap-2 text-red-900 font-extrabold text-xs">
-                <FileText className="w-4 h-4 text-red-600" />
-                <span>Requisito Obligatorio: Fórmula Médica Veterinaria</span>
+            <div className="p-3.5 bg-blue-50/80 border border-blue-200 rounded-2xl flex items-start gap-2.5 text-xs text-blue-900">
+              <ShieldCheck className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+              <div>
+                <p className="font-extrabold text-[11px] text-blue-950">Medicamento Veterinario Especializado</p>
+                <p className="text-[11px] text-blue-700 leading-relaxed mt-0.5">
+                  Compra directa sin adjuntar archivos ni recetas. Administra este medicamento siguiendo siempre las recomendaciones y dosificación de tu médico veterinario.
+                </p>
               </div>
-              <p className="text-[11px] text-red-700 leading-relaxed">
-                Este pedido incluye medicamentos controlados. Tu receta será verificada por el químico farmacéutico veterinario antes de autorizar el despacho.
-              </p>
-              <div className="p-3 bg-white rounded-xl border border-red-200 flex items-center justify-between text-xs">
-                <div className="flex items-center gap-2 overflow-hidden">
-                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span className="font-semibold text-slate-800 truncate">{uploadedFormulaName}</span>
-                </div>
-                <span className="text-[10px] text-emerald-700 bg-emerald-50 px-2 py-0.5 rounded-full font-bold">
-                  Adjuntada
-                </span>
-              </div>
-              <input
-                type="text"
-                placeholder="Nombre del Médico Veterinario y Matrícula"
-                value={vetName}
-                onChange={e => setVetName(e.target.value)}
-                className="w-full text-xs bg-white border border-red-200 rounded-xl px-3 py-2 text-slate-800 focus:outline-none"
-              />
             </div>
           )}
         </div>

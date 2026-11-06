@@ -6,3 +6,7 @@ coverage/
 *.log
 .env*
 !.env.example
+.aistudio/
+.gmp_cache/
+.bolt-private/
+server.js

@@ -1,7 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Product, Store, MainCategory, Species, PharmacySubcategory, ProductPresentation } from '../types';
-import { INITIAL_STORES } from '../data/seedData';
+import { INITIAL_STORES, INITIAL_PRODUCTS } from '../data/seedData';
 
 export interface LocalCatalogSummary {
   totalProductosAgrupados: number;
@@ -125,7 +125,35 @@ class LocalCatalogService {
   }
 
   private buildProductsCache(): void {
-    this.productsCache = this.rawProducts.map(p => {
+    // 1. Productos operacionales semilla con inventario real, precios verificados en COP y fichas técnicas
+    const storeGids = [
+      'HUB_KENNEDY',
+      'HUB_ALAMOS',
+      'HUB_SUBA',
+      'HUB_CENTRO',
+      'gid://shopify/Location/115617857816',
+      'gid://shopify/Location/115617890584',
+      'gid://shopify/Location/115617923352',
+      'gid://shopify/Location/115676021016',
+    ];
+
+    const operationalProducts: Product[] = INITIAL_PRODUCTS.map(op => ({
+      ...op,
+      status: op.status || 'ACTIVE',
+      bodegaIds: op.bodegaIds && op.bodegaIds.length > 0 ? op.bodegaIds : storeGids,
+      presentaciones: op.presentaciones && op.presentaciones.length > 0 ? op.presentaciones : [
+        {
+          varianteId: `var-${op.id}`,
+          nombre: op.presentation || 'Unidad estándar',
+          sku: op.sku,
+          foto: op.image,
+          bodegaIds: storeGids,
+        },
+      ],
+    }));
+
+    // 2. Mapeo de los productos del catálogo local estructurado (3.830 agrupados)
+    const rawCatalogProducts: Product[] = this.rawProducts.map(p => {
       const tags = p.tags || [];
       const tagsLower = tags.map(t => t.toLowerCase());
       const typeLower = (p.productType || '').toLowerCase();
@@ -190,8 +218,7 @@ class LocalCatalogService {
       // Foto principal: producto o primera variante
       const primaryPhoto = p.foto || presentaciones[0]?.foto || 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800';
 
-      // Stock por bodega: "Estos archivos no contienen cantidades, precios ni pesos; conserva los controles de compra correspondientes"
-      // Stock = 0 en todas las sedes para no inventar stock ni superar controles
+      // Stock por bodega: productos de catálogo sin inventario asignado se marcan en 0
       const stockByStore: Record<string, number> = {
         HUB_KENNEDY: 0,
         HUB_ALAMOS: 0,
@@ -221,9 +248,9 @@ class LocalCatalogService {
         requiresPrescription,
         storageCondition: 'LUGAR_FRESCO_Y_SECO',
         temperatureColdChain: false,
-        price: 0, // No inventa precios
+        price: 0, // No inventa precios para catálogo referencial
         presentation: primaryPresentationName,
-        weightKg: 0, // No inventa pesos
+        weightKg: 0,
         image: primaryPhoto,
         gallery: presentaciones.map(pr => pr.foto).filter(Boolean),
         description: p.descripcion || '',
@@ -237,6 +264,19 @@ class LocalCatalogService {
         presentaciones, // Variantes agrupadas
       };
     });
+
+    // Combinar: productos operacionales primero para posibilitar compras reales en sedes habilitadas
+    this.productsCache = [...operationalProducts, ...rawCatalogProducts];
+  }
+
+  public getProductById(id: string): Product | undefined {
+    if (!id) return undefined;
+    return this.productsCache.find(p =>
+      p.id === id ||
+      p.productoId === id ||
+      p.sku === id ||
+      (p.presentaciones && p.presentaciones.some(v => v.varianteId === id || v.sku === id))
+    );
   }
 
   public getSummary(): LocalCatalogSummary {

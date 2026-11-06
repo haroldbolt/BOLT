@@ -1,0 +1,135 @@
+{
+  "version": "1.0.0",
+  "lastUpdated": "2026-11-05T23:32:53.144Z",
+  "customProducts": [
+    {
+      "id": "prod-custom-mw46kfb8-428",
+      "productoId": "prod-custom-mw46kfb8-428",
+      "sku": "SKU-DENTAL-MED-7U",
+      "name": "Snack Dental Bolt Care Perros Medianos",
+      "brand": "Bolt Pets",
+      "species": "Perro",
+      "category": "Snacks",
+      "requiresPrescription": false,
+      "storageCondition": "TEMPERATURA_AMBIENTE",
+      "temperatureColdChain": false,
+      "price": 42000,
+      "presentation": "Bolsa 7 unidades",
+      "weightKg": 0.35,
+      "image": "/uploads/catalog/img-1793921530609-a1675b3e-foto-cachorro.png.png",
+      "gallery": [
+        "/uploads/catalog/img-1793921530609-a1675b3e-foto-cachorro.png.png"
+      ],
+      "description": "Snacks masticables para higiene oral y reducción de sarro",
+      "stockByStore": {
+        "HUB_KENNEDY": 80,
+        "HUB_ALAMOS": 60,
+        "HUB_SUBA": 45
+      },
+      "reservedStockByStore": {
+        "HUB_KENNEDY": 0,
+        "HUB_ALAMOS": 0,
+        "HUB_SUBA": 0,
+        "HUB_CENTRO": 0,
+        "HUB_FONTIBON": 0
+      },
+      "rating": 5,
+      "reviewsCount": 1,
+      "tags": [
+        "Nuevo",
+        "Bolt Pets"
+      ],
+      "status": "ACTIVE",
+      "bodegaIds": [
+        "HUB_KENNEDY",
+        "HUB_ALAMOS",
+        "HUB_SUBA"
+      ],
+      "presentaciones": [
+        {
+          "varianteId": "var-prod-custom-mw46kfb8-428-1",
+          "nombre": "Bolsa 7 unidades",
+          "sku": "SKU-DENTAL-MED-7U",
+          "foto": "/uploads/catalog/img-1793921530609-a1675b3e-foto-cachorro.png.png",
+          "bodegaIds": [
+            "HUB_KENNEDY",
+            "HUB_ALAMOS",
+            "HUB_SUBA"
+          ]
+        }
+      ]
+    }
+  ],
+  "overrides": {},
+  "auditLog": [
+    {
+      "id": "aud-1793921573144-988",
+      "timestamp": "2026-11-05T23:32:53.144Z",
+      "actor": {
+        "email": "harold@bolt.pet",
+        "name": "Harold Admin"
+      },
+      "action": "TOGGLE_STATUS",
+      "productId": "prod-custom-mw46kfb8-428",
+      "productName": "Snack Dental Bolt Care Perros Medianos",
+      "details": {
+        "previousStatus": "INACTIVE",
+        "newStatus": "ACTIVE"
+      }
+    },
+    {
+      "id": "aud-1793921561935-237",
+      "timestamp": "2026-11-05T23:32:41.935Z",
+      "actor": {
+        "email": "harold@bolt.pet",
+        "name": "Harold Admin"
+      },
+      "action": "TOGGLE_STATUS",
+      "productId": "prod-custom-mw46kfb8-428",
+      "productName": "Snack Dental Bolt Care Perros Medianos",
+      "details": {
+        "previousStatus": "ACTIVE",
+        "newStatus": "INACTIVE"
+      }
+    },
+    {
+      "id": "aud-1793921553849-278",
+      "timestamp": "2026-11-05T23:32:33.849Z",
+      "actor": {
+        "email": "harold@bolt.pet",
+        "name": "Harold Admin"
+      },
+      "action": "UPDATE_PRODUCT",
+      "productId": "prod-custom-mw46kfb8-428",
+      "productName": "Snack Dental Bolt Care Perros Medianos",
+      "details": {
+        "price": 42000,
+        "stockByStore": {
+          "HUB_KENNEDY": 80,
+          "HUB_ALAMOS": 60,
+          "HUB_SUBA": 45
+        }
+      }
+    },
+    {
+      "id": "aud-1793921540229-600",
+      "timestamp": "2026-11-05T23:32:20.229Z",
+      "actor": {
+        "email": "harold@bolt.pet",
+        "name": "Harold Admin"
+      },
+      "action": "CREATE_PRODUCT",
+      "productId": "prod-custom-mw46kfb8-428",
+      "productName": "Snack Dental Bolt Care Perros Medianos",
+      "details": {
+        "sku": "SKU-DENTAL-MED-7U",
+        "priceCOP": 38500,
+        "stockByStore": {
+          "HUB_KENNEDY": 50,
+          "HUB_ALAMOS": 40,
+          "HUB_SUBA": 35
+        }
+      }
+    }
+  ]
+}

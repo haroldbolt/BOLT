@@ -327,6 +327,10 @@ export interface Order {
     details: string;
     porteriaPolicy: PorteriaPolicy;
     coordinates: { lat: number; lng: number };
+    municipality?: string;
+    locality?: string;
+    neighborhood?: string;
+    territoryInfo?: any;
   };
   items: OrderItem[];
   totals: {

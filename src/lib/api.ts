@@ -22,7 +22,7 @@ export const api = {
     }
   },
 
-  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string } | null> {
+  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string; municipality?: string; locality?: string } | null> {
     try {
       const res = await fetch(`${BASE_URL}/geocode/reverse?lat=${lat}&lng=${lng}`);
       if (!res.ok) return null;
@@ -33,7 +33,7 @@ export const api = {
     }
   },
 
-  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string } | null> {
+  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string; municipality?: string; locality?: string } | null> {
     try {
       const res = await fetch(`${BASE_URL}/geocode/forward?address=${encodeURIComponent(address)}`);
       if (!res.ok) return null;
@@ -304,6 +304,195 @@ export const api = {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Error al simular webhook de Shopify');
     }
+    return await res.json();
+  },
+
+  // ==========================================
+  // AUTENTICACIÓN Y SEGURIDAD ADMINISTRATIVA
+  // ==========================================
+
+  getStoredAdminToken(): string | null {
+    return localStorage.getItem('bolt_admin_token') || sessionStorage.getItem('bolt_admin_token');
+  },
+
+  setStoredAdminToken(token: string | null): void {
+    if (token) {
+      localStorage.setItem('bolt_admin_token', token);
+      sessionStorage.setItem('bolt_admin_token', token);
+    } else {
+      localStorage.removeItem('bolt_admin_token');
+      sessionStorage.removeItem('bolt_admin_token');
+    }
+  },
+
+  async getAuthStatus(): Promise<{ isSetupRequired: boolean; isAuthenticated: boolean; user?: any }> {
+    const token = this.getStoredAdminToken();
+    const headers: Record<string, string> = { 'Content-Type': 'application/json' };
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(`${BASE_URL}/auth/status`, { headers });
+    if (!res.ok) throw new Error('Error al consultar estado de autenticación');
+    return await res.json();
+  },
+
+  async setupMasterAdmin(payload: { email: string; password: string; name: string }): Promise<any> {
+    const res = await fetch(`${BASE_URL}/auth/setup-admin`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al configurar administrador');
+    if (data.token) {
+      this.setStoredAdminToken(data.token);
+    }
+    return data;
+  },
+
+  async loginAdmin(email: string, password: string): Promise<any> {
+    const res = await fetch(`${BASE_URL}/auth/login`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email, password }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Credenciales inválidas');
+    if (data.token) {
+      this.setStoredAdminToken(data.token);
+    }
+    return data;
+  },
+
+  async getAdminMe(): Promise<any> {
+    const token = this.getStoredAdminToken();
+    if (!token) return null;
+    const res = await fetch(`${BASE_URL}/auth/me`, {
+      headers: { 'Authorization': `Bearer ${token}` },
+    });
+    if (!res.ok) {
+      this.setStoredAdminToken(null);
+      return null;
+    }
+    return await res.json();
+  },
+
+  async logoutAdmin(): Promise<void> {
+    const token = this.getStoredAdminToken();
+    if (token) {
+      await fetch(`${BASE_URL}/auth/logout`, {
+        method: 'POST',
+        headers: { 'Authorization': `Bearer ${token}` },
+      }).catch(() => {});
+    }
+    this.setStoredAdminToken(null);
+  },
+
+  // ==========================================
+  // GESTIÓN DE CATÁLOGO ADMINISTRATIVO (CRUD)
+  // ==========================================
+
+  async getAdminCatalog(params?: { q?: string; category?: string; status?: string }): Promise<Product[]> {
+    const token = this.getStoredAdminToken();
+    const url = new URL(`${window.location.origin}${BASE_URL}/admin/catalog`);
+    if (params?.q) url.searchParams.append('q', params.q);
+    if (params?.category) url.searchParams.append('category', params.category);
+    if (params?.status) url.searchParams.append('status', params.status);
+
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(url.toString(), { headers });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      throw new Error(err.error || 'Error al consultar catálogo administrativo');
+    }
+    return await res.json();
+  },
+
+  async createAdminProduct(productData: Partial<Product>): Promise<Product> {
+    const token = this.getStoredAdminToken();
+    const res = await fetch(`${BASE_URL}/admin/catalog/products`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(productData),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al crear producto');
+    return data.product;
+  },
+
+  async updateAdminProduct(id: string, updates: Partial<Product>): Promise<Product> {
+    const token = this.getStoredAdminToken();
+    const res = await fetch(`${BASE_URL}/admin/catalog/products/${id}`, {
+      method: 'PUT',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(updates),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al actualizar producto');
+    return data.product;
+  },
+
+  async toggleProductStatus(id: string): Promise<{ product: Product; newStatus: string }> {
+    const token = this.getStoredAdminToken();
+    const res = await fetch(`${BASE_URL}/admin/catalog/products/${id}/status`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al cambiar estado del producto');
+    return data;
+  },
+
+  async updateVariantPriceStock(id: string, payload: { variantId?: string; priceCOP?: number; stockByStore?: Record<string, number>; presentationName?: string }): Promise<Product> {
+    const token = this.getStoredAdminToken();
+    const res = await fetch(`${BASE_URL}/admin/catalog/products/${id}/pricing-stock`, {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify(payload),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al actualizar precio o inventario');
+    return data.product;
+  },
+
+  async uploadCatalogImage(dataUrl: string, filename?: string): Promise<{ url: string; filename: string; size: number }> {
+    const token = this.getStoredAdminToken();
+    const res = await fetch(`${BASE_URL}/admin/catalog/upload-image`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Authorization': `Bearer ${token}`,
+      },
+      body: JSON.stringify({ dataUrl, filename }),
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || 'Error al subir imagen');
+    return data;
+  },
+
+  async getCatalogAuditLog(productId?: string): Promise<any[]> {
+    const token = this.getStoredAdminToken();
+    const url = new URL(`${window.location.origin}${BASE_URL}/admin/catalog/audit`);
+    if (productId) url.searchParams.append('productId', productId);
+
+    const headers: Record<string, string> = {};
+    if (token) headers['Authorization'] = `Bearer ${token}`;
+
+    const res = await fetch(url.toString(), { headers });
+    if (!res.ok) throw new Error('Error al consultar historial de auditoría');
     return await res.json();
   },
 };

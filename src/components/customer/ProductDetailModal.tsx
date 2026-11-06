@@ -55,7 +55,8 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   const stock = product.stockByStore[selectedStoreId] || 0;
   const reserved = product.reservedStockByStore[selectedStoreId] || 0;
   const availableToSell = Math.max(0, stock - reserved);
-  const isOutOfStock = availableToSell <= 0;
+  const isReferenceOnly = product.price <= 0;
+  const isOutOfStock = availableToSell <= 0 || isReferenceOnly;
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
@@ -187,14 +188,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             )}
           </div>
 
-          {/* Prescription Alert if required */}
+          {/* Recomendaciones de uso veterinario */}
           {product.requiresPrescription && (
-            <div className="p-3.5 bg-red-50 border border-red-200 rounded-2xl flex items-start gap-3">
-              <FileText className="w-5 h-5 text-red-600 shrink-0 mt-0.5" />
-              <div className="text-xs text-red-900">
-                <p className="font-black">Requiere Fórmula Médica Veterinaria</p>
-                <p className="mt-0.5 text-red-700">
-                  Para el despacho de este medicamento, deberás adjuntar la receta de tu médico veterinario durante el proceso de compra.
+            <div className="p-3.5 bg-blue-50 border border-blue-200 rounded-2xl flex items-start gap-3">
+              <ShieldCheck className="w-5 h-5 text-blue-600 shrink-0 mt-0.5" />
+              <div className="text-xs text-blue-900">
+                <p className="font-black">Medicamento de Uso Veterinario</p>
+                <p className="mt-0.5 text-blue-700 leading-relaxed">
+                  Compra directa sin adjuntar archivos ni recetas. Sigue las indicaciones, dosificación y advertencias de tu médico veterinario tratante para este tratamiento.
                 </p>
               </div>
             </div>
@@ -262,10 +263,10 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
               <button
                 onClick={() => onAddToCart(product)}
                 disabled={isOutOfStock}
-                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-red-500/30 transition"
+                className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-red-500/30 transition cursor-pointer disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
-                Agregar a mi pedido
+                {isReferenceOnly ? 'Catálogo de referencia' : isOutOfStock ? 'Agotado en esta sede' : 'Agregar a mi pedido'}
               </button>
             ) : (
               <div className="flex items-center gap-3 bg-red-600 text-white rounded-2xl px-3 py-2 shadow-md">

@@ -1,0 +1,24 @@
+{
+  "version": "1.0.0",
+  "admins": [
+    {
+      "id": "adm-master-mw46k3m1",
+      "email": "harold@bolt.pet",
+      "name": "Harold Admin",
+      "passwordHash": "d08bd910a090cc7124e3bad20c76602f49508e3e6248dfefb234a3bb95cb9634a0f15aa916b99357ed303107d55a443560e92dd6cb1ea7c536c04fc61631d3fc",
+      "salt": "f470fe39e3dcdad27fdf8ed762ae22fd",
+      "role": "ADMINISTRADOR",
+      "createdAt": "2026-11-05T23:32:05.065Z",
+      "lastLoginAt": "2026-11-05T23:32:05.065Z"
+    },
+    {
+      "id": "adm-mw4i8e01",
+      "email": "jumer4@gmail.com",
+      "name": "Boltadmin1",
+      "passwordHash": "8bc92057359ea778c82f190a2ee1440b0f8f2ed715036d786f8d22efcea7026f540ed13f3764e27aeb4860f93223bcb63de4abe39b7c86fa8e76e5b8aed8e905",
+      "salt": "c16b4b513951fed21625c79ae4d2249e",
+      "role": "ADMINISTRADOR",
+      "createdAt": "2026-11-06T04:58:54.049Z"
+    }
+  ]
+}

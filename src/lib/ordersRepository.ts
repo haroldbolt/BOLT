@@ -48,14 +48,32 @@ const ROLE_PERMISSIONS: Partial<Record<FulfillmentStatus, string[]>> = {
   CANCELADO: ['CLIENTE', 'BODEGA', 'COORDINADOR', 'ADMINISTRADOR', 'SISTEMA', 'SOPORTE'],
 };
 
+export interface OrdersRepositoryOptions {
+  dataDir?: string;
+  ordersFile?: string;
+  driversFile?: string;
+  auditFile?: string;
+  telemetryFile?: string;
+}
+
 export class OrdersRepository {
   private orders: Order[] = [];
   private drivers: DriverProfile[] = [];
   private auditHistory: OrderStatusHistoryEntry[] = [];
   private telemetryHistory: Record<string, GPSTelemetry[]> = {};
   private initialized = false;
+  private dataDir: string;
+  private ordersFile: string;
+  private driversFile: string;
+  private auditFile: string;
+  private telemetryFile: string;
 
-  constructor() {
+  constructor(options?: OrdersRepositoryOptions) {
+    this.dataDir = options?.dataDir || DATA_DIR;
+    this.ordersFile = options?.ordersFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-orders.json') : ORDERS_FILE);
+    this.driversFile = options?.driversFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-drivers.json') : DRIVERS_FILE);
+    this.auditFile = options?.auditFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-audit.json') : AUDIT_FILE);
+    this.telemetryFile = options?.telemetryFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-telemetry.json') : TELEMETRY_FILE);
     this.init();
   }
 
@@ -63,21 +81,21 @@ export class OrdersRepository {
    * Carga los datos desde el almacenamiento persistente en disco o desde los datos semilla
    */
   public init() {
-    if (!fs.existsSync(DATA_DIR)) {
+    if (!fs.existsSync(this.dataDir)) {
       try {
-        fs.mkdirSync(DATA_DIR, { recursive: true });
+        fs.mkdirSync(this.dataDir, { recursive: true });
       } catch (e) {
         console.error('[OrdersRepository] No se pudo crear directorio de datos:', e);
       }
     }
 
     // 1. Cargar o Inicializar Pedidos
-    if (fs.existsSync(ORDERS_FILE)) {
+    if (fs.existsSync(this.ordersFile)) {
       try {
-        const raw = fs.readFileSync(ORDERS_FILE, 'utf-8');
+        const raw = fs.readFileSync(this.ordersFile, 'utf-8');
         this.orders = JSON.parse(raw);
       } catch (err) {
-        console.error('[OrdersRepository] Error leyendo persisted-orders.json, usando semillas:', err);
+        console.error('[OrdersRepository] Error leyendo pedidos persistidos, usando semillas:', err);
         this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
         this.saveOrders();
       }
@@ -87,12 +105,12 @@ export class OrdersRepository {
     }
 
     // 2. Cargar o Inicializar Conductores
-    if (fs.existsSync(DRIVERS_FILE)) {
+    if (fs.existsSync(this.driversFile)) {
       try {
-        const raw = fs.readFileSync(DRIVERS_FILE, 'utf-8');
+        const raw = fs.readFileSync(this.driversFile, 'utf-8');
         this.drivers = JSON.parse(raw);
       } catch (err) {
-        console.error('[OrdersRepository] Error leyendo persisted-drivers.json, usando semillas:', err);
+        console.error('[OrdersRepository] Error leyendo conductores persistidos, usando semillas:', err);
         this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
         this.saveDrivers();
       }
@@ -102,9 +120,9 @@ export class OrdersRepository {
     }
 
     // 3. Cargar o Inicializar Auditoría
-    if (fs.existsSync(AUDIT_FILE)) {
+    if (fs.existsSync(this.auditFile)) {
       try {
-        const raw = fs.readFileSync(AUDIT_FILE, 'utf-8');
+        const raw = fs.readFileSync(this.auditFile, 'utf-8');
         this.auditHistory = JSON.parse(raw);
       } catch (err) {
         this.auditHistory = [];
@@ -116,9 +134,9 @@ export class OrdersRepository {
     }
 
     // 4. Cargar o Inicializar Telemetría GPS Persistente
-    if (fs.existsSync(TELEMETRY_FILE)) {
+    if (fs.existsSync(this.telemetryFile)) {
       try {
-        const raw = fs.readFileSync(TELEMETRY_FILE, 'utf-8');
+        const raw = fs.readFileSync(this.telemetryFile, 'utf-8');
         this.telemetryHistory = JSON.parse(raw);
       } catch (err) {
         this.telemetryHistory = {};
@@ -174,7 +192,7 @@ export class OrdersRepository {
 
   private saveOrders() {
     try {
-      fs.writeFileSync(ORDERS_FILE, JSON.stringify(this.orders, null, 2), 'utf-8');
+      fs.writeFileSync(this.ordersFile, JSON.stringify(this.orders, null, 2), 'utf-8');
     } catch (e) {
       console.error('[OrdersRepository] Error guardando pedidos en disco:', e);
     }
@@ -182,7 +200,7 @@ export class OrdersRepository {
 
   private saveDrivers() {
     try {
-      fs.writeFileSync(DRIVERS_FILE, JSON.stringify(this.drivers, null, 2), 'utf-8');
+      fs.writeFileSync(this.driversFile, JSON.stringify(this.drivers, null, 2), 'utf-8');
     } catch (e) {
       console.error('[OrdersRepository] Error guardando conductores en disco:', e);
     }
@@ -190,7 +208,7 @@ export class OrdersRepository {
 
   private saveAudit() {
     try {
-      fs.writeFileSync(AUDIT_FILE, JSON.stringify(this.auditHistory, null, 2), 'utf-8');
+      fs.writeFileSync(this.auditFile, JSON.stringify(this.auditHistory, null, 2), 'utf-8');
     } catch (e) {
       console.error('[OrdersRepository] Error guardando historial de auditoría en disco:', e);
     }
@@ -198,7 +216,7 @@ export class OrdersRepository {
 
   private saveTelemetry() {
     try {
-      fs.writeFileSync(TELEMETRY_FILE, JSON.stringify(this.telemetryHistory, null, 2), 'utf-8');
+      fs.writeFileSync(this.telemetryFile, JSON.stringify(this.telemetryHistory, null, 2), 'utf-8');
     } catch (e) {
       console.error('[OrdersRepository] Error guardando telemetría en disco:', e);
     }
@@ -625,6 +643,7 @@ export class OrdersRepository {
     }
 
     // Actualizar timestamps
+    if (!order.timestamps) order.timestamps = {};
     if (newStatus === 'EN_ALISTAMIENTO' && !order.timestamps.prepStartedAt) order.timestamps.prepStartedAt = nowIso;
     if (newStatus === 'LISTO_PARA_DESPACHO' && !order.timestamps.prepCompletedAt) order.timestamps.prepCompletedAt = nowIso;
     if (newStatus === 'REPARTIDOR_ASIGNADO' && !order.timestamps.assignedAt) order.timestamps.assignedAt = nowIso;

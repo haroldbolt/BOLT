@@ -27,6 +27,16 @@ import {
   getAvailableScheduledWindows,
   validateScheduledBookingWindow,
 } from '../utils/timeUtils';
+import {
+  resolveTerritorialAssignment,
+  canonicalizeBogotaLocality,
+  isSoachaMunicipality,
+  TerritorialAssignmentResult,
+  TERRITORIAL_WAREHOUSES,
+  KENNEDY_LOCALITIES,
+  ALAMOS_LOCALITIES,
+  SUBA_LOCALITIES,
+} from './territoryConfig';
 
 // ============================================================================
 // 1. CONSTANTES DE CONFIGURACIÓN AUTORITATIVAS
@@ -444,10 +454,17 @@ export interface DeliveryQuote {
   autoSwitchedToScheduled?: boolean;
   switchReason?: 'LOCALITY_NOT_TURBO' | 'TURBO_CONDITIONS_NOT_MET' | 'WEIGHT_OVERSIZED';
 
+  // Información y Asignación Territorial (Pedidos Programados)
+  territoryInfo?: TerritorialAssignmentResult;
+  municipality?: string;
+  locality?: string;
+
   destination: {
     address: string;
     details?: string;
     coordinates: LatLng;
+    municipality?: string;
+    locality?: string;
   };
   calculatedAt: string;
   expiresAt: string;
@@ -468,8 +485,11 @@ export interface QuoteRequest {
     address: string;
     details?: string;
     coordinates: LatLng;
+    municipality?: string;
+    locality?: string;
   };
   items?: QuoteRequestItem[];
+  requestedMode?: DeliveryMode;
 }
 
 // ============================================================================
@@ -1124,8 +1144,107 @@ export function evaluateDeliveryQuote(
     };
   }
 
+  // Resolución autoritativa de territorio (localidad en Bogotá o Soacha)
+  const territoryAssignment = resolveTerritorialAssignment({
+    municipality: destination.municipality,
+    locality: destination.locality,
+    address: destination.address,
+    coordinates: destination.coordinates,
+  });
+
+  // 1. Si está fuera del área de cobertura estándar (ej: Sumapaz o municipio no cubierto como Chía)
+  if (territoryAssignment.status === 'OUT_OF_COVERAGE') {
+    return {
+      quoteId,
+      eligibilityStatus: DeliveryStatus.OUT_OF_COVERAGE,
+      reasonCode: 'TERRITORY_OUT_OF_COVERAGE',
+      message: territoryAssignment.reason || 'Zona fuera del área de cobertura habilitada.',
+      availableModes: { turbo: false, turboDividido: false, scheduled: false },
+      recommendedMode: null,
+      autoSwitchedToScheduled: false,
+      detectedLocality: territoryAssignment.locality || 'FUERA_DE_COBERTURA',
+      detectedLocalityName: territoryAssignment.locality || territoryAssignment.municipality,
+      isTurboLocality: false,
+      destination,
+      geographicDistanceMeters: 0,
+      geographicDistanceKm: 0,
+      roadDistanceMeters: 0,
+      roadDistanceKm: 0,
+      scheduledEligible: false,
+      scheduledSlots: [],
+      territoryInfo: territoryAssignment,
+      municipality: territoryAssignment.municipality,
+      locality: territoryAssignment.locality,
+      calculatedAt: now.toISOString(),
+      expiresAt,
+      configVersion: DELIVERY_CONFIG.configVersion,
+      candidateWarehousesEvaluated: 0,
+      basketValidated: !!items?.length,
+      totalWeightKg,
+      totalWeightGrams,
+    };
+  }
+
+  // 2. Si la localidad o municipio no se reconoció con certeza y requiere confirmación del cliente
+  if (territoryAssignment.status === 'NEEDS_CONFIRMATION') {
+    return {
+      quoteId,
+      eligibilityStatus: DeliveryStatus.ADDRESS_NEEDS_CONFIRMATION,
+      reasonCode: 'LOCALITY_NEEDS_CONFIRMATION',
+      message: territoryAssignment.reason || 'Por favor confirma tu localidad o municipio para validar la cobertura y bodega.',
+      availableModes: { turbo: false, turboDividido: false, scheduled: false },
+      recommendedMode: null,
+      autoSwitchedToScheduled: false,
+      destination,
+      geographicDistanceMeters: 0,
+      geographicDistanceKm: 0,
+      roadDistanceMeters: 0,
+      roadDistanceKm: 0,
+      scheduledEligible: false,
+      scheduledSlots: [],
+      territoryInfo: territoryAssignment,
+      municipality: territoryAssignment.municipality,
+      calculatedAt: now.toISOString(),
+      expiresAt,
+      configVersion: DELIVERY_CONFIG.configVersion,
+      candidateWarehousesEvaluated: 0,
+      basketValidated: false,
+      totalWeightKg: 0,
+      totalWeightGrams: 0,
+    };
+  }
+
+  // Identificar la bodega territorial asignada
+  const assignedTerritorialStoreId = territoryAssignment.assignedStoreId!;
+  const territorialStore = stores.find(s => s.id === assignedTerritorialStoreId);
+  const isTerritorialStoreActive = !!territorialStore?.isActive;
+
+  // Validar existencias en la bodega territorial asignada (descontando reservado)
+  let territorialStockSufficient = true;
+  let territorialInsufficientItemName = '';
+  let territorialAvailableStock = 0;
+
+  if (items && items.length > 0 && catalogProducts.length > 0 && territorialStore) {
+    for (const basketItem of items) {
+      const prod = catalogProducts.find(
+        p => p.id === basketItem.productId || p.sku === basketItem.productId || p.productoId === basketItem.productId
+      );
+      if (prod) {
+        const currentStock = prod.stockByStore[territorialStore.id] || 0;
+        const currentReserved = prod.reservedStockByStore[territorialStore.id] || 0;
+        const availableToSell = currentStock - currentReserved;
+        if (availableToSell - basketItem.quantity < 0) {
+          territorialStockSufficient = false;
+          territorialInsufficientItemName = prod.name;
+          territorialAvailableStock = Math.max(0, availableToSell);
+          break;
+        }
+      }
+    }
+  }
+
   // REGLA 1: Turbo y Turbo Dividido únicamente en Kennedy, Suba y Engativá.
-  // En cualquier otra localidad de Bogotá, selecciona automáticamente Envío Programado.
+  // En cualquier otra localidad de Bogotá o Soacha, selecciona automáticamente Envío Programado con su bodega asignada.
   if (!isTurboLocality) {
     let minTurboGeoDistance = Infinity;
     for (const store of activeTurboStores) {
@@ -1135,30 +1254,50 @@ export function evaluateDeliveryQuote(
     const geoKm = Number((minTurboGeoDistance / 1000).toFixed(1));
     const roadKm = Number(((minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor) / 1000).toFixed(1));
 
+    // Validar estado de la bodega e inventario
+    let scheduledEligible = isTerritorialStoreActive && territorialStockSufficient;
+    let scheduledMessage = 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido';
+    let reasonCode = 'NON_TURBO_LOCALITY_AUTO_SCHEDULED';
+
+    if (!isTerritorialStoreActive) {
+      scheduledMessage = `La bodega ${territoryAssignment.assignedStoreName} se encuentra temporalmente inactiva. No es posible trasladar el pedido a otra bodega sin autorización.`;
+      reasonCode = 'STORE_INACTIVE';
+    } else if (!territorialStockSufficient) {
+      scheduledMessage = `Inventario insuficiente para "${territorialInsufficientItemName}" en ${territoryAssignment.assignedStoreName}. Disponibles para venta: ${territorialAvailableStock}. Por favor ajusta tu carrito.`;
+      reasonCode = 'INSUFFICIENT_STOCK';
+    }
+
     return {
       quoteId,
-      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
-      reasonCode: 'NON_TURBO_LOCALITY_AUTO_SCHEDULED',
-      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
+      eligibilityStatus: scheduledEligible ? DeliveryStatus.SCHEDULED_ONLY : DeliveryStatus.OUT_OF_STOCK,
+      reasonCode,
+      message: scheduledMessage,
       availableModes: {
         turbo: false,
         turboDividido: false,
-        scheduled: true,
+        scheduled: scheduledEligible,
       },
-      recommendedMode: 'PROGRAMADO',
+      recommendedMode: scheduledEligible ? 'PROGRAMADO' : null,
       autoSwitchedToScheduled: true,
       switchReason: 'LOCALITY_NOT_TURBO',
       detectedLocality,
-      detectedLocalityName,
+      detectedLocalityName: territoryAssignment.locality || territoryAssignment.municipality,
       isTurboLocality: false,
+      assignedStoreId: territoryAssignment.assignedStoreId || undefined,
+      assignedStoreName: territoryAssignment.assignedStoreName || undefined,
+      assignedStoreAddress: territorialStore?.address,
+      assignedStoreCoordinates: territorialStore ? getStoreDispatchCoordinates(territorialStore) : undefined,
+      territoryInfo: territoryAssignment,
+      municipality: territoryAssignment.municipality,
+      locality: territoryAssignment.locality,
       destination,
       geographicDistanceMeters: minTurboGeoDistance,
       geographicDistanceKm: geoKm,
       roadDistanceMeters: Math.round(minTurboGeoDistance * DELIVERY_CONFIG.urbanRoadFactor),
       roadDistanceKm: roadKm,
-      scheduledEligible: true,
-      scheduledSlots,
-      scheduledExplanation: `Turbo y Turbo Dividido aplican exclusivamente en Kennedy, Suba y Engativá. Para ${detectedLocalityName}, continuamos con Envío Programado.`,
+      scheduledEligible,
+      scheduledSlots: scheduledEligible ? scheduledSlots : [],
+      scheduledExplanation: scheduledMessage,
       calculatedAt: now.toISOString(),
       expiresAt,
       configVersion: DELIVERY_CONFIG.configVersion,
@@ -1170,25 +1309,40 @@ export function evaluateDeliveryQuote(
   }
 
   if (activeTurboStores.length === 0) {
+    let scheduledEligible = isTerritorialStoreActive && territorialStockSufficient;
+    let scheduledMessage = 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido';
+    if (!isTerritorialStoreActive) {
+      scheduledMessage = `La bodega ${territoryAssignment.assignedStoreName} se encuentra temporalmente inactiva.`;
+    } else if (!territorialStockSufficient) {
+      scheduledMessage = `Inventario insuficiente para "${territorialInsufficientItemName}" en ${territoryAssignment.assignedStoreName}. Disponibles: ${territorialAvailableStock}.`;
+    }
+
     return {
       quoteId,
-      eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
+      eligibilityStatus: scheduledEligible ? DeliveryStatus.SCHEDULED_ONLY : DeliveryStatus.OUT_OF_STOCK,
       reasonCode: 'NO_ACTIVE_TURBO_STORES',
-      message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
-      availableModes: { turbo: false, turboDividido: false, scheduled: true },
-      recommendedMode: 'PROGRAMADO',
+      message: scheduledMessage,
+      availableModes: { turbo: false, turboDividido: false, scheduled: scheduledEligible },
+      recommendedMode: scheduledEligible ? 'PROGRAMADO' : null,
       autoSwitchedToScheduled: true,
       switchReason: 'TURBO_CONDITIONS_NOT_MET',
       detectedLocality,
-      detectedLocalityName,
+      detectedLocalityName: territoryAssignment.locality || detectedLocalityName,
       isTurboLocality: true,
+      assignedStoreId: territoryAssignment.assignedStoreId || undefined,
+      assignedStoreName: territoryAssignment.assignedStoreName || undefined,
+      assignedStoreAddress: territorialStore?.address,
+      assignedStoreCoordinates: territorialStore ? getStoreDispatchCoordinates(territorialStore) : undefined,
+      territoryInfo: territoryAssignment,
+      municipality: territoryAssignment.municipality,
+      locality: territoryAssignment.locality,
       destination,
       geographicDistanceMeters: 0,
       geographicDistanceKm: 0,
       roadDistanceMeters: 0,
       roadDistanceKm: 0,
-      scheduledEligible: true,
-      scheduledSlots,
+      scheduledEligible,
+      scheduledSlots: scheduledEligible ? scheduledSlots : [],
       calculatedAt: now.toISOString(),
       expiresAt,
       configVersion: DELIVERY_CONFIG.configVersion,
@@ -1481,25 +1635,39 @@ export function evaluateDeliveryQuote(
   }
 
   // CASO A: Pedido estándar elegible para Turbo (peso <= 60 kg, <= 6 km, <= 25 min en Kennedy/Suba/Engativá)
+  const isScheduledRequested = req.requestedMode === 'PROGRAMADO';
+  const finalAssignedStoreId = isScheduledRequested && territoryAssignment.assignedStoreId
+    ? territoryAssignment.assignedStoreId
+    : winner.store.id;
+  const finalAssignedStoreName = isScheduledRequested && territoryAssignment.assignedStoreName
+    ? territoryAssignment.assignedStoreName
+    : winner.store.name;
+  const finalAssignedStore = stores.find(s => s.id === finalAssignedStoreId) || winner.store;
+
   return {
     quoteId,
     eligibilityStatus: DeliveryStatus.ELIGIBLE,
     reasonCode: 'SUCCESS',
-    message: `Entregamos en esta dirección en aprox. ${winner.estimatedMinutes} min desde ${winner.store.name}.`,
+    message: isScheduledRequested
+      ? `Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido`
+      : `Entregamos en esta dirección en aprox. ${winner.estimatedMinutes} min desde ${winner.store.name}.`,
     availableModes: {
       turbo: true,
       turboDividido: false,
       scheduled: true,
     },
-    recommendedMode: 'TURBO',
-    autoSwitchedToScheduled: false,
+    recommendedMode: isScheduledRequested ? 'PROGRAMADO' : 'TURBO',
+    autoSwitchedToScheduled: isScheduledRequested,
     detectedLocality,
-    detectedLocalityName,
+    detectedLocalityName: territoryAssignment.locality || detectedLocalityName,
     isTurboLocality: true,
-    assignedStoreId: winner.store.id,
-    assignedStoreName: winner.store.name,
-    assignedStoreAddress: winner.store.address,
-    assignedStoreCoordinates: getStoreDispatchCoordinates(winner.store),
+    assignedStoreId: finalAssignedStoreId,
+    assignedStoreName: finalAssignedStoreName,
+    assignedStoreAddress: finalAssignedStore.address,
+    assignedStoreCoordinates: getStoreDispatchCoordinates(finalAssignedStore),
+    territoryInfo: territoryAssignment,
+    municipality: territoryAssignment.municipality,
+    locality: territoryAssignment.locality,
     destination,
     geographicDistanceMeters: winner.geoDistanceMeters,
     geographicDistanceKm: Number((winner.geoDistanceMeters / 1000).toFixed(1)),

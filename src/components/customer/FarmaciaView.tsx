@@ -85,7 +85,7 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
               className="bg-yellow-400 hover:bg-yellow-300 text-red-950 font-black text-xs px-3.5 py-1.5 rounded-full flex items-center gap-1.5 shadow-sm transition"
             >
               <Info className="w-3.5 h-3.5" />
-              ¿Cómo funciona la fórmula médica?
+              ¿Guía de medicamentos veterinarios?
             </button>
             <span className="inline-flex items-center gap-1 text-[11px] bg-red-900/60 text-red-100 px-3 py-1 rounded-full font-medium">
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
@@ -136,8 +136,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
                 : 'bg-slate-100 hover:bg-slate-200 text-slate-700'
             }`}
           >
-            <FileText className="w-3.5 h-3.5" />
-            Solo con fórmula médica
+            <ShieldCheck className="w-3.5 h-3.5" />
+            Medicamentos especializados
           </button>
         </div>
         <span className="font-semibold">{pharmacyProducts.length} productos disponibles</span>
@@ -164,38 +164,38 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
         ))}
       </div>
 
-      {/* Modal Explanation: Prescription Gate */}
+      {/* Modal Explanation: Guía de Medicamentos */}
       {showFormulaInfoModal && (
         <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-center justify-center p-4">
           <div className="bg-white rounded-3xl max-w-lg w-full p-6 shadow-2xl animate-in fade-in zoom-in-95 space-y-4">
             <div className="flex items-center gap-3 text-red-600">
               <div className="w-12 h-12 rounded-2xl bg-red-50 flex items-center justify-center shrink-0">
-                <FileText className="w-6 h-6" />
+                <ShieldCheck className="w-6 h-6 text-red-600" />
               </div>
               <div>
-                <h3 className="text-lg font-black text-slate-900">Normativa de Fórmulas Veterinarias</h3>
-                <p className="text-xs text-slate-500">Resolución ICA & Farmacovigilancia Colombia</p>
+                <h3 className="text-lg font-black text-slate-900">Guía de Farmacia Veterinaria</h3>
+                <p className="text-xs text-slate-500">Registro ICA & Trazabilidad Oficial en Colombia</p>
               </div>
             </div>
 
             <div className="space-y-2.5 text-xs text-slate-700 leading-relaxed bg-slate-50 p-4 rounded-2xl border border-slate-100">
               <p>
-                <strong>1. Identificación:</strong> Los medicamentos veterinarios controlados (como antibióticos, AINEs y moduladores) llevan la etiqueta roja <em>“Requiere fórmula médica”</em>.
+                <strong>1. Medicamentos Certificados:</strong> Todos los productos cuentan con Registro ICA vigente, número de lote y fecha de vencimiento garantizados.
               </p>
               <p>
-                <strong>2. Subida del Documento:</strong> Durante el checkout podrás adjuntar foto o PDF de la receta expedida por un Médico Veterinario con tarjeta profesional válida en Colombia.
+                <strong>2. Compra Directa Sin Archivos:</strong> Puedes agregar cualquier medicamento a tu carrito y completar tu compra ágilmente sin adjuntar archivos ni fotos de recetas.
               </p>
               <p>
-                <strong>3. Validación Farmacéutica:</strong> Nuestro químico farmacéutico veterinario verificará la prescripción, posología y fechas antes de autorizar el despacho físico.
+                <strong>3. Uso Responsable:</strong> Sigue siempre las indicaciones, posología y frecuencia prescritas por el Médico Veterinario tratante de tu mascota.
               </p>
               <p>
-                <strong>4. Seguridad de tu Mascota:</strong> No inventamos dosis ni sustituimos medicamentos sin autorización del profesional tratante.
+                <strong>4. Calidad y Almacenamiento:</strong> Conservamos los medicamentos en condiciones controladas de temperatura y humedad en nuestras sedes de Bogotá.
               </p>
             </div>
 
             <button
               onClick={() => setShowFormulaInfoModal(false)}
-              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-2xl text-xs transition"
+              className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold py-3 rounded-2xl text-xs transition cursor-pointer"
             >
               Entendido
             </button>

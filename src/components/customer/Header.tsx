@@ -1,5 +1,5 @@
 import React, { useState } from 'react';
-import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark } from 'lucide-react';
+import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark, Layers } from 'lucide-react';
 import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
 import { DeliveryQuote } from '../../lib/deliveryService';
 
@@ -268,6 +268,14 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <ShieldCheck className="w-4 h-4 text-red-600" />
                       <span>Panel Operativo (/operacion)</span>
+                    </button>
+
+                    <button
+                      onClick={() => { setShowAccountMenu(false); window.location.href = '/admin'; }}
+                      className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-bold transition"
+                    >
+                      <Layers className="w-4 h-4 text-slate-600" />
+                      <span>Administrador de Catálogo (/admin)</span>
                     </button>
                   </div>
                 )}

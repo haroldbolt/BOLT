@@ -617,9 +617,9 @@ export default function App() {
   }
 
   // -------------------------------------------------------------
-  // RENDER: OPERATIONS DASHBOARD (/operacion)
+  // RENDER: OPERATIONS DASHBOARD & CATALOG ADMIN (/operacion, /admin)
   // -------------------------------------------------------------
-  if (currentPath === '/operacion') {
+  if (currentPath === '/operacion' || currentPath === '/admin') {
     return (
       <OperationsDashboard
         onBackToCustomer={() => navigateTo('/')}
