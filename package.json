@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts && tsx src/tests/catalogAdmin.test.ts"
+    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts && tsx src/tests/catalogAdmin.test.ts && tsx src/tests/coverageRegression.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

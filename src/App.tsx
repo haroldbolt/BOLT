@@ -247,6 +247,7 @@ export default function App() {
   const [customerAddress, setCustomerAddress] = useState<string>('Calle 3 #78-20, Kennedy Central, Bogotá');
   const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('Apto 502, Torre 2');
   const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.6365, lng: -74.1448 });
+  const [customerTerritory, setCustomerTerritory] = useState<{municipality?:string;locality?:string;neighborhood?:string}>({municipality:'Bogotá D.C.',locality:'Kennedy'});
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
@@ -354,6 +355,8 @@ export default function App() {
 
   // Re-evaluate delivery quote and update automatically assigned warehouse
   useEffect(() => {
+    let cancelled = false;
+    setDeliveryQuote(null);
     const fetchQuote = async () => {
       try {
         const q = await api.getDeliveryQuote(
@@ -362,12 +365,16 @@ export default function App() {
               address: customerAddress,
               details: customerAddressDetails,
               coordinates: customerCoordinates,
+              ...customerTerritory,
             },
             items: cartItems.map(i => ({ productId: i.product.id, quantity: i.quantity })),
+            requestedMode: selectedDeliveryMode,
+            scheduledWindow: selectedDeliveryMode === 'PROGRAMADO' ? selectedScheduledWindow || undefined : undefined,
           },
           stores,
           products
         );
+        if(cancelled) return;
         setDeliveryQuote(q);
         if (q.assignedStoreId) {
           const matchStore = stores.find(s => s.id === q.assignedStoreId);
@@ -378,7 +385,8 @@ export default function App() {
       }
     };
     fetchQuote();
-  }, [customerCoordinates, stores]);
+    return ()=>{cancelled=true};
+  }, [customerAddress, customerAddressDetails, customerCoordinates, customerTerritory, stores, products, cartItems, selectedDeliveryMode, selectedScheduledWindow]);
 
   const handleConfirmAddress = (
     newAddress: string,
@@ -389,6 +397,8 @@ export default function App() {
     setCustomerAddress(newAddress);
     setCustomerAddressDetails(newDetails);
     setCustomerCoordinates(newCoords);
+    setCustomerTerritory({municipality:newQuote.municipality,locality:newQuote.locality,neighborhood:newQuote.destination.neighborhood});
+    setSelectedScheduledWindow(null);
     setDeliveryQuote(newQuote);
 
     // Automatic store assignment based on quote

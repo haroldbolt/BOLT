@@ -6,23 +6,14 @@ const BASE_URL = '/api/v1';
 
 export const api = {
   async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[]): Promise<DeliveryQuote> {
-    try {
-      const res = await fetch(`${BASE_URL}/delivery/quote`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(req),
-      });
-      if (!res.ok) {
-        throw new Error('Error del servidor en cotización');
-      }
-      return await res.json();
-    } catch {
-      // Fallback local autoritativo
-      return evaluateDeliveryQuote(req, localStores || INITIAL_STORES, localProducts || INITIAL_PRODUCTS);
-    }
+    const res = await fetch(`${BASE_URL}/delivery/quote`, {
+      method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(req), cache:'no-store'
+    });
+    if(!res.ok) throw new Error('No se pudo validar la entrega. Intenta nuevamente.');
+    return res.json();
   },
 
-  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string; municipality?: string; locality?: string } | null> {
+  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string; municipality?: string; locality?: string; neighborhood?: string } | null> {
     try {
       const res = await fetch(`${BASE_URL}/geocode/reverse?lat=${lat}&lng=${lng}`);
       if (!res.ok) return null;
@@ -33,7 +24,7 @@ export const api = {
     }
   },
 
-  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string; municipality?: string; locality?: string } | null> {
+  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string; municipality?: string; locality?: string; neighborhood?: string } | null> {
     try {
       const res = await fetch(`${BASE_URL}/geocode/forward?address=${encodeURIComponent(address)}`);
       if (!res.ok) return null;

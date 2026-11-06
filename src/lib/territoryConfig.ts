@@ -179,19 +179,7 @@ export function canonicalizeBogotaLocality(raw?: string | null): AllBogotaLocali
 export function isSoachaMunicipality(text?: string | null): boolean {
   if (!text) return false;
   const clean = normalizeTerritoryString(text);
-  return (
-    clean === 'soacha' ||
-    clean.includes('municipio de soacha') ||
-    clean.includes('soacha cundinamarca') ||
-    clean.includes('soacha centro') ||
-    clean.includes('ciudad verde') ||
-    clean.includes('san mateo') ||
-    clean.includes('compartir') ||
-    clean.includes('cazuca') ||
-    clean.includes('la despensa') ||
-    clean.startsWith('soacha') ||
-    clean.endsWith('soacha')
-  );
+  return clean === 'soacha' || clean === 'municipio de soacha' || clean === 'soacha cundinamarca';
 }
 
 /**
@@ -218,16 +206,6 @@ export function extractTerritoryFromInput(input: {
     return {
       municipality: 'Soacha',
       locality: explicitLoc || undefined,
-      isConfirmed: true,
-      rawMatched: 'Soacha',
-    };
-  }
-
-  // 2. Si la dirección menciona explícitamente el municipio Soacha
-  if (isSoachaMunicipality(addressText)) {
-    return {
-      municipality: 'Soacha',
-      locality: undefined,
       isConfirmed: true,
       rawMatched: 'Soacha',
     };
@@ -320,7 +298,7 @@ export function resolveTerritorialAssignment(input: {
   const extracted = extractTerritoryFromInput(input);
 
   // 1. Validación de Soacha
-  if (extracted.municipality === 'Soacha' || isSoachaMunicipality(input.address) || isSoachaMunicipality(input.municipality)) {
+  if (extracted.municipality === 'Soacha') {
     return {
       status: 'ASSIGNED',
       assignedStoreId: TERRITORIAL_WAREHOUSES.KENNEDY.id,
@@ -334,7 +312,7 @@ export function resolveTerritorialAssignment(input: {
 
   // 2. Validación de otros municipios fuera de Bogotá / Soacha
   const normMun = normalizeTerritoryString(extracted.municipality);
-  const isBogota = normMun.includes('bogota') || normMun === '' || normMun === 'bogota d c';
+  const isBogota = ['bogota', 'bogota d c', 'bogota dc'].includes(normMun);
   if (!isBogota && !isSoachaMunicipality(extracted.municipality)) {
     // Municipios como Chía, Cota, Mosquera, etc.
     return {
