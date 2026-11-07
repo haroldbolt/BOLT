@@ -1238,7 +1238,7 @@ export class DispatchService {
         this.unreserveOffer(o);
         r.status = "PENDING";
         r.offerId = undefined;
-      } else if (r.status === "ASSIGNED") r.releaseRequested = true;
+      } else if (["ASSIGNED","INCIDENT"].includes(r.status) && r.driverId) r.releaseRequested = true;
       else fail("INVALID_STATE", "No existe asignación que liberar");
       this.event("RELEASE_REQUESTED", adminId, r.id);
       return r;
@@ -1684,6 +1684,11 @@ export class DispatchService {
       if (["PENDING", "SEARCHING"].includes(r.status)) await this.search(r.id);
     }
   }
+  private estimateView(estimate?:PickupEstimate) {
+    if(!estimate)return undefined;
+    const ageSeconds=Math.max(0,(this.now()-estimate.observedAt)/1000),stale=ageSeconds>this.state.config.routeMaxAgeSeconds;
+    return {...estimate,ageSeconds,stale,seconds:stale?undefined:estimate.seconds};
+  }
   driverDispatch(r: DispatchRun, id: string) {
     const offer = r.offerId ? this.state.offers[r.offerId] : undefined;
     if (
@@ -1721,7 +1726,7 @@ export class DispatchService {
       ],
       destination: r.driverId === id ? order.deliveryAddress : undefined,
       customerPhone: r.driverId === id ? order.customer.phone : undefined,
-      pickupEstimate: r.estimate,
+      pickupEstimate: this.estimateView(r.estimate),
       cashToCollect: r.cashDue - r.cashCollected,
       releaseRequested: r.releaseRequested,
       transfer: r.transfer
@@ -1741,7 +1746,9 @@ export class DispatchService {
             : ["release-custody"]
           : offer?.status === "PENDING"
             ? ["accept", "reject"]
-            : r.status === "ASSIGNED"
+            : r.releaseRequested && !r.pickedUpAt
+              ? ["release"]
+              : r.status === "ASSIGNED"
               ? r.releaseRequested
                 ? ["release"]
                 : ["arrived-hub", "pickup", "incident"]
@@ -1774,6 +1781,8 @@ export class DispatchService {
       return "Estamos confirmando un repartidor para tu entrega.";
     if (runs.some((r) => r.status === "PENDING"))
       return "Estamos preparando tu entrega; el repartidor aún no está confirmado.";
+    if(runs.some(r=>r.status==='ASSIGNED'))return 'Repartidor confirmado. Estamos coordinando la recogida en la sede.';
+    if(runs.some(r=>r.status==='PICKED_UP'))return 'Tu entrega está en camino. Consulta el avance de cada despacho.';
     return undefined;
   }
   customerDispatches(orderId: string) {
@@ -1782,6 +1791,7 @@ export class DispatchService {
       .map((r) => ({
         id: r.id,
         code: r.code,
+        shipmentId: r.shipmentId,
         status:
           r.status === "SEARCH_EXHAUSTED" || r.status === "INCIDENT"
             ? "REQUIERE_ATENCION"
@@ -1836,7 +1846,7 @@ export class DispatchService {
       providers: DISABLED_LIVE_PROVIDERS,
       simulation: !!this.deps.simulation,
       drivers: Object.keys(this.state.accounts).map((id) =>
-        this.profile(id, true),
+        ({...this.profile(id, true),cashHeldCOP:this.repo.getDriverById(id)?.cashBalance||0}),
       ),
       orders: this.repo
         .getAllOrders()
@@ -1847,11 +1857,16 @@ export class DispatchService {
           id: o.id,
           code: o.purchaseCode,
           storeId: o.storeId,
+          warehouse: this.deps.stores().find(s=>s.id===o.storeId),
           status: o.fulfillmentStatus,
           dispatches: Object.values(this.state.runs)
             .filter((r) => r.orderId === o.id)
             .map((r) => ({
               ...r,
+              estimate:this.estimateView(r.estimate),
+              fulfillmentStatus: this.target(r).shipment.fulfillmentStatus,
+              items: this.target(r).shipment.items.map(({productId,name,presentation,quantity})=>({productId,name,presentation,quantity})),
+              weightGrams: this.target(r).shipment.transportLoad?.grossWeightGrams,
               offers: Object.values(this.state.offers).filter(
                 (of) => of.dispatchId === r.id,
               ),

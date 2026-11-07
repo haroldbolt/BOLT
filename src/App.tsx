@@ -1,3 +1,6 @@
+import {DriverPanel} from './components/dispatch/DriverPanel';
+import {DispatchSimulation} from './components/dispatch/DispatchSimulation';
+import {SimulationBanner} from './components/dispatch/DispatchUi';
 import { useGuestAddresses } from './components/customer/useGuestAddresses';
 import { SavedAddressesModal } from './components/customer/SavedAddressesModal';
 import type { AddressDestination, SavedAddress } from './lib/guestAddresses';
@@ -593,6 +596,10 @@ export default function App() {
   // -------------------------------------------------------------
   // RENDER: ORDER TRACKING PAGE (/pedido/:orderId)
   // -------------------------------------------------------------
+  if(currentPath==='/conductor')return <DriverPanel/>;
+  if(currentPath==='/simulacion')return <DispatchSimulation/>;
+  if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
+
   if (currentPath.startsWith('/pedido') && trackingOrderId) {
     return (
       <>

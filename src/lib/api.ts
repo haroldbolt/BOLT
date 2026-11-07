@@ -9,14 +9,15 @@ const guestOrderKey='bolt_guest_order_access_v1';
 let guestOrderMemory:Record<string,string>={};
 function guestOrderTokens():Record<string,string>{try{return {...guestOrderMemory,...JSON.parse(localStorage.getItem(guestOrderKey)||'{}')}}catch{return guestOrderMemory}}
 function saveOrderAccess(id:string,token:string){guestOrderMemory={...guestOrderTokens(),[id]:token};try{localStorage.setItem(guestOrderKey,JSON.stringify(guestOrderMemory))}catch{}}
-function authorizedFetch(url:RequestInfo|URL,init:RequestInit={}){
+function authorizedFetch(url:RequestInfo|URL,init:RequestInit={},guestOnly=false){
   const headers=new Headers(init.headers),path=String(url),match=path.match(/\/orders\/([^/?]+)/);
-  if(/\/(operations|admin|orders)(\/|$|\?)/.test(path)){const token=api.getStoredAdminToken();if(token&&!headers.has('Authorization'))headers.set('Authorization',`Bearer ${token}`);}
+  if(!guestOnly && /\/(operations|admin|orders)(\/|$|\?)/.test(path)){const token=api.getStoredAdminToken();if(token&&!headers.has('Authorization'))headers.set('Authorization',`Bearer ${token}`);}
   if(match){const token=guestOrderTokens()[decodeURIComponent(match[1])];if(token)headers.set('X-Order-Token',token);}
   return fetch(url,{...init,headers});
 }
 
 export const api = {
+  saveOrderAccess,
   async transportAdmin(path:string, method='GET', body?:unknown) {
     const res=await authorizedFetch(`${BASE_URL}/admin/${path}`,{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${api.getStoredAdminToken() || ''}`},body:body===undefined?undefined:JSON.stringify(body)});
     const data=await res.json();if(!res.ok)throw new Error(data.error || 'No se pudo guardar transporte');return data;
@@ -105,8 +106,8 @@ export const api = {
     return created;
   },
 
-  async getOrder(orderId: string): Promise<Order> {
-    const res = await authorizedFetch(`${BASE_URL}/orders/${orderId}`);
+  async getOrder(orderId: string, guestOnly=false): Promise<Order> {
+    const res = await authorizedFetch(`${BASE_URL}/orders/${orderId}`,{},guestOnly);
     if (!res.ok) throw new Error('Pedido no encontrado');
     return await res.json();
   },
@@ -135,11 +136,11 @@ export const api = {
     return await res.json();
   },
 
-  async getTracking(orderId: string, shipmentId?: string): Promise<DeliveryTracking> {
+  async getTracking(orderId: string, shipmentId?: string, guestOnly=false): Promise<DeliveryTracking> {
     const url = shipmentId
       ? `${BASE_URL}/orders/${orderId}/tracking?shipmentId=${encodeURIComponent(shipmentId)}`
       : `${BASE_URL}/orders/${orderId}/tracking`;
-    const res = await authorizedFetch(url);
+    const res = await authorizedFetch(url,{},guestOnly);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'Error al consultar rastreo');
@@ -218,7 +219,7 @@ export const api = {
     return await res.json();
   },
 
-  async cancelOrder(orderId: string, reason?: string, role: string = 'CLIENTE', shipmentId?: string): Promise<any> {
+  async cancelOrder(orderId: string, reason?: string, role: string = 'CLIENTE', shipmentId?: string, guestOnly=false): Promise<any> {
     const res = await authorizedFetch(`${BASE_URL}/orders/${orderId}/cancel`, {
       method: 'POST',
       headers: {
@@ -226,7 +227,7 @@ export const api = {
         'x-actor-role': role,
       },
       body: JSON.stringify({ reason, role, shipmentId }),
-    });
+    },guestOnly);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'No se pudo cancelar el pedido');

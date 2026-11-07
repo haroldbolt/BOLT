@@ -776,6 +776,11 @@ test("Cancellation and delivered history are not automatically migrated; legacy 
   assert.equal(migrated.status, "PICKED_UP");
   assert.equal(migrated.driverId, x.ids[0]);
 });
+test("Incident before pickup releases only after driver confirmation; stale estimates are labeled in both panels", async()=>{
+ const x=setup();x.provision();const o=x.order(),r=x.runs(o)[0];await x.service.search(r.id);x.service.respond(x.ids[0],r.offerId!,"accept");x.advance(61000);
+ assert.equal(x.service.driverDispatch(r,x.ids[0]).pickupEstimate?.stale,true);assert.equal(x.service.adminView().orders[0].dispatches[0].estimate?.stale,true);
+ x.service.incident(x.ids[0],r.id,"TEST: vehicle issue before pickup");x.service.requestRelease(r.id,"admin");assert.deepEqual(x.service.driverDispatch(r,x.ids[0]).actions,["release"]);x.service.confirmRelease(x.ids[0],r.id);assert.equal(r.status,"PENDING");assert.equal(r.driverId,undefined);assert.equal(o.items[0].quantity,1);
+});
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

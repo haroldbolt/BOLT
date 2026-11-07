@@ -28,32 +28,7 @@ export const notificationLifetime = (notification:PushNotification) => notificat
 
 export class PushNotificationService {
   private listeners: Set<NotificationListener> = new Set();
-  private notifications: PushNotification[] = [
-    {
-      id: 'notif-seed-1',
-      orderId: 'ORD-2026-8941',
-      orderNumber: '#BP-8941',
-      title: '⚡ ¡Tu pedido va en camino!',
-      message: 'Carlos Rodríguez recogió tu paquete en Sede Kennedy y viaja hacia tu dirección. Llega en aprox. 7 min.',
-      type: 'ORDER_ON_THE_WAY',
-      timestamp: Date.now() - 3 * 60 * 1000,
-      read: false,
-      actionUrl: '/pedido/ORD-2026-8941',
-      driverName: 'Carlos Rodríguez',
-      secretDeliveryCode: '4892',
-    },
-    {
-      id: 'notif-seed-2',
-      orderId: 'ORD-2026-8942',
-      orderNumber: '#BP-8942',
-      title: '📋 Fórmula veterinaria en revisión',
-      message: 'Nuestro equipo farmacéutico está validando la receta médica de Apoquel antes del despacho.',
-      type: 'ORDER_PREPARING',
-      timestamp: Date.now() - 20 * 60 * 1000,
-      read: true,
-      actionUrl: '/pedido/ORD-2026-8942',
-    },
-  ];
+  private notifications: PushNotification[] = [];
 
   private seenAssignments = new Set<string>();
   private assignmentRevisions: Record<string,number> = {};
@@ -84,6 +59,22 @@ export class PushNotificationService {
     this.seenAssignments.add(event.id);
     this.assignmentRevisions[order.id]=event.revision;
     return this.send({orderId:order.id,orderNumber:order.orderNumber,title:event.kind==='CHANGED'?'Sede actualizada':'Sede de preparación y despacho',message:assignmentMessage(event),type:event.kind==='CHANGED'?'WAREHOUSE_CHANGED':'WAREHOUSE_ASSIGNED',actionUrl:'/pedido/'+order.id},event.id);
+  }
+
+  notifyDispatchEvents(order:Order) {
+    this.restore();
+    const labels:Record<string,[PushNotification['type'],string]>={DISPATCH_ASSIGNED:['DRIVER_ASSIGNED','Repartidor confirmado'],PICKUP_CONFIRMED:['ORDER_ON_THE_WAY','Tu entrega va en camino'],DELIVERED:['ORDER_DELIVERED','Entrega completada'],INCIDENT:['ORDER_PREPARING','Estamos coordinando tu entrega'],RELEASE_CONFIRMED:['ORDER_PREPARING','Estamos confirmando otro repartidor'],CUSTODY_ACCEPTED:['DRIVER_ASSIGNED','Repartidor actualizado']};
+    for(const dispatch of (order as any).dispatches||[]) {
+      const events=dispatch.events||[];
+      for(const e of events) {
+        const key='dispatch:'+e.id;if(this.seenAssignments.has(key))continue;
+        this.seenAssignments.add(key);
+        // Historical events are retained as seen, not replayed as current alerts.
+        if(e!==events[events.length-1]||Date.now()-e.at>60000||!labels[e.type])continue;
+        const [type,title]=labels[e.type];this.send({orderId:order.id,orderNumber:order.orderNumber,title,message:`${dispatch.code}: ${title.toLowerCase()}.`,type,actionUrl:'/pedido/'+order.id},key);
+      }
+    }
+    this.persist();
   }
 
   subscribe(listener: NotificationListener): () => void {

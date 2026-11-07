@@ -1,3 +1,4 @@
+import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
 import {DispatchService} from './src/lib/dispatchService';
 import {mountDispatchRoutes,mountOrderAccess} from './src/lib/dispatchRoutes';
 import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/coverageConfig';
@@ -60,7 +61,9 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 const catalogOperations = new CatalogOperations({file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),products:()=>catalogRepository.getAllProducts(true),stores:()=>stores,orders:()=>ordersRepository.getAllOrders()});
 const transportRepository = new TransportRepository();
-const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config});
+const isDispatchSimulation=simulationEnabled();
+const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
+const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[]});
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
 function quoteForPurchase(request: any) {
   request={...request,destination:enrichDestination(request.destination)};
@@ -73,11 +76,13 @@ function quoteForPurchase(request: any) {
 }
 async function startServer() {
   acquireCatalogWriterLock();
+  if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
-  app.use(cors());
+  if(isDispatchSimulation)app.use((req,res,next)=>{const origin=req.get('Origin');if(!/^127\.0\.0\.1(:\d+)?$/.test(req.get('Host')||'') || origin && origin!==`http://127.0.0.1:${PORT}`)return res.status(403).json({error:'Simulación disponible únicamente en su origen local'});next()});
+  app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
   app.use(express.json({ limit: '15mb' }));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
   app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
@@ -173,6 +178,8 @@ async function startServer() {
   }
 
   mountDispatchRoutes(app,dispatchService,ordersRepository,requireAdminAuth);
+  if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth);
+  else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
   app.use('/api/v1/operations',requireAdminAuth);
   mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token));
   // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
@@ -1182,7 +1189,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, isDispatchSimulation?'127.0.0.1':'0.0.0.0', () => {
     console.log(`Bolt Pets Authoritative Full-Stack Server running on port ${PORT}`);
   });
 }
