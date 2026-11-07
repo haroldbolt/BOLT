@@ -1,6 +1,7 @@
 import {PresentationSelector} from './PresentationSelector';
 import {usePresentation} from './PresentationContext';
 import {hasSalePrice} from '../../lib/presentationSelection';
+import {validOffer} from '../../lib/catalogPurchase';
 import React from 'react';
 import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
@@ -45,8 +46,9 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
   const displayImage = selectedProduct?.image || product.image;
   const displayPresentation = selectedProduct?.presentation || 'Selecciona una presentación';
   const displaySku = selectedProduct?.sku || 'No disponible';
-  const blocked = !!selectedProduct && !availability.canAdd;
-  const add = () => selectedProduct ? availability.canAdd && onAddToCart(selectedProduct) : focusSelector();
+  const blocked = presentation.busy || (!!selectedProduct && !availability.canAdd);
+  const offer=validOffer(selectedProduct);
+  const add = (event:React.MouseEvent<HTMLButtonElement>) => {if(event.detail>1)return;if(!selectedProduct)focusSelector();else if(availability.canAdd && !presentation.busy)void presentation.add(onAddToCart);};
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
@@ -120,9 +122,9 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
               alt={product.name}
               className="w-full h-full object-cover transition-all duration-300"
             />
-            {selectedProduct?.discountPercent && selectedProduct?.discountPercent > 0 && (
+            {offer?.percent && (
               <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
-                -{selectedProduct?.discountPercent}% DESCUENTO
+                -{offer.percent}% DESCUENTO
               </span>
             )}
           </div>
@@ -134,9 +136,9 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
               <span className="text-2xl font-black text-slate-900">
                 {!selectedProduct ? 'Selecciona una presentación' : hasSalePrice(selectedProduct) ? formatCOP(selectedProduct.price) : 'Precio por confirmar'}
               </span>
-              {selectedProduct?.originalPrice && selectedProduct.originalPrice > selectedProduct.price && (
+              {offer && (
                 <span className="text-sm text-slate-400 line-through font-semibold">
-                  {formatCOP(selectedProduct.originalPrice)}
+                  {formatCOP(offer.originalPrice)}
                 </span>
               )}
             </div>
@@ -149,7 +151,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
               <span>SKU: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">{displaySku}</code></span>
             </div>
 
-            <PresentationSelector product={product} selectedId={selectedId} onSelect={select} selectorRef={selectorRef} />
+            <PresentationSelector product={product} selectedId={selectedId} onSelect={select} selectorRef={selectorRef} storeId={presentation.storeId} disabled={presentation.busy} />
           </div>
 
           {/* Recomendaciones de uso veterinario */}
@@ -210,6 +212,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
             <p className="text-xs text-slate-600 leading-relaxed">{product.description}</p>
           </div>
 
+          <p role="status" aria-atomic="true" className={`text-xs font-semibold ${presentation.feedback?.error ? "text-red-700" : "text-emerald-700"}`}>{presentation.feedback?.text}</p>
           {/* Bottom Action Bar */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
             <div>
@@ -224,12 +227,12 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-red-500/30 transition cursor-pointer disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
-                {!selectedProduct ? 'Elegir presentación' : 'Agregar a mi pedido'}
+                {presentation.adding ? 'Agregando…' : !selectedProduct ? 'Elegir presentación' : 'Agregar a mi pedido'}
               </button>
             ) : (
               <div className="flex items-center gap-3 bg-red-600 text-white rounded-2xl px-3 py-2 shadow-md">
                 <button
-                  aria-label="Quitar una unidad" onClick={() => selectedProduct && onUpdateQuantity(selectedProduct, quantityInCart - 1)}
+                  disabled={presentation.busy} aria-label="Quitar una unidad" onClick={() => selectedProduct && onUpdateQuantity(selectedProduct, quantityInCart - 1)}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 flex items-center justify-center transition"
                 >
                   <Minus className="w-4 h-4" />

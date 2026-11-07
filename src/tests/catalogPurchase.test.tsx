@@ -1,0 +1,34 @@
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup} from 'react-dom/server';
+import type {Product} from '../types';
+import type {DeliveryQuote,QuoteRequest} from '../lib/deliveryService';
+import {CartActionGate,optionStock,validOffer,validateCartAddition} from '../lib/catalogPurchase';
+import {PresentationProvider} from '../components/customer/PresentationContext';
+import {ProductCard} from '../components/customer/ProductCard';
+import {PresentationSelector} from '../components/customer/PresentationSelector';
+import {selectedPresentation} from '../lib/presentationSelection';
+// Isolated fixtures: never persist or import this catalog into the app.
+const p={id:'fixture-buy',name:'Producto de prueba',brand:'Marca de prueba',price:30000,originalPrice:40000,discountPercent:99,image:'/original.jpg',weightKg:3,presentation:'3 kg / Pollo',sku:'A',stockByStore:{HUB:3},reservedStockByStore:{HUB:1},presentaciones:[
+ {varianteId:'buy-v1',nombre:'3 kg / Pollo',sku:'A',price:30000,foto:'/pollo.jpg',stockByStore:{HUB:3},reservedStockByStore:{HUB:1},bodegaIds:['HUB']},
+ {varianteId:'buy-v2',nombre:'3 kg / Pescado',sku:'B',price:45000,foto:'',stockByStore:{HUB:0},reservedStockByStore:{HUB:0},bodegaIds:['HUB']},
+ {varianteId:'buy-v3',nombre:'8 kg',sku:'C',price:0,foto:'',stockByStore:{HUB:3},reservedStockByStore:{},bodegaIds:['HUB']},
+]} as unknown as Product;
+const selected=selectedPresentation(p,'buy-v1')!;
+const request={destination:{address:'Fixture',coordinates:{lat:4,lng:-74}},items:[],requestedMode:'PROGRAMADO'} as QuoteRequest;
+const quote={assignedStoreId:'HUB',basketValidated:true,recommendedMode:'PROGRAMADO',availableModes:{turbo:false,turboDividido:false,scheduled:true},message:'Programado'} as DeliveryQuote;
+let passed=0;
+const check=async(name:string,fn:()=>void|Promise<void>)=>{await fn();passed++;console.log('PASS',name);};
+await check('Una sola presentación conserva su nombre sin radios',()=>{const html=renderToStaticMarkup(<PresentationSelector product={{...p,presentaciones:[p.presentaciones![0]]}} onSelect={()=>{}} selectorRef={{current:null}} />);assert.ok(!html.includes('type="radio"'));assert.match(html,/3 kg \/ Pollo/);});
+await check('Marca y nombre preceden al precio y el botón principal cierra la tarjeta',()=>{const html=renderToStaticMarkup(<PresentationProvider request={request} quantities={{}}><ProductCard product={{...p,presentaciones:[p.presentaciones![0]]}} quantityInCart={0} isFavorite={false} selectedStoreId="HUB" onAddToCart={()=>{}} onUpdateQuantity={()=>{}} onOpenDetails={()=>{}} onToggleFavorite={()=>{}} /></PresentationProvider>);assert.ok(html.indexOf('<img')<html.indexOf('Por Marca'));assert.ok(html.indexOf('Por Marca')<html.indexOf('<h3'));assert.ok(html.indexOf('</h3>')<html.indexOf('text-lg sm:text-xl'));assert.ok(html.indexOf('text-lg sm:text-xl')<html.indexOf('<fieldset'));assert.match(html,/w-full min-h-11/);assert.match(html,/>Agregar<\/button>/);assert.ok(!html.includes('absolute bottom-2'));});
+await check('Opciones agotadas y sin precio etiquetadas desde datos, sin inventar stock',()=>{const html=renderToStaticMarkup(<PresentationSelector product={p} onSelect={()=>{}} selectorRef={{current:null}} storeId="HUB" />);assert.match(html,/Agotado en esta sede/);assert.match(html,/Precio pendiente/);assert.match(html,/3 kg \/ Pescado/);assert.equal(optionStock(selected), 'pending');assert.equal(optionStock(selected,'MISSING'),'unavailable');});
+await check('Reservas y fotografía de cada presentación',()=>{assert.equal(optionStock({...selected,reservedStockByStore:{HUB:3}},'HUB'),'out');assert.equal(selected.image,'/pollo.jpg');assert.equal(selectedPresentation(p,'buy-v2')!.image,'/original.jpg');});
+await check('Oferta calculada con precios válidos, sin copiar porcentaje declarativo',()=>{assert.deepEqual(validOffer(p),{originalPrice:40000,percent:25});for(const originalPrice of [undefined,0,20000,NaN,Infinity])assert.equal(validOffer({...p,originalPrice}),null);for(const price of [0,-1,NaN])assert.equal(validOffer({...p,price}),null);});
+await check('Revalida cantidad acumulada y confirma solo la variante enviada',async()=>{let committed:Product|undefined;await validateCartAddition({product:selected,request:{...request,items:[{productId:selected.id,quantity:1}]},quote:async r=>{assert.deepEqual(r.items,[{productId:selected.id,quantity:2}]);return quote;},isCurrent:()=>true,commit:p=>{committed=p;}});assert.equal(committed?.variantId,'buy-v1');});
+await check('Doble activación pendiente procesa una sola operación',async()=>{const gate=new CartActionGate();let release!:()=>void,commits=0;const first=gate.run(async()=>{await new Promise<void>(r=>release=r);commits++;});assert.equal(await gate.run(async()=>{commits++;}),false);release();assert.equal(await first,true);assert.equal(commits,1);assert.equal(await gate.run(async()=>{commits++;}),true);assert.equal(commits,2);});
+await check('Un error libera el bloqueo y permite reintentar',async()=>{const gate=new CartActionGate();await assert.rejects(gate.run(async()=>{throw new Error('sin red');}));assert.equal(await gate.run(async()=>{}),true);});
+await check('Falta de inventario reciente bloquea el agregado aunque la tarjeta tuviera stock',async()=>{let added=false;await assert.rejects(validateCartAddition({product:selected,request,quote:async()=>({...quote,recommendedMode:null,availableModes:{turbo:false,turboDividido:false,scheduled:false},message:'Inventario insuficiente'}),isCurrent:()=>true,commit:()=>{added=true;}}),/Inventario insuficiente/);assert.equal(added,false);});
+await check('Cambio de dirección/carrito/selección durante petición descarta el resultado',async()=>{let added=false;await assert.rejects(validateCartAddition({product:selected,request,quote:async()=>quote,isCurrent:()=>false,commit:()=>{added=true;}}),/cambió/);assert.equal(added,false);});
+await check('Variante agotada y precio inválido nunca llegan al carrito',async()=>{for(const product of [selectedPresentation(p,'buy-v2')!,selectedPresentation(p,'buy-v3')!]){let added=false;await assert.rejects(validateCartAddition({product,request,quote:async()=>quote,isCurrent:()=>true,commit:()=>{added=true;}}));assert.equal(added,false);}});
+await check('Otra presentación conserva la primera como línea independiente',async()=>{const other={...selectedPresentation(p,'buy-v2')!,stockByStore:{HUB:3}};await validateCartAddition({product:other,request:{...request,items:[{productId:selected.id,quantity:2}]},quote:async r=>{assert.deepEqual(r.items,[{productId:selected.id,quantity:2},{productId:'buy-v2',quantity:1}]);return quote;},isCurrent:()=>true,commit:p=>assert.equal(p.id,'buy-v2')});});
+console.log(`${passed} catalog purchase checks passed`);

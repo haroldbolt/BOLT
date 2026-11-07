@@ -654,7 +654,7 @@ export default function App() {
   // RENDER: MAIN CUSTOMER SHOPPING EXPERIENCE (/)
   // -------------------------------------------------------------
   return (
-    <PresentationProvider quantities={cartQuantities} request={{destination:{address:customerAddress,details:customerAddressDetails,coordinates:customerCoordinates,...customerTerritory},items:cartItems.map(i=>({productId:i.product.id,quantity:i.quantity})),requestedMode:selectedDeliveryMode,scheduledWindow:selectedDeliveryMode==='PROGRAMADO' ? selectedScheduledWindow || undefined : undefined}}>
+    <PresentationProvider deliveryQuote={deliveryQuote} quantities={cartQuantities} request={{destination:{address:customerAddress,details:customerAddressDetails,coordinates:customerCoordinates,...customerTerritory},items:cartItems.map(i=>({productId:i.product.id,quantity:i.quantity})),requestedMode:selectedDeliveryMode,scheduledWindow:selectedDeliveryMode==='PROGRAMADO' ? selectedScheduledWindow || undefined : undefined}}>
     <div className="min-h-screen bg-[#F8F9FA] text-slate-900 pb-28">
       {/* Google Maps Quota Defense Banner as required by GMP skill */}
       {quotaExceeded && (

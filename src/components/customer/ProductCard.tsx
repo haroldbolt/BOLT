@@ -2,7 +2,8 @@ import React from 'react';
 import {PresentationSelector} from './PresentationSelector';
 import {usePresentation} from './PresentationContext';
 import {hasSalePrice} from '../../lib/presentationSelection';
-import { Heart, Plus, Minus, FileText, Scale, Check, Bookmark, ShieldCheck } from 'lucide-react';
+import {validOffer} from '../../lib/catalogPurchase';
+import { Heart, ShoppingCart, LoaderCircle, Minus, Scale, Bookmark, ShieldCheck } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -39,19 +40,19 @@ export const ProductCard: React.FC<ProductCardProps> = ({
   const {selected, availability, selectorRef, selectedId, select, focusSelector} = presentation;
   quantityInCart = presentation.quantity;
   const displayProduct = selected || product;
-  const add = () => selected ? availability.canAdd && onAddToCart(selected) : focusSelector();
-  const blocked = !!selected && !availability.canAdd;
+  const add = (event:React.MouseEvent<HTMLButtonElement>) => {
+    if(event.detail>1) return; // The second click of a double click is the same purchase gesture.
+    if(!selected) {focusSelector();return;}
+    if(availability.canAdd && !presentation.busy) void presentation.add(onAddToCart);
+  };
+  const blocked = presentation.busy || (!!selected && !availability.canAdd);
+  const offer = validOffer(selected);
 
   return (
-    <article aria-label={product.name} className="bg-white rounded-3xl p-3 shadow-xs border border-slate-100 flex flex-col justify-between relative group hover:shadow-md transition">
+    <article aria-label={product.name} className="bg-white rounded-3xl p-3 shadow-xs border border-slate-100 flex flex-col h-full min-w-0 relative group hover:shadow-md transition">
       {/* Top badges & Actions (Compare & Heart) */}
       <div className="absolute top-2.5 left-2.5 right-2.5 flex items-center justify-between z-10 pointer-events-none">
         <div className="flex flex-col gap-1 items-start">
-          {selected?.discountPercent && selected?.discountPercent > 0 && (
-            <span className="bg-yellow-400 text-red-950 font-black text-[11px] px-2 py-0.5 rounded-md shadow-xs">
-              -{selected?.discountPercent}%
-            </span>
-          )}
           {product.requiresPrescription && (
             <span className="bg-blue-600 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-xs flex items-center gap-1">
               <ShieldCheck className="w-2.5 h-2.5" />
@@ -73,6 +74,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
                   ? 'bg-amber-400 text-slate-900 ring-2 ring-amber-500 scale-105'
                   : 'bg-white/90 text-slate-400 hover:text-slate-800'
               }`}
+              aria-pressed={isCompared}
               title={isCompared ? 'Quitar del comparador' : 'Comparar producto (hasta 3)'}
             >
               <Scale className="w-3.5 h-3.5" />
@@ -115,34 +117,35 @@ export const ProductCard: React.FC<ProductCardProps> = ({
         </div>
       </div>
 
-      <div className="w-full aspect-square rounded-2xl overflow-hidden bg-slate-50 mb-2 relative">
-        <button type="button" onClick={()=>onOpenDetails(product)} className="w-full h-full" aria-label={`Ver ${product.name}`}>
-          <img src={displayProduct.image} alt={`${product.name}${selected ? ` · ${selected.presentation}` : ''}`} className="w-full h-full object-cover group-hover:scale-105 transition duration-300" loading="lazy" />
-        </button>
-        <div className="absolute bottom-2 right-2 z-10">
-          {quantityInCart===0 ? <button type="button" onClick={add} disabled={blocked} aria-label={selected ? `Agregar ${product.name}, ${selected.presentation}` : `Seleccionar presentación de ${product.name}`} className="w-11 h-11 rounded-full bg-red-600 hover:bg-red-700 text-white shadow-md flex items-center justify-center disabled:bg-slate-300 disabled:cursor-not-allowed">
-            <Plus className="w-5 h-5 stroke-[2.5]" />
-          </button> : <div className="flex items-center bg-red-600 text-white rounded-full p-0.5 shadow-md">
-            <button type="button" onClick={()=>selected && onUpdateQuantity(selected,quantityInCart-1)} aria-label={`Quitar una unidad de ${selected?.presentation}`} className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-red-700"><Minus className="w-4 h-4" /></button>
-            <span className="w-5 text-center text-xs font-black">{quantityInCart}</span>
-            <button type="button" onClick={add} disabled={blocked} aria-label={`Agregar una unidad de ${selected?.presentation}`} className="w-10 h-10 rounded-full flex items-center justify-center hover:bg-red-700 disabled:opacity-40"><Plus className="w-4 h-4" /></button>
-          </div>}
+      <button type="button" onClick={()=>onOpenDetails(product)} className="w-full aspect-square shrink-0 rounded-2xl overflow-hidden bg-slate-50" aria-label={`Ver ${product.name}`}>
+        <img src={displayProduct.image} alt={`${product.name}${selected ? ` · ${selected.presentation}` : ''}`} className="w-full h-full object-contain group-hover:scale-105 transition duration-300" loading="lazy" />
+      </button>
+      <div className="flex flex-col flex-1 min-w-0 pt-3">
+        <p className="min-h-4 text-[11px] text-slate-500 font-medium truncate">{product.brand ? `Por ${product.brand}` : ''}</p>
+        <button type="button" onClick={()=>onOpenDetails(product)} className="text-left mt-1"><h3 className="text-xs sm:text-sm font-bold text-slate-800 line-clamp-2 min-h-8 sm:min-h-10 leading-4 sm:leading-5">{product.name}</h3></button>
+        <div className="mt-2 min-h-8" aria-live="polite" aria-atomic="true">
+          {offer?.percent && <span className="block text-[11px] font-extrabold text-red-600">{offer.percent}% de descuento</span>}
+          <div className="flex items-baseline gap-1.5 flex-wrap">
+            <span className={`${selected && hasSalePrice(selected) ? 'text-lg sm:text-xl' : 'text-sm'} font-black text-slate-900 tracking-tight`}>{!selected ? 'Selecciona una presentación' : hasSalePrice(selected) ? formatCOP(selected.price) : 'Precio por confirmar'}</span>
+            {offer && <span className="text-xs text-slate-400 line-through">{formatCOP(offer.originalPrice)}</span>}
+          </div>
         </div>
-      </div>
-      <div className="flex flex-col flex-1">
-        <div className="flex items-baseline gap-1.5 flex-wrap" aria-live="polite" aria-atomic="true">
-          <span className="text-base font-black text-slate-900 tracking-tight">{!selected ? 'Selecciona una presentación' : hasSalePrice(selected) ? formatCOP(selected.price) : 'Precio por confirmar'}</span>
-          {selected?.originalPrice && selected.originalPrice>selected.price ? <span className="text-xs text-slate-400 line-through">{formatCOP(selected.originalPrice)}</span> : null}
-        </div>
-        <button type="button" onClick={()=>onOpenDetails(product)} className="text-left"><h3 className="text-xs font-bold text-slate-800 line-clamp-2 mt-1 leading-snug">{product.name}</h3></button>
-        <PresentationSelector product={product} selectedId={selectedId} onSelect={select} selectorRef={selectorRef} />
-        <p role="status" className={`mt-2 text-[11px] font-semibold ${availability.canAdd ? 'text-emerald-700' : 'text-slate-600'}`}>{availability.message}</p>
+        <PresentationSelector product={product} selectedId={selectedId} onSelect={select} selectorRef={selectorRef} storeId={presentation.storeId} disabled={presentation.busy} />
+        <p className={`mt-2 text-[11px] font-semibold ${availability.canAdd ? 'text-emerald-700' : 'text-slate-600'}`}>{availability.message}</p>
         {availability.available !== undefined && availability.canAdd && availability.available<=2 && <p className="text-[10px] text-amber-700">¡Últimas {availability.available} unidades!</p>}
         {availability.message.includes('Reintenta') && <button type="button" onClick={presentation.retry} className="text-xs underline py-2 text-left">Reintentar entrega</button>}
-        {onToggleCompare && <button type="button" onClick={()=>onToggleCompare(product)} aria-pressed={isCompared} className="mt-auto pt-3 pb-1 flex items-center gap-1.5 text-[11px] text-slate-500 hover:text-slate-900 min-h-11">
-          <span className={`w-3.5 h-3.5 rounded border flex items-center justify-center ${isCompared ? 'bg-amber-400 border-amber-500 text-slate-900' : 'border-slate-300 bg-white'}`}>{isCompared && <Check className="w-2.5 h-2.5" />}</span>
-          {isCompared ? 'En comparador' : 'Comparar'}
-        </button>}
+        <div className="mt-auto pt-2">
+          <div className="min-h-11 flex items-center justify-between gap-1">
+            <p role="status" aria-atomic="true" className={`text-[11px] leading-4 font-semibold ${presentation.feedback?.error ? 'text-red-700' : 'text-emerald-700'}`}>
+              {presentation.feedback?.text || (quantityInCart>0 ? `${quantityInCart} en tu carrito` : '')}
+            </p>
+            {quantityInCart>0 && <button type="button" onClick={()=>selected && onUpdateQuantity(selected,quantityInCart-1)} disabled={presentation.busy} aria-label={`Quitar una unidad de ${selected?.presentation}`} className="w-11 h-11 shrink-0 flex items-center justify-center rounded-xl text-slate-600 hover:bg-slate-100 disabled:opacity-50"><Minus className="w-4 h-4" /></button>}
+          </div>
+          <button type="button" onClick={add} disabled={blocked} aria-busy={presentation.adding} aria-label={selected ? `Agregar ${product.name}, ${selected.presentation}` : `Agregar ${product.name}: elige una presentación`} className="w-full min-h-11 px-2 py-3 rounded-xl bg-red-600 hover:bg-red-700 active:scale-[0.98] text-white text-sm font-extrabold flex items-center justify-center gap-2 transition disabled:bg-slate-200 disabled:text-slate-500 disabled:cursor-not-allowed focus-visible:ring-2 focus-visible:ring-red-600 focus-visible:ring-offset-2">
+            {presentation.adding ? <LoaderCircle aria-hidden="true" className="w-4 h-4 animate-spin" /> : <ShoppingCart aria-hidden="true" className="w-4 h-4" />}
+            {presentation.adding ? 'Agregando…' : 'Agregar'}
+          </button>
+        </div>
       </div>
     </article>
   );
