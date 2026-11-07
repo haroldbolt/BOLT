@@ -268,7 +268,7 @@ export default function App() {
 
   // Delivery Address & Authoritative Delivery Quote context
   const [customerAddress, setCustomerAddress] = useState<string>('Calle 3 #78-20, Kennedy Central, Bogotá');
-  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('Apto 502, Torre 2');
+  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('');
   const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.6365, lng: -74.1448 });
   const [customerTerritory, setCustomerTerritory] = useState<{municipality?:string;locality?:string;neighborhood?:string}>({municipality:'Bogotá D.C.',locality:'Kennedy'});
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);

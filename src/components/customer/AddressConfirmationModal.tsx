@@ -66,7 +66,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   products = [],
 }) => {
   const [addressInput, setAddressInput] = useState(currentAddress || 'Calle 3 #78-20, Kennedy Central, Bogotá');
-  const [detailsInput, setDetailsInput] = useState(currentDetails || 'Apto 502, Torre 2');
+  const [detailsInput, setDetailsInput] = useState(currentDetails ?? '');
   const [pinCoordinates, setPinCoordinates] = useState<LatLng>(
     currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 }
   );
@@ -126,7 +126,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   useEffect(() => {
     if (isOpen) {
       const initialAddr = currentAddress || 'Calle 3 #78-20, Kennedy Central, Bogotá';
-      const initialDetails = currentDetails || 'Apto 502, Torre 2';
+      const initialDetails = currentDetails ?? '';
       const initialCoords = currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 };
 
       setAddressInput(initialAddr);
@@ -387,7 +387,6 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 type="text"
                 value={detailsInput}
                 onChange={e => setDetailsInput(e.target.value)}
-                placeholder="Ej: Apto 502, Torre 2"
                 className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-red-500 font-medium transition shadow-2xs"
               />
             </div>
