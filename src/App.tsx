@@ -1,3 +1,6 @@
+import { useGuestAddresses } from './components/customer/useGuestAddresses';
+import { SavedAddressesModal } from './components/customer/SavedAddressesModal';
+import type { AddressDestination, SavedAddress } from './lib/guestAddresses';
 import { COVERAGE_NOTICE } from './data/coverageConfig';
 import {PresentationProvider} from './components/customer/PresentationContext';
 import { saleVariant, salesCatalog } from './lib/variantCommerce';
@@ -83,7 +86,6 @@ export default function App() {
 
   // App data state
   const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
-  const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
 
@@ -269,11 +271,22 @@ export default function App() {
 
   // Delivery Address & Authoritative Delivery Quote context
   const [coverageAlert,setCoverageAlert]=useState(false);
-  const [customerAddress, setCustomerAddress] = useState<string>('');
-  const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('');
-  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng | undefined>();
-  const [customerTerritory, setCustomerTerritory] = useState<{municipality?:string;locality?:string;neighborhood?:string}>({});
-  const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
+  const addressBook = useGuestAddresses();
+  const addressStore = addressBook.store;
+  const customerAddress = addressBook.current?.address || '';
+  const customerAddressDetails = addressBook.current?.details || '';
+  const customerCoordinates = addressBook.current?.coordinates;
+  const customerTerritory = useMemo(()=>({municipality:addressBook.current?.municipality,locality:addressBook.current?.locality,neighborhood:addressBook.current?.neighborhood}),[addressBook.current?.municipality,addressBook.current?.locality,addressBook.current?.neighborhood]);
+  const [quoteState,setQuoteState]=useState<{quote:DeliveryQuote;revision:number}|null>(null);
+  const deliveryQuote=quoteState?.revision===addressBook.selectionRevision ? quoteState.quote : null;
+  const setDeliveryQuote=useCallback((quote:DeliveryQuote|null)=>setQuoteState(quote?{quote,revision:addressBook.selectionRevision}:null),[addressBook.selectionRevision]);
+  const currentStore=deliveryQuote ? stores.find(s=>s.id===deliveryQuote.assignedStoreId) || null : null;
+  const [isAddressBookOpen,setIsAddressBookOpen]=useState(false);
+  const [addressBookMessage,setAddressBookMessage]=useState('');
+  const [addressDraft,setAddressDraft]=useState<AddressDestination|null>(null);
+  const [editingAddress,setEditingAddress]=useState<SavedAddress|null>(null);
+  const deliveryRequest=useRef(0);
+  const announcedAddress=useRef(-1);
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
@@ -367,98 +380,63 @@ export default function App() {
     return () => { cancelled = true; catalogRequest.current++; };
   }, [refreshCatalog]);
 
-  // Re-evaluate delivery quote and update automatically assigned warehouse
+  const invalidateDestination = () => {
+    ++deliveryRequest.current;
+    setDeliveryQuote(null);
+    setSelectedScheduledWindow(null);
+    setSelectedDeliveryMode('TURBO');
+    setCoverageAlert(false);
+    setIsScheduledModalOpen(false);
+    setIsCheckoutOpen(false);
+  };
+  // This also handles restoration and changes made in another tab, without touching the cart.
+  useEffect(()=>{invalidateDestination()},[addressBook.selectionRevision]);
+
   useEffect(() => {
     let cancelled = false;
+    const seq=++deliveryRequest.current, revision=addressBook.selectionRevision;
     setDeliveryQuote(null);
-    if (!customerAddress.trim() || !customerCoordinates) { setCurrentStore(null); return; }
-    if (catalogLoading || catalogError || unavailableCartItems.length) return;
-    const fetchQuote = async () => {
-      try {
-        const q = await api.getDeliveryQuote(
-          {
-            destination: {
-              address: customerAddress,
-              details: customerAddressDetails,
-              coordinates: customerCoordinates,
-              ...customerTerritory,
-            },
-            items: cartItems.map(i => ({ productId: i.product.id, quantity: i.quantity })),
-            requestedMode: selectedDeliveryMode,
-            scheduledWindow: selectedDeliveryMode === 'PROGRAMADO' ? selectedScheduledWindow || undefined : undefined,
-          },
-          stores,
-          products
-        );
-        if(cancelled) return;
-        setDeliveryQuote(q);
-        if(selectedScheduledWindow && !q.scheduledSlots.some(s=>s.slotId===selectedScheduledWindow.slotId && s.date===selectedScheduledWindow.date && !s.cutoffPassed && s.availableCapacity>0)) setSelectedScheduledWindow(null);
-        if (!q.assignedStoreId) setCurrentStore(null);
-        if (q.assignedStoreId) {
-          const matchStore = stores.find(s => s.id === q.assignedStoreId);
-          if (matchStore) setCurrentStore(matchStore);
-        }
-      } catch (e) {
-        console.error('Error fetching delivery quote:', e);
+    if (!customerAddress.trim() || !customerCoordinates || catalogLoading || catalogError || unavailableCartItems.length) return;
+    api.getDeliveryQuote({
+      destination: {address:customerAddress,details:customerAddressDetails,coordinates:customerCoordinates,...customerTerritory},
+      items:cartItems.map(i=>({productId:i.product.id,quantity:i.quantity})),
+      requestedMode:selectedDeliveryMode,
+      scheduledWindow:selectedDeliveryMode==='PROGRAMADO'?selectedScheduledWindow || undefined:undefined,
+    },stores,products).then(q=>{
+      if(cancelled || seq!==deliveryRequest.current || revision!==addressStore.getSnapshot().selectionRevision) return;
+      setDeliveryQuote(q);
+      if(selectedScheduledWindow && !q.scheduledSlots.some(s=>s.slotId===selectedScheduledWindow.slotId && s.date===selectedScheduledWindow.date && !s.cutoffPassed && s.availableCapacity>0)) setSelectedScheduledWindow(null);
+      if(announcedAddress.current!==revision) {
+        announcedAddress.current=revision;
+        setCoverageAlert(q.eligibilityStatus==='OUT_OF_COVERAGE');
       }
-    };
-    fetchQuote();
+    }).catch(()=>{
+      if(!cancelled && seq===deliveryRequest.current) setAddressBookMessage('No se pudo validar esta dirección. Vuelve a seleccionarla para reintentar.');
+    });
     return ()=>{cancelled=true};
-  }, [customerAddress, customerAddressDetails, customerCoordinates, customerTerritory, stores, products, cartItems, selectedDeliveryMode, selectedScheduledWindow, catalogLoading, catalogError, unavailableCartItems]);
+  },[customerAddress,customerAddressDetails,customerCoordinates,customerTerritory,addressBook.selectionRevision,stores,products,cartItems,selectedDeliveryMode,selectedScheduledWindow,catalogLoading,catalogError,unavailableCartItems]);
 
-  const handleConfirmAddress = (
-    newAddress: string,
-    newDetails: string,
-    newCoords: LatLng,
-    newQuote: DeliveryQuote
-  ) => {
-    setCustomerAddress(newAddress);
-    setCustomerAddressDetails(newDetails);
-    setCustomerCoordinates(newCoords);
-    setCustomerTerritory({municipality:newQuote.municipality,locality:newQuote.locality,neighborhood:newQuote.destination.neighborhood});
-    setSelectedScheduledWindow(null);
-    setIsScheduledModalOpen(false);
-    setDeliveryQuote(newQuote);
-    setCoverageAlert(newQuote.eligibilityStatus==='OUT_OF_COVERAGE');
-    if(!newQuote.assignedStoreId) setCurrentStore(null);
-    if(newQuote.eligibilityStatus==='OUT_OF_COVERAGE') return;
-    if(!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && !newQuote.availableModes.scheduled) {
-      setSelectedDeliveryMode('PROGRAMADO');
-      setCurrentStore(stores.find(s=>s.id===newQuote.assignedStoreId) || null);
-      if(newQuote.effectiveMode==='PROGRAMADO') setIsScheduledModalOpen(true);
-      pushService.triggerNotification('Opciones de entrega pendientes',newQuote.message);
-      return;
-    }
-
-    // Automatic store assignment based on quote
-    if (newQuote.assignedStoreId) {
-      const targetStore = stores.find(s => s.id === newQuote.assignedStoreId);
-      if (targetStore) {
-        setCurrentStore(targetStore);
-      }
-    }
-
-    const shouldAutoSwitchToScheduled =
-      newQuote.effectiveMode === 'PROGRAMADO' ||
-      newQuote.autoSwitchedToScheduled ||
-      newQuote.recommendedMode === 'PROGRAMADO' ||
-      (!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && newQuote.availableModes.scheduled);
-
-    if (shouldAutoSwitchToScheduled) {
-      setSelectedDeliveryMode('PROGRAMADO');
-
-      setIsScheduledModalOpen(true);
-      pushService.triggerNotification(
-        'Envío Programado Seleccionado',
-        'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido'
-      );
+  const openAddressBook = () => {setAddressBookMessage('');setIsAddressBookOpen(true)};
+  const editDeliveryAddress = (saved?:SavedAddress) => {
+    setEditingAddress(saved || null);
+    setAddressDraft(saved || null);
+    setAddressBookMessage('');
+    setIsAddressBookOpen(false);
+    setIsAddressModalOpen(true);
+  };
+  const handleConfirmAddress = (address:string,details:string,coordinates:LatLng,q:DeliveryQuote,metadata?:{name:string;isDefault:boolean}) => {
+    const destination:AddressDestination={address,details,coordinates,municipality:q.municipality,locality:q.locality,neighborhood:q.destination.neighborhood};
+    if(editingAddress) {
+      const result=addressStore.update(editingAddress.id,destination,metadata?.name || editingAddress.name,metadata?.isDefault ?? editingAddress.isDefault);
+      setAddressBookMessage(result.message);
+      if(!result.ok)return false;
     } else {
-      setSelectedDeliveryMode(newQuote.recommendedMode || 'TURBO');
-      pushService.triggerNotification(
-        'Ubicación y Sede Confirmadas',
-        `Entregaremos en ${newAddress}. Atendido desde ${newQuote.assignedStoreName || 'sede cercana'}. ETA aprox: ${newQuote.estimatedMinutes || 25} min.`
-      );
+      invalidateDestination();
+      addressStore.confirm(destination);
+      setAddressBookMessage('Dirección confirmada. Puedes guardarla con un nombre o continuar.');
     }
+    setIsAddressBookOpen(true);
+    return true;
   };
 
   // Cart operations
@@ -667,7 +645,7 @@ export default function App() {
       <Header
         currentStore={currentStore}
         allStores={stores}
-        onSelectStore={(st) => setCurrentStore(st)}
+        onSelectStore={openAddressBook}
         selectedCategory={selectedCategory}
         onSelectCategory={(cat) => {
           setSelectedCategory(cat);
@@ -699,7 +677,11 @@ export default function App() {
         customerAddress={customerAddress}
         customerAddressDetails={customerAddressDetails}
         deliveryQuote={deliveryQuote}
-        onOpenAddressModal={() => setIsAddressModalOpen(true)}
+        onOpenAddressModal={openAddressBook}
+        onOpenSavedAddresses={openAddressBook}
+        savedAddressCount={addressBook.addresses.length}
+        activeAddressName={addressBook.addresses.find(a=>a.id===addressBook.current?.savedId)?.name}
+        canSaveAddress={!!addressBook.current && !addressBook.current.savedId && !!deliveryQuote && deliveryQuote.eligibilityStatus!=='ADDRESS_NEEDS_CONFIRMATION'}
         selectedDeliveryMode={selectedDeliveryMode}
         selectedScheduledWindow={selectedScheduledWindow}
         onOpenScheduledModal={() => setIsScheduledModalOpen(true)}
@@ -1252,7 +1234,7 @@ export default function App() {
         onRefreshCatalog={() => void refreshCatalog()}
         onProceedToCheckout={async () => {
           if (cartBlockReason || !cartItems.length) return;
-          if (!customerAddress.trim() || !customerCoordinates) { setIsCartOpen(false); setIsAddressModalOpen(true); return; }
+          if (!customerAddress.trim() || !customerCoordinates) { setIsCartOpen(false); openAddressBook(); return; }
           if (await refreshCatalog()) { setIsCartOpen(false); setIsCheckoutOpen(true); }
         }}
         currentStore={currentStore}
@@ -1276,7 +1258,7 @@ export default function App() {
         onSelectScheduledWindow={setSelectedScheduledWindow}
         onChangeAddress={() => {
           setIsCheckoutOpen(false);
-          setIsAddressModalOpen(true);
+          openAddressBook();
         }}
         onOrderSuccess={(orderId) => {
           setIsCheckoutOpen(false);
@@ -1286,14 +1268,27 @@ export default function App() {
         }}
       />
 
+      <SavedAddressesModal isOpen={isAddressBookOpen} onClose={()=>setIsAddressBookOpen(false)}
+        addresses={addressBook.addresses} current={addressBook.current} quote={deliveryQuote}
+        warning={addressBook.warning} message={addressBookMessage}
+        onAdd={()=>editDeliveryAddress()} onEdit={editDeliveryAddress}
+        onUse={id=>{invalidateDestination();setAddressBookMessage('');if(!addressStore.select(id))setAddressBookMessage('Esta dirección ya no está guardada. Selecciona otra.')}}
+        onRemove={id=>{const active=addressStore.remove(id);if(active){invalidateDestination();setAddressBookMessage('Eliminaste la dirección en uso. Selecciona otra antes de confirmar el pedido.')}else setAddressBookMessage('Dirección eliminada.')}}
+        onDefault={id=>{addressStore.setDefault(id);setAddressBookMessage('Dirección predeterminada actualizada. La dirección de esta compra se conserva hasta que elijas otra.')}}
+        onSave={(name,isDefault)=>{const result=addressStore.saveCurrent(name,isDefault);setAddressBookMessage(result.message);return result.ok}}
+        onContinue={()=>{setIsAddressBookOpen(false);if(deliveryQuote?.territoryInfo?.isCovered && deliveryQuote.effectiveMode==='PROGRAMADO')setIsScheduledModalOpen(true)}}
+      />
+
       {/* Address Confirmation & Coverage Modal */}
       <AddressConfirmationModal
         isOpen={isAddressModalOpen}
-        onClose={() => setIsAddressModalOpen(false)}
-        currentAddress={customerAddress}
-        currentDetails={customerAddressDetails}
-        currentCoordinates={customerCoordinates}
-        currentTerritory={customerTerritory}
+        onClose={() => {setIsAddressModalOpen(false);setIsAddressBookOpen(true)}}
+        currentAddress={addressDraft?.address || ''}
+        currentDetails={addressDraft?.details || ''}
+        currentCoordinates={addressDraft?.coordinates}
+        currentTerritory={addressDraft || undefined}
+        savedAddressOptions={editingAddress || undefined}
+        saveError={editingAddress ? addressBookMessage : undefined}
         onConfirmAddress={handleConfirmAddress}
         stores={stores}
         cartItems={cartItems}
@@ -1335,7 +1330,7 @@ export default function App() {
 
       {/* Push Notification Real-Time Toast Banner */}
       <PushNotificationBanner
-        notice={coverageAlert ? {...COVERAGE_NOTICE,onDismiss:()=>setCoverageAlert(false),onAction:()=>{setCoverageAlert(false);setIsAddressModalOpen(true)}} : undefined}
+        notice={coverageAlert && deliveryQuote?.eligibilityStatus==='OUT_OF_COVERAGE' ? {...COVERAGE_NOTICE,onDismiss:()=>setCoverageAlert(false),onAction:()=>{setCoverageAlert(false);openAddressBook()}} : undefined}
         onNavigateToOrder={(orderId) => navigateTo(`/pedido/${orderId}`)}
       />
 

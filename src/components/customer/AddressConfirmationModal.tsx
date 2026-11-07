@@ -33,7 +33,9 @@ interface AddressConfirmationModalProps {
   currentDetails: string;
   currentCoordinates?: LatLng;
   currentTerritory?: AddressTerritory;
-  onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote) => void;
+  onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote, metadata?: {name:string;isDefault:boolean}) => boolean | void;
+  savedAddressOptions?: {name:string;isDefault:boolean};
+  saveError?: string;
   stores: Store[];
   cartItems?: CartItem[];
   products?: Product[];
@@ -60,10 +62,13 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   currentCoordinates,
   currentTerritory,
   onConfirmAddress,
+  savedAddressOptions, saveError,
   stores,
   cartItems,
   products = [],
 }) => {
+  const [savedName,setSavedName]=useState(savedAddressOptions?.name || '');
+  const [savedDefault,setSavedDefault]=useState(savedAddressOptions?.isDefault || false);
   const [addressInput, setAddressInput] = useState(currentAddress ?? '');
   const [detailsInput, setDetailsInput] = useState(currentDetails ?? '');
   const [pinCoordinates, setPinCoordinates] = useState<Partial<LatLng>>(currentCoordinates ?? {});
@@ -133,6 +138,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       ++reverseGeocodeReqSeqRef.current;
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
 
+      setSavedName(savedAddressOptions?.name || '');setSavedDefault(savedAddressOptions?.isDefault || false);
       setAddressInput(initialAddr);
       setDetailsInput(initialDetails);
       setPinCoordinates(initialCoords);
@@ -249,7 +255,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
   // Requisito 4: Al confirmar, onConfirmAddress debe recibir los datos de esa misma ubicación
   const canConfirm = 
-    !!addressInput.trim() && !!destinationPoint &&
+    (!savedAddressOptions || !!savedName.trim()) && !!addressInput.trim() && !!destinationPoint &&
     !isEvaluating && !isGeocoding && 
     !isReverseGeocoding && 
     isAddressSynced && 
@@ -260,8 +266,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const handleConfirm = () => {
     if (canConfirm && quote && destinationPoint) {
       // Requisito 5: Conserva lo escrito en «Torre / Apto / Portería» (detailsInput)
-      onConfirmAddress(addressInput, detailsInput, destinationPoint, quote);
-      onClose();
+      if(onConfirmAddress(addressInput,detailsInput,destinationPoint,quote,savedAddressOptions?{name:savedName,isDefault:savedDefault}:undefined)!==false) onClose();
     }
   };
 
@@ -302,7 +307,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={onClose} aria-label="Cerrar formulario de dirección"
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
           >
             <X className="w-4 h-4" />
@@ -312,6 +317,11 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           
+          {savedAddressOptions && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
+            <label className="block text-xs font-bold text-slate-700">Nombre de la dirección<input aria-label="Nombre de la dirección guardada" value={savedName} maxLength={60} onChange={e=>setSavedName(e.target.value)} className="block w-full mt-1 p-3 rounded-xl border border-slate-200 bg-white text-sm"/></label>
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={savedDefault} onChange={e=>setSavedDefault(e.target.checked)}/>Usar como predeterminada</label>
+            {saveError && <p role="status" className="text-xs text-amber-800">{saveError}</p>}
+          </div>}
           {/* Address Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2 space-y-1">
@@ -698,7 +708,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 <span>Esperando dirección...</span>
               ) : (
                 <>
-                  <span>{isAutoSwitchedToScheduled ? 'Continuar con Envío Programado' : 'Confirmar dirección'}</span>
+                  <span>{savedAddressOptions ? 'Guardar cambios' : 'Confirmar dirección'}</span>
                   <ChevronRight className="w-4 h-4" />
                 </>
               )}

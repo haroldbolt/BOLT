@@ -25,6 +25,10 @@ interface HeaderProps {
   customerAddressDetails?: string;
   deliveryQuote?: DeliveryQuote | null;
   onOpenAddressModal?: () => void;
+  onOpenSavedAddresses?: () => void;
+  savedAddressCount?: number;
+  activeAddressName?: string;
+  canSaveAddress?: boolean;
   selectedDeliveryMode?: DeliveryMode;
   selectedScheduledWindow?: ScheduledDeliveryWindow | null;
   onOpenScheduledModal?: () => void;
@@ -67,6 +71,7 @@ export const Header: React.FC<HeaderProps> = ({
   customerAddressDetails,
   deliveryQuote,
   onOpenAddressModal,
+  onOpenSavedAddresses, savedAddressCount=0, activeAddressName, canSaveAddress=false,
   selectedDeliveryMode,
   selectedScheduledWindow,
   onOpenScheduledModal,
@@ -355,7 +360,7 @@ export const Header: React.FC<HeaderProps> = ({
                 <div className="truncate text-xs sm:text-sm font-semibold flex-1">
                   {customerAddress ? (
                     <span className="font-bold text-white tracking-wide">
-                      {customerAddress}
+                      {activeAddressName ? `${activeAddressName} · ` : ''}{customerAddress}
                       {deliveryQuote?.detectedLocalityName && (
                         <span className="text-red-200 text-xs font-normal ml-1">
                           · {deliveryQuote.detectedLocalityName}
@@ -371,6 +376,7 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
+          {onOpenSavedAddresses && <div className="flex justify-center"><button type="button" onClick={onOpenSavedAddresses} className="min-h-10 px-4 rounded-full text-white text-xs font-bold flex items-center gap-2 hover:bg-red-800/50"><Bookmark className="w-4 h-4"/>{canSaveAddress?'Guardar dirección':`Mis direcciones (${savedAddressCount})`}</button></div>}
           {/* ROW 4: SEARCH BAR */}
           <div className="relative" id="tour-search-bar">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
