@@ -58,7 +58,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
             </div>
             <div>
               <h3 className="font-black text-slate-900 text-sm">Centro de Notificaciones</h3>
-              <p className="text-[11px] text-slate-500">Alertas push de tus pedidos en tiempo real</p>
+              <p className="text-[11px] text-slate-500">Notificaciones de tus pedidos dentro de la app</p>
             </div>
           </div>
           <button

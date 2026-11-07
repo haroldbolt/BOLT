@@ -149,7 +149,7 @@ export const Header: React.FC<HeaderProps> = ({
               <button
                 onClick={onOpenNotifications}
                 className="relative w-8 h-8 rounded-full bg-red-700 hover:bg-red-800 text-white flex items-center justify-center border border-red-500/60 shadow-sm transition"
-                title="Centro de notificaciones push"
+                  title="Centro de notificaciones"
               >
                 <Bell className="w-4 h-4" />
                 {unreadNotificationsCount > 0 && (

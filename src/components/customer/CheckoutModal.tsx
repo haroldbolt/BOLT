@@ -1,3 +1,4 @@
+import { pushService } from '../../lib/notifications';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
   X, MapPin, CreditCard, DollarSign, FileText, CheckCircle2, 
@@ -168,7 +169,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       if(!deliveryQuote || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido)) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
       const payload = {
-        storeId: deliveryQuote?.assignedStoreId || currentStore.id,
+        // The server assigns the warehouse; no browser store choice is submitted.
         deliveryMode: selectedMode,
         scheduledWindow: scheduledWindowPayload,
         items: cartItems.map(item => ({
@@ -206,6 +207,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       };
 
       const newOrder = await api.createOrder(payload);
+
+      pushService.notifyWarehouseAssignment(newOrder);
 
       // Celebrate
       confetti({
@@ -253,8 +256,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-500">
-              Sede asignada: {deliveryQuote?.assignedStoreName || currentStore.name} • Peso: {totalWeightKg.toFixed(1)} kg
+              Sede propuesta: {deliveryQuote?.warehouse?.customerName || 'Sede pendiente de confirmar'} • Peso: {totalWeightKg.toFixed(1)} kg
             </p>
+            {deliveryQuote?.warehouse?.address && <p className="text-[11px] text-slate-500 mt-1">{deliveryQuote.warehouse.address}</p>}
           </div>
           <button
             onClick={onClose}

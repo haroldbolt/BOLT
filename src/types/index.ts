@@ -90,6 +90,11 @@ export interface ProductFilterState {
 export type WarehouseVerificationStatus = 'VERIFIED' | 'UNVERIFIED' | 'DISCREPANCY_WARNING';
 
 export interface Store {
+  customerName?: string;
+  showAddressToCustomer?: boolean;
+  enabledModes?: DeliveryMode[];
+  scheduledLocalities?: readonly string[];
+  scheduledMunicipalities?: readonly string[];
   id: string;
   name: string;
   address: string;
@@ -300,7 +305,19 @@ export interface ChildShipment {
   cancelReason?: string;
 }
 
+export interface WarehouseAssignmentEvent {
+  id:string;
+  revision:number;
+  kind:'ASSIGNED'|'CHANGED';
+  timestamp:string;
+  store:{id:string;name:string;customerName:string;address?:string};
+}
+
 export interface Order {
+  warehouseAssignment?: WarehouseAssignmentEvent;
+  warehouse?: WarehouseAssignmentEvent['store'];
+  creationRequestId?: string;
+  creationRequestFingerprint?: string;
   id: string;
   orderNumber: string;
   createdAt: string;
