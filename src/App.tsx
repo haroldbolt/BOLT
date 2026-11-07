@@ -1,3 +1,4 @@
+import {PresentationProvider} from './components/customer/PresentationContext';
 import { saleVariant, salesCatalog } from './lib/variantCommerce';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/customer/Header';
@@ -457,7 +458,9 @@ export default function App() {
   }, [cartItems]);
 
   const handleAddToCart = (product: Product) => {
+    if (!product.variantId && (product.presentaciones?.length || 0)>1) { setDetailProduct(product); return; }
     if(!product.variantId) product = saleVariant(product);
+    if(!Number.isFinite(product.price) || product.price<=0) return;
     setCartItems(prev => {
       const existing = prev.find(i => i.product.id === product.id);
       if (existing) {
@@ -651,6 +654,7 @@ export default function App() {
   // RENDER: MAIN CUSTOMER SHOPPING EXPERIENCE (/)
   // -------------------------------------------------------------
   return (
+    <PresentationProvider deliveryQuote={deliveryQuote} quantities={cartQuantities} request={{destination:{address:customerAddress,details:customerAddressDetails,coordinates:customerCoordinates,...customerTerritory},items:cartItems.map(i=>({productId:i.product.id,quantity:i.quantity})),requestedMode:selectedDeliveryMode,scheduledWindow:selectedDeliveryMode==='PROGRAMADO' ? selectedScheduledWindow || undefined : undefined}}>
     <div className="min-h-screen bg-[#F8F9FA] text-slate-900 pb-28">
       {/* Google Maps Quota Defense Banner as required by GMP skill */}
       {quotaExceeded && (
@@ -1366,5 +1370,6 @@ export default function App() {
         onComplete={handleDismissTour}
       />
     </div>
+    </PresentationProvider>
   );
 }
