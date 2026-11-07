@@ -275,6 +275,7 @@ export interface OrderStatusHistoryEntry {
 }
 
 export interface ChildShipment {
+  dispatchCode?: string;
   transportLoad?: TransportLoad;
   storeId?: string;
   shipmentId: string;
@@ -326,6 +327,10 @@ export interface WarehouseAssignmentEvent {
 }
 
 export interface Order {
+  dispatchStatusMessage?: string;
+  purchaseCode?: string;
+  dispatchCode?: string;
+  guestAccessToken?: string;
   transportLoad?: TransportLoad;
   transportConfirmation?: string;
   warehouseAssignment?: WarehouseAssignmentEvent;
@@ -431,6 +436,7 @@ export interface Order {
 }
 
 export interface DriverProfile {
+  operationalEligible?: boolean;
   id: string;
   name: string;
   phone: string;
@@ -440,7 +446,7 @@ export interface DriverProfile {
   rating: number;
   photo: string;
   isOnline: boolean;
-  currentStatus: 'DISPONIBLE' | 'EN_RUTA_A_HUB' | 'EN_CAMINO_CLIENTE' | 'FUERA_DE_TURNO';
+  currentStatus: 'OFERTA_PENDIENTE' | 'DISPONIBLE' | 'EN_RUTA_A_HUB' | 'EN_CAMINO_CLIENTE' | 'FUERA_DE_TURNO';
   currentLocation: {
     lat: number;
     lng: number;

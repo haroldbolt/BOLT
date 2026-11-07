@@ -36,14 +36,14 @@ export class AdminAuthService {
   private activeSessions: Map<string, AdminSession> = new Map();
   private isLoaded = false;
 
-  constructor() {
+  constructor(private authFile=AUTH_FILE_PATH) {
     this.loadFromDisk();
   }
 
   private loadFromDisk(): void {
     try {
-      if (fs.existsSync(AUTH_FILE_PATH)) {
-        const raw = fs.readFileSync(AUTH_FILE_PATH, 'utf-8');
+      if (fs.existsSync(this.authFile)) {
+        const raw = fs.readFileSync(this.authFile, 'utf-8');
         const data: PersistedAuthData = JSON.parse(raw);
         if (Array.isArray(data.admins)) {
           this.admins.clear();
@@ -85,11 +85,11 @@ export class AdminAuthService {
         version: '1.0.0',
         admins: Array.from(this.admins.values()),
       };
-      const dir = path.dirname(AUTH_FILE_PATH);
+      const dir = path.dirname(this.authFile);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
-      fs.writeFileSync(AUTH_FILE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+      fs.writeFileSync(this.authFile, JSON.stringify(data, null, 2), 'utf-8');
     } catch (err) {
       console.error('[AdminAuthService] Error saving admin auth file:', err);
     }
@@ -239,9 +239,9 @@ export class AdminAuthService {
   public resetForTesting(): void {
     this.admins.clear();
     this.activeSessions.clear();
-    if (fs.existsSync(AUTH_FILE_PATH)) {
+    if (fs.existsSync(this.authFile)) {
       try {
-        fs.unlinkSync(AUTH_FILE_PATH);
+        fs.unlinkSync(this.authFile);
       } catch {}
     }
   }

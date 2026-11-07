@@ -235,7 +235,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                       {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}
                     </span>
                   ) : (
-                    <span>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></span>
+                    <span>{order.dispatchStatusMessage || <>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></>}</span>
                   )}
                 </h2>
                 <p className="text-[11px] text-slate-500 mt-1">
@@ -651,7 +651,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                     {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}
                   </span>
                 ) : (
-                  <span>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></span>
+                  <span>{order.dispatchStatusMessage || <>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></>}</span>
                 )}
               </h2>
             </div>
