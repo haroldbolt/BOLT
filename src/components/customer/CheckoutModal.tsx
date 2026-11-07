@@ -49,9 +49,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   selectedScheduledWindow: selectedScheduledWindowProp,
   onSelectScheduledWindow,
 }) => {
-  const [customerName, setCustomerName] = useState('Juan David Gómez');
-  const [customerPhone, setCustomerPhone] = useState('+57 312 890 1234');
-  const [customerEmail, setCustomerEmail] = useState('juan.gomez@ejemplo.com');
+  const [customerName, setCustomerName] = useState('');
+  const [customerPhone, setCustomerPhone] = useState('');
+  const [customerEmail, setCustomerEmail] = useState('');
   const [address, setAddress] = useState(customerAddress ?? '');
   const [addressDetails, setAddressDetails] = useState(customerAddressDetails ?? '');
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
@@ -147,6 +147,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setErrorMessage('');
 
     try {
+      if (!customerName.trim() || !customerPhone.trim() || !customerEmail.trim()) throw new Error('Completa tu nombre, teléfono y correo electrónico.');
       if (cartBlockReason || !cartItems.length) throw new Error(cartBlockReason || 'Tu carrito está vacío.');
       if (!customerAddress?.trim() || !customerCoordinates) throw new Error('Ingresa y confirma tu dirección antes de continuar.');
       const scheduledWindowPayload: ScheduledDeliveryWindow | undefined =
@@ -189,9 +190,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           requiresPrescription: item.product.requiresPrescription,
         })),
         customer: {
-          name: customerName,
-          phone: customerPhone,
-          email: customerEmail,
+          name: customerName.trim(),
+          phone: customerPhone.trim(),
+          email: customerEmail.trim(),
           isGuest: true,
         },
         deliveryAddress: {
@@ -572,6 +573,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <input
                 type="text"
                 placeholder="Nombre completo"
+                aria-label="Nombre completo"
                 value={customerName}
                 onChange={e => setCustomerName(e.target.value)}
                 required
@@ -580,10 +582,20 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <input
                 type="tel"
                 placeholder="Teléfono móvil"
+                aria-label="Teléfono móvil"
                 value={customerPhone}
                 onChange={e => setCustomerPhone(e.target.value)}
                 required
                 className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
+              />
+              <input
+                type="email"
+                placeholder="Correo electrónico"
+                aria-label="Correo electrónico"
+                value={customerEmail}
+                onChange={e => setCustomerEmail(e.target.value)}
+                required
+                className="w-full sm:col-span-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
               />
             </div>
           </div>
