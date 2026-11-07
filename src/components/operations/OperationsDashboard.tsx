@@ -1,3 +1,5 @@
+import { GroupedDispatches } from './GroupedDispatches';
+import { TransportManagerTab } from './TransportManagerTab';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
   ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
@@ -207,6 +209,8 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [orderHistoryEntries, setOrderHistoryEntries] = useState<any[]>([]);
   const [loadingHistory, setLoadingHistory] = useState(false);
 
+  const [pinRequest,setPinRequest]=useState<{orderId:string;shipmentId?:string;reason?:string}|null>(null);
+  const [enteredPin,setEnteredPin]=useState('');
   // Handle stage change with role authorization and PIN validation
   const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus, shipmentId?: string, reason?: string, deliveryCode?: string) => {
     try {
@@ -216,12 +220,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       // Si es entrega física, requiere PIN
       let finalCode = deliveryCode;
       if (status === 'ENTREGADO' && !finalCode) {
-        if (shipmentId && targetOrder?.childShipments) {
-          const child = targetOrder.childShipments.find(c => c.shipmentId === shipmentId);
-          finalCode = child?.secretDeliveryCode;
-        } else {
-          finalCode = targetOrder?.secretDeliveryCode;
-        }
+        setPinRequest({orderId,shipmentId,reason});setEnteredPin('');return;
       }
 
       await api.updateOrderStatus(orderId, status, shipmentId, reason, finalCode, currentRole);
@@ -445,7 +444,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const handleAssignDriver = async (orderId: string, shipmentId?: string) => {
     try {
       setErrorMessage(null);
-      await api.assignDriver(orderId, 'DRV-CARLOS-01', shipmentId);
+      const order=orders.find(o=>o.id===orderId);
+      const target=shipmentId?order?.childShipments?.find(c=>c.shipmentId===shipmentId):order;
+      if(!target?.driver?.id)throw Error('Selecciona un conductor disponible en operaciones.');
+      await api.assignDriver(orderId, target.driver.id, shipmentId);
       await loadData();
       if (selectedOrder && selectedOrder.id === orderId) {
         const updated = await api.getOrder(orderId);
@@ -457,10 +459,10 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   };
 
   // Handle physical return confirmation
-  const handleConfirmPhysicalReturn = async (orderId: string) => {
+  const handleConfirmPhysicalReturn = async (orderId: string, shipmentId?: string) => {
     try {
       setErrorMessage(null);
-      await api.confirmPhysicalReturn(orderId, `Operador Bodega (${currentRole})`);
+      await api.confirmPhysicalReturn(orderId, `Operador Bodega (${currentRole})`, undefined, shipmentId);
       await loadData();
       if (selectedOrder && selectedOrder.id === orderId) {
         const updated = await api.getOrder(orderId);
@@ -934,6 +936,8 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         </div>
       )}
 
+      {pinRequest && <div role="dialog" aria-modal="true" aria-label="Confirmar entrega con PIN" className="fixed inset-0 z-50 bg-black/50 grid place-items-center"><form className="bg-white p-6 rounded-2xl space-y-3" onSubmit={e=>{e.preventDefault();void handleUpdateStatus(pinRequest.orderId,'ENTREGADO',pinRequest.shipmentId,pinRequest.reason,enteredPin);setPinRequest(null);}}><label className="block">PIN del cliente<input aria-label="PIN del cliente" className="block border p-3 rounded-xl" value={enteredPin} onChange={e=>setEnteredPin(e.target.value)} inputMode="numeric" maxLength={4}/></label><button disabled={!/^\d{4}$/.test(enteredPin)} className="bg-red-600 text-white p-3 rounded-xl">Validar entrega</button><button type="button" className="p-3" onClick={()=>setPinRequest(null)}>Volver</button></form></div>}
+
       {/* Main Content Area */}
       <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
         {/* ============================================================== */}
@@ -981,6 +985,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
             {/* Inactive / Excluded Store Audit Banners */}
             {renderAuditBanners()}
+            <GroupedDispatches orders={filteredStoreOrders} transition={handleUpdateStatus} assign={handleAssignDriver} confirmReturn={handleConfirmPhysicalReturn} track={onViewOrderTracking} />
 
             {/* Delivery Mode Filter Chips */}
             <div className="flex items-center gap-2 overflow-x-auto pb-1 no-scrollbar text-xs font-bold">
@@ -988,7 +993,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               {[
                 { id: 'TODOS', label: 'Todos', count: storeOrders.length },
                 { id: 'TURBO', label: '⚡ Turbo (25 min)', count: storeOrders.filter(o => (!o.deliveryMode || o.deliveryMode === 'TURBO') && !o.isSplitOrder).length },
-                { id: 'TURBO_DIVIDIDO', label: '⚡ Turbo Dividido (>60kg)', count: storeOrders.filter(o => o.isSplitOrder || o.deliveryMode === 'TURBO_DIVIDIDO').length },
+                { id: 'TURBO_DIVIDIDO', label: '⚡ Turbo en varias entregas', count: storeOrders.filter(o => o.isSplitOrder || o.deliveryMode === 'TURBO_DIVIDIDO').length },
                 { id: 'PROGRAMADO', label: '📅 Envío Programado', count: storeOrders.filter(o => o.deliveryMode === 'PROGRAMADO').length },
               ].map(f => {
                 const isSelected = deliveryModeFilter === f.id;
@@ -1018,13 +1023,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>1. EN ALISTAMIENTO</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO').length}
+                    {filteredStoreOrders.filter(o=>!o.childShipments?.length).filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {filteredStoreOrders
-                    .filter(o => o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO')
+                  {filteredStoreOrders.filter(o=>!o.childShipments?.length)
+                    .filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'CONFIRMADO' || o.fulfillmentStatus === 'EN_ALISTAMIENTO')
                     .map(order => (
                       <div
                         key={order.id}
@@ -1091,13 +1096,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>2. LISTO PARA DESPACHO</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'LISTO_PARA_DESPACHO').length}
+                    {filteredStoreOrders.filter(o=>!o.childShipments?.length).filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'LISTO_PARA_DESPACHO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {filteredStoreOrders
-                    .filter(o => o.fulfillmentStatus === 'LISTO_PARA_DESPACHO')
+                  {filteredStoreOrders.filter(o=>!o.childShipments?.length)
+                    .filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'LISTO_PARA_DESPACHO')
                     .map(order => (
                       <div
                         key={order.id}
@@ -1171,13 +1176,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>3. EN CAMINO (GPS ACTIVO)</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length}
+                    {filteredStoreOrders.filter(o=>!o.childShipments?.length).filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {filteredStoreOrders
-                    .filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')
+                  {filteredStoreOrders.filter(o=>!o.childShipments?.length)
+                    .filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')
                     .map(order => (
                       <div
                         key={order.id}
@@ -1340,13 +1345,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 <div className="flex items-center justify-between text-xs font-black text-slate-700 px-1">
                   <span>4. ENTREGADOS HOY</span>
                   <span className="bg-slate-300 px-2 py-0.5 rounded-full text-[10px]">
-                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'ENTREGADO').length}
+                    {filteredStoreOrders.filter(o=>!o.childShipments?.length).filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'ENTREGADO').length}
                   </span>
                 </div>
 
                 <div className="space-y-2.5">
-                  {filteredStoreOrders
-                    .filter(o => o.fulfillmentStatus === 'ENTREGADO')
+                  {filteredStoreOrders.filter(o=>!o.childShipments?.length)
+                    .filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'ENTREGADO')
                     .map(order => (
                       <div
                         key={order.id}
@@ -1378,7 +1383,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
             </div>
 
             {/* Cancelled Orders & Physical Returns Queue */}
-            {filteredStoreOrders.some(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending) && (
+            {filteredStoreOrders.filter(o=>!o.childShipments?.length).some(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending) && (
               <div className="bg-rose-50/70 border border-rose-200 rounded-3xl p-4 md:p-5 space-y-3 shadow-xs">
                 <div className="flex items-center justify-between">
                   <h3 className="text-xs font-black text-rose-950 uppercase tracking-wider flex items-center gap-1.5">
@@ -1386,13 +1391,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                     <span>Pedidos Cancelados & Devoluciones Físicas a Bodega</span>
                   </h3>
                   <span className="text-[10px] font-extrabold bg-rose-200 text-rose-900 px-2 py-0.5 rounded-full">
-                    {filteredStoreOrders.filter(o => o.fulfillmentStatus === 'CANCELADO').length} cancelados
+                    {filteredStoreOrders.filter(o=>!o.childShipments?.length).filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'CANCELADO').length} cancelados
                   </span>
                 </div>
 
                 <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                  {filteredStoreOrders
-                    .filter(o => o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending)
+                  {filteredStoreOrders.filter(o=>!o.childShipments?.length)
+                    .filter(o => !o.childShipments?.length && o.fulfillmentStatus === 'CANCELADO' || o.physicalReturnPending)
                     .map(order => (
                       <div key={order.id} className="bg-white p-3.5 rounded-2xl border border-rose-200 text-xs space-y-2 shadow-xs">
                         <div className="flex items-center justify-between">
@@ -1688,100 +1693,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         {/* ============================================================== */}
         {/* TAB 3: FLEET & LIVE REPARTIDORES */}
         {/* ============================================================== */}
-        {activeTab === 'FLOTA' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xl font-black text-slate-900">Flota Propia Bolt Conductor</h2>
-              <p className="text-xs text-slate-500">
-                Monitoreo de disponibilidad, capacidad de carga (máx 25 kg) y telemetría en tiempo real.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              {[
-                {
-                  id: 'DRV-CARLOS-01',
-                  name: 'Carlos Rodríguez',
-                  phone: '+57 312 456 7890',
-                  plate: 'TPK-44E',
-                  vehicle: 'Moto Yamaha FZ 2.0',
-                  status: 'EN RUTA A CLIENTE',
-                  statusColor: 'bg-yellow-400 text-red-950',
-                  battery: '85%',
-                  activeOrder: '#BP-8941',
-                  photo: 'https://images.unsplash.com/photo-1534528741775-53994a69daeb?w=400&auto=format&fit=crop&q=80',
-                  cashCollected: 68500,
-                },
-                {
-                  id: 'DRV-DAVID-02',
-                  name: 'David Gómez',
-                  phone: '+57 310 987 6543',
-                  plate: 'MNB-12F',
-                  vehicle: 'Moto Suzuki Gixxer',
-                  status: 'DISPONIBLE EN SEDE',
-                  statusColor: 'bg-emerald-100 text-emerald-800',
-                  battery: '94%',
-                  activeOrder: 'Ninguno',
-                  photo: 'https://images.unsplash.com/photo-1507003211169-0a1dd7228f2d?w=400&auto=format&fit=crop&q=80',
-                  cashCollected: 0,
-                },
-                {
-                  id: 'DRV-VALENTINA-03',
-                  name: 'Valentina Ríos',
-                  phone: '+57 320 123 4567',
-                  plate: 'ZXZ-89D',
-                  vehicle: 'Moto Honda CB 160',
-                  status: 'DISPONIBLE EN SEDE',
-                  statusColor: 'bg-emerald-100 text-emerald-800',
-                  battery: '90%',
-                  activeOrder: 'Ninguno',
-                  photo: 'https://images.unsplash.com/photo-1544005313-94ddf0286df2?w=400&auto=format&fit=crop&q=80',
-                  cashCollected: 0,
-                },
-              ].map(driver => (
-                <div key={driver.id} className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                  <div className="flex items-center gap-3">
-                    <img
-                      src={driver.photo}
-                      alt={driver.name}
-                      className="w-12 h-12 rounded-full object-cover border-2 border-white shadow-xs"
-                    />
-                    <div>
-                      <h4 className="font-black text-sm text-slate-900">{driver.name}</h4>
-                      <p className="text-xs text-slate-500">{driver.vehicle} • {driver.plate}</p>
-                      <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full inline-block mt-1 ${driver.statusColor}`}>
-                        {driver.status}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 p-3 rounded-2xl text-xs space-y-1.5 border border-slate-100">
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Misión actual:</span>
-                      <strong className="text-slate-800">{driver.activeOrder}</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Batería celular:</span>
-                      <strong className="text-emerald-600">{driver.battery}</strong>
-                    </div>
-                    <div className="flex justify-between">
-                      <span className="text-slate-500">Efectivo recaudado en turno:</span>
-                      <strong className="text-red-600">{formatCOP(driver.cashCollected)}</strong>
-                    </div>
-                  </div>
-
-                  <a
-                    href={`tel:${driver.phone}`}
-                    className="w-full bg-slate-100 hover:bg-slate-200 text-slate-800 font-bold text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition"
-                  >
-                    <Phone className="w-3.5 h-3.5" />
-                    <span>Llamar por radio/teléfono</span>
-                  </a>
-                </div>
-              ))}
-            </div>
-          </div>
-        )}
+        {activeTab === 'FLOTA' && <TransportManagerTab admin={adminUser} onAuthenticate={()=>setIsAdminAuthModalOpen(true)} />}
 
         {/* ============================================================== */}
         {/* TAB 4: INVENTORY & EXPIRY */}

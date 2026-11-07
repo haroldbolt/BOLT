@@ -1,3 +1,4 @@
+import type { TransportAttributes, TransportLoad } from './transport';
 export type Species = 'Perro' | 'Gato' | 'Ambos' | 'Otros';
 
 export type MainCategory =
@@ -32,6 +33,7 @@ export interface ProductLot {
 }
 
 export interface ProductPresentation {
+  transport?: TransportAttributes;
   price?: number;
   stockByStore?: Record<string, number>;
   reservedStockByStore?: Record<string, number>;
@@ -44,6 +46,7 @@ export interface ProductPresentation {
 }
 
 export interface Product {
+  transport?: TransportAttributes;
   parentProductId?: string;
   variantId?: string;
   commerceRevision?: string;
@@ -272,6 +275,8 @@ export interface OrderStatusHistoryEntry {
 }
 
 export interface ChildShipment {
+  transportLoad?: TransportLoad;
+  storeId?: string;
   shipmentId: string;
   shipmentIndex: number;
   shipmentCount: number;
@@ -321,6 +326,8 @@ export interface WarehouseAssignmentEvent {
 }
 
 export interface Order {
+  transportLoad?: TransportLoad;
+  transportConfirmation?: string;
   warehouseAssignment?: WarehouseAssignmentEvent;
   warehouse?: WarehouseAssignmentEvent['store'];
   creationRequestId?: string;

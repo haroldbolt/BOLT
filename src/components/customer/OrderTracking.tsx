@@ -68,7 +68,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
       const ord = await api.getOrder(orderId);
       setOrder(ord);
       pushService.notifyWarehouseAssignment(ord);
-      const tracking = await api.getTracking(orderId);
+      const tracking = await api.getTracking(orderId, ord.isSplitOrder ? ord.childShipments?.[activeShipmentIndex]?.shipmentId : undefined);
       setTrackingData(tracking);
     } catch (e) {
       console.error('Error fetching tracking:', e);
@@ -81,14 +81,14 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
     loadData();
     const interval = setInterval(loadData, 5000);
     return () => clearInterval(interval);
-  }, [orderId]);
+  }, [orderId, activeShipmentIndex]);
 
   const handleCancelOrder = async () => {
     if (!order) return;
     try {
       setCancelling(true);
       setCancelError(null);
-      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE');
+      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE', order.isSplitOrder ? order.childShipments?.[activeShipmentIndex]?.shipmentId : undefined);
       await loadData();
     } catch (e: any) {
       setCancelError(e.message || 'No se pudo cancelar el pedido');
@@ -115,15 +115,14 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
 
   const effectiveStatus = currentChild ? currentChild.fulfillmentStatus : order.fulfillmentStatus;
   const effectiveDriver = currentChild?.driver || order.driver;
+  const externalOffer=(currentChild?.transportLoad || order.transportLoad)?.vehicle.externalOffer;
   const effectiveSecretCode = currentChild?.secretDeliveryCode || order.secretDeliveryCode;
 
   const hubCoords = trackingData?.hubCoordinates || order.deliveryAddress.coordinates;
   const customerCoords = trackingData?.customerCoordinates || order.deliveryAddress.coordinates;
-  const driverCoords = trackingData?.telemetry
-    ? { lat: trackingData.telemetry.latitude, lng: trackingData.telemetry.longitude }
-    : (effectiveDriver ? { lat: 4.6312, lng: -74.1485 } : undefined);
-
-  const secondsAgo = trackingData?.telemetry?.secondsAgo ?? 4;
+  const telemetry = trackingData?.telemetry && (!currentChild || trackingData.telemetry.shipmentId===currentChild.shipmentId) ? trackingData.telemetry : undefined;
+  const driverCoords = telemetry ? { lat: telemetry.latitude, lng: telemetry.longitude } : undefined;
+  const secondsAgo = telemetry?.secondsAgo ?? 0;
   const isStale = secondsAgo > 30 && secondsAgo <= 60;
   const isLost = secondsAgo > 60;
 
@@ -176,7 +175,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               <span className={`w-2.5 h-2.5 rounded-full ${statusBadge.dot}`} />
               <span className="font-black text-xs text-slate-900">{order.orderNumber}</span>
               <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${statusBadge.bg}`}>
-                {statusBadge.text}
+                {isSplitOrder ? `Entrega ${activeShipmentIndex+1}: ` : ''}{statusBadge.text}
               </span>
             </div>
             {isSplitOrder && (
@@ -215,6 +214,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               </div>
             )}
 
+{currentChild && <section aria-label="Contenido de esta entrega" className="mx-4 my-3 rounded-xl border p-3 text-sm"><p className="font-bold">Entrega {currentChild.shipmentIndex} · {order.storeName} · {currentChild.weightKg} kg</p><p>{currentChild.driver?.name || 'Repartidor pendiente'} · {currentChild.fulfillmentStatus}</p><ul>{currentChild.items.map(i=><li key={i.productId}>{i.quantity} × {i.name}{i.presentation && !i.name.endsWith(i.presentation) ? ` · ${i.presentation}` : ''}</li>)}</ul></section>}
             {/* Tiempo estimado y PIN secreto */}
             <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
               <div>
@@ -273,18 +273,18 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                     </p>
                     <div className="flex items-center gap-1 text-[11px] text-amber-600 font-bold">
                       <span>★ {effectiveDriver.rating}</span>
-                      <span className="text-slate-400">• Flota Propia Bolt Pets</span>
+                      <span className="text-slate-400">{externalOffer ? `Red externa simulada · ${externalOffer.providerName}` : '• Flota propia Bolt Pets'}</span>
                     </div>
                   </div>
                 </div>
 
-                <a
+                {effectiveDriver.phone && <a
                   href={`tel:${effectiveDriver.phone}`}
                   className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 transition shrink-0"
                   title="Llamar al repartidor"
                 >
                   <Phone className="w-4 h-4" />
-                </a>
+                </a>}
               </div>
             )}
 
@@ -336,14 +336,14 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                 <span className="text-red-600">{formatCOP(order.totals.total)}</span>
               </div>
 
-              {(order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.fulfillmentStatus === 'CONFIRMADO') && (
+              {(effectiveStatus === 'PENDIENTE_CONFIRMACION' || effectiveStatus === 'CONFIRMADO') && (
                 <div className="pt-2 border-t border-slate-100">
                   <button
                     onClick={handleCancelOrder}
                     disabled={cancelling}
                     className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5"
                   >
-                    {cancelling ? 'Cancelando pedido...' : '✕ Cancelar Pedido'}
+                    {cancelling ? 'Cancelando…' : isSplitOrder ? `Cancelar entrega ${activeShipmentIndex+1}` : '✕ Cancelar Pedido'}
                   </button>
                   {cancelError && (
                     <p className="text-[11px] text-rose-600 mt-1 text-center font-medium">{cancelError}</p>
@@ -360,8 +360,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
             {effectiveStatus === 'EN_CAMINO' ? (
               <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
-                <span className={`w-2 h-2 rounded-full ${isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-                {isLost ? (
+                <span className={`w-2 h-2 rounded-full ${!telemetry || isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+                {!telemetry ? <span className="text-slate-200">GPS pendiente de esta entrega</span> : isLost ? (
                   <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
                 ) : isStale ? (
                   <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
@@ -475,7 +475,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           <span className={`w-2.5 h-2.5 rounded-full ${statusBadge.dot}`} />
           <span className="font-black text-xs text-slate-900">{order.orderNumber}</span>
           <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${statusBadge.bg}`}>
-            {statusBadge.text}
+            {isSplitOrder ? `Entrega ${activeShipmentIndex+1}: ` : ''}{statusBadge.text}
           </span>
           {isSplitOrder && (
             <span className="text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full">
@@ -497,8 +497,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
       {effectiveStatus === 'EN_CAMINO' ? (
         <div className="absolute top-16 left-4 right-4 z-20 flex justify-center pointer-events-none">
           <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
-            <span className={`w-2 h-2 rounded-full ${isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-            {isLost ? (
+            <span className={`w-2 h-2 rounded-full ${!telemetry || isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
+            {!telemetry ? <span className="text-slate-200">GPS pendiente de esta entrega</span> : isLost ? (
               <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
             ) : isStale ? (
               <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
@@ -629,6 +629,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           </div>
         )}
 
+{currentChild && <section aria-label="Contenido de esta entrega" className="mx-4 my-3 rounded-xl border p-3 text-sm"><p className="font-bold">Entrega {currentChild.shipmentIndex} · {order.storeName} · {currentChild.weightKg} kg</p><p>{currentChild.driver?.name || 'Repartidor pendiente'} · {currentChild.fulfillmentStatus}</p><ul>{currentChild.items.map(i=><li key={i.productId}>{i.quantity} × {i.name}{i.presentation && !i.name.endsWith(i.presentation) ? ` · ${i.presentation}` : ''}</li>)}</ul></section>}
         {/* Essential Tracking Bar */}
         <div className="px-5 pb-3">
           <div className="flex items-center justify-between">
@@ -692,18 +693,18 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                 </p>
                 <div className="flex items-center gap-1 text-[11px] text-amber-600 font-bold">
                   <span>★ {effectiveDriver.rating}</span>
-                  <span className="text-slate-400">• Flota Propia Bolt</span>
+                  <span className="text-slate-400">{externalOffer ? `Red externa simulada · ${externalOffer.providerName}` : '• Flota propia Bolt'}</span>
                 </div>
               </div>
             </div>
 
-            <a
+            {effectiveDriver.phone && <a
               href={`tel:${effectiveDriver.phone}`}
               className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 transition"
               title="Llamar al repartidor"
             >
               <Phone className="w-4 h-4" />
-            </a>
+            </a>}
           </div>
         )}
 
@@ -757,14 +758,14 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
               <span className="text-red-600">{formatCOP(order.totals.total)}</span>
             </div>
 
-            {(order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.fulfillmentStatus === 'CONFIRMADO') && (
+            {(effectiveStatus === 'PENDIENTE_CONFIRMACION' || effectiveStatus === 'CONFIRMADO') && (
               <div className="pt-2 border-t border-slate-100">
                 <button
                   onClick={handleCancelOrder}
                   disabled={cancelling}
                   className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2.5 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5"
                 >
-                  {cancelling ? 'Cancelando pedido...' : '✕ Cancelar Pedido'}
+                  {cancelling ? 'Cancelando…' : isSplitOrder ? `Cancelar entrega ${activeShipmentIndex+1}` : '✕ Cancelar Pedido'}
                 </button>
                 {cancelError && (
                   <p className="text-[11px] text-rose-600 mt-1 text-center font-medium">{cancelError}</p>

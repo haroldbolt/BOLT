@@ -19,7 +19,7 @@ import { INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
-const DATA_DIR = path.resolve(__dirname, '../data');
+const DATA_DIR = process.env.BOLT_DATA_DIR || path.resolve(__dirname, '../data');
 
 const ORDERS_FILE = path.join(DATA_DIR, 'persisted-orders.json');
 const DRIVERS_FILE = path.join(DATA_DIR, 'persisted-drivers.json');
@@ -297,6 +297,10 @@ export class OrdersRepository {
       return { success: false, error: `Pedido duplicado: ya existe un pedido con ID ${orderData.id}` };
     }
 
+    if(orderData.childShipments?.length) {
+      const sum=(items:typeof orderData.items)=>{const m=new Map<string,number>();for(const i of items){if(!Number.isSafeInteger(i.quantity)||i.quantity<=0)throw Error('Cantidad inválida');m.set(i.productId,(m.get(i.productId)||0)+i.quantity);}return JSON.stringify([...m].sort());};
+      if(sum(orderData.items)!==sum(orderData.childShipments.flatMap(c=>c.items)) || orderData.childShipments.some(c=>c.storeId && c.storeId!==orderData.storeId)) return {success:false,error:'Los despachos no coinciden con las unidades o sede de la compra.'};
+    }
     // 2. Comprobar y reservar inventario si se proporciona catálogo
     if (catalogProducts && orderData.items) {
       for (const item of orderData.items) {
@@ -407,6 +411,7 @@ export class OrdersRepository {
     const nowIso = new Date().toISOString();
 
     // -------------------------------------------------------------
+    if(order.isSplitOrder && order.childShipments?.length && !shipmentId) return {success:false,code:400,error:'Gestiona cada entrega por separado; el estado principal se calcula al completar todas.'};
     // CASO A: TRANSICIÓN DE ENVÍO HIJO EN PEDIDO DIVIDIDO (>60 KG)
     // -------------------------------------------------------------
     if (order.isSplitOrder && order.childShipments && shipmentId) {
@@ -727,37 +732,20 @@ export class OrdersRepository {
     orderId: string,
     inspectorName: string,
     catalogProducts: Product[],
-    notes?: string
+    notes?: string,
+    shipmentId?: string
   ): { success: boolean; order?: Order; error?: string } {
     const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
     if (!order) return { success: false, error: 'Pedido no encontrado' };
 
-    if (!order.physicalReturnPending && !order.childShipments?.some(c => c.physicalReturnPending)) {
-      return { success: false, error: 'Este pedido no tiene devoluciones físicas pendientes de confirmación.' };
+    const target=order.childShipments?.length ? order.childShipments.find(c=>c.shipmentId===shipmentId) : order;
+    if(!target || target.fulfillmentStatus!=='CANCELADO' || !target.physicalReturnPending) return {success:false,error:'Selecciona una entrega cancelada con devolución física pendiente.'};
+    const nowIso=new Date().toISOString();
+    for(const item of target.items) {
+      const p=catalogProducts.find(p=>p.id===item.productId);
+      if(p) p.reservedStockByStore[order.storeId]=Math.max(0,(p.reservedStockByStore[order.storeId]||0)-item.quantity);
     }
-
-    const nowIso = new Date().toISOString();
-    order.physicalReturnPending = false;
-    order.physicalReturnConfirmedAt = nowIso;
-    order.physicalReturnConfirmedBy = inspectorName;
-
-    // Liberar reserva física en catálogo tras corroborar inspección de estado del producto
-    if (catalogProducts) {
-      for (const item of order.items) {
-        const prod = catalogProducts.find(p => p.id === item.productId);
-        if (prod && prod.reservedStockByStore) {
-          prod.reservedStockByStore[order.storeId] = Math.max(0, (prod.reservedStockByStore[order.storeId] || 0) - item.quantity);
-        }
-      }
-    }
-
-    if (order.childShipments) {
-      order.childShipments.forEach(c => {
-        c.physicalReturnPending = false;
-        c.physicalReturnConfirmedAt = nowIso;
-        c.physicalReturnConfirmedBy = inspectorName;
-      });
-    }
+    target.physicalReturnPending=false; target.physicalReturnConfirmedAt=nowIso; target.physicalReturnConfirmedBy=inspectorName;
 
     const auditEntry: OrderStatusHistoryEntry = {
       id: `HIST-${Date.now()}-${Math.floor(1000 + Math.random() * 9000)}`,
@@ -767,6 +755,7 @@ export class OrdersRepository {
       timestamp: nowIso,
       actor: { role: 'BODEGA', name: inspectorName },
       reason: `Devolución física inspeccionada y reingresada a inventario disponible. Notas: ${notes || 'Mercancía en perfecto estado.'}`,
+      shipmentId,
       metadata: { physicalReturnCleared: true },
     };
 
@@ -792,7 +781,11 @@ export class OrdersRepository {
     const order = this.orders.find(o => o.id === orderId || o.orderNumber === orderId);
     if (!order) return { success: false, error: 'Pedido no encontrado', code: 404 };
 
-    const driver = this.drivers.find(d => d.id === driverId) || this.drivers[0];
+    const target=shipmentId ? order.childShipments?.find(c=>c.shipmentId===shipmentId) : order;
+    const externalDriver=target?.transportLoad?.vehicle.externalOffer?.driver;
+    const driver = this.drivers.find(d => d.id === driverId) || (externalDriver?.id===driverId ? externalDriver : undefined);
+    if(!driver) return {success:false,error:'Conductor no encontrado',code:404};
+    if(target?.transportLoad && target.transportLoad.driverId!==driverId) return {success:false,error:'Este despacho tiene capacidad confirmada con otro vehículo. Requiere una nueva validación operativa antes de reasignarlo.',code:409};
     const driverPayload = {
       id: driver.id,
       name: driver.name,
@@ -809,17 +802,21 @@ export class OrdersRepository {
       const child = order.childShipments.find(s => s.shipmentId === shipmentId);
       if (!child) return { success: false, error: `Envío hijo no encontrado: ${shipmentId}`, code: 404 };
 
-      child.driver = driverPayload;
-      return this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
+      const previous=child.driver; child.driver=driverPayload;
+      const result=this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
         shipmentId,
         reason: `Conductor ${driver.name} asignado al envío hijo ${child.shipmentIndex}`,
       });
+      if(!result.success) child.driver=previous;
+      return result;
     }
 
-    order.driver = driverPayload;
-    return this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
+    const previous=order.driver; order.driver = driverPayload;
+    const result=this.transitionStatus(orderId, 'REPARTIDOR_ASIGNADO', actor, {
       reason: `Conductor ${driver.name} asignado al pedido ${order.orderNumber}`,
     });
+    if(!result.success) order.driver=previous;
+    return result;
   }
 
   // ==========================================
@@ -908,6 +905,10 @@ export class OrdersRepository {
     } else if (allCancelled) {
       order.fulfillmentStatus = 'CANCELADO';
       order.timestamps.cancelledAt = nowIso;
+    } else if (children.every(c => ['ENTREGADO','CANCELADO'].includes(c.fulfillmentStatus))) {
+      order.fulfillmentStatus='CON_INCIDENCIA';
+    } else if (children.some(c => c.fulfillmentStatus === 'CON_INCIDENCIA')) {
+      order.fulfillmentStatus='CON_INCIDENCIA';
     } else if (children.some(c => c.fulfillmentStatus === 'EN_CAMINO')) {
       order.fulfillmentStatus = 'EN_CAMINO';
     } else if (children.some(c => c.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')) {
@@ -916,7 +917,7 @@ export class OrdersRepository {
       order.fulfillmentStatus = 'LISTO_PARA_DESPACHO';
     } else if (children.some(c => c.fulfillmentStatus === 'EN_ALISTAMIENTO')) {
       order.fulfillmentStatus = 'EN_ALISTAMIENTO';
-    }
+    } else { order.fulfillmentStatus='CONFIRMADO'; }
   }
 
   private validateRolePermission(actor: OrderActor, newStatus: FulfillmentStatus): boolean {

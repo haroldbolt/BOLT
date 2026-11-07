@@ -686,7 +686,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             ) : isTurbo ? (
               <span className="text-emerald-700 font-bold">✓ Cumple radio de 6 km y límite de 25 min</span>
             ) : isTurboDividido ? (
-              <span className="text-amber-800 font-bold">✓ Pedido &gt; 60 kg elegible para Turbo Dividido o Programado</span>
+              <span className="text-amber-800 font-bold">✓ Distribución por capacidad verificada para esta compra</span>
             ) : isScheduledOnly ? (
               <span className="text-blue-800 font-bold">✓ Disponible para Envío Programado en Bogotá</span>
             ) : (

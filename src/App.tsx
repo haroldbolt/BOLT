@@ -473,10 +473,12 @@ export default function App() {
     if (!product.variantId && (product.presentaciones?.length || 0)>1) { setDetailProduct(product); return; }
     if(!product.variantId) product = saleVariant(product);
     if(!Number.isFinite(product.price) || product.price<=0) return;
+    setDeliveryQuote(null);
     guestCart.add(product);
   };
 
   const handleUpdateQuantity = (product: Product, newQuantity: number) => {
+    setDeliveryQuote(null);
     guestCart.setQuantity(productReference(product, newQuantity), Math.max(0, newQuantity));
   };
 
@@ -1235,6 +1237,7 @@ export default function App() {
         onRemoveUnavailable={ref => guestCart.setQuantity(ref, 0)}
         pendingCount={catalogLoading || catalogError ? cartCount : undefined}
         blockReason={cartBlockReason}
+        deliveryQuote={deliveryQuote}
         deliveryMessage={cartItems.length > 0 && deliveryQuote && !deliveryQuote.basketValidated ? deliveryQuote.message : undefined}
         onRefreshCatalog={() => void refreshCatalog()}
         onProceedToCheckout={async () => {
