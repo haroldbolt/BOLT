@@ -1,3 +1,4 @@
+import { saleVariant } from '../../lib/variantCommerce';
 import React from 'react';
 import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
@@ -7,6 +8,7 @@ interface ProductDetailModalProps {
   product: Product | null;
   onClose: () => void;
   quantityInCart: number;
+  cartQuantities?: Record<string,number>;
   onAddToCart: (p: Product) => void;
   onUpdateQuantity: (p: Product, q: number) => void;
   isFavorite: boolean;
@@ -18,10 +20,12 @@ interface ProductDetailModalProps {
   onOpenSaveToWishlist?: (p: Product) => void;
 }
 
-export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
+export const ProductDetailModal: React.FC<ProductDetailModalProps> = props => props.product ? <ProductDetailContent {...props} product={props.product} /> : null;
+const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}> = ({
   product,
   onClose,
-  quantityInCart,
+  quantityInCart: defaultQuantityInCart,
+  cartQuantities,
   onAddToCart,
   onUpdateQuantity,
   isFavorite,
@@ -32,7 +36,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
   isInWishlist = false,
   onOpenSaveToWishlist,
 }) => {
-  if (!product) return null;
+
 
   const [selectedVariantId, setSelectedVariantId] = React.useState<string>(() => {
     return product.presentaciones?.[0]?.varianteId || product.id;
@@ -48,14 +52,16 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
     return product.presentaciones?.find(v => v.varianteId === selectedVariantId) || product.presentaciones?.[0];
   }, [product.presentaciones, selectedVariantId]);
 
+  const selectedProduct = saleVariant(product, selectedVariantId);
+  const quantityInCart=cartQuantities?.[selectedProduct.id] ?? (selectedProduct.id===product.id?defaultQuantityInCart:0);
   const displayImage = currentVariant?.foto || product.image;
   const displayPresentation = currentVariant?.nombre || product.presentation;
   const displaySku = currentVariant?.sku || product.sku;
 
-  const stock = product.stockByStore[selectedStoreId] || 0;
-  const reserved = product.reservedStockByStore[selectedStoreId] || 0;
+  const stock = selectedProduct.stockByStore[selectedStoreId] || 0;
+  const reserved = selectedProduct.reservedStockByStore[selectedStoreId] || 0;
   const availableToSell = Math.max(0, stock - reserved);
-  const isReferenceOnly = product.price <= 0;
+  const isReferenceOnly = selectedProduct.price <= 0;
   const isOutOfStock = availableToSell <= 0 || isReferenceOnly;
 
   return (
@@ -142,11 +148,11 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
-                {product.price > 0 ? formatCOP(product.price) : 'Precio por confirmar'}
+                {selectedProduct.price > 0 ? formatCOP(selectedProduct.price) : 'Precio por confirmar'}
               </span>
-              {product.originalPrice && product.originalPrice > product.price && (
+              {selectedProduct.originalPrice && selectedProduct.originalPrice > selectedProduct.price && (
                 <span className="text-sm text-slate-400 line-through font-semibold">
-                  {formatCOP(product.originalPrice)}
+                  {formatCOP(selectedProduct.originalPrice)}
                 </span>
               )}
             </div>
@@ -261,7 +267,7 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
 
             {quantityInCart === 0 ? (
               <button
-                onClick={() => onAddToCart(product)}
+                onClick={() => onAddToCart(selectedProduct)}
                 disabled={isOutOfStock}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-red-500/30 transition cursor-pointer disabled:cursor-not-allowed"
               >
@@ -271,14 +277,14 @@ export const ProductDetailModal: React.FC<ProductDetailModalProps> = ({
             ) : (
               <div className="flex items-center gap-3 bg-red-600 text-white rounded-2xl px-3 py-2 shadow-md">
                 <button
-                  onClick={() => onUpdateQuantity(product, quantityInCart - 1)}
+                  onClick={() => onUpdateQuantity(selectedProduct, quantityInCart - 1)}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 flex items-center justify-center transition"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
                 <span className="font-black text-sm px-2">{quantityInCart}</span>
                 <button
-                  onClick={() => onUpdateQuantity(product, quantityInCart + 1)}
+                  onClick={() => onUpdateQuantity(selectedProduct, quantityInCart + 1)}
                   disabled={quantityInCart >= availableToSell}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 disabled:opacity-50 flex items-center justify-center transition"
                 >

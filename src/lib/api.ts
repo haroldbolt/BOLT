@@ -456,7 +456,7 @@ export const api = {
     return data;
   },
 
-  async updateVariantPriceStock(id: string, payload: { variantId?: string; priceCOP?: number; stockByStore?: Record<string, number>; presentationName?: string }): Promise<Product> {
+  async updateVariantPriceStock(id: string, payload: { expectedRevision?: string; variantId?: string; priceCOP?: number; stockByStore?: Record<string, number>; presentationName?: string }): Promise<Product> {
     const token = this.getStoredAdminToken();
     const res = await fetch(`${BASE_URL}/admin/catalog/products/${id}/pricing-stock`, {
       method: 'PATCH',
