@@ -32,6 +32,7 @@ export function presentationAvailability(selected: Product | null, quote: Delive
   if (!Object.hasOwn(selected.stockByStore, store)) return {canAdd:false,message:'Presentación no disponible en la sede asignada'};
   const available = Math.max(0, selected.stockByStore[store] - (selected.reservedStockByStore[store] || 0));
   if (!available) return {canAdd:false,message:'Agotado en esta sede', available};
+  if(quote.inventoryValidated && !quote.transportPlan?.feasible && ['TRANSPORT_DATA_PENDING','FLEET_CONFIGURATION_PENDING','NO_AVAILABLE_VEHICLES','PROVIDER_RESPONSE_PENDING','PROVIDER_UNAVAILABLE','INSUFFICIENT_VEHICLES','UNIT_EXCEEDS_CAPACITY'].includes(quote.reasonCode)) return {canAdd:true,message:quote.message,available};
   const modes = quote.availableModes;
   const mode = quote.recommendedMode;
   const canAdd = quote.basketValidated && (mode==='PROGRAMADO' ? modes.scheduled : mode==='TURBO' ? modes.turbo : mode==='TURBO_DIVIDIDO' ? modes.turboDividido : false);

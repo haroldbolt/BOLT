@@ -1,3 +1,5 @@
+import { DeliveryPlanSummary } from './DeliveryPlanSummary';
+import type { DeliveryQuote } from '../../lib/deliveryService';
 import React from 'react';
 import { X, Trash2, Plus, Minus, FileText, ArrowRight, ShoppingBag, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { CartItem, Product, Store } from '../../types';
@@ -17,6 +19,7 @@ interface CartDrawerProps {
   pendingCount?: number;
   blockReason?: string;
   deliveryMessage?: string;
+  deliveryQuote?: DeliveryQuote | null;
   onRefreshCatalog?: () => void;
 }
 
@@ -28,18 +31,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClearCart,
   onProceedToCheckout,
   currentStore,
-  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, deliveryMessage, onRefreshCatalog,
+  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, deliveryMessage, onRefreshCatalog, deliveryQuote,
 }) => {
   if (!isOpen) return null;
 
+  const hasPrescriptionItems=cartItems.some(i=>i.product.requiresPrescription);
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
-  const totalWeightKg = cartItems.reduce((acc, item) => acc + ((item.product.weightKg || 0.2) * item.quantity), 0);
-  const shipping = subtotal >= 70000 ? 0 : 4900;
-  const serviceFee = 1500;
-  const total = subtotal + (cartItems.length > 0 ? (shipping + serviceFee) : 0);
-
-  const hasPrescriptionItems = cartItems.some(i => i.product.requiresPrescription);
-  const exceedsWeight = totalWeightKg > currentStore.vehicleMaxWeightKg;
+  const totalWeightKg = deliveryQuote?.transportPlan?.feasible ? deliveryQuote.totalWeightKg : null;
+  const shipping = deliveryQuote?.charges?.shipping;
+  const serviceFee = deliveryQuote?.charges?.serviceFee;
+  const total = deliveryQuote?.charges?.total;
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Mi carrito" className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
@@ -97,18 +98,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               )}
 
-              {/* Weight warning if over 25 kg */}
-              {exceedsWeight && (
-                <div className="p-3 bg-amber-50 border border-amber-200 rounded-2xl flex items-start gap-2.5 text-xs text-amber-900">
-                  <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-                  <div>
-                    <span className="font-extrabold">Límite de peso excedido:</span>
-                    <p className="text-[11px] text-amber-700 mt-0.5">
-                      Peso actual: {totalWeightKg.toFixed(1)} Kg. La capacidad máxima de despacho motorizado es de {currentStore.vehicleMaxWeightKg} Kg.
-                    </p>
-                  </div>
-                </div>
-              )}
+              <DeliveryPlanSummary quote={deliveryQuote} />
 
               {cartItems.map(item => (
                 <div
@@ -165,30 +155,30 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span>Envío Turbo ({currentStore.name.replace('Sede ', '')}):</span>
+                <span>Transporte ({deliveryQuote?.assignedStoreName || currentStore.name}):</span>
                 {shipping === 0 ? (
                   <span className="font-bold text-emerald-600">¡GRATIS!</span>
                 ) : (
-                  <span className="font-bold text-slate-900">{formatCOP(shipping)}</span>
+                  <span className="font-bold text-slate-900">{shipping===undefined?'Por confirmar':formatCOP(shipping)}</span>
                 )}
               </div>
               <div className="flex justify-between">
                 <span>Tarifa de servicio y embalaje:</span>
-                <span className="font-bold text-slate-900">{formatCOP(serviceFee)}</span>
+                <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':formatCOP(serviceFee)}</span>
               </div>
               <div className="flex justify-between text-[11px] text-slate-400">
                 <span>Peso total estimado:</span>
-                <span>{totalWeightKg.toFixed(2)} Kg</span>
+                <span>{totalWeightKg===null?'Por confirmar':totalWeightKg.toLocaleString('es-CO')+' kg'}</span>
               </div>
               <div className="border-t border-slate-200 pt-1.5 flex justify-between text-sm font-black text-slate-900">
                 <span>Total a pagar:</span>
-                <span className="text-red-600 text-base">{formatCOP(total)}</span>
+                <span className="text-red-600 text-base">{total===undefined?'Por confirmar':formatCOP(total)}</span>
               </div>
             </div>
 
             <button
               onClick={onProceedToCheckout}
-              disabled={exceedsWeight || !!blockReason}
+              disabled={!!blockReason || !deliveryQuote?.basketValidated || !deliveryQuote?.confirmationToken}
               className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 active:scale-98 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition"
             >
               <span>Continuar con el pedido</span>

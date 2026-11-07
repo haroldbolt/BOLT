@@ -1,3 +1,5 @@
+import { TransportRepository } from './src/lib/transportRepository';
+import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
 import { describeWarehouse } from './src/lib/warehouseAssignment';
@@ -17,7 +19,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, INITIAL_STORES } from './src/data/seedData';
 import { Order, Product, Store, DriverProfile, GPSTelemetry, OrderActor, ActorRole } from './src/types';
-import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking } from './src/lib/deliveryService';
+import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking, generateScheduledSlots } from './src/lib/deliveryService';
 import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
@@ -60,8 +62,19 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
 const catalogOperations = new CatalogOperations({file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),products:()=>catalogRepository.getAllProducts(true),stores:()=>stores,orders:()=>ordersRepository.getAllOrders()});
+const transportRepository = new TransportRepository();
+function transportContext() { return {config:transportRepository.read().config,drivers:ordersRepository.getAllDrivers(),orders:ordersRepository.getAllOrders()}; }
+function quoteForPurchase(request: any) {
+  const quote=evaluateDeliveryQuote(request,stores,products,ordersRepository.getAllOrders(),transportContext());
+  if(quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
+    destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
+    charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,products.find(p=>p.id===i.productId)?.price]).sort(),
+  })).digest('hex');
+  return quote;
+}
 async function startServer() {
   acquireCatalogWriterLock();
+  catalogOperations.initializeOrderTracking();
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
@@ -260,7 +273,7 @@ async function startServer() {
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
-    const quote=evaluateDeliveryQuote({...req.body, destination: enrichDestination(req.body.destination)}, stores, products, ordersRepository.getAllOrders());
+    const quote=quoteForPurchase({...req.body, destination: enrichDestination(req.body.destination)});
     return res.json({...quote,warehouse:describeWarehouse(stores.find(store=>store.id===quote.assignedStoreId))});
   });
 
@@ -357,6 +370,7 @@ async function startServer() {
   app.post('/api/v1/orders', (req: Request, res: Response) => {
     try {
       const creationRequestId=req.get('Idempotency-Key');
+      if(!creationRequestId) return res.status(400).json({code:'IDEMPOTENCY_REQUIRED',error:'Falta el identificador estable de confirmación. Actualiza e intenta nuevamente.'});
       const creationRequestFingerprint=crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
       if(creationRequestId) {
         if(creationRequestId.length>150) return res.status(400).json({error:'Identificador de solicitud inválido'});
@@ -403,12 +417,12 @@ async function startServer() {
       let evaluatedQuote: any = null;
 
       if (deliveryAddress.coordinates && !isNaN(deliveryAddress.coordinates.lat) && !isNaN(deliveryAddress.coordinates.lng)) {
-        evaluatedQuote = evaluateDeliveryQuote({
+        evaluatedQuote = quoteForPurchase({
           destination: deliveryAddress,
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
           requestedMode: requestedDeliveryMode,
           scheduledWindow,
-        }, stores, products, ordersRepository.getAllOrders());
+        });
 
         // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
         if (requestedDeliveryMode === 'PROGRAMADO') {
@@ -458,6 +472,9 @@ async function startServer() {
         return res.status(400).json({code:'ADDRESS_INCOMPLETE',error:'Confirma las coordenadas del destino antes de crear el pedido.'});
       }
 
+      if(!evaluatedQuote?.transportPlan?.feasible || !evaluatedQuote.basketValidated) return res.status(400).json({code:evaluatedQuote?.reasonCode || 'CAPACITY_PENDING',error:evaluatedQuote?.message || 'Capacidad pendiente de verificar.'});
+      if(!req.body.confirmationToken || req.body.confirmationToken!==evaluatedQuote.confirmationToken) return res.status(409).json({code:'QUOTE_CHANGED',error:'La distribución, disponibilidad o el costo cambió. Actualiza la cotización y confirma nuevamente.'});
+      if(!Number.isSafeInteger(tip) || tip<0) return res.status(400).json({error:'Propina inválida.'});
       const assignedStore = stores.find(s => s.id === assignedStoreId);
       if (!assignedStore || !assignedStore.isActive) {
         return res.status(400).json({
@@ -492,28 +509,15 @@ async function startServer() {
       // OrdersRepository reserves once, then the persisted order drives the inventory projection.
       const hasPrescriptionItem = items.some((i: any) => i.requiresPrescription);
       const subtotal = items.reduce((acc: number, curr: any) => acc + (curr.price * curr.quantity), 0);
-      const totalWeightKg = items.reduce((acc: number, curr: any) => acc + ((curr.weightKg || 0.2) * curr.quantity), 0);
-      const totalWeightGrams = Math.round(totalWeightKg * 1000);
-      const shipping = subtotal >= 70000 ? 0 : 4900;
-      const serviceFee = 1500;
+      const totalWeightKg = evaluatedQuote.totalWeightKg;
+      const {shipping,serviceFee}=evaluatedQuote.charges;
       const total = subtotal + shipping + serviceFee + tip;
-
-      const random4DigitCode = Math.floor(1000 + Math.random() * 9000).toString();
-      const newOrderNum = `#BP-${Math.floor(1000 + Math.random() * 9000)}`;
-
-      // Determinar modo de entrega efectivo
-      let effectiveDeliveryMode = requestedDeliveryMode;
-      if (!effectiveDeliveryMode) {
-        if (totalWeightGrams > 60000 && evaluatedQuote?.turboDividido?.feasible) {
-          effectiveDeliveryMode = 'TURBO_DIVIDIDO';
-        } else if (evaluatedQuote?.availableModes?.turbo) {
-          effectiveDeliveryMode = 'TURBO';
-        } else {
-          effectiveDeliveryMode = 'PROGRAMADO';
-        }
-      }
-
-      const isSplitOrder = effectiveDeliveryMode === 'TURBO_DIVIDIDO';
+      const random4DigitCode = crypto.randomInt(1000,10000).toString();
+      const usedDeliveryCodes=new Set([random4DigitCode]);
+      const nextDeliveryCode=()=>{let code:string;do{code=crypto.randomInt(1000,10000).toString();}while(usedDeliveryCodes.has(code));usedDeliveryCodes.add(code);return code;};
+      const newOrderNum = `#BP-${crypto.randomUUID().slice(0,8).toUpperCase()}`;
+      const effectiveDeliveryMode = requestedDeliveryMode==='PROGRAMADO' ? 'PROGRAMADO' : evaluatedQuote.recommendedMode;
+      const isSplitOrder = evaluatedQuote.transportPlan.shipments.length>1;
 
       // ETA calculado dinámicamente según la cotización
       const estimatedMinutes = evaluatedQuote?.estimatedMinutes || (effectiveDeliveryMode === 'PROGRAMADO' ? 180 : 25);
@@ -521,7 +525,7 @@ async function startServer() {
         ? `${scheduledWindow.date}T${scheduledWindow.endTime}:00.000Z`
         : new Date(Date.now() + estimatedMinutes * 60 * 1000).toISOString();
 
-      const newOrderId = `ORD-2026-${Math.floor(1000 + Math.random() * 9000)}`;
+      const newOrderId = `ORD-${crypto.randomUUID()}`;
 
       // Generar envíos hijos si es Turbo Dividido
       let childShipments: any[] | undefined = undefined;
@@ -529,7 +533,7 @@ async function startServer() {
         let accumulatedCash = 0;
         childShipments = evaluatedQuote.turboDividido.shipments.map((plan: any, idx: number) => {
           // Asignar conductor inicial de la flota disponible en bodega
-          const assignedDriver = drivers[idx % drivers.length];
+          const assignedDriver = evaluatedQuote.transportPlan.shipments[idx].vehicle.externalOffer?.driver || drivers.find(d=>d.id===evaluatedQuote.transportPlan.shipments[idx].driverId);
           const isLast = idx === evaluatedQuote.turboDividido.shipments.length - 1;
           
           // Asignación proporcional de efectivo contra entrega
@@ -550,7 +554,7 @@ async function startServer() {
             return {
               productId: pi.productId,
               sku: catalogItem?.sku || `SKU-${pi.productId}`,
-              name: pi.name,
+              name: catalogItem?.name || pi.name,
               brand: catalogItem?.brand || 'Bolt Pets',
               presentation: catalogItem?.presentation || '',
               price: pi.price,
@@ -563,19 +567,21 @@ async function startServer() {
           });
 
           return {
-            shipmentId: `SHP-${newOrderId.slice(-4)}-${idx + 1}`,
+            shipmentId: `${newOrderId}-S${idx + 1}`,
+            storeId: assignedStoreId,
+            transportLoad: evaluatedQuote.transportPlan.shipments[idx],
             shipmentIndex: idx + 1,
             shipmentCount: evaluatedQuote.turboDividido.shipments.length,
             parentOrderId: newOrderId,
-            childOrderId: `${newOrderId}-${String.fromCharCode(65 + idx)}`,
+            childOrderId: `${newOrderId}-${String(idx+1).padStart(2,'0')}`,
             items: shipmentItems,
             weightKg: plan.weightKg,
             weightGrams: plan.weightGrams,
             subtotal: plan.subtotal,
             cashToCollect: shipmentCash,
             fulfillmentStatus: 'CONFIRMADO',
-            secretDeliveryCode: Math.floor(1000 + Math.random() * 9000).toString(),
-            estimatedDeliveryMinutes: estimatedMinutes,
+            secretDeliveryCode: nextDeliveryCode(),
+            estimatedDeliveryMinutes: plan.estimatedArrivalSeconds/60 || estimatedMinutes,
             driver: assignedDriver ? {
               id: assignedDriver.id,
               name: assignedDriver.name,
@@ -594,6 +600,9 @@ async function startServer() {
 
       const newOrder: Order = {
         creationRequestId, creationRequestFingerprint,
+        transportConfirmation: evaluatedQuote.confirmationToken,
+        transportLoad: !isSplitOrder ? evaluatedQuote.transportPlan.shipments[0] : undefined,
+        driver: !isSplitOrder ? evaluatedQuote.transportPlan.shipments[0].vehicle.externalOffer?.driver || drivers.find(d=>d.id===evaluatedQuote.transportPlan.shipments[0].driverId) : undefined,
         id: newOrderId,
         orderNumber: newOrderNum,
         createdAt: new Date().toISOString(),
@@ -700,6 +709,7 @@ async function startServer() {
     if (actorName) actor.name = actorName;
 
     const result = ordersRepository.transitionStatus(req.params.orderId, 'CANCELADO', actor, {
+      shipmentId:req.body.shipmentId,
       reason: reason || 'Cancelación de pedido solicitada',
       catalogProducts: products,
     });
@@ -735,12 +745,16 @@ async function startServer() {
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
     const shipmentId = req.query.shipmentId ? String(req.query.shipmentId) : undefined;
+    const child=shipmentId ? order.childShipments?.find(s=>s.shipmentId===shipmentId) : undefined;
+    if(shipmentId && !child) return res.status(404).json({error:'Entrega no encontrada en esta compra.'});
+    const tracked=child || order;
     const latestTelemetry = ordersRepository.getLatestTelemetry(order.id, shipmentId);
 
     res.json({
       orderId: order.id,
+      shipmentId,
       orderNumber: order.orderNumber,
-      status: order.fulfillmentStatus,
+      status: tracked.fulfillmentStatus,
       deliveryMode: order.deliveryMode || 'TURBO',
       warehouse:presentOrder(order).warehouse,
       warehouseAssignment:order.warehouseAssignment,
@@ -748,16 +762,16 @@ async function startServer() {
       isSplitOrder: !!order.isSplitOrder,
       shipmentCount: order.shipmentCount || (order.childShipments ? order.childShipments.length : 1),
       childShipments: order.childShipments,
-      estimatedMinutes: order.estimatedDeliveryMinutes,
-      secretDeliveryCode: order.secretDeliveryCode,
-      driver: order.driver ? {
-        id: order.driver.id,
-        name: order.driver.name,
-        phone: order.driver.phone,
-        vehiclePlate: order.driver.vehiclePlate,
-        vehicleType: order.driver.vehicleType,
-        photo: order.driver.photo,
-        rating: order.driver.rating,
+      estimatedMinutes: tracked.estimatedDeliveryMinutes,
+      secretDeliveryCode: tracked.secretDeliveryCode,
+      driver: tracked.driver ? {
+        id: tracked.driver.id,
+        name: tracked.driver.name,
+        phone: tracked.driver.phone,
+        vehiclePlate: tracked.driver.vehiclePlate,
+        vehicleType: tracked.driver.vehicleType,
+        photo: tracked.driver.photo,
+        rating: tracked.driver.rating,
       } : null,
       telemetry: latestTelemetry ? {
         pointId: latestTelemetry.pointId,
@@ -1081,7 +1095,8 @@ async function startServer() {
       req.params.orderId,
       inspectorName || 'Supervisor de Bodega Kennedy',
       products,
-      notes
+      notes,
+      req.body.shipmentId
     );
 
     if (!result.success) {
@@ -1215,6 +1230,25 @@ async function startServer() {
   // ==========================================
   // RUTAS DE GESTIÓN DE CATÁLOGO (PROTEGIDAS POR TOKEN)
   // ==========================================
+
+  app.get('/api/v1/admin/transport', requireAdminAuth, (_req,res)=>res.json({...transportRepository.read(),drivers:ordersRepository.getAllDrivers(),stores,scheduledSlots:generateScheduledSlots(new Date())}));
+  app.put('/api/v1/admin/transport', requireAdminAuth, (req,res)=>{
+    try {res.json(transportRepository.update(req.body.config,req.body.revision,(req as any).adminSession,ordersRepository.getAllDrivers(),stores));}
+    catch(error:any) {res.status(409).json({error:error.message});}
+  });
+  app.put('/api/v1/admin/catalog/transport', requireAdminAuth, (req,res)=>{
+    const {productId,variantId,transport,previous}=req.body;
+    if(!validateTransportAttributes(transport)) return res.status(400).json({error:'Completa peso en gramos, embalaje y dimensiones positivas; confirma los indicadores de transporte.'});
+    const p=catalogRepository.getAllProducts(true).find(p=>p.id===productId);
+    if(!p) return res.status(404).json({error:'Producto no encontrado.'});
+    const variant=p.presentaciones?.find(v=>v.varianteId===variantId);
+    if(p.presentaciones?.length && !variant) return res.status(400).json({error:'Selecciona la presentación exacta.'});
+    if(JSON.stringify(previous || null)!==JSON.stringify((variant?variant.transport:p.transport) || null)) return res.status(409).json({error:'Los atributos cambiaron. Recarga antes de guardar.'});
+    const update=variant ? {presentaciones:p.presentaciones!.map(v=>v===variant?{...v,transport}:v)} : {transport,weightKg:transport.weightGrams/1000};
+    const result=catalogRepository.updateProduct(productId,update,(req as any).adminSession);
+    if(!result.success) return res.status(400).json({error:result.error});
+    res.json({product:result.product});
+  });
 
   app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
     const { q, category, status } = req.query;

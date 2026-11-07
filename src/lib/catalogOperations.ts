@@ -79,13 +79,21 @@ export class CatalogOperations {
     }
     return {...sale,price:value.price,stockByStore:stock,reservedStockByStore:reserved,commerceRevision:hash({revision:value.revision,stock,reserved,price:value.price})};
   }
+  public initializeOrderTracking() {
+    if(this.state) return;
+    const state=this.fresh();
+    for(const p of this.options.products()) {
+      for(const id of p.presentaciones?.length ? p.presentaciones.map(v=>v.varianteId) : [p.id]) this.ensureValue(state,p,id);
+    }
+    this.persist(state); // Establish a durable baseline, no stock adjustment or price import.
+  }
   public getProducts(): Product[] {
     const effects=orderEffects(this.options.orders());
     const baseProducts=this.options.products();
     // Register products added later before they can receive orders. Their initial state
     // must not remain a transient catalog object after the first batch migration.
     if(this.state) {
-      const additions=baseProducts.flatMap(p=>(p.presentaciones||[]).filter(v=>!this.state!.values[keyFor(p.id,v.varianteId)]).map(v=>({p,v})));
+      const additions=baseProducts.flatMap(p=>(p.presentaciones?.length?p.presentaciones:[{varianteId:p.id}]).filter(v=>!this.state!.values[keyFor(p.id,v.varianteId)]).map(v=>({p,v})));
       if(additions.length) {
         const next=copy(this.state);
         for(const {p,v} of additions) {
@@ -99,7 +107,7 @@ export class CatalogOperations {
       }
     }
     return baseProducts.map(p=>{
-      const variants=p.presentaciones?.length ? p.presentaciones : [{varianteId:p.id,nombre:p.presentation,sku:p.sku,foto:p.image,bodegaIds:p.bodegaIds||[]}];
+      const variants=p.presentaciones?.length ? p.presentaciones : [{varianteId:p.id,nombre:p.presentation,sku:p.sku,foto:p.image,bodegaIds:p.bodegaIds||Object.keys(p.stockByStore),transport:p.transport}];
       const presentaciones=variants.map(v=>{
         const current=this.current(p,v.varianteId,this.state,effects);
         return {...v,price:current.price,stockByStore:current.stockByStore,reservedStockByStore:current.reservedStockByStore,commerceRevision:current.commerceRevision};

@@ -1,3 +1,4 @@
+import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import { pushService } from '../../lib/notifications';
 import React, { useState, useEffect, useMemo } from 'react';
 import { 
@@ -136,10 +137,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const hasPrescriptionItems = cartItems.some(i => i.product.requiresPrescription);
 
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
-  const totalWeightKg = cartItems.reduce((acc, item) => acc + ((item.product.weightKg || 0.2) * item.quantity), 0);
+  const totalWeightKg = deliveryQuote?.totalWeightKg || 0;
   const totalWeightGrams = Math.round(totalWeightKg * 1000);
-  const shipping = subtotal >= 70000 ? 0 : 4900;
-  const serviceFee = 1500;
+  const shipping = deliveryQuote?.charges?.shipping ?? 0;
+  const serviceFee = deliveryQuote?.charges?.serviceFee ?? 0;
   const total = subtotal + shipping + serviceFee + tip;
 
   const selectedSlot = availableSlots.find(s => s.slotId === selectedSlotId);
@@ -172,7 +173,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           : undefined;
 
       if(!deliveryQuote?.basketValidated || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido)) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
+      if(!deliveryQuote.confirmationToken || !deliveryQuote.charges) throw new Error('Espera la cotización de transporte antes de confirmar.');
       const payload = {
+        confirmationToken:deliveryQuote.confirmationToken,
         // The server assigns the warehouse; no browser store choice is submitted.
         deliveryMode: selectedMode,
         scheduledWindow: scheduledWindowPayload,
@@ -185,7 +188,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           price: item.product.price,
           quantity: item.quantity,
           image: item.product.image,
-          weightKg: item.product.weightKg || 0.2,
+          weightKg: item.product.weightKg,
           requiresPrescription: item.product.requiresPrescription,
         })),
         customer: {
@@ -275,6 +278,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
               <span>{errorMessage}</span>
+              <button type="button" className="font-bold underline shrink-0" onClick={onRefreshCatalog}>Actualizar cotización</button>
             </div>
           )}
 
@@ -326,12 +330,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Directo a tu puerta en motocicleta antes de 25 min.
+                    Entrega a tu puerta con vehículo de capacidad confirmada, hasta 25 min.
                   </p>
                 </div>
               )}
 
-              {/* Option: Turbo Dividido (> 60 kg) */}
+              {/* Option: Turbo with multiple verified dispatches */}
               {deliveryQuote?.availableModes.turboDividido && (
                 <div
                   onClick={() => {
@@ -349,11 +353,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                       ⚡ Turbo Dividido
                     </span>
                     <span className="text-[10px] font-black bg-yellow-400 text-red-950 px-1.5 py-0.5 rounded">
-                      {deliveryQuote.turboDividido?.shipmentCount} motos (~{deliveryQuote.estimatedMinutes} min)
+                      {deliveryQuote.turboDividido?.shipmentCount} entregas (~{deliveryQuote.estimatedMinutes} min)
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 mt-1">
-                    Carga pesada ({totalWeightKg.toFixed(0)} kg): {deliveryQuote.turboDividido?.shipmentCount} motos simultáneas con plazo común de 25 min.
+                    Tu compra de {totalWeightKg.toLocaleString('es-CO')} kg: {deliveryQuote.turboDividido?.shipmentCount} entregas con capacidad confirmada y tiempo estimado visible en la cotización.
                   </p>
                 </div>
               )}
@@ -386,29 +390,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               )}
             </div>
 
-            {/* Split Order Information Details */}
-            {selectedMode === 'TURBO_DIVIDIDO' && deliveryQuote?.turboDividido && (
-              <div className="p-3 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-950 space-y-1.5">
-                <div className="flex items-center justify-between font-extrabold">
-                  <span>Detalle de partición en {deliveryQuote.turboDividido.shipmentCount} envíos:</span>
-                  <span className="text-[11px] text-amber-800">
-                    Límite común: 25 min (1.500s)
-                  </span>
-                </div>
-                <div className="space-y-1 pt-1">
-                  {deliveryQuote.turboDividido.shipments.map((s, idx) => (
-                    <div key={s.shipmentId} className="flex justify-between items-center text-[11px] bg-white/80 p-1.5 rounded-lg border border-amber-200">
-                      <span>
-                        <strong>Envío {idx + 1}:</strong> {s.weightKg} kg ({s.items.length} productos)
-                      </span>
-                      <span className="font-semibold text-slate-700">
-                        {paymentMethod === 'CASH_ON_DELIVERY' ? `Cobro: ${formatCOP(s.subtotal)}` : 'Despacho simultáneo'}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </div>
-            )}
+            <DeliveryPlanSummary quote={deliveryQuote} />
 
             {/* Scheduled Slot Picker */}
             {selectedMode === 'PROGRAMADO' && (
@@ -677,7 +659,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {/* Dynamic Free Shipping Benefit relocated to Checkout */}
           <div className="pt-1">
-            <BenefitProgressBar subtotal={subtotal} threshold={70000} />
+            {deliveryQuote?.charges && !deliveryQuote.charges.externalShipping && <BenefitProgressBar subtotal={subtotal} threshold={deliveryQuote.charges.freeShippingFrom} />}
           </div>
 
           {/* Breakdown and Submit */}

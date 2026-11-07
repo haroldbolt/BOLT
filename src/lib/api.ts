@@ -6,6 +6,10 @@ const BASE_URL = '/api/v1';
 let pendingCheckoutRequest: {fingerprint:string;requestId:string} | undefined;
 
 export const api = {
+  async transportAdmin(path:string, method='GET', body?:unknown) {
+    const res=await fetch(`${BASE_URL}/admin/${path}`,{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${api.getStoredAdminToken() || ''}`},body:body===undefined?undefined:JSON.stringify(body)});
+    const data=await res.json();if(!res.ok)throw new Error(data.error || 'No se pudo guardar transporte');return data;
+  },
   async getDeliveryQuote(req: QuoteRequest, localStores?: Store[], localProducts?: Product[]): Promise<DeliveryQuote> {
     const res = await fetch(`${BASE_URL}/delivery/quote`, {
       method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(req), cache:'no-store'
@@ -201,14 +205,14 @@ export const api = {
     return await res.json();
   },
 
-  async cancelOrder(orderId: string, reason?: string, role: string = 'CLIENTE'): Promise<any> {
+  async cancelOrder(orderId: string, reason?: string, role: string = 'CLIENTE', shipmentId?: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/orders/${orderId}/cancel`, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
         'x-actor-role': role,
       },
-      body: JSON.stringify({ reason, role }),
+      body: JSON.stringify({ reason, role, shipmentId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
@@ -217,11 +221,11 @@ export const api = {
     return await res.json();
   },
 
-  async confirmPhysicalReturn(orderId: string, inspectorName: string, notes?: string): Promise<any> {
+  async confirmPhysicalReturn(orderId: string, inspectorName: string, notes?: string, shipmentId?: string): Promise<any> {
     const res = await fetch(`${BASE_URL}/operations/orders/${orderId}/confirm-physical-return`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ inspectorName, notes }),
+      body: JSON.stringify({ inspectorName, notes, shipmentId }),
     });
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

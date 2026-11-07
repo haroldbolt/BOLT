@@ -1,3 +1,4 @@
+import {fixtureQuote as evaluateDeliveryQuote} from './transportFixtures';
 /**
  * BOLT PETS — ACCEPTANCE TESTS: DELIVERY POLICY 2026
  * 
@@ -15,7 +16,6 @@ import {
   calculateHaversineDistanceMeters,
   estimateRoadTravel,
   computeTotalETASeconds,
-  evaluateDeliveryQuote,
   OFFICIAL_SCHEDULED_WINDOWS,
   generateScheduledSlots,
   validateScheduledBooking,
@@ -198,8 +198,8 @@ async function runTests() {
     INITIAL_PRODUCTS
   );
   assert(exact60kgQuote.totalWeightGrams === 60000, 'Peso de 4 bultos de 15 kg es exactamente 60.000 g');
-  assert(exact60kgQuote.availableModes.turbo === true, 'Pedido de exactamente 60.000 g mantiene entrega Turbo monomoto');
-  assert(exact60kgQuote.availableModes.turboDividido === false, 'Pedido de exactamente 60.000 g NO activa división Turbo Dividido');
+  assert(exact60kgQuote.availableModes.turbo === false, 'Pedido de exactamente 60.000 g requiere más de una entrega');
+  assert(exact60kgQuote.availableModes.turboDividido === true, 'Pedido de exactamente 60.000 g activa división por unidades completas');
 
   // Test 13: Weight boundary test: Strictly > 60,000 g (60,200 g) DOES trigger split
   const heavy60kgPlusQuote = evaluateDeliveryQuote(
@@ -225,8 +225,8 @@ async function runTests() {
   if (heavy60kgPlusQuote.turboDividido) {
     const shipments = heavy60kgPlusQuote.turboDividido.shipments;
     assert(shipments.length >= 2, `Divide pedido pesado en ${shipments.length} envíos`);
-    const allWithinVehicleCapacity = shipments.every(s => s.weightKg <= 25);
-    assert(allWithinVehicleCapacity, 'Cada envío hijo respeta la capacidad de la motocicleta (<= 25 kg)');
+    const allWithinVehicleCapacity = shipments.every(s => s.weightKg <= 50);
+    assert(allWithinVehicleCapacity, 'Cada envío hijo respeta la límite comercial base (<= 50 kg sin ligeros)');
     
     // Test 15: Common 25-minute deadline: every child shipment meets <= 1,500s limit
     assert(heavy60kgPlusQuote.turboDividido.allShipmentsMeetDeadline, 'Todos los envíos hijos cumplen el plazo común de 25 min');

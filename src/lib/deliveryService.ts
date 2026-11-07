@@ -1,28 +1,8 @@
+import { applyTransportQuote } from './transportQuote';
+import { DEFAULT_TRANSPORT_CONFIG, type TransportContext, type TransportPlan } from './transportPlanner';
 import { WAREHOUSES } from '../data/warehouseConfig';
 import { validDestinationCoordinates } from './addressGeography';
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- * BOLT PETS — SERVICIO AUTORITATIVO DE ENTREGAS Y COBERTURA (BOGOTÁ, D.C.)
- * 
- * Requerimientos y Reglas Operativas:
- * 1. Constantes autoritativas:
- *    - coverageRadiusMeters: 6.000 metros (6 km) de radio geográfico por bodega habilitada.
- *    - maxDeliverySeconds: 1.500 segundos (25 minutos) como límite máximo de tiempo total de entrega.
- *    - heavyOrderThresholdGrams: 60.000 gramos (60 kg) límite estricto para pedidos pesados.
- *    - maxVehicleWeightGrams: 25.000 gramos (25 kg) capacidad máxima estándar por motocicleta.
- *    - scheduledCoverageRadiusMeters: 25.000 metros (25 km) radio metropolitano de entrega programada.
- * 2. Fórmula de Haversine para cálculo de distancia geodésica.
- * 3. Filtrado y evaluación de bodegas habilitadas en Bogotá (Kennedy, Álamos, Suba).
- * 4. Turbo vs Turbo Dividido vs Envío Programado:
- *    - Case A: Cobertura Turbo estándar (<= 6 km, <= 25 min, peso <= 60 kg).
- *    - Case B: Turbo Dividido (peso > 60 kg, <= 6 km, <= 25 min, unidades enteras sin fraccionar empaques,
- *              plazo común estricto de 25 min para todos los envíos hijos).
- *    - Case C: Envío Programado exclusivo (dirección fuera de radio Turbo de 6 km o tiempo > 25 min, pero dentro de cobertura programada).
- *    - Case D: Fuera del territorio urbano habilitado (geometría oficial del servidor).
- * 5. Endpoint '/api/v1/delivery/quote' y manejador para Express y cliente.
- */
-
+// Geographic and time eligibility; capacity uses the shared unit planner below.
 import { Store, Product, DeliveryMode, ScheduledDeliveryWindow, SCHEDULED_DELIVERY_CONFIG } from '../types';
 import {
   getCurrentBogotaTime,
@@ -46,8 +26,6 @@ import {
 
 export const COVERAGE_RADIUS_METERS = 6000;          // 6 km radio geodésico Turbo
 export const MAX_DELIVERY_SECONDS = 1500;             // 25 minutos (1.500 segundos) límite Turbo
-export const HEAVY_ORDER_THRESHOLD_GRAMS = 60000;     // 60 kg (estrictamente > 60.000 g activa división)
-export const MAX_VEHICLE_WEIGHT_GRAMS = 25000;        // 25 kg capacidad de carga de moto estándar
 export const SCHEDULED_COVERAGE_RADIUS_METERS = 25000; // Legacy display value; never used to reject scheduled territory
 export const MAX_SCHEDULED_WEIGHT_GRAMS = 300000;     // 300 kg capacidad de camioneta programada
 
@@ -200,12 +178,10 @@ export function getBogotaLocalityName(localityCode: string): string {
 export const DELIVERY_CONFIG = {
   coverageRadiusMeters: COVERAGE_RADIUS_METERS,
   maxDeliverySeconds: MAX_DELIVERY_SECONDS,
-  heavyOrderThresholdGrams: HEAVY_ORDER_THRESHOLD_GRAMS,
-  maxVehicleWeightGrams: MAX_VEHICLE_WEIGHT_GRAMS,
   scheduledCoverageRadiusMeters: SCHEDULED_COVERAGE_RADIUS_METERS,
   maxScheduledWeightGrams: MAX_SCHEDULED_WEIGHT_GRAMS,
   scheduledDelivery: SCHEDULED_DELIVERY_CONFIG,
-  configVersion: '2026.2-SPLIT-SCHEDULED',
+  configVersion: '2026.3-UNIT-CAPACITY',
   defaultPrepReadySeconds: 180, // 3 min alistamiento base de farmacia / alimentos
   itemPickSeconds: 15,          // 15 seg por ítem adicional en picking
   courierReadySeconds: 120,     // 2 min disponibilidad de repartidor en bodega
@@ -325,9 +301,9 @@ export interface SplitShipmentPlan {
 export interface TurboDivididoDetails {
   totalWeightKg: number;
   totalWeightGrams: number;
-  thresholdGrams: number; // 60000
+  thresholdGrams: number; // Commercial base, not a physical vehicle capacity
   shipmentCount: number;
-  maxWeightPerVehicleKg: number; // 25
+  maxWeightPerVehicleKg: number; // Configured physical maximum
   shipments: SplitShipmentPlan[];
   commonDeadlineSeconds: number; // 1500
   allShipmentsMeetDeadline: boolean;
@@ -336,6 +312,12 @@ export interface TurboDivididoDetails {
 }
 
 export interface DeliveryQuote {
+  transportPlan?: TransportPlan;
+  inventoryValidated?: boolean;
+  confirmationToken?: string;
+  charges?: {subtotal:number;freeShippingFrom:number;shipping:number;ownShipping?:number;externalShipping?:number;serviceFee:number;total:number};
+  providerResponses?: import('../types/transport').ExternalProviderResponse[];
+  transportWindow?: ScheduledSlot;
   warehouse?: {id:string;name:string;customerName:string;address?:string};
   quoteId: string;
   eligibilityStatus: DeliveryEligibilityStatus;
@@ -362,7 +344,7 @@ export interface DeliveryQuote {
   etaComponents?: ETAComponents;
   estimatedMinutes?: number;
 
-  // Detalles Turbo Dividido (para pedidos > 60 kg)
+  // Detalles de distribución por unidades y capacidad
   turboDividido?: TurboDivididoDetails;
 
   // Detalles Entrega Programada
@@ -797,172 +779,6 @@ export function validateScheduledBooking(
   return { valid: true };
 }
 
-// ============================================================================
-// 8. ALGORITMO DE PARTICIÓN TURBO DIVIDIDO (> 60 KG)
-// ============================================================================
-
-/**
- * Divide pedidos pesados (> 60 kg) en unidades enteras respetando la capacidad
- * de carga del vehículo (máx. 25 kg por moto) y asegurando que TODOS los envíos
- * cumplan con el plazo común único de 25 minutos (1.500 segundos).
- */
-export function generateSplitDeliveryPlan(
-  rawItems: QuoteRequestItem[],
-  catalogProducts: Product[],
-  estimatedTravelSeconds: number,
-  maxVehicleCapacityGrams: number = MAX_VEHICLE_WEIGHT_GRAMS
-): TurboDivididoDetails {
-  // 1. Expandir unidades discretas enteras (sin fraccionar ningún paquete)
-  interface DiscreteUnit {
-    productId: string;
-    name: string;
-    weightKg: number;
-    weightGrams: number;
-    price: number;
-  }
-
-  const discreteUnits: DiscreteUnit[] = [];
-  let totalOrderWeightGrams = 0;
-
-  for (const item of rawItems) {
-    const prod = catalogProducts.find(p => p.id === item.productId);
-    const unitWeightKg = prod?.weightKg || 0.2;
-    const unitWeightGrams = Math.round(unitWeightKg * 1000);
-    const unitPrice = prod?.price || 0;
-    const name = prod?.name || `Producto ${item.productId}`;
-
-    for (let q = 0; q < item.quantity; q++) {
-      discreteUnits.push({
-        productId: item.productId,
-        name,
-        weightKg: unitWeightKg,
-        weightGrams: unitWeightGrams,
-        price: unitPrice,
-      });
-      totalOrderWeightGrams += unitWeightGrams;
-    }
-  }
-
-  // 2. Ordenamiento descendente por peso (First-Fit Decreasing)
-  discreteUnits.sort((a, b) => b.weightGrams - a.weightGrams);
-
-  // 3. Empaque en contenedores de motocicleta (bins)
-  interface Bin {
-    units: DiscreteUnit[];
-    currentWeightGrams: number;
-  }
-
-  const bins: Bin[] = [];
-  let hasOversizedUnit = false;
-
-  for (const unit of discreteUnits) {
-    if (unit.weightGrams > maxVehicleCapacityGrams) {
-      hasOversizedUnit = true; // Unidad indivisible superior a la capacidad del vehículo
-    }
-
-    let placed = false;
-    for (const bin of bins) {
-      if (bin.currentWeightGrams + unit.weightGrams <= maxVehicleCapacityGrams) {
-        bin.units.push(unit);
-        bin.currentWeightGrams += unit.weightGrams;
-        placed = true;
-        break;
-      }
-    }
-
-    if (!placed) {
-      bins.push({
-        units: [unit],
-        currentWeightGrams: unit.weightGrams,
-      });
-    }
-  }
-
-  // 4. Verificación de plazo común de 25 minutos (1.500 segundos)
-  // Cada envío hijo se prepara en paralelo en la bodega y se despacha hacia el mismo destino
-  const shipments: SplitShipmentPlan[] = bins.map((bin, index) => {
-    // Agrupar unidades por producto
-    const groupedMap = new Map<string, SplitShipmentItem>();
-    for (const u of bin.units) {
-      const existing = groupedMap.get(u.productId);
-      if (existing) {
-        existing.quantity += 1;
-        existing.totalWeightGrams += u.weightGrams;
-        existing.totalWeightKg = Number((existing.totalWeightGrams / 1000).toFixed(2));
-      } else {
-        groupedMap.set(u.productId, {
-          productId: u.productId,
-          name: u.name,
-          quantity: 1,
-          unitWeightKg: u.weightKg,
-          totalWeightKg: u.weightKg,
-          totalWeightGrams: u.weightGrams,
-          price: u.price,
-        });
-      }
-    }
-
-    const items = Array.from(groupedMap.values());
-    const subtotal = items.reduce((acc, it) => acc + (it.price * it.quantity), 0);
-    const weightGrams = bin.currentWeightGrams;
-    const weightKg = Number((weightGrams / 1000).toFixed(2));
-
-    // Tiempo total de este envío hijo: preparación de sus ítems + viaje + margen
-    const { totalSeconds } = computeTotalETASeconds(estimatedTravelSeconds, bin.units.length);
-
-    return {
-      shipmentIndex: index + 1,
-      shipmentId: `SHP-${Date.now().toString().slice(-4)}-${index + 1}`,
-      items,
-      weightKg,
-      weightGrams,
-      subtotal,
-      cashToCollect: subtotal, // Inicializado al subtotal del envío
-      estimatedArrivalSeconds: totalSeconds,
-      secretDeliveryCode: Math.floor(1000 + Math.random() * 9000).toString(),
-    };
-  });
-
-  const allShipmentsMeetDeadline = shipments.every(
-    s => s.estimatedArrivalSeconds <= DELIVERY_CONFIG.maxDeliverySeconds
-  );
-
-  // Es factible si:
-  // - No hay unidades que excedan por sí solas los 25 kg
-  // - Se requieren <= 4 motos (capacidad simultánea de flota de bodega)
-  // - Todos los envíos llegan en <= 1.500 s (25 min)
-  const feasible = !hasOversizedUnit && bins.length <= 4 && allShipmentsMeetDeadline;
-
-  const totalWeightKg = Number((totalOrderWeightGrams / 1000).toFixed(2));
-
-  return {
-    totalWeightKg,
-    totalWeightGrams: totalOrderWeightGrams,
-    thresholdGrams: HEAVY_ORDER_THRESHOLD_GRAMS,
-    shipmentCount: shipments.length,
-    maxWeightPerVehicleKg: Number((maxVehicleCapacityGrams / 1000).toFixed(0)),
-    shipments,
-    commonDeadlineSeconds: DELIVERY_CONFIG.maxDeliverySeconds,
-    allShipmentsMeetDeadline,
-    feasible,
-    explanation: feasible
-      ? `Tu pedido pesa ${totalWeightKg} kg (> 60 kg). Se dividirá en ${shipments.length} envíos Turbo en moto simultáneos con llegada en menos de 25 min.`
-      : `Tu pedido pesa ${totalWeightKg} kg y requiere despacho mediante Envío Programado en vehículo de carga.`,
-  };
-}
-
-// ============================================================================
-// 9. LÓGICA DE EVALUACIÓN DE COTIZACIÓN Y ASIGNACIÓN AUTOMÁTICA
-// ============================================================================
-
-/**
- * Evalúa las bodegas habilitadas en Bogotá para una dirección de destino:
- * 1. Condición Turbo estándar: Haversine <= 6.000 m, totalETA <= 1.500 s, peso <= 60 kg.
- * 2. Condición Turbo Dividido: peso > 60 kg (estrictamente > 60.000 g), Haversine <= 6.000 m,
- *    totalETA <= 1.500 s para todos los envíos hijos, unidades enteras sin fraccionar empaques.
- * 3. Condición Envío Programado: hasta 25 km de cobertura metropolitana de Bogotá.
- * 4. Selección automática de la bodega óptima sin intervención del cliente.
- */
 function evaluateDeliveryQuoteInternal(
   req: QuoteRequest,
   stores: Store[] = BOGOTA_TURBO_WAREHOUSES,
@@ -979,7 +795,7 @@ function evaluateDeliveryQuoteInternal(
   if (items && items.length > 0 && catalogProducts.length > 0) {
     for (const it of items) {
       const prod = catalogProducts.find(p => p.id === it.productId);
-      const unitWeight = prod?.weightKg || 0.2;
+      const unitWeight = prod?.transport ? prod.transport.weightGrams / 1000 : Number.isFinite(prod?.weightKg) && prod!.weightKg>0 ? prod!.weightKg : 0;
       totalWeightGrams += Math.round(unitWeight * 1000) * it.quantity;
     }
   }
@@ -1427,102 +1243,6 @@ function evaluateDeliveryQuoteInternal(
 
   const winner = timeEligibleCandidates[0];
 
-  // ==========================================================================
-  // EVALUACIÓN DE PESO Y CONDICIÓN TURBO DIVIDIDO (> 60 KG)
-  // Regla estricta: activada ÚNICAMENTE cuando totalWeightGrams > 60000.
-  // ==========================================================================
-  const isHeavyOrder = totalWeightGrams > DELIVERY_CONFIG.heavyOrderThresholdGrams;
-
-  if (isHeavyOrder && items && items.length > 0 && catalogProducts.length > 0) {
-    const splitPlan = generateSplitDeliveryPlan(
-      items,
-      catalogProducts,
-      winner.roadTravelSeconds,
-      DELIVERY_CONFIG.maxVehicleWeightGrams
-    );
-
-    if (splitPlan.feasible) {
-      // CASO B: Turbo Dividido factible y Envío Programado
-      return {
-        quoteId,
-        eligibilityStatus: DeliveryStatus.ELIGIBLE,
-        reasonCode: 'TURBO_DIVIDIDO_ELIGIBLE',
-        message: `Tu pedido pesa ${totalWeightKg} kg (> 60 kg). Se entregará en ${splitPlan.shipmentCount} motos Turbo simultáneas en aprox. ${winner.estimatedMinutes} min.`,
-        availableModes: {
-          turbo: false, // Monomoto deshabilitada por exceder 60 kg
-          turboDividido: true,
-          scheduled: true,
-        },
-        recommendedMode: 'TURBO_DIVIDIDO',
-        autoSwitchedToScheduled: false,
-        detectedLocality,
-        detectedLocalityName,
-        isTurboLocality: true,
-        assignedStoreId: winner.store.id,
-        assignedStoreName: winner.store.name,
-        assignedStoreAddress: winner.store.address,
-        assignedStoreCoordinates: getStoreDispatchCoordinates(winner.store),
-        destination,
-        geographicDistanceMeters: winner.geoDistanceMeters,
-        geographicDistanceKm: Number((winner.geoDistanceMeters / 1000).toFixed(1)),
-        roadDistanceMeters: winner.roadDistanceMeters,
-        roadDistanceKm: Number((winner.roadDistanceMeters / 1000).toFixed(1)),
-        etaComponents: winner.etaComponents,
-        estimatedMinutes: winner.estimatedMinutes,
-        turboDividido: splitPlan,
-        scheduledEligible: true,
-        scheduledSlots,
-        calculatedAt: now.toISOString(),
-        expiresAt,
-        configVersion: DELIVERY_CONFIG.configVersion,
-        candidateWarehousesEvaluated: pool.length,
-        basketValidated: true,
-        totalWeightKg,
-        totalWeightGrams,
-      };
-    } else {
-      // Peso > 60 kg pero división Turbo no es factible -> Envío Programado
-      return {
-        quoteId,
-        eligibilityStatus: DeliveryStatus.SCHEDULED_ONLY,
-        reasonCode: 'HEAVY_ORDER_SCHEDULED_ONLY',
-        message: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
-        availableModes: {
-          turbo: false,
-          turboDividido: false,
-          scheduled: true,
-        },
-        recommendedMode: 'PROGRAMADO',
-        autoSwitchedToScheduled: true,
-        switchReason: 'WEIGHT_OVERSIZED',
-        detectedLocality,
-        detectedLocalityName,
-        isTurboLocality: true,
-        assignedStoreId: winner.store.id,
-        assignedStoreName: winner.store.name,
-        assignedStoreAddress: winner.store.address,
-        assignedStoreCoordinates: getStoreDispatchCoordinates(winner.store),
-        destination,
-        geographicDistanceMeters: winner.geoDistanceMeters,
-        geographicDistanceKm: Number((winner.geoDistanceMeters / 1000).toFixed(1)),
-        roadDistanceMeters: winner.roadDistanceMeters,
-        roadDistanceKm: Number((winner.roadDistanceMeters / 1000).toFixed(1)),
-        scheduledEligible: true,
-        scheduledSlots,
-        scheduledExplanation: 'Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido',
-        calculatedAt: now.toISOString(),
-        expiresAt,
-        configVersion: DELIVERY_CONFIG.configVersion,
-        candidateWarehousesEvaluated: pool.length,
-        basketValidated: true,
-        totalWeightKg,
-        totalWeightGrams,
-      };
-    }
-  }
-
-  // CASO A: Pedido estándar elegible para Turbo (peso <= 60 kg, <= 6 km, <= 25 min en Kennedy/Suba/Engativá)
-
   return {
     quoteId,
     eligibilityStatus: DeliveryStatus.ELIGIBLE,
@@ -1566,7 +1286,10 @@ function evaluateDeliveryQuoteInternal(
 
 // One result for store, checkout and order creation. Slots are populated from
 // the server's order repository; a full slot is an operational rejection.
-export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOTA_TURBO_WAREHOUSES, products: Product[] = [], slotOrders: any[] = []): DeliveryQuote {
+export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOTA_TURBO_WAREHOUSES, products: Product[] = [], slotOrders: any[] = [], transport: TransportContext = {config:DEFAULT_TRANSPORT_CONFIG,drivers:[],orders:slotOrders}): DeliveryQuote {
+  const quantities=new Map<string,number>();
+  for(const i of req.items || []) quantities.set(i.productId,(quantities.get(i.productId)||0)+i.quantity);
+  req={...req,items:[...quantities].map(([productId,quantity])=>({productId,quantity}))};
   const quote = evaluateDeliveryQuoteInternal(req, stores, products);
   const territory = resolveTerritorialAssignment(req.destination || {});
   if (!territory.isCovered || quote.eligibilityStatus === 'OUT_OF_COVERAGE' || quote.eligibilityStatus === 'ADDRESS_NEEDS_CONFIRMATION') return quote;
@@ -1614,7 +1337,7 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
       quote.scheduledEligible=false; quote.availableModes.scheduled=false; quote.recommendedMode=null;
     }
   }
-  return quote;
+  return applyTransportQuote(quote,req,stores,products,transport);
 }
 
 // Alias funcional
