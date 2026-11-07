@@ -17,8 +17,11 @@ const valid=existing[0],validQuote=await quote(valid);assert.equal(validQuote.as
 const payload={storeId:'HUB_KENNEDY',deliveryAddress:{address:valid.address,coordinates:valid.coordinates},items:purchaseItems,deliveryMode:'PROGRAMADO',confirmationToken:validQuote.confirmationToken,scheduledWindow:validQuote.transportWindow,customer:{name:'SIMULACIÓN COBERTURA',phone:'0000000000',email:'coverage@example.invalid'},paymentMethod:'CASH_ON_DELIVERY',tip:0};
 for(const f of [...fixtures,existing.find(f=>f.name==='Chia')!]) {
  const q=await quote(f,{municipality:'Bogotá',locality:'Usaquén',countryCode:'CO',municipalityCode:'11001',geographicExclusion:''});
- const pending=['Cajicá','Chia'].includes(f.name);
- assert.equal(q.reasonCode,pending?'SCHEDULED_SERVICE_PENDING':'TERRITORY_OUT_OF_COVERAGE');
+ if(['Cajicá','Chia'].includes(f.name)) {
+  assert.equal(q.assignedStoreId,'HUB_SUBA');assert.equal(q.recommendedMode,'PROGRAMADO');assert.ok(q.scheduledSlots.some((s:any)=>s.availableCapacity>0));
+  reports.push({case:f.name,store:q.assignedStoreId,mode:q.recommendedMode,slots:q.scheduledSlots.length});continue;
+ }
+ assert.equal(q.reasonCode,'TERRITORY_OUT_OF_COVERAGE');
  assert.equal(q.availableModes.turbo,false);assert.equal(q.availableModes.scheduled,false);
  for(const deliveryMode of ['PROGRAMADO','TURBO']) {
   const bad=await request('/api/v1/orders',{...payload,deliveryMode,deliveryAddress:{address:'Carrera 5 #12-14, vía Chía, Bogotá',coordinates:f.coordinates,municipality:'Bogotá',locality:'Usaquén',geographicExclusion:''}},crypto.randomUUID());
@@ -39,4 +42,4 @@ for(const old of before)assert.deepEqual(after.find((o:any)=>o.id===old.id),old)
 const afterProduct=(await request('/api/v1/catalog?q=SIMULACI%C3%93N')).data.find((p:any)=>p.id===product.id);assert.equal(afterProduct.reservedStockByStore.HUB_SUBA,(product.reservedStockByStore.HUB_SUBA||0)+1);
 const q=await quote(valid,{municipality:'Cota',locality:'Bogotá'});assert.equal(q.assignedStoreId,'HUB_SUBA');assert.equal(q.availableModes.scheduled,true);
 fs.writeFileSync('../coverage-http-results.json',JSON.stringify({reports,createdTestOrder:created.data.id,order:created.data,existingOrdersUnchanged:true,priceRevalidated:true,reservedExactlyOnce:true,idempotency:true},null,2));
-console.log('PASS HTTP: 8 destinations, 16 forged orders blocked, missing destination, price, preserved history, Cedritos purchase + retry + reservation once');
+console.log('PASS HTTP: 8 destinations, 12 forged orders blocked, missing destination, price, preserved history, Cedritos purchase + retry + reservation once');

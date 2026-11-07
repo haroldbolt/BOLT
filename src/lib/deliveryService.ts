@@ -149,6 +149,8 @@ export interface ScheduledSlot {
   commercialHook: string; // "Pide antes de las 10:00 a. m. y recibe hoy de 9:00 a. m. a 2:00 p. m."
   countdownNotice?: string; // "⏰ Últimos 35 minutos para elegir esta franja"
   minutesUntilCutoff?: number; // 35
+  unavailableReason?: 'CAPACITY' | 'TRANSPORT';
+  unavailableMessage?: string;
   availableCapacity: number;
   maxCapacity: number;
   cutoffPassed: boolean;
@@ -210,6 +212,9 @@ export interface DeliveryQuote {
     scheduled: boolean;
   };
   recommendedMode: DeliveryMode | null;
+  // Effective UI mode remains known even when an operational check is pending.
+  effectiveMode?: DeliveryMode;
+  selectedSlotInvalid?: boolean;
 
   // Detalles Turbo
   assignedStoreId?: string;
@@ -1181,6 +1186,7 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
   }
   const policy=coverageMunicipality(territory.municipality,coverageConfig);
   if(!policy?.active) return {...quote,eligibilityStatus:'OUT_OF_COVERAGE',reasonCode:'TERRITORY_OUT_OF_COVERAGE',message:'Municipio no habilitado.',availableModes:{turbo:false,turboDividido:false,scheduled:false},scheduledEligible:false,scheduledSlots:[],recommendedMode:null,basketValidated:false};
+  quote.effectiveMode = req.requestedMode==='PROGRAMADO' || !policy.modes.some(m=>m==='TURBO'||m==='TURBO_DIVIDIDO') ? 'PROGRAMADO' : quote.recommendedMode || undefined;
   quote.availableModes.turbo &&= policy.modes.includes('TURBO');
   quote.availableModes.turboDividido &&= policy.modes.includes('TURBO_DIVIDIDO');
   const service=typeof policy.scheduledService==='object' ? policy.scheduledService : undefined;
@@ -1191,10 +1197,11 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
     return !p || !Number.isInteger(item.quantity) || item.quantity<=0 || (p.stockByStore[store?.id || ''] || 0)-(p.reservedStockByStore[store?.id || ''] || 0)<item.quantity;
   });
   quote.scheduledSlots = quote.scheduledSlots.map(slot=>({...slot, maxCapacity:service?.capacityPerWindow ?? slot.maxCapacity, availableCapacity: Math.max(0,(service?.capacityPerWindow ?? 10)-slotOrders.filter(o=>o.deliveryMode==='PROGRAMADO' && o.storeId===store?.id && o.status!=='CANCELADO' && o.fulfillmentStatus!=='CANCELADO' && o.scheduledWindow?.date===slot.date && (o.scheduledWindow.slotId===slot.slotId || o.scheduledWindow.startTime===slot.startTime)).length)}));
+  quote.scheduledSlots.forEach(slot=>{if(slot.availableCapacity<=0) slot.unavailableReason='CAPACITY'});
   if(service && serviceReady) quote.scheduledSlots=quote.scheduledSlots.filter(slot=>service.windowIds.includes(slot.windowId) && service.weekdays.includes(new Date(slot.date+'T12:00:00Z').getUTCDay()));
   quote.scheduledEligible = serviceReady && !!store?.isActive && (!store.enabledModes || store.enabledModes.includes('PROGRAMADO')) && stockOK;
   quote.availableModes.scheduled = quote.scheduledEligible;
-  if (req.requestedMode === 'PROGRAMADO' || quote.recommendedMode === 'PROGRAMADO') {
+  if (quote.effectiveMode === 'PROGRAMADO' || quote.recommendedMode === 'PROGRAMADO') {
     quote.assignedStoreId = store?.id; quote.assignedStoreName = store?.name;
     quote.assignedStoreAddress = store?.address;
     if(store) {
@@ -1212,12 +1219,13 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
       && (!selected.slotId || s.slotId===selected.slotId)
       && (!selected.windowId || s.windowId===selected.windowId)
       && (!selected.startTime || s.startTime===selected.startTime));
+    quote.selectedSlotInvalid=serviceReady && !!store?.isActive && (!store.enabledModes || store.enabledModes.includes('PROGRAMADO')) && stockOK && !!selected && !slot;
     const reason = !serviceReady ? [policy.modes.includes('PROGRAMADO') ? 'SCHEDULED_SERVICE_PENDING' : 'MODE_UNAVAILABLE',policy.modes.includes('PROGRAMADO') ? `Zona habilitada en ${policy.name}. La ruta, tarifa y horarios de Programado desde ${store?.customerName || store?.name || 'la sede asignada'} están pendientes de verificación. Aún no es posible confirmar una entrega.` : 'Programado no está habilitado en este municipio.']
       : !store?.isActive ? ['STORE_INACTIVE','La bodega territorial asignada está inactiva.']
       : store.enabledModes && !store.enabledModes.includes('PROGRAMADO') ? ['MODE_UNAVAILABLE','La sede territorial no tiene habilitado el envío programado.']
       : !stockOK ? ['INSUFFICIENT_STOCK','Inventario insuficiente en la bodega territorial asignada. Ajusta tu carrito.']
       : selected && !slot ? ['MODE_UNAVAILABLE','La franja seleccionada ya no está disponible. Elige otra franja.']
-      : (slot ? slot.availableCapacity<=0 : !quote.scheduledSlots.some(s=>s.availableCapacity>0)) ? ['SLOT_CAPACITY_EXCEEDED','La franja no tiene cupo. Selecciona otro horario.'] : null;
+      : (slot ? slot.availableCapacity<=0 : !quote.scheduledSlots.some(s=>s.availableCapacity>0)) ? ['SLOT_CAPACITY_EXCEEDED',selected && quote.scheduledSlots.some(s=>s.date===selected.date && s.availableCapacity>0 && !s.cutoffPassed) ? 'La franja no tiene cupo. Selecciona otro horario.' : 'No hay horarios disponibles para esta fecha. Elige otro día'] : null;
     if (reason) {
       quote.reasonCode=reason[0]; quote.message=reason[1];
       quote.eligibilityStatus = reason[0]==='STORE_INACTIVE' ? 'STORE_CLOSED' : reason[0]==='INSUFFICIENT_STOCK' ? 'INSUFFICIENT_STOCK' : 'ESTIMATE_UNAVAILABLE';

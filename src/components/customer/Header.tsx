@@ -1,3 +1,4 @@
+import { COVERAGE_NOTICE } from '../../data/coverageConfig';
 import React, { useState } from 'react';
 import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark, Layers } from 'lucide-react';
 import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
@@ -287,7 +288,7 @@ export const Header: React.FC<HeaderProps> = ({
           <div className="flex justify-center">
             <button
               onClick={() => {
-                if (isScheduledDelivery && onOpenScheduledModal) {
+                if (deliveryQuote?.eligibilityStatus!=='OUT_OF_COVERAGE' && isScheduledDelivery && onOpenScheduledModal) {
                   onOpenScheduledModal();
                 } else if (onOpenAddressModal) {
                   onOpenAddressModal();
@@ -304,14 +305,18 @@ export const Header: React.FC<HeaderProps> = ({
             >
               {!customerAddress ? (
                 <><MapPin className="w-4 h-4" /><span>Confirma tu dirección para ver las entregas</span></>
+              ) : deliveryQuote?.eligibilityStatus==='OUT_OF_COVERAGE' ? (
+                <><MapPin className="w-4 h-4" /><span>{COVERAGE_NOTICE.title}</span></>
+              ) : !deliveryQuote ? (
+                <span>Consultando opciones de entrega…</span>
               ) : isScheduledDelivery ? (
                 <>
                   <Calendar className="w-4 h-4 text-yellow-300 shrink-0" />
                   <span className="font-bold">
-                    {selectedScheduledWindow ? (
+                    {selectedScheduledWindow && deliveryQuote?.scheduledSlots.some(s=>s.slotId===selectedScheduledWindow.slotId && s.availableCapacity>0 && !s.cutoffPassed) ? (
                       `Envío programado · ${formatHeaderWindow(selectedScheduledWindow)}`
                     ) : (
-                      'Envío programado · Elige día y horario'
+                      `Envío programado · ${deliveryQuote?.warehouse?.customerName || deliveryQuote?.assignedStoreName || 'Sede pendiente'} · Elige día y horario`
                     )}
                   </span>
                   {deliveryQuote?.detectedLocalityName && (

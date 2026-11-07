@@ -10,7 +10,7 @@
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts && tsx src/tests/catalogAdmin.test.ts && tsx src/tests/coverageRegression.test.ts && tsx src/tests/warehouseNotifications.test.ts && tsx src/tests/catalogBatch.test.ts && tsx src/tests/presentationSelection.test.tsx && tsx src/tests/catalogPurchase.test.tsx && tsx src/tests/guestCart.test.tsx && tsx src/tests/transport.test.ts && tsx src/tests/municipalCoverage.test.ts",
+    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts && tsx src/tests/catalogAdmin.test.ts && tsx src/tests/coverageRegression.test.ts && tsx src/tests/warehouseNotifications.test.ts && tsx src/tests/catalogBatch.test.ts && tsx src/tests/presentationSelection.test.tsx && tsx src/tests/catalogPurchase.test.tsx && tsx src/tests/guestCart.test.tsx && tsx src/tests/transport.test.ts && tsx src/tests/municipalCoverage.test.ts && tsx src/tests/scheduledDestination.test.tsx",
     "catalog:batch": "node --import tsx scripts/catalog-batch.ts"
   },
   "dependencies": {

@@ -30,9 +30,12 @@ for(const f of fixtures.filter(f=>f.name!=='Cajicá')) test('Provider fixture '+
   assert.equal(q.eligibilityStatus,'OUT_OF_COVERAGE');assert.equal(q.reasonCode,'TERRITORY_OUT_OF_COVERAGE');assert.equal(q.territoryInfo?.isCovered,false);assert.equal(q.assignedStoreId,undefined);assert.equal(q.availableModes.scheduled,false);
  }
 });
-for(const f of [oldFixtures.find(f=>f.name==='Chia')!,fixtures[0]]) test(f.name+' is Suba, Programado only; pending operation is not geographical exclusion',()=>{
- const q=quote(f);assert.equal(q.territoryInfo?.isCovered,true);assert.equal(q.municipality,f.name==='Chia'?'Chía':'Cajicá');assert.equal(q.assignedStoreId,'HUB_SUBA');assert.equal(q.reasonCode,'SCHEDULED_SERVICE_PENDING');assert.equal(q.basketValidated,false);assert.equal(q.availableModes.turbo,false);assert.equal(q.availableModes.turboDividido,false);assert.equal(q.scheduledSlots.length,0);assert.equal(q.confirmationToken,undefined);
+for(const f of [oldFixtures.find(f=>f.name==='Chia')!,fixtures[0]]) test(f.name+' is Suba, Programado only with approved Bogotá service',()=>{
+ const q=quote(f);assert.equal(q.territoryInfo?.isCovered,true);assert.equal(q.municipality,f.name==='Chia'?'Chía':'Cajicá');assert.equal(q.assignedStoreId,'HUB_SUBA');assert.equal(q.recommendedMode,'PROGRAMADO');assert.equal(q.effectiveMode,'PROGRAMADO');assert.equal(q.basketValidated,true);assert.equal(q.availableModes.turbo,false);assert.equal(q.availableModes.turboDividido,false);assert.ok(q.scheduledSlots.length>0);assert.equal(q.confirmationToken,undefined);
  const policies=structuredClone(COVERAGE_MUNICIPALITIES);const policy=policies.find(p=>p.name===q.municipality)!;
+ policy.scheduledService=null;
+ const pending=evaluateDeliveryQuote({destination:enrichDestination({address:f.address,coordinates:f.coordinates}),items,requestedMode:'TURBO'},INITIAL_STORES,[product],[],context,policies);
+ assert.equal(pending.reasonCode,'SCHEDULED_SERVICE_PENDING');assert.equal(pending.effectiveMode,'PROGRAMADO');assert.equal(pending.scheduledSlots.length,0);assert.equal(pending.territoryInfo?.isCovered,true);
  policy.scheduledService={routeReference:'SIMULACIÓN AISLADA, NO OPERATIVA',verifiedAt:new Date().toISOString(),weekdays:[0,1,2,3,4,5,6],windowIds:['HORARIO_2'],capacityPerWindow:2,pricing:{shipping:12300,freeShippingFrom:200000,serviceFee:1500}};
  const configured=evaluateDeliveryQuote({destination:enrichDestination({address:f.address,coordinates:f.coordinates}),items,requestedMode:'TURBO'},INITIAL_STORES,[product],[],context,policies);
  assert.equal(configured.recommendedMode,'PROGRAMADO');assert.equal(configured.basketValidated,true);assert.equal(configured.assignedStoreId,'HUB_SUBA');assert.equal(configured.charges?.shipping,12300);assert.ok(configured.scheduledSlots.every(s=>s.windowId==='HORARIO_2' && s.maxCapacity===2 && s.availableCapacity===2));assert.equal(configured.availableModes.turbo,false);
@@ -50,7 +53,7 @@ test('Municipality and country read by component type, neighborhood is separate'
 });
 test('Configuration does not invent missing tariffs, route or time windows',()=>{
  assert.equal(scheduledServiceReady(null),false);assert.equal(scheduledServiceReady({routeReference:'missing'} as any),false);
- assert.ok(COVERAGE_MUNICIPALITIES.filter(m=>['Chía','Cajicá'].includes(m.name)).every(m=>m.scheduledService===null));
+ assert.ok(COVERAGE_MUNICIPALITIES.filter(m=>['Chía','Cajicá'].includes(m.name)).every(m=>m.scheduledService==='EXISTING_SERVICE'));
 });
 test('Switching from blocked destination to Cedritos clears geographic rejection',()=>{
  assert.equal(quote(fixtures[1]).reasonCode,'TERRITORY_OUT_OF_COVERAGE');const q=quote(cedritos);assert.equal(q.assignedStoreId,'HUB_SUBA');assert.equal(q.basketValidated,true);assert.equal(q.recommendedMode,'PROGRAMADO');

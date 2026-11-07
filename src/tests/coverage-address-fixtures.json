@@ -115,7 +115,6 @@
     "formattedAddress": "Cra. 11 #11-29, Chía, Colombia",
     "municipality": "Chía",
     "status": "OK",
-    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates",
-    "expectedReason": "SCHEDULED_SERVICE_PENDING"
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
   }
 ]

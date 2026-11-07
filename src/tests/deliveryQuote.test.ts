@@ -145,9 +145,9 @@ async function runTests() {
     INITIAL_PRODUCTS
   );
   assert(quoteFar.availableModes.turbo === false, 'Destino > 6.000m o fuera de Kennedy/Suba/Engativá deshabilita Turbo');
-  assert(quoteFar.availableModes.scheduled === false, 'Chía espera configuración operativa de Programado');
-  assert(quoteFar.eligibilityStatus === 'ESTIMATE_UNAVAILABLE', 'Chía requiere datos operativos de su ruta, no es una exclusión geográfica');
-  assert(quoteFar.reasonCode === 'SCHEDULED_SERVICE_PENDING', 'Chía está habilitada geográficamente, sin disponibilidad inventada');
+  assert(quoteFar.availableModes.scheduled === true, 'Chía reutiliza el servicio Programado aprobado de Bogotá');
+  assert(quoteFar.territoryInfo?.isCovered === true, 'Chía es una zona geográficamente habilitada');
+  assert(quoteFar.assignedStoreId === 'HUB_SUBA', 'Chía se atiende desde Suba');
 
   // Test 10: Strict 1,500s Time Boundary Test
   // Create an artificial candidate store at distance where total seconds exceeds 1500s but distance is <= 6000m

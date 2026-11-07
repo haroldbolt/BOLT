@@ -45,7 +45,7 @@ test('Unidentified locality is pending, not geographic rejection',()=>{
 test('Street words do not enable Soacha or override verified geography',()=>{
  const f=fixtures.find(f=>f.name==='Chia')!;
  const q=evaluateDeliveryQuote({destination:enrichDestination({address:'Calle 11 #11-29, San Mateo, Cedritos, Bogotá',municipality:'Bogotá',locality:'Usaquén',coordinates:f.coordinates}),requestedMode:'PROGRAMADO'});
- assert.equal(q.municipality,'Chía');assert.equal(q.reasonCode,'SCHEDULED_SERVICE_PENDING');
+ assert.equal(q.municipality,'Chía');assert.equal(q.assignedStoreId,'HUB_SUBA');assert.equal(q.scheduledEligible,true);
  assert.equal(resolveTerritorialAssignment({municipality:'San Mateo',locality:'Usaquén'}).status,'OUT_OF_COVERAGE');
 });
 test('Sumapaz stays excluded (structured territorial fixture, no fabricated coordinates)',()=>assert.equal(resolveTerritorialAssignment({municipality:'Bogotá',locality:'Sumapaz'}).status,'OUT_OF_COVERAGE'));
@@ -67,8 +67,8 @@ test('Full slot has separate rejection and free alternatives',()=>{
  assert.equal(q2.scheduledSlots[0].availableCapacity,10);
 });
 test('A rejection does not survive the next destination',()=>{
- const bad=fixtures.find(f=>f.name==='Chia')!;
- assert.equal(evaluateDeliveryQuote({destination:enrichDestination({address:bad.address,coordinates:bad.coordinates})}).reasonCode,'SCHEDULED_SERVICE_PENDING');
+ const bad={address:'Carrera 5 #12-14, Cota',coordinates:{lat:4.809501,lng:-74.101627}};
+ assert.equal(evaluateDeliveryQuote({destination:enrichDestination({address:bad.address,coordinates:bad.coordinates})}).reasonCode,'TERRITORY_OUT_OF_COVERAGE');
  assert.equal(evaluateDeliveryQuote({destination:destination(),requestedMode:'PROGRAMADO'}).scheduledEligible,true);
 });
 test('Point in polygon respects holes and longitude latitude order',()=>{

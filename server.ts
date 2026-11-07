@@ -448,6 +448,7 @@ async function startServer() {
               (!scheduledWindow.slotId || slot.slotId === scheduledWindow.slotId) &&
               (!scheduledWindow.startTime || slot.startTime === scheduledWindow.startTime) &&
               (!scheduledWindow.windowId || slot.windowId === scheduledWindow.windowId));
+            if(!canonicalSlot || canonicalSlot.cutoffPassed || canonicalSlot.availableCapacity<=0) return res.status(400).json({code:'SLOT_CAPACITY_EXCEEDED',error:'La franja seleccionada ya no está disponible. Elige otra franja.'});
             Object.assign(scheduledWindow, canonicalSlot);
             const bookingVal = validateScheduledBooking(scheduledWindow);
             if (!bookingVal.valid) {

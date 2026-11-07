@@ -305,18 +305,14 @@ export default function App() {
   useEffect(() => {
     if (deliveryQuote) {
       const shouldBeScheduled =
+        deliveryQuote.effectiveMode === 'PROGRAMADO' ||
         deliveryQuote.autoSwitchedToScheduled ||
         deliveryQuote.recommendedMode === 'PROGRAMADO' ||
         (!deliveryQuote.availableModes.turbo && !deliveryQuote.availableModes.turboDividido && deliveryQuote.availableModes.scheduled);
 
       if (shouldBeScheduled) {
         setSelectedDeliveryMode('PROGRAMADO');
-        if (!selectedScheduledWindow && deliveryQuote.scheduledSlots?.length) {
-          const firstValid = deliveryQuote.scheduledSlots.find(s => !s.cutoffPassed);
-          if (firstValid) {
-            setSelectedScheduledWindow(firstValid);
-          }
-        }
+
       } else if (deliveryQuote.recommendedMode) {
         setSelectedDeliveryMode(deliveryQuote.recommendedMode);
       }
@@ -396,6 +392,7 @@ export default function App() {
         );
         if(cancelled) return;
         setDeliveryQuote(q);
+        if(selectedScheduledWindow && !q.scheduledSlots.some(s=>s.slotId===selectedScheduledWindow.slotId && s.date===selectedScheduledWindow.date && !s.cutoffPassed && s.availableCapacity>0)) setSelectedScheduledWindow(null);
         if (!q.assignedStoreId) setCurrentStore(null);
         if (q.assignedStoreId) {
           const matchStore = stores.find(s => s.id === q.assignedStoreId);
@@ -420,6 +417,7 @@ export default function App() {
     setCustomerCoordinates(newCoords);
     setCustomerTerritory({municipality:newQuote.municipality,locality:newQuote.locality,neighborhood:newQuote.destination.neighborhood});
     setSelectedScheduledWindow(null);
+    setIsScheduledModalOpen(false);
     setDeliveryQuote(newQuote);
     setCoverageAlert(newQuote.eligibilityStatus==='OUT_OF_COVERAGE');
     if(!newQuote.assignedStoreId) setCurrentStore(null);
@@ -427,6 +425,7 @@ export default function App() {
     if(!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && !newQuote.availableModes.scheduled) {
       setSelectedDeliveryMode('PROGRAMADO');
       setCurrentStore(stores.find(s=>s.id===newQuote.assignedStoreId) || null);
+      if(newQuote.effectiveMode==='PROGRAMADO') setIsScheduledModalOpen(true);
       pushService.triggerNotification('Opciones de entrega pendientes',newQuote.message);
       return;
     }
@@ -440,16 +439,14 @@ export default function App() {
     }
 
     const shouldAutoSwitchToScheduled =
+      newQuote.effectiveMode === 'PROGRAMADO' ||
       newQuote.autoSwitchedToScheduled ||
       newQuote.recommendedMode === 'PROGRAMADO' ||
       (!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && newQuote.availableModes.scheduled);
 
     if (shouldAutoSwitchToScheduled) {
       setSelectedDeliveryMode('PROGRAMADO');
-      if (newQuote.scheduledSlots && newQuote.scheduledSlots.length > 0) {
-        const firstValid = newQuote.scheduledSlots.find(s => !s.cutoffPassed) || newQuote.scheduledSlots[0];
-        setSelectedScheduledWindow(firstValid);
-      }
+
       setIsScheduledModalOpen(true);
       pushService.triggerNotification(
         'Envío Programado Seleccionado',
@@ -1305,6 +1302,9 @@ export default function App() {
 
       {/* Scheduled Delivery Date and Slot Selection Modal */}
       <ScheduledDeliveryModal
+        key={`${customerAddress}|${customerCoordinates?.lat}|${customerCoordinates?.lng}`}
+        quote={deliveryQuote}
+        loading={!deliveryQuote}
         isOpen={isScheduledModalOpen}
         onClose={() => setIsScheduledModalOpen(false)}
         scheduledSlots={deliveryQuote?.scheduledSlots || []}
@@ -1313,8 +1313,8 @@ export default function App() {
           setSelectedScheduledWindow(slot);
           setSelectedDeliveryMode('PROGRAMADO');
           pushService.triggerNotification(
-            'Franja de Entrega Confirmada',
-            `Tu pedido llegará ${slot.dateLabel}, horario ${slot.displayWindowShort || slot.displayWindow}.`
+            'Franja seleccionada',
+            `${slot.dateLabel}, horario ${slot.displayWindowShort || slot.displayWindow}. Validaremos disponibilidad y costo al confirmar tu pedido.`
           );
         }}
         localityName={deliveryQuote?.locality || deliveryQuote?.municipality || 'Destino pendiente de identificar'}
