@@ -18,7 +18,7 @@ test('Cedritos resolves from official polygons even when locality incorrectly co
 for(const f of fixtures) test('Verified provider fixture: '+f.name,()=>{
  const d=enrichDestination({address:f.address,coordinates:f.coordinates});
  const q=evaluateDeliveryQuote({destination:d,requestedMode:'PROGRAMADO'},INITIAL_STORES,INITIAL_PRODUCTS);
- if(f.expectedStoreId){assert.equal(q.assignedStoreId,f.expectedStoreId);assert.equal(q.scheduledEligible,true);if(f.expectedLocality)assert.equal(q.locality,f.expectedLocality)}
+ if(f.expectedStoreId){assert.equal(q.assignedStoreId,f.expectedStoreId);assert.equal(q.scheduledEligible,!(f as any).expectedReason);if((f as any).expectedReason)assert.equal(q.reasonCode,(f as any).expectedReason);if(f.expectedLocality)assert.equal(q.locality,f.expectedLocality)}
  else {assert.equal(q.eligibilityStatus,'OUT_OF_COVERAGE');assert.equal(q.scheduledEligible,false)}
 });
 for(const [localities,storeId] of [[KENNEDY_LOCALITIES,'HUB_KENNEDY'],[ALAMOS_LOCALITIES,'HUB_ALAMOS'],[SUBA_LOCALITIES,'HUB_SUBA']] as const) {
@@ -39,13 +39,13 @@ test('Incomplete address and missing, transposed, NaN and infinite coordinates a
  assert.equal(evaluateDeliveryQuote({destination:{address:'Calle 150',coordinates:cedritos.coordinates}}).reasonCode,'ADDRESS_INCOMPLETE');
 });
 test('Unidentified locality is pending, not geographic rejection',()=>{
- assert.equal(evaluateDeliveryQuote({destination:{address:'Calle 150 #16-56',coordinates:cedritos.coordinates}}).reasonCode,'LOCALITY_NEEDS_CONFIRMATION');
+ assert.equal(evaluateDeliveryQuote({destination:{address:'Calle 150 #16-56',coordinates:cedritos.coordinates}}).reasonCode,'MUNICIPALITY_NEEDS_CONFIRMATION');
  assert.equal(resolveTerritorialAssignment({municipality:'Bogotá',locality:'Cedritos'}).status,'NEEDS_CONFIRMATION');
 });
 test('Street words do not enable Soacha or override verified geography',()=>{
  const f=fixtures.find(f=>f.name==='Chia')!;
  const q=evaluateDeliveryQuote({destination:enrichDestination({address:'Calle 11 #11-29, San Mateo, Cedritos, Bogotá',municipality:'Bogotá',locality:'Usaquén',coordinates:f.coordinates}),requestedMode:'PROGRAMADO'});
- assert.equal(q.eligibilityStatus,'OUT_OF_COVERAGE');
+ assert.equal(q.municipality,'Chía');assert.equal(q.reasonCode,'SCHEDULED_SERVICE_PENDING');
  assert.equal(resolveTerritorialAssignment({municipality:'San Mateo',locality:'Usaquén'}).status,'OUT_OF_COVERAGE');
 });
 test('Sumapaz stays excluded (structured territorial fixture, no fabricated coordinates)',()=>assert.equal(resolveTerritorialAssignment({municipality:'Bogotá',locality:'Sumapaz'}).status,'OUT_OF_COVERAGE'));
@@ -68,7 +68,7 @@ test('Full slot has separate rejection and free alternatives',()=>{
 });
 test('A rejection does not survive the next destination',()=>{
  const bad=fixtures.find(f=>f.name==='Chia')!;
- assert.equal(evaluateDeliveryQuote({destination:enrichDestination({address:bad.address,coordinates:bad.coordinates})}).eligibilityStatus,'OUT_OF_COVERAGE');
+ assert.equal(evaluateDeliveryQuote({destination:enrichDestination({address:bad.address,coordinates:bad.coordinates})}).reasonCode,'SCHEDULED_SERVICE_PENDING');
  assert.equal(evaluateDeliveryQuote({destination:destination(),requestedMode:'PROGRAMADO'}).scheduledEligible,true);
 });
 test('Point in polygon respects holes and longitude latitude order',()=>{

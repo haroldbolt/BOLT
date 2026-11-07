@@ -19,7 +19,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
   scheduledSlots,
   selectedSlotId,
   onSelectSlot,
-  localityName = 'Bogotá',
+  localityName = 'Destino pendiente de identificar',
   isAutoSwitched = true,
   address,
 }) => {
@@ -130,7 +130,7 @@ export const ScheduledDeliveryModal: React.FC<ScheduledDeliveryModalProps> = ({
                   Para esta dirección, continuamos con envío programado. Elige cuándo recibir tu pedido
                 </p>
                 <p className="text-blue-800 text-[11px] mt-0.5">
-                  {address ? `${address} · ` : ''}Localidad: <strong>{localityName}</strong>. Despacho seguro en camioneta o flota programada de Bogotá.
+                  {address ? `${address} · ` : ''}Zona: <strong>{localityName}</strong>. Entrega sujeta a la capacidad verificada de la flota programada.
                 </p>
               </div>
             </div>

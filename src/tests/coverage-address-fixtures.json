@@ -107,14 +107,15 @@
     "name": "Chia",
     "address": "Carrera 11 #11-29, Chía, Cundinamarca",
     "expectedLocality": "",
-    "expectedStoreId": null,
+    "expectedStoreId": "HUB_SUBA",
     "coordinates": {
       "lat": 4.861376,
       "lng": -74.060706
     },
     "formattedAddress": "Cra. 11 #11-29, Chía, Colombia",
-    "municipality": "Bogotá D.C.",
+    "municipality": "Chía",
     "status": "OK",
-    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates"
+    "source": "Google Maps Geocoding API, retrieved 2026-11-06; actual provider result, not synthetic coordinates",
+    "expectedReason": "SCHEDULED_SERVICE_PENDING"
   }
 ]

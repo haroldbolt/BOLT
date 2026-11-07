@@ -1,3 +1,4 @@
+import { COVERAGE_NOTICE } from './data/coverageConfig';
 import {PresentationProvider} from './components/customer/PresentationContext';
 import { saleVariant, salesCatalog } from './lib/variantCommerce';
 import { useGuestCart } from './components/customer/useGuestCart';
@@ -267,6 +268,7 @@ export default function App() {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(() => pushService.getUnreadCount());
 
   // Delivery Address & Authoritative Delivery Quote context
+  const [coverageAlert,setCoverageAlert]=useState(false);
   const [customerAddress, setCustomerAddress] = useState<string>('');
   const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('');
   const [customerCoordinates, setCustomerCoordinates] = useState<LatLng | undefined>();
@@ -394,6 +396,7 @@ export default function App() {
         );
         if(cancelled) return;
         setDeliveryQuote(q);
+        if (!q.assignedStoreId) setCurrentStore(null);
         if (q.assignedStoreId) {
           const matchStore = stores.find(s => s.id === q.assignedStoreId);
           if (matchStore) setCurrentStore(matchStore);
@@ -418,6 +421,15 @@ export default function App() {
     setCustomerTerritory({municipality:newQuote.municipality,locality:newQuote.locality,neighborhood:newQuote.destination.neighborhood});
     setSelectedScheduledWindow(null);
     setDeliveryQuote(newQuote);
+    setCoverageAlert(newQuote.eligibilityStatus==='OUT_OF_COVERAGE');
+    if(!newQuote.assignedStoreId) setCurrentStore(null);
+    if(newQuote.eligibilityStatus==='OUT_OF_COVERAGE') return;
+    if(!newQuote.availableModes.turbo && !newQuote.availableModes.turboDividido && !newQuote.availableModes.scheduled) {
+      setSelectedDeliveryMode('PROGRAMADO');
+      setCurrentStore(stores.find(s=>s.id===newQuote.assignedStoreId) || null);
+      pushService.triggerNotification('Opciones de entrega pendientes',newQuote.message);
+      return;
+    }
 
     // Automatic store assignment based on quote
     if (newQuote.assignedStoreId) {
@@ -1305,7 +1317,7 @@ export default function App() {
             `Tu pedido llegará ${slot.dateLabel}, horario ${slot.displayWindowShort || slot.displayWindow}.`
           );
         }}
-        localityName={deliveryQuote?.detectedLocalityName || 'Bogotá'}
+        localityName={deliveryQuote?.locality || deliveryQuote?.municipality || 'Destino pendiente de identificar'}
         isAutoSwitched={deliveryQuote?.autoSwitchedToScheduled}
         address={customerAddress}
       />
@@ -1323,6 +1335,7 @@ export default function App() {
 
       {/* Push Notification Real-Time Toast Banner */}
       <PushNotificationBanner
+        notice={coverageAlert ? {...COVERAGE_NOTICE,onDismiss:()=>setCoverageAlert(false),onAction:()=>{setCoverageAlert(false);setIsAddressModalOpen(true)}} : undefined}
         onNavigateToOrder={(orderId) => navigateTo(`/pedido/${orderId}`)}
       />
 

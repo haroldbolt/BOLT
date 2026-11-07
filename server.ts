@@ -1,3 +1,4 @@
+import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/coverageConfig';
 import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
@@ -19,7 +20,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, INITIAL_STORES } from './src/data/seedData';
 import { Order, Product, Store, DriverProfile, GPSTelemetry, OrderActor, ActorRole } from './src/types';
-import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking, generateScheduledSlots } from './src/lib/deliveryService';
+import { evaluateDeliveryQuote, DELIVERY_CONFIG, validateScheduledBooking, generateScheduledSlots } from './src/lib/deliveryService';
 import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
@@ -65,8 +66,9 @@ const catalogOperations = new CatalogOperations({file:path.join(process.cwd(),'.
 const transportRepository = new TransportRepository();
 function transportContext() { return {config:transportRepository.read().config,drivers:ordersRepository.getAllDrivers(),orders:ordersRepository.getAllOrders()}; }
 function quoteForPurchase(request: any) {
+  request={...request,destination:enrichDestination(request.destination)};
   const quote=evaluateDeliveryQuote(request,stores,products,ordersRepository.getAllOrders(),transportContext());
-  if(quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
+  if(quote.recommendedMode && quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
     destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
     charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,products.find(p=>p.id===i.productId)?.price]).sort(),
   })).digest('hex');
@@ -273,7 +275,7 @@ async function startServer() {
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
-    const quote=quoteForPurchase({...req.body, destination: enrichDestination(req.body.destination)});
+    const quote=quoteForPurchase(req.body);
     return res.json({...quote,warehouse:describeWarehouse(stores.find(store=>store.id===quote.assignedStoreId))});
   });
 
@@ -301,13 +303,14 @@ async function startServer() {
           .trim();
 
         const territory = parseAddressComponents(first.address_components);
-        const resolved = enrichDestination({...territory, coordinates: first.geometry?.location});
+        const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
 
         return res.json({
           address,
           formattedAddress: address,
           rawAddress: raw,
           municipality: resolved.municipality,
+          countryCode: resolved.countryCode,
           locality: resolved.locality,
           neighborhood: territory.neighborhood,
           status: 'OK',
@@ -330,7 +333,7 @@ async function startServer() {
 
     const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
     try {
-      const searchTarget = String(address).toLowerCase().includes('bogot') ? String(address) : `${address}, Bogotá, Colombia`;
+      const searchTarget = String(address); // Country bias only; never append a municipality.
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchTarget)}&key=${apiKey}&components=country:CO&language=es&region=co`
       );
@@ -353,6 +356,7 @@ async function startServer() {
           coordinates: location ? { lat: Number(location.lat.toFixed(6)), lng: Number(location.lng.toFixed(6)) } : null,
           formattedAddress: formatted,
           municipality: resolved.municipality,
+          countryCode: resolved.countryCode,
           locality: resolved.locality,
           neighborhood: territory.neighborhood,
           status: 'OK',
@@ -1249,6 +1253,12 @@ async function startServer() {
     if(!result.success) return res.status(400).json({error:result.error});
     res.json({product:result.product});
   });
+
+  // Read-only administrative view. Configuration changes require a reviewed repository change.
+  app.get('/api/v1/admin/coverage', requireAdminAuth, (_req,res)=>res.json({
+    municipalities:COVERAGE_MUNICIPALITIES.map(m=>({...m,scheduledServiceReady:scheduledServiceReady(m.scheduledService)})),
+    configurationSource:'src/data/coverageConfig.ts',
+  }));
 
   app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
     const { q, category, status } = req.query;
