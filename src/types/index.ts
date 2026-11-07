@@ -74,6 +74,8 @@ export interface Product {
   unitPriceText?: string;
   image: string;
   gallery?: string[];
+  /** Image-only overrides, keyed by existing variant ID; never commercial data. */
+  variantImages?: Record<string, string>;
   description: string;
   authorizedInfo?: string;
   stockByStore: Record<string, number>;
