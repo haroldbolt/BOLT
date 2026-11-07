@@ -1,6 +1,7 @@
 import React from 'react';
 import { X, Trash2, Plus, Minus, FileText, ArrowRight, ShoppingBag, ShieldAlert, ShieldCheck } from 'lucide-react';
 import { CartItem, Product, Store } from '../../types';
+import { CartReference, cartReferenceKey } from '../../lib/guestCart';
 import { formatCOP } from '../../lib/formatters';
 
 interface CartDrawerProps {
@@ -11,6 +12,12 @@ interface CartDrawerProps {
   onClearCart: () => void;
   onProceedToCheckout: () => void;
   currentStore: Store;
+  unavailableItems?: CartReference[];
+  onRemoveUnavailable?: (ref: CartReference) => void;
+  pendingCount?: number;
+  blockReason?: string;
+  deliveryMessage?: string;
+  onRefreshCatalog?: () => void;
 }
 
 export const CartDrawer: React.FC<CartDrawerProps> = ({
@@ -21,6 +28,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClearCart,
   onProceedToCheckout,
   currentStore,
+  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, deliveryMessage, onRefreshCatalog,
 }) => {
   if (!isOpen) return null;
 
@@ -34,7 +42,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const exceedsWeight = totalWeightKg > currentStore.vehicleMaxWeightKg;
 
   return (
-    <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
+    <div role="dialog" aria-modal="true" aria-label="Mi carrito" className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
       <div className="bg-white w-full max-w-md h-full flex flex-col justify-between shadow-2xl animate-in slide-in-from-right duration-200">
         {/* Header */}
         <div className="p-4 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
@@ -42,11 +50,11 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
             <ShoppingBag className="w-5 h-5 text-red-600" />
             <h3 className="font-extrabold text-slate-900 text-base">Mi Carrito Bolt Pets</h3>
             <span className="text-xs bg-red-100 text-red-700 font-bold px-2 py-0.5 rounded-full">
-              {cartItems.reduce((a, b) => a + b.quantity, 0)} items
+              {pendingCount ?? (cartItems.reduce((a, b) => a + b.quantity, 0) + unavailableItems.reduce((a, b) => a + b.quantity, 0))} items
             </span>
           </div>
           <button
-            onClick={onClose}
+            aria-label="Cerrar carrito" onClick={onClose}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
           >
             <X className="w-4 h-4" />
@@ -55,7 +63,16 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Item List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {cartItems.length === 0 ? (
+          {(blockReason || deliveryMessage) && <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-950">
+            <p>{blockReason || deliveryMessage}</p>
+            <button className="mt-2 font-bold underline" onClick={onRefreshCatalog}>Actualizar precio y disponibilidad</button>
+          </div>}
+          {unavailableItems.map((item, index) => <div key={cartReferenceKey(item)} className="rounded-2xl border border-amber-200 p-3 text-sm">
+            <p className="font-bold">Presentación guardada no disponible ({index + 1})</p>
+            <p>Ya no aparece en el catálogo. Cantidad guardada: {item.quantity}. No la hemos sustituido.</p>
+            <button className="mt-2 font-bold text-red-600 underline" onClick={() => onRemoveUnavailable?.(item)}>Eliminar presentación no disponible {index + 1}</button>
+          </div>)}
+          {cartItems.length === 0 && unavailableItems.length === 0 && !blockReason ? (
             <div className="h-full flex flex-col items-center justify-center text-center p-6 text-slate-400 space-y-3">
               <div className="w-16 h-16 rounded-full bg-slate-100 flex items-center justify-center text-slate-400">
                 <ShoppingBag className="w-8 h-8" />
@@ -171,7 +188,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
             <button
               onClick={onProceedToCheckout}
-              disabled={exceedsWeight}
+              disabled={exceedsWeight || !!blockReason}
               className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 active:scale-98 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition"
             >
               <span>Continuar con el pedido</span>

@@ -46,7 +46,7 @@ export const api = {
     }
   },
 
-  async getCatalog(params?: { category?: string; species?: string; q?: string; storeId?: string }): Promise<Product[]> {
+  async getCatalog(params?: { category?: string; species?: string; q?: string; storeId?: string }, options?: { requireServer?: boolean }): Promise<Product[]> {
     try {
       const url = new URL(`${window.location.origin}${BASE_URL}/catalog`);
       if (params?.category) url.searchParams.append('category', params.category);
@@ -54,10 +54,13 @@ export const api = {
       if (params?.q) url.searchParams.append('q', params.q);
       if (params?.storeId) url.searchParams.append('storeId', params.storeId);
 
-      const res = await fetch(url.toString());
+      const res = await fetch(url.toString(), { cache: 'no-store' });
       if (!res.ok) throw new Error('Error al cargar catálogo');
-      return await res.json();
-    } catch {
+      const catalog = await res.json();
+      if (!Array.isArray(catalog)) throw new Error('Catálogo inválido');
+      return catalog;
+    } catch (error) {
+      if (options?.requireServer) throw error;
       return INITIAL_PRODUCTS;
     }
   },

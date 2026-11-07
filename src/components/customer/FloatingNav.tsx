@@ -10,6 +10,7 @@ interface FloatingNavProps {
   onTriggerSearch: () => void;
   cartCount: number;
   cartTotal: number;
+  cartTotalPending?: boolean;
   onOpenCart: () => void;
   wishlistCount?: number;
 }
@@ -20,6 +21,7 @@ export const FloatingNav: React.FC<FloatingNavProps> = ({
   onTriggerSearch,
   cartCount,
   cartTotal,
+  cartTotalPending,
   onOpenCart,
   wishlistCount = 0,
 }) => {
@@ -39,7 +41,7 @@ export const FloatingNav: React.FC<FloatingNavProps> = ({
               <span className="font-extrabold text-sm tracking-tight">Ver carrito</span>
             </div>
             <div className="flex items-center gap-2">
-              <span className="font-black text-sm">{formatCOP(cartTotal)}</span>
+              <span className="font-black text-sm">{cartTotalPending ? 'Por confirmar' : formatCOP(cartTotal)}</span>
               <span className="text-yellow-300 text-xs">➔</span>
             </div>
           </div>
