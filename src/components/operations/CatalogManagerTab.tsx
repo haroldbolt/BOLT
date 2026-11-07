@@ -1,3 +1,4 @@
+import { saleVariant } from '../../lib/variantCommerce';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
   Search, Plus, Filter, Edit3, Image as ImageIcon, CheckCircle2,
@@ -39,6 +40,8 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
   // Quick Price & Stock Modal
   const [isQuickPricingOpen, setIsQuickPricingOpen] = useState(false);
   const [quickProduct, setQuickProduct] = useState<Product | null>(null);
+  const [configuredStores,setConfiguredStores]=useState<Store[]>([]);
+  const [quickVariantId,setQuickVariantId]=useState('');
   const [quickPrice, setQuickPrice] = useState<number>(0);
   const [quickStock, setQuickStock] = useState<Record<string, number>>({});
 
@@ -61,6 +64,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
     try {
       const data = await api.getAdminCatalog();
       setProducts(data);
+      setConfiguredStores(await api.getStores());
     } catch (err: any) {
       if (err.message?.includes('token') || err.message?.includes('denegado') || err.message?.includes('autorizado')) {
         onOpenAuthModal();
@@ -98,6 +102,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
   // Open Quick Price & Stock Modal
   const handleOpenQuickPricing = (product: Product) => {
     setQuickProduct(product);
+    setQuickVariantId(product.presentaciones?.[0]?.varianteId||product.id);
     setQuickPrice(product.price);
     setQuickStock({ ...(product.stockByStore || {}) });
     setIsQuickPricingOpen(true);
@@ -107,8 +112,10 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
     if (!quickProduct) return;
     try {
       const updated = await api.updateVariantPriceStock(quickProduct.id, {
+        variantId:quickVariantId,
+        expectedRevision:saleVariant(quickProduct,quickVariantId).commerceRevision,
         priceCOP: quickPrice,
-        stockByStore: quickStock,
+        stockByStore:Object.fromEntries(Object.entries(quickStock).filter(([id])=>configuredStores.some(s=>s.id===id&&s.isActive&&(saleVariant(quickProduct,quickVariantId).bodegaIds||[]).some(b=>b===s.id||b===s.shopifyLocationGid)))),
       });
       setProducts(prev => prev.map(p => p.id === quickProduct.id ? updated : p));
       setIsQuickPricingOpen(false);
@@ -452,9 +459,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
               className="bg-slate-50 border border-slate-200 text-slate-700 text-xs font-semibold px-3 py-2.5 rounded-xl focus:outline-none focus:ring-2 focus:ring-red-600 cursor-pointer"
             >
               <option value="ALL">Stock: Cualquier Sede</option>
-              <option value="HUB_KENNEDY">Con Stock en Kennedy</option>
-              <option value="HUB_ALAMOS">Con Stock en Álamos</option>
-              <option value="HUB_SUBA">Con Stock en Suba</option>
+              {configuredStores.filter(s=>s.isActive).map(s=><option key={s.id} value={s.id}>Con stock en {s.customerName||s.name}</option>)}
             </select>
           </div>
         </div>
@@ -494,7 +499,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                   <th className="p-3.5">SKU & Registro</th>
                   <th className="p-3.5">Categoría</th>
                   <th className="p-3.5">Precio COP</th>
-                  <th className="p-3.5">Stock por Sede (K / A / S)</th>
+                  <th className="p-3.5">Stock por sede · presentación principal</th>
                   <th className="p-3.5">Estado</th>
                   <th className="p-3.5 text-right">Acciones</th>
                 </tr>
@@ -502,10 +507,8 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
               <tbody className="divide-y divide-slate-100 font-medium text-slate-700">
                 {filteredProducts.slice(0, 50).map(product => {
                   const isActive = (product.status || 'ACTIVE') === 'ACTIVE';
-                  const kStock = product.stockByStore?.['HUB_KENNEDY'] || 0;
-                  const aStock = product.stockByStore?.['HUB_ALAMOS'] || 0;
-                  const sStock = product.stockByStore?.['HUB_SUBA'] || 0;
-                  const totalStock = kStock + aStock + sStock;
+                  const associatedStores=configuredStores.filter(s=>s.isActive&&(product.presentaciones?.[0]?.bodegaIds||product.bodegaIds||[]).some(b=>b===s.id||b===s.shopifyLocationGid));
+                  const totalStock=associatedStores.reduce((n,s)=>n+(product.stockByStore[s.id]||0),0);
 
                   return (
                     <tr key={product.id} className="hover:bg-slate-50/80 transition">
@@ -584,16 +587,8 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
 
                       {/* Stock by store */}
                       <td className="p-3.5">
-                        <div className="flex items-center gap-1.5 font-mono text-[11px]">
-                          <span className={`px-1.5 py-0.5 rounded font-bold ${kStock > 2 ? 'bg-emerald-50 text-emerald-700' : kStock > 0 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`} title="Kennedy">
-                            K: {kStock}
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded font-bold ${aStock > 2 ? 'bg-emerald-50 text-emerald-700' : aStock > 0 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`} title="Álamos">
-                            A: {aStock}
-                          </span>
-                          <span className={`px-1.5 py-0.5 rounded font-bold ${sStock > 2 ? 'bg-emerald-50 text-emerald-700' : sStock > 0 ? 'bg-amber-50 text-amber-700' : 'bg-rose-50 text-rose-700'}`} title="Suba">
-                            S: {sStock}
-                          </span>
+                        <div className="flex flex-wrap items-center gap-1.5 font-mono text-[11px]">
+                          {associatedStores.map(store=><span key={store.id} className="px-1.5 py-0.5 rounded bg-slate-50" title={store.name}>{store.customerName||store.name}: {product.stockByStore[store.id]||0}</span>)}
                         </div>
                         <span className="text-[10px] text-slate-400 block mt-0.5">
                           Total: <strong>{totalStock}</strong> un.
@@ -678,6 +673,11 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
             </div>
 
             <div className="p-6 space-y-4">
+              <label className="block text-xs font-bold text-slate-700">Presentación
+                <select aria-label="Presentación a editar" className="mt-2 w-full p-2 border rounded-xl" value={quickVariantId} onChange={e=>{setQuickVariantId(e.target.value);const v=saleVariant(quickProduct,e.target.value);setQuickPrice(v.price);setQuickStock({...v.stockByStore});}}>
+                  {quickProduct.presentaciones?.map(v=><option key={v.varianteId} value={v.varianteId}>{v.nombre} — {v.sku||'Sin SKU'}</option>)}
+                </select>
+              </label>
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-1">
                   Precio de Venta en COP
@@ -696,36 +696,13 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
 
               <div>
                 <label className="block text-xs font-bold text-slate-700 mb-2">
-                  Existencias Disponibles por Bodega
+                  Existencias por bodega (incluyen reservas)
                 </label>
-                <div className="grid grid-cols-3 gap-2.5">
-                  <div>
-                    <span className="block text-[11px] font-bold text-slate-600 mb-1">Kennedy</span>
-                    <input
-                      type="number"
-                      value={quickStock['HUB_KENNEDY'] ?? 0}
-                      onChange={e => setQuickStock({ ...quickStock, HUB_KENNEDY: Math.max(0, parseInt(e.target.value) || 0) })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-600"
-                    />
-                  </div>
-                  <div>
-                    <span className="block text-[11px] font-bold text-slate-600 mb-1">Álamos</span>
-                    <input
-                      type="number"
-                      value={quickStock['HUB_ALAMOS'] ?? 0}
-                      onChange={e => setQuickStock({ ...quickStock, HUB_ALAMOS: Math.max(0, parseInt(e.target.value) || 0) })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-600"
-                    />
-                  </div>
-                  <div>
-                    <span className="block text-[11px] font-bold text-slate-600 mb-1">Suba</span>
-                    <input
-                      type="number"
-                      value={quickStock['HUB_SUBA'] ?? 0}
-                      onChange={e => setQuickStock({ ...quickStock, HUB_SUBA: Math.max(0, parseInt(e.target.value) || 0) })}
-                      className="w-full px-3 py-2 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-600"
-                    />
-                  </div>
+                <div className="grid grid-cols-2 gap-2.5">
+                  {configuredStores.filter(s=>s.isActive&&(saleVariant(quickProduct,quickVariantId).bodegaIds||[]).some(b=>b===s.id||b===s.shopifyLocationGid)).map(store=><label key={store.id} className="text-xs text-slate-600">{store.customerName||store.name}
+                    <input aria-label={'Existencia '+store.name} type="number" className="w-full px-3 py-2 border rounded-xl" value={quickStock[store.id]??0} onChange={e=>setQuickStock({...quickStock,[store.id]:Number(e.target.value)})}/>
+                    <span>Reservadas: {saleVariant(quickProduct,quickVariantId).reservedStockByStore[store.id]||0} · Disponibles: {(quickStock[store.id]||0)-(saleVariant(quickProduct,quickVariantId).reservedStockByStore[store.id]||0)}</span>
+                  </label>)}
                 </div>
               </div>
 

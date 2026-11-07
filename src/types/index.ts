@@ -32,6 +32,10 @@ export interface ProductLot {
 }
 
 export interface ProductPresentation {
+  price?: number;
+  stockByStore?: Record<string, number>;
+  reservedStockByStore?: Record<string, number>;
+  commerceRevision?: string;
   varianteId: string;
   nombre: string;
   sku: string;
@@ -40,6 +44,9 @@ export interface ProductPresentation {
 }
 
 export interface Product {
+  parentProductId?: string;
+  variantId?: string;
+  commerceRevision?: string;
   id: string;
   productoId?: string;
   sku: string;

@@ -1,3 +1,4 @@
+import { saleVariant, salesCatalog } from './lib/variantCommerce';
 import React, { useState, useEffect, useMemo } from 'react';
 import { Header } from './components/customer/Header';
 import { CampaignBanner } from './components/customer/CampaignBanner';
@@ -344,7 +345,11 @@ export default function App() {
           api.getOrders(),
         ]);
         if (loadedStores.length) setStores(loadedStores);
-        if (loadedProducts.length) setProducts(loadedProducts);
+        if (loadedProducts.length) {
+          setProducts(loadedProducts);
+          const current=salesCatalog(loadedProducts);
+          setCartItems(previous=>previous.map(item=>({...item,product:current.find(p=>p.id===item.product.id)||item.product})));
+        }
         if (loadedOrders.length) setOrders(loadedOrders);
       } catch (e) {
         console.error('Error fetching initial app data:', e);
@@ -452,6 +457,7 @@ export default function App() {
   }, [cartItems]);
 
   const handleAddToCart = (product: Product) => {
+    if(!product.variantId) product = saleVariant(product);
     setCartItems(prev => {
       const existing = prev.find(i => i.product.id === product.id);
       if (existing) {
@@ -1186,6 +1192,7 @@ export default function App() {
 
       {/* Product Detail Modal */}
       <ProductDetailModal
+        cartQuantities={cartQuantities}
         product={detailProduct}
         onClose={() => setDetailProduct(null)}
         quantityInCart={detailProduct ? (cartQuantities[detailProduct.id] || 0) : 0}

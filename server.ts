@@ -1,3 +1,5 @@
+import { CatalogOperations } from './src/lib/catalogOperations';
+import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
 import { describeWarehouse } from './src/lib/warehouseAssignment';
 import { enrichDestination } from './src/lib/serverGeography';
 import { parseAddressComponents } from './src/lib/addressGeography';
@@ -57,12 +59,15 @@ console.log(`[Inventario Privado] ${privateInventoryStatus.message} Se utiliza e
 let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
+const catalogOperations = new CatalogOperations({file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),products:()=>catalogRepository.getAllProducts(true),stores:()=>stores,orders:()=>ordersRepository.getAllOrders()});
 async function startServer() {
+  acquireCatalogWriterLock();
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
   app.use(cors());
   app.use(express.json({ limit: '15mb' }));
+  app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
   app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
 
   // Función para validar encabezados binarios y guardar imagen en public/uploads/catalog
@@ -205,8 +210,7 @@ async function startServer() {
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
     const { category, species, storeId, q, all } = req.query;
-    products = catalogRepository.getAllProducts(true);
-    let filtered = [...products];
+    let filtered = catalogOperations.getProducts();
 
     // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
     if (all !== 'true') {
@@ -362,7 +366,7 @@ async function startServer() {
       }
       const {
         storeId,
-        items,
+        items: submittedItems,
         customer,
         deliveryAddress: rawDeliveryAddress,
         paymentMethod,
@@ -371,6 +375,16 @@ async function startServer() {
         scheduledWindow,
       } = req.body;
 
+      if(!Array.isArray(submittedItems)||!submittedItems.length) return res.status(400).json({error:'Carrito vacío'});
+      const canonicalItems=new Map<string,any>();
+      for(const item of submittedItems) {
+        const p=products.find(p=>p.id===item.productId);
+        if(!p || p.status && p.status!=='ACTIVE' || !Number.isSafeInteger(item.quantity) || item.quantity<1) return res.status(400).json({error:'Variante o cantidad inválida'});
+        if(!Number.isFinite(p.price)||p.price<=0 || item.price!==p.price) return res.status(409).json({code:'PRICE_CHANGED',error:'El precio cambió o está pendiente. Actualiza el carrito y confirma nuevamente.'});
+        const existing=canonicalItems.get(p.id);
+        canonicalItems.set(p.id,{...item,productId:p.id,sku:p.sku,name:p.name,brand:p.brand,presentation:p.presentation,image:p.image,price:p.price,weightKg:p.weightKg,requiresPrescription:p.requiresPrescription,quantity:(existing?.quantity||0)+item.quantity});
+      }
+      const items=Array.from(canonicalItems.values());
       const deliveryAddress = enrichDestination(rawDeliveryAddress);
       if (!items || !items.length || !customer || !deliveryAddress || !paymentMethod) {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
@@ -462,6 +476,7 @@ async function startServer() {
         if (prod.price <= 0) {
           return res.status(400).json({ error: `El producto "${prod.name}" es del catálogo referencial y no está habilitado para compra directa en línea.` });
         }
+        if(prod.bodegaIds && !prod.bodegaIds.includes(assignedStore.id) && !prod.bodegaIds.includes(assignedStore.shopifyLocationGid||'')) return res.status(400).json({error:'Variante no asociada a la sede'});
         const currentStock = prod.stockByStore[assignedStoreId] || 0;
         const currentReserved = prod.reservedStockByStore[assignedStoreId] || 0;
         const availableToSell = currentStock - currentReserved;
@@ -474,12 +489,7 @@ async function startServer() {
         }
       }
 
-      // Apply reservation
-      for (const item of items) {
-        const prod = products.find(p => p.id === item.productId || p.productoId === item.productId || p.sku === item.productId)!;
-        prod.reservedStockByStore[assignedStoreId] = (prod.reservedStockByStore[assignedStoreId] || 0) + item.quantity;
-      }
-
+      // OrdersRepository reserves once, then the persisted order drives the inventory projection.
       const hasPrescriptionItem = items.some((i: any) => i.requiresPrescription);
       const subtotal = items.reduce((acc: number, curr: any) => acc + (curr.price * curr.quantity), 0);
       const totalWeightKg = items.reduce((acc: number, curr: any) => acc + ((curr.weightKg || 0.2) * curr.quantity), 0);
@@ -1144,52 +1154,9 @@ async function startServer() {
     res.json(shopifyService.getState());
   });
 
-  app.post('/api/v1/shopify/sync', async (_req: Request, res: Response) => {
-    try {
-      const state = await shopifyService.triggerReconciliation();
-      res.json({
-        message: 'Conciliación de inventario con Shopify (Agrocentro Pets) completada exitosamente',
-        state,
-      });
-    } catch (e: any) {
-      res.status(500).json({ error: e.message || 'Error en conciliación de inventario con Shopify' });
-    }
-  });
-
-  app.post('/api/v1/shopify/webhook', (req: Request, res: Response) => {
-    const topic = req.headers['x-shopify-topic'] || 'inventory_levels/update';
-    console.log(`[Shopify Webhook] Evento recibido: ${topic}`);
-    res.status(200).json({ received: true });
-  });
-
-  // Simulador de webhook de Shopify (inventory_levels/update) para pruebas operativas seguras
-  app.post('/api/v1/shopify/simulate-webhook', (req: Request, res: Response) => {
-    const { storeId, sku, newOnHand, committed = 0 } = req.body;
-    if (!storeId || !sku || typeof newOnHand !== 'number') {
-      return res.status(400).json({ error: 'Faltan parámetros requeridos (storeId, sku, newOnHand)' });
-    }
-
-    const result = shopifyService.updateLocationStock(storeId, sku, newOnHand, committed);
-    if (!result.success) {
-      return res.status(404).json({ error: result.error || 'No se pudo actualizar el inventario' });
-    }
-
-    // Actualizar también el catálogo en memoria de la sede para consistencia
-    const prod = products.find(p => p.sku === sku);
-    if (prod) {
-      prod.stockByStore[storeId] = Math.max(0, newOnHand - committed);
-    }
-
-    res.json({
-      message: `Webhook simulado exitosamente: Stock actualizado en ${storeId} para SKU ${sku}`,
-      item: result.item,
-      state: shopifyService.getState(),
-    });
-  });
-
-  // ==========================================
-  // RUTAS DE AUTENTICACIÓN Y SEGURIDAD ADMINISTRATIVA
-  // ==========================================
+  app.post('/api/v1/shopify/sync', requireAdminAuth, (_req,res)=>res.status(409).json({error:'Sincronización automática desactivada. Usa un lote explícito de lectura de precios.'}));
+  app.post('/api/v1/shopify/webhook', requireAdminAuth, (_req,res)=>res.status(409).json({error:'Sincronización automática desactivada. Usa un lote explícito de lectura de precios.'}));
+  app.post('/api/v1/shopify/simulate-webhook', requireAdminAuth, (_req,res)=>res.status(409).json({error:'Sincronización automática desactivada. Usa un lote explícito de lectura de precios.'}));
 
   app.get('/api/v1/auth/status', (req: Request, res: Response) => {
     const authHeader = req.headers.authorization;
@@ -1251,7 +1218,7 @@ async function startServer() {
 
   app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
     const { q, category, status } = req.query;
-    let all = catalogRepository.getAllProducts(true);
+    let all = catalogOperations.getProducts();
 
     if (status && status !== 'TODOS') {
       all = all.filter(p => (p.status || 'ACTIVE') === status);
@@ -1280,7 +1247,7 @@ async function startServer() {
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    products = catalogRepository.getAllProducts(true);
+    products = catalogOperations.getSalesProducts();
     res.status(201).json({
       message: 'Producto creado exitosamente.',
       product: result.product,
@@ -1289,14 +1256,20 @@ async function startServer() {
 
   app.put('/api/v1/admin/catalog/products/:id', requireAdminAuth, (req: Request, res: Response) => {
     const session = (req as any).adminSession;
-    const result = catalogRepository.updateProduct(req.params.id, req.body, {
+    const current=catalogOperations.getProducts().find(p=>p.id===req.params.id);
+    const metadata={...req.body};
+    for(const field of ['price','stockByStore','reservedStockByStore','presentaciones','commerceRevision']) {
+      if(metadata[field]!==undefined && JSON.stringify(metadata[field])!==JSON.stringify((current as any)?.[field])) return res.status(409).json({error:'Edita precio, existencias y presentación desde Precio/Stock por variante; recarga si los datos cambiaron.'});
+      delete metadata[field];
+    }
+    const result = catalogRepository.updateProduct(req.params.id, metadata, {
       email: session.email,
       name: session.name,
     });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    products = catalogRepository.getAllProducts(true);
+    products = catalogOperations.getSalesProducts();
     res.json({
       message: 'Producto actualizado exitosamente.',
       product: result.product,
@@ -1312,7 +1285,7 @@ async function startServer() {
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    products = catalogRepository.getAllProducts(true);
+    products = catalogOperations.getSalesProducts();
     res.json({
       message: `Estado del producto actualizado a ${result.newStatus}.`,
       product: result.product,
@@ -1320,22 +1293,22 @@ async function startServer() {
     });
   });
 
-  app.patch('/api/v1/admin/catalog/products/:id/pricing-stock', requireAdminAuth, (req: Request, res: Response) => {
-    const session = (req as any).adminSession;
-    const { variantId, priceCOP, stockByStore, presentationName } = req.body;
-    const result = catalogRepository.updateVariantPriceAndStock(
-      req.params.id,
-      { variantId, priceCOP, stockByStore, presentationName },
-      { email: session.email, name: session.name }
-    );
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-    products = catalogRepository.getAllProducts(true);
-    res.json({
-      message: 'Precio e inventario actualizados exitosamente.',
-      product: result.product,
-    });
+  app.patch('/api/v1/admin/catalog/products/:id/pricing-stock', requireAdminAuth, (req,res)=>{
+    try {const product=catalogOperations.edit(req.params.id,req.body,(req as any).adminSession);res.json({product});}
+    catch(error:any){res.status(409).json({error:error.message});}
+  });
+  app.get('/api/v1/admin/catalog/batches',requireAdminAuth,(_req,res)=>res.json(catalogOperations.listBatches()));
+  app.get('/api/v1/admin/catalog/batches/:id',requireAdminAuth,(req,res)=>{
+    try{res.json(catalogOperations.getBatch(req.params.id));}catch(e:any){res.status(404).json({error:e.message});}
+  });
+  app.post('/api/v1/admin/catalog/batches',requireAdminAuth,(req,res)=>{
+    try{res.json(catalogOperations.prepare(req.body.id,req.body.source,(req as any).adminSession,req.body.inventoryDelta??6));}catch(e:any){res.status(400).json({error:e.message});}
+  });
+  app.post('/api/v1/admin/catalog/batches/:id/apply',requireAdminAuth,(req,res)=>{
+    try{res.json(catalogOperations.apply(req.params.id,(req as any).adminSession,req.body.limit));}catch(e:any){res.status(409).json({error:e.message});}
+  });
+  app.post('/api/v1/admin/catalog/batches/:id/reverse',requireAdminAuth,(req,res)=>{
+    try{res.json(catalogOperations.reverse(req.params.id,(req as any).adminSession));}catch(e:any){res.status(409).json({error:e.message});}
   });
 
   app.post('/api/v1/admin/catalog/upload-image', requireAdminAuth, (req: Request, res: Response) => {
@@ -1356,7 +1329,7 @@ async function startServer() {
 
   app.get('/api/v1/admin/catalog/audit', requireAdminAuth, (req: Request, res: Response) => {
     const { productId } = req.query;
-    const logs = catalogRepository.getAuditLog(productId ? String(productId) : undefined);
+    const logs = [...catalogRepository.getAuditLog(productId ? String(productId) : undefined),...catalogOperations.getAuditLog().filter(a=>!productId||a.productId===productId)].sort((a,b)=>String(b.timestamp||b.at).localeCompare(String(a.timestamp||a.at)));
     res.json(logs);
   });
 
