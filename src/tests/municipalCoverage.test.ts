@@ -35,7 +35,7 @@ for(const f of [oldFixtures.find(f=>f.name==='Chia')!,fixtures[0]]) test(f.name+
  const policies=structuredClone(COVERAGE_MUNICIPALITIES);const policy=policies.find(p=>p.name===q.municipality)!;
  policy.scheduledService={routeReference:'SIMULACIÓN AISLADA, NO OPERATIVA',verifiedAt:new Date().toISOString(),weekdays:[0,1,2,3,4,5,6],windowIds:['HORARIO_2'],capacityPerWindow:2,pricing:{shipping:12300,freeShippingFrom:200000,serviceFee:1500}};
  const configured=evaluateDeliveryQuote({destination:enrichDestination({address:f.address,coordinates:f.coordinates}),items,requestedMode:'TURBO'},INITIAL_STORES,[product],[],context,policies);
- assert.equal(configured.recommendedMode,'PROGRAMADO');assert.equal(configured.basketValidated,true);assert.equal(configured.assignedStoreId,'HUB_SUBA');assert.equal(configured.charges?.shipping,12300);assert.ok(configured.scheduledSlots.every(s=>s.windowId==='HORARIO_2'));assert.equal(configured.availableModes.turbo,false);
+ assert.equal(configured.recommendedMode,'PROGRAMADO');assert.equal(configured.basketValidated,true);assert.equal(configured.assignedStoreId,'HUB_SUBA');assert.equal(configured.charges?.shipping,12300);assert.ok(configured.scheduledSlots.every(s=>s.windowId==='HORARIO_2' && s.maxCapacity===2 && s.availableCapacity===2));assert.equal(configured.availableModes.turbo,false);
  const noFleet=evaluateDeliveryQuote({destination:enrichDestination({address:f.address,coordinates:f.coordinates}),items,requestedMode:'PROGRAMADO'},INITIAL_STORES,[product],[],{...context,config:{...context.config,vehicles:[]}},policies);
  assert.equal(noFleet.basketValidated,false);assert.equal(noFleet.territoryInfo?.isCovered,true);
 });

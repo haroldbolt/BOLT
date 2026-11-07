@@ -1190,7 +1190,7 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
     const p = products.find(p=>p.id===item.productId || p.sku===item.productId || p.productoId===item.productId);
     return !p || !Number.isInteger(item.quantity) || item.quantity<=0 || (p.stockByStore[store?.id || ''] || 0)-(p.reservedStockByStore[store?.id || ''] || 0)<item.quantity;
   });
-  quote.scheduledSlots = quote.scheduledSlots.map(slot=>({...slot, availableCapacity: Math.max(0,(service?.capacityPerWindow ?? 10)-slotOrders.filter(o=>o.deliveryMode==='PROGRAMADO' && o.storeId===store?.id && o.status!=='CANCELADO' && o.fulfillmentStatus!=='CANCELADO' && o.scheduledWindow?.date===slot.date && (o.scheduledWindow.slotId===slot.slotId || o.scheduledWindow.startTime===slot.startTime)).length)}));
+  quote.scheduledSlots = quote.scheduledSlots.map(slot=>({...slot, maxCapacity:service?.capacityPerWindow ?? slot.maxCapacity, availableCapacity: Math.max(0,(service?.capacityPerWindow ?? 10)-slotOrders.filter(o=>o.deliveryMode==='PROGRAMADO' && o.storeId===store?.id && o.status!=='CANCELADO' && o.fulfillmentStatus!=='CANCELADO' && o.scheduledWindow?.date===slot.date && (o.scheduledWindow.slotId===slot.slotId || o.scheduledWindow.startTime===slot.startTime)).length)}));
   if(service && serviceReady) quote.scheduledSlots=quote.scheduledSlots.filter(slot=>service.windowIds.includes(slot.windowId) && service.weekdays.includes(new Date(slot.date+'T12:00:00Z').getUTCDay()));
   quote.scheduledEligible = serviceReady && !!store?.isActive && (!store.enabledModes || store.enabledModes.includes('PROGRAMADO')) && stockOK;
   quote.availableModes.scheduled = quote.scheduledEligible;
