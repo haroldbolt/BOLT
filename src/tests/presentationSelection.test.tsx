@@ -16,7 +16,7 @@ const product={id:'fixture-product',name:'Fixture alimento',price:30000,sku:'P',
 const quote={assignedStoreId:'A',basketValidated:true,recommendedMode:'PROGRAMADO',availableModes:{turbo:false,turboDividido:false,scheduled:true},eligibilityStatus:'SCHEDULED_ONLY',message:'Programado',reasonCode:'SCHEDULED'} as DeliveryQuote;
 let passed=0;const check=(name:string,fn:()=>void)=>{fn();passed++;console.log('PASS',name);};
 const a=selectedPresentation(product,'fixture-v1')!, b=selectedPresentation(product,'fixture-v2')!;
-check('Una presentación se muestra directamente y se selecciona sin ambigüedad',()=>assert.equal(selectedPresentation({...product,presentaciones:[product.presentaciones![0]]})!.variantId,'fixture-v1'));
+check('Una presentación se selecciona automáticamente sin cambiar su ID',()=>assert.equal(selectedPresentation({...product,presentaciones:[product.presentaciones![0]]})!.variantId,'fixture-v1'));
 check('Varias presentaciones: ninguna seleccionada inicialmente; ID inválido no cae a la primera',()=>{assert.equal(selectedPresentation(product),null);assert.equal(selectedPresentation(product,'invalid'),null);});
 check('Selección conserva ID contractual, SKU, presentación, precio, imagen y stock propios',()=>{assert.equal(a.id,'fixture-product');assert.equal(b.id,'fixture-v2');assert.equal(b.sku,'SALMON');assert.equal(b.presentation,'3 kg / Salmón');assert.equal(b.price,45000);assert.equal(b.image,'/salmon.jpg');assert.equal(b.stockByStore.A,2);});
 check('Igual peso con atributos diferentes mantiene ambas opciones',()=>{assert.equal(presentationLabel(product,'fixture-v1'),'3 kg / Pollo');assert.equal(presentationLabel(product,'fixture-v2'),'3 kg / Salmón');});
