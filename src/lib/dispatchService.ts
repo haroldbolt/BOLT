@@ -443,11 +443,11 @@ export class DispatchService {
       storeIds: a.storeIds,
       activeDispatchId: a.activeDispatchId,
       vehicle: this.deps.transport().vehicles.find((v) => v.driverId === id),
-      location: {
+      location: Date.parse(d.currentLocation.updatedAt)>0 ? {
         ...d.currentLocation,
         ageSeconds: age,
         stale: age > this.state.config.locationMaxAgeSeconds,
-      },
+      } : undefined,
       heartbeatStale:
         !a.heartbeatAt ||
         this.now() - a.heartbeatAt >

@@ -71,6 +71,7 @@ function setup(
       },
       "fixture-admin",
     );
+    assert.equal(service.profile(id).location,undefined,"No GPS sample must be shown as a pending location, not epoch coordinates");
     service.shift(id, "START");
     service.location(id, {
       latitude: store.coordinates.lat + offset,
