@@ -108,8 +108,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       {item.product.name}
                     </p>
                     <p className="text-[11px] text-slate-500">
-                      {item.product.presentation} • {(item.product.weightKg || 0.2) * item.quantity} Kg
+                      {item.product.presentation}
                     </p>
+                    <p className="text-[11px] text-slate-600">{formatCOP(item.product.price)} por unidad · Cantidad: {item.quantity}</p>
                     <p className="text-xs font-black text-slate-900 mt-1">
                       {formatCOP(item.product.price * item.quantity)}
                     </p>
@@ -117,7 +118,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
                   <div className="flex items-center gap-1.5 bg-slate-100 rounded-full p-1">
                     <button
-                      onClick={() => onUpdateQuantity(item.product, item.quantity - 1)}
+                      aria-label={`Quitar una unidad de ${item.product.presentation}`} onClick={() => onUpdateQuantity(item.product, item.quantity - 1)}
                       className="w-6 h-6 rounded-full bg-white flex items-center justify-center text-slate-700 shadow-xs hover:bg-slate-200 transition"
                     >
                       {item.quantity === 1 ? <Trash2 className="w-3 h-3 text-red-600" /> : <Minus className="w-3 h-3" />}
@@ -126,7 +127,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                       {item.quantity}
                     </span>
                     <button
-                      onClick={() => onUpdateQuantity(item.product, item.quantity + 1)}
+                      aria-label={`Agregar una unidad de ${item.product.presentation}`} onClick={() => onUpdateQuantity(item.product, item.quantity + 1)}
                       className="w-6 h-6 rounded-full bg-white flex items-center justify-center text-slate-700 shadow-xs hover:bg-slate-200 transition"
                     >
                       <Plus className="w-3 h-3" />

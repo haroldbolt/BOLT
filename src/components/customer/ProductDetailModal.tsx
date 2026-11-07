@@ -1,4 +1,6 @@
-import { saleVariant } from '../../lib/variantCommerce';
+import {PresentationSelector} from './PresentationSelector';
+import {usePresentation} from './PresentationContext';
+import {hasSalePrice} from '../../lib/presentationSelection';
 import React from 'react';
 import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
@@ -38,31 +40,13 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
 }) => {
 
 
-  const [selectedVariantId, setSelectedVariantId] = React.useState<string>(() => {
-    return product.presentaciones?.[0]?.varianteId || product.id;
-  });
-
-  React.useEffect(() => {
-    if (product.presentaciones?.[0]?.varianteId) {
-      setSelectedVariantId(product.presentaciones[0].varianteId);
-    }
-  }, [product.id]);
-
-  const currentVariant = React.useMemo(() => {
-    return product.presentaciones?.find(v => v.varianteId === selectedVariantId) || product.presentaciones?.[0];
-  }, [product.presentaciones, selectedVariantId]);
-
-  const selectedProduct = saleVariant(product, selectedVariantId);
-  const quantityInCart=cartQuantities?.[selectedProduct.id] ?? (selectedProduct.id===product.id?defaultQuantityInCart:0);
-  const displayImage = currentVariant?.foto || product.image;
-  const displayPresentation = currentVariant?.nombre || product.presentation;
-  const displaySku = currentVariant?.sku || product.sku;
-
-  const stock = selectedProduct.stockByStore[selectedStoreId] || 0;
-  const reserved = selectedProduct.reservedStockByStore[selectedStoreId] || 0;
-  const availableToSell = Math.max(0, stock - reserved);
-  const isReferenceOnly = selectedProduct.price <= 0;
-  const isOutOfStock = availableToSell <= 0 || isReferenceOnly;
+  const presentation = usePresentation(product);
+  const {selected: selectedProduct, availability, selectorRef, selectedId, select, focusSelector, quantity: quantityInCart} = presentation;
+  const displayImage = selectedProduct?.image || product.image;
+  const displayPresentation = selectedProduct?.presentation || 'Selecciona una presentación';
+  const displaySku = selectedProduct?.sku || 'No disponible';
+  const blocked = !!selectedProduct && !availability.canAdd;
+  const add = () => selectedProduct ? availability.canAdd && onAddToCart(selectedProduct) : focusSelector();
 
   return (
     <div className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex items-end sm:items-center justify-center p-0 sm:p-4 animate-in fade-in">
@@ -120,7 +104,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
           </span>
 
           <button
-            onClick={onClose}
+            aria-label="Cerrar ficha del producto" onClick={onClose}
             className="w-9 h-9 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-600 transition cursor-pointer"
           >
             <X className="w-5 h-5" />
@@ -136,9 +120,9 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
               alt={product.name}
               className="w-full h-full object-cover transition-all duration-300"
             />
-            {product.discountPercent && product.discountPercent > 0 && (
+            {selectedProduct?.discountPercent && selectedProduct?.discountPercent > 0 && (
               <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
-                -{product.discountPercent}% DESCUENTO
+                -{selectedProduct?.discountPercent}% DESCUENTO
               </span>
             )}
           </div>
@@ -148,9 +132,9 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
           <div>
             <div className="flex items-baseline gap-2">
               <span className="text-2xl font-black text-slate-900">
-                {selectedProduct.price > 0 ? formatCOP(selectedProduct.price) : 'Precio por confirmar'}
+                {!selectedProduct ? 'Selecciona una presentación' : hasSalePrice(selectedProduct) ? formatCOP(selectedProduct.price) : 'Precio por confirmar'}
               </span>
-              {selectedProduct.originalPrice && selectedProduct.originalPrice > selectedProduct.price && (
+              {selectedProduct?.originalPrice && selectedProduct.originalPrice > selectedProduct.price && (
                 <span className="text-sm text-slate-400 line-through font-semibold">
                   {formatCOP(selectedProduct.originalPrice)}
                 </span>
@@ -165,33 +149,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
               <span>SKU: <code className="bg-slate-100 px-1 py-0.5 rounded text-slate-700">{displaySku}</code></span>
             </div>
 
-            {/* Selector de presentaciones agrupadas */}
-            {product.presentaciones && product.presentaciones.length > 1 && (
-              <div className="mt-3 pt-3 border-t border-slate-100">
-                <p className="text-[11px] font-bold text-slate-700 mb-1.5">
-                  Presentaciones disponibles ({product.presentaciones.length}):
-                </p>
-                <div className="flex flex-wrap gap-1.5">
-                  {product.presentaciones.map((pres) => {
-                    const isPresSelected = pres.varianteId === selectedVariantId;
-                    return (
-                      <button
-                        key={pres.varianteId}
-                        type="button"
-                        onClick={() => setSelectedVariantId(pres.varianteId)}
-                        className={`px-3 py-1 text-xs font-bold rounded-xl transition border cursor-pointer ${
-                          isPresSelected
-                            ? 'bg-red-600 text-white border-red-600 shadow-xs'
-                            : 'bg-slate-50 hover:bg-slate-100 text-slate-700 border-slate-200'
-                        }`}
-                      >
-                        {pres.nombre}
-                      </button>
-                    );
-                  })}
-                </div>
-              </div>
-            )}
+            <PresentationSelector product={product} selectedId={selectedId} onSelect={select} selectorRef={selectorRef} />
           </div>
 
           {/* Recomendaciones de uso veterinario */}
@@ -255,37 +213,31 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
           {/* Bottom Action Bar */}
           <div className="pt-3 border-t border-slate-100 flex items-center justify-between gap-4">
             <div>
-              <p className="text-[11px] text-slate-500">Stock disponible:</p>
-              <p className="text-xs font-bold text-slate-800">
-                {isOutOfStock ? (
-                  <span className="text-red-600">Agotado</span>
-                ) : (
-                  <span className="text-emerald-700">{availableToSell} unidades en sede</span>
-                )}
-              </p>
+              <p role="status" className="text-xs font-semibold text-slate-600">{availability.message}</p>
+              {availability.message.includes('Reintenta') && <button type="button" onClick={presentation.retry} className="text-xs underline py-2">Reintentar entrega</button>}
             </div>
 
             {quantityInCart === 0 ? (
               <button
-                onClick={() => onAddToCart(selectedProduct)}
-                disabled={isOutOfStock}
+                onClick={add}
+                disabled={blocked}
                 className="flex-1 bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black py-3 rounded-2xl text-xs flex items-center justify-center gap-2 shadow-md shadow-red-500/30 transition cursor-pointer disabled:cursor-not-allowed"
               >
                 <Plus className="w-4 h-4" />
-                {isReferenceOnly ? 'Catálogo de referencia' : isOutOfStock ? 'Agotado en esta sede' : 'Agregar a mi pedido'}
+                {!selectedProduct ? 'Elegir presentación' : 'Agregar a mi pedido'}
               </button>
             ) : (
               <div className="flex items-center gap-3 bg-red-600 text-white rounded-2xl px-3 py-2 shadow-md">
                 <button
-                  onClick={() => onUpdateQuantity(selectedProduct, quantityInCart - 1)}
+                  aria-label="Quitar una unidad" onClick={() => selectedProduct && onUpdateQuantity(selectedProduct, quantityInCart - 1)}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 flex items-center justify-center transition"
                 >
                   <Minus className="w-4 h-4" />
                 </button>
                 <span className="font-black text-sm px-2">{quantityInCart}</span>
                 <button
-                  onClick={() => onUpdateQuantity(selectedProduct, quantityInCart + 1)}
-                  disabled={quantityInCart >= availableToSell}
+                  aria-label="Agregar una unidad" onClick={add}
+                  disabled={blocked}
                   className="w-8 h-8 rounded-xl bg-red-700 hover:bg-red-800 disabled:opacity-50 flex items-center justify-center transition"
                 >
                   <Plus className="w-4 h-4" />
