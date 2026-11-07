@@ -2,7 +2,8 @@ import React, {useId} from 'react';
 import type {Product} from '../../types';
 import {formatCOP} from '../../lib/formatters';
 import {saleVariant} from '../../lib/variantCommerce';
-import {hasSalePrice, presentationLabel} from '../../lib/presentationSelection';
+import {hasSalePrice} from '../../lib/presentationSelection';
+import {presentationChip} from '../../lib/presentationDisplay';
 import {optionStock} from '../../lib/catalogPurchase';
 
 export function PresentationSelector({product, selectedId, onSelect, selectorRef, storeId, disabled=false}: {
@@ -15,15 +16,17 @@ export function PresentationSelector({product, selectedId, onSelect, selectorRef
     <legend className="text-[11px] font-bold text-slate-600 mb-1.5">Presentación</legend>
       <div className="flex flex-wrap gap-1.5">
         {!variants.length && <span className={chipClass(!!product.presentation)}>
-          <span className="block text-xs font-extrabold break-words">{product.presentation || 'Presentación por confirmar'}</span>
+          <span className="block text-xs font-extrabold break-words">{presentationChip(product).label}</span>
         </span>}
         {variants.map(v => {
           const sale = saleVariant(product,v.varianteId);
+          const chip = presentationChip(product,v.varianteId);
           const stock=optionStock(sale,storeId);
           const stockLabel=stock==='out' ? 'Agotado en esta sede' : stock==='unavailable' ? 'No disponible en esta sede' : '';
           return <label key={v.varianteId} className={`${chipClass(selectedId===v.varianteId)} cursor-pointer focus-within:ring-2 focus-within:ring-red-500 focus-within:ring-offset-2`}>
-            <input className="sr-only" type="radio" name={name} value={v.varianteId} checked={selectedId===v.varianteId} onChange={()=>onSelect(v.varianteId)} aria-label={`${presentationLabel(product,v.varianteId)}, ${hasSalePrice(sale) ? formatCOP(sale.price) : 'precio pendiente'}${stockLabel ? `, ${stockLabel}` : ''}`} />
-            <span className="block text-xs font-extrabold break-words">{presentationLabel(product,v.varianteId)}</span>
+            <input className="sr-only" type="radio" name={name} value={v.varianteId} checked={selectedId===v.varianteId} onChange={()=>onSelect(v.varianteId)} aria-label={`${chip.label}${chip.detail ? `, ${chip.detail}` : ''}, ${hasSalePrice(sale) ? formatCOP(sale.price) : 'precio pendiente'}${stockLabel ? `, ${stockLabel}` : ''}`} />
+            <span className="block text-xs font-extrabold break-words">{chip.label}</span>
+            {chip.detail && <span className="block text-[10px] leading-4 mt-0.5">{chip.detail}</span>}
             <span className="block text-[10px] leading-4 font-semibold mt-0.5">{hasSalePrice(sale) ? formatCOP(sale.price) : 'Precio pendiente'}</span>
             {stockLabel && <span className="block text-[10px] leading-4 text-red-700 mt-0.5">{stockLabel}</span>}
           </label>;
