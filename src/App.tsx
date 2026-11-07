@@ -1,6 +1,8 @@
 import {PresentationProvider} from './components/customer/PresentationContext';
 import { saleVariant, salesCatalog } from './lib/variantCommerce';
-import React, { useState, useEffect, useMemo } from 'react';
+import { useGuestCart } from './components/customer/useGuestCart';
+import { productReference } from './lib/guestCart';
+import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react';
 import { Header } from './components/customer/Header';
 import { CampaignBanner } from './components/customer/CampaignBanner';
 import { ProductCard } from './components/customer/ProductCard';
@@ -234,10 +236,29 @@ export default function App() {
   };
 
   // Cart state
-  const [cartItems, setCartItems] = useState<CartItem[]>([
-    { product: INITIAL_PRODUCTS[4], quantity: 1 }, // NexGard
-    { product: INITIAL_PRODUCTS[8], quantity: 1 }, // Churu
-  ]);
+  const [cartCatalog, setCartCatalog] = useState<Product[] | null>(null);
+  const [catalogLoading, setCatalogLoading] = useState(true);
+  const [catalogError, setCatalogError] = useState('');
+  const catalogRequest = useRef(0);
+  const { items: cartItems, unavailable: unavailableCartItems, references: cartReferences, warning: cartStorageWarning, store: guestCart } = useGuestCart(cartCatalog);
+  const cartBlockReason = catalogLoading ? 'Actualizando tu carrito con el catálogo vigente…' : catalogError ||
+    (unavailableCartItems.length ? 'Revisa las presentaciones que ya no están disponibles antes de continuar.' :
+    cartItems.some(item => !Number.isFinite(item.product.price) || item.product.price <= 0) ? 'Hay una presentación con precio pendiente de confirmar.' : '');
+  const refreshCatalog = useCallback(async () => {
+    const requestId = ++catalogRequest.current;
+    setCatalogLoading(true); setCatalogError('');
+    try {
+      const loaded = await api.getCatalog(undefined, { requireServer: true });
+      if (requestId !== catalogRequest.current) return false;
+      setProducts(loaded); setCartCatalog(loaded);
+      return true;
+    } catch {
+      if (requestId === catalogRequest.current) setCatalogError('No se pudo actualizar el catálogo. Tus selecciones siguen guardadas; reintenta para validar precio y disponibilidad.');
+      return false;
+    } finally {
+      if (requestId === catalogRequest.current) setCatalogLoading(false);
+    }
+  }, []);
   const [isCartOpen, setIsCartOpen] = useState(false);
   const [isCheckoutOpen, setIsCheckoutOpen] = useState(false);
   const [isOrderHistoryOpen, setIsOrderHistoryOpen] = useState(false);
@@ -336,33 +357,23 @@ export default function App() {
     };
   }, []);
 
-  // Fetch initial data
+  // Restore references only against a successful, current server catalog response.
   useEffect(() => {
-    const fetchInitial = async () => {
-      try {
-        const [loadedStores, loadedProducts, loadedOrders] = await Promise.all([
-          api.getStores(),
-          api.getCatalog(),
-          api.getOrders(),
-        ]);
-        if (loadedStores.length) setStores(loadedStores);
-        if (loadedProducts.length) {
-          setProducts(loadedProducts);
-          const current=salesCatalog(loadedProducts);
-          setCartItems(previous=>previous.map(item=>({...item,product:current.find(p=>p.id===item.product.id)||item.product})));
-        }
-        if (loadedOrders.length) setOrders(loadedOrders);
-      } catch (e) {
-        console.error('Error fetching initial app data:', e);
-      }
-    };
-    fetchInitial();
-  }, []);
+    let cancelled = false;
+    void refreshCatalog();
+    void Promise.all([api.getStores(), api.getOrders()]).then(([loadedStores, loadedOrders]) => {
+      if (cancelled) return;
+      if (loadedStores.length) setStores(loadedStores);
+      setOrders(loadedOrders);
+    }).catch(error => console.error('Error fetching initial app data:', error));
+    return () => { cancelled = true; catalogRequest.current++; };
+  }, [refreshCatalog]);
 
   // Re-evaluate delivery quote and update automatically assigned warehouse
   useEffect(() => {
     let cancelled = false;
     setDeliveryQuote(null);
+    if (catalogLoading || catalogError || unavailableCartItems.length) return;
     const fetchQuote = async () => {
       try {
         const q = await api.getDeliveryQuote(
@@ -392,7 +403,7 @@ export default function App() {
     };
     fetchQuote();
     return ()=>{cancelled=true};
-  }, [customerAddress, customerAddressDetails, customerCoordinates, customerTerritory, stores, products, cartItems, selectedDeliveryMode, selectedScheduledWindow]);
+  }, [customerAddress, customerAddressDetails, customerCoordinates, customerTerritory, stores, products, cartItems, selectedDeliveryMode, selectedScheduledWindow, catalogLoading, catalogError, unavailableCartItems]);
 
   const handleConfirmAddress = (
     newAddress: string,
@@ -454,28 +465,19 @@ export default function App() {
   }, [cartItems]);
 
   const cartCount = useMemo(() => {
-    return cartItems.reduce((acc, item) => acc + item.quantity, 0);
-  }, [cartItems]);
+    return cartReferences.reduce((acc, item) => acc + item.quantity, 0);
+  }, [cartReferences]);
 
   const handleAddToCart = (product: Product) => {
+    if (!cartCatalog || catalogLoading || catalogError) return;
     if (!product.variantId && (product.presentaciones?.length || 0)>1) { setDetailProduct(product); return; }
     if(!product.variantId) product = saleVariant(product);
     if(!Number.isFinite(product.price) || product.price<=0) return;
-    setCartItems(prev => {
-      const existing = prev.find(i => i.product.id === product.id);
-      if (existing) {
-        return prev.map(i => i.product.id === product.id ? { ...i, quantity: i.quantity + 1 } : i);
-      }
-      return [...prev, { product, quantity: 1 }];
-    });
+    guestCart.add(product);
   };
 
   const handleUpdateQuantity = (product: Product, newQuantity: number) => {
-    if (newQuantity <= 0) {
-      setCartItems(prev => prev.filter(i => i.product.id !== product.id));
-    } else {
-      setCartItems(prev => prev.map(i => i.product.id === product.id ? { ...i, quantity: newQuantity } : i));
-    }
+    guestCart.setQuantity(productReference(product, newQuantity), Math.max(0, newQuantity));
   };
 
   const handleToggleFavorite = (product: Product) => {
@@ -509,36 +511,11 @@ export default function App() {
   };
 
   const handleReorder = (order: Order) => {
+    const current = salesCatalog(cartCatalog || []);
     for (const item of order.items) {
-      const prod = products.find(p => p.id === item.productId) || {
-        id: item.productId,
-        sku: item.sku,
-        name: item.name,
-        brand: item.brand,
-        species: 'Perro',
-        category: 'Alimentos',
-        requiresPrescription: item.requiresPrescription,
-        storageCondition: 'TEMPERATURA_AMBIENTE',
-        temperatureColdChain: false,
-        price: item.price,
-        presentation: item.presentation,
-        weightKg: item.weightKg,
-        image: item.image,
-        description: item.name,
-        stockByStore: { [currentStore.id]: 20 },
-        reservedStockByStore: { [currentStore.id]: 0 },
-        rating: 5,
-        reviewsCount: 10,
-        tags: [],
-      };
-
-      setCartItems(prev => {
-        const existing = prev.find(i => i.product.id === prod.id);
-        if (existing) {
-          return prev.map(i => i.product.id === prod.id ? { ...i, quantity: i.quantity + item.quantity } : i);
-        }
-        return [...prev, { product: prod as Product, quantity: item.quantity }];
-      });
+      const product = current.find(p => p.id === item.productId);
+      // Missing historical references remain visible as unavailable; never substitute a variant.
+      guestCart.add(product || ({ id: item.productId } as Product), item.quantity);
     }
     setIsCartOpen(true);
   };
@@ -723,6 +700,14 @@ export default function App() {
       />
 
       {/* Main Content Container */}
+      {(cartStorageWarning || catalogError || (catalogLoading && cartCount > 0) || unavailableCartItems.length > 0) && (
+        <div role="status" className="mx-3 my-3 rounded-2xl border border-amber-200 bg-amber-50 p-3 text-sm text-amber-950">
+          {cartStorageWarning && <p>{cartStorageWarning}</p>}
+          {(catalogError || (catalogLoading && cartCount > 0) || unavailableCartItems.length > 0) && <p>{cartBlockReason}</p>}
+          {catalogError && <button className="mt-2 font-bold underline" onClick={() => void refreshCatalog()}>Reintentar carga del catálogo</button>}
+          {unavailableCartItems.length > 0 && <button className="mt-2 font-bold underline" onClick={() => setIsCartOpen(true)}>Revisar carrito</button>}
+        </div>
+      )}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 pl-safe pr-safe pt-3 space-y-4 pb-28 sm:pb-32">
         {/* If user selected Listas de Deseos tab */}
         {currentTab === 'deseos' ? (
@@ -1245,10 +1230,16 @@ export default function App() {
         onClose={() => setIsCartOpen(false)}
         cartItems={cartItems}
         onUpdateQuantity={handleUpdateQuantity}
-        onClearCart={() => setCartItems([])}
-        onProceedToCheckout={() => {
-          setIsCartOpen(false);
-          setIsCheckoutOpen(true);
+        onClearCart={guestCart.clear}
+        unavailableItems={unavailableCartItems}
+        onRemoveUnavailable={ref => guestCart.setQuantity(ref, 0)}
+        pendingCount={catalogLoading || catalogError ? cartCount : undefined}
+        blockReason={cartBlockReason}
+        deliveryMessage={cartItems.length > 0 && deliveryQuote && !deliveryQuote.basketValidated ? deliveryQuote.message : undefined}
+        onRefreshCatalog={() => void refreshCatalog()}
+        onProceedToCheckout={async () => {
+          if (cartBlockReason || !cartItems.length) return;
+          if (await refreshCatalog()) { setIsCartOpen(false); setIsCheckoutOpen(true); }
         }}
         currentStore={currentStore}
       />
@@ -1258,6 +1249,8 @@ export default function App() {
         isOpen={isCheckoutOpen}
         onClose={() => setIsCheckoutOpen(false)}
         cartItems={cartItems}
+        cartBlockReason={cartBlockReason}
+        onRefreshCatalog={() => void refreshCatalog()}
         currentStore={currentStore}
         customerAddress={customerAddress}
         customerAddressDetails={customerAddressDetails}
@@ -1273,7 +1266,7 @@ export default function App() {
         }}
         onOrderSuccess={(orderId) => {
           setIsCheckoutOpen(false);
-          setCartItems([]);
+          guestCart.clear();
 
           navigateTo(`/pedido/${orderId}`);
         }}
@@ -1349,6 +1342,7 @@ export default function App() {
         }}
         cartCount={cartCount}
         cartTotal={cartTotal}
+        cartTotalPending={!!cartBlockReason}
         onOpenCart={() => setIsCartOpen(true)}
         wishlistCount={totalWishlistItemsCount}
       />

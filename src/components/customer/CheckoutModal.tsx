@@ -16,6 +16,8 @@ interface CheckoutModalProps {
   isOpen: boolean;
   onClose: () => void;
   cartItems: CartItem[];
+  cartBlockReason?: string;
+  onRefreshCatalog?: () => void;
   currentStore: Store;
   onOrderSuccess: (orderId: string) => void;
   customerAddress?: string;
@@ -33,6 +35,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   isOpen,
   onClose,
   cartItems,
+  cartBlockReason, onRefreshCatalog,
   currentStore,
   onOrderSuccess,
   customerAddress,
@@ -147,6 +150,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     setErrorMessage('');
 
     try {
+      if (cartBlockReason || !cartItems.length) throw new Error(cartBlockReason || 'Tu carrito está vacío.');
       const scheduledWindowPayload: ScheduledDeliveryWindow | undefined =
         selectedMode === 'PROGRAMADO' && selectedSlot
           ? {
@@ -167,7 +171,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             }
           : undefined;
 
-      if(!deliveryQuote || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido)) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
+      if(!deliveryQuote?.basketValidated || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido)) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
       const payload = {
         // The server assigns the warehouse; no browser store choice is submitted.
         deliveryMode: selectedMode,
@@ -188,7 +192,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           name: customerName,
           phone: customerPhone,
           email: customerEmail,
-          isGuest: false,
+          isGuest: true,
         },
         deliveryAddress: {
           address,
@@ -226,10 +230,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const isEligibleForAny =
-    !deliveryQuote ||
-    deliveryQuote.availableModes.turbo ||
-    deliveryQuote.availableModes.turboDividido ||
-    deliveryQuote.availableModes.scheduled;
+    !!deliveryQuote?.basketValidated && (deliveryQuote.availableModes.turbo ||
+    deliveryQuote.availableModes.turboDividido || deliveryQuote.availableModes.scheduled);
 
   if (!isOpen) return null;
 
@@ -704,15 +706,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
           </div>
 
+          {cartBlockReason && <p role="status" className="text-sm text-amber-800">{cartBlockReason}</p>}
+          {errorMessage && <button type="button" className="text-sm font-bold text-red-600 underline" onClick={onRefreshCatalog}>Actualizar carrito y volver a confirmar</button>}
           <button
             type="submit"
-            disabled={isSubmitting || !isEligibleForAny}
+            disabled={isSubmitting || !isEligibleForAny || !!cartBlockReason || !cartItems.length}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition active:scale-98 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (
               <span>Procesando pago seguro...</span>
-            ) : !isEligibleForAny ? (
-              <span>Dirección fuera de cobertura</span>
+            ) : cartBlockReason || !isEligibleForAny ? (
+              <span>{cartBlockReason || deliveryQuote?.message || 'Validando disponibilidad del carrito…'}</span>
             ) : selectedMode === 'PROGRAMADO' ? (
               <>
                 <span>Confirmar y Programar Entrega ({formatCOP(total)})</span>
