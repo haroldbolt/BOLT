@@ -6,10 +6,11 @@ import {hasSalePrice, presentationAvailability, prospectiveItems, selectedPresen
 import {CartActionGate, validateCartAddition} from '../../lib/catalogPurchase';
 
 type Feedback={productId:string;variantId?:string;text:string;error:boolean};
-type Context = {choices:Record<string,string>; select:(product:string,id:string)=>void; request:QuoteRequest; quantities:Record<string,number>; quote:(request:QuoteRequest)=>Promise<DeliveryQuote>; storeId?:string; busyId?:string; feedback?:Feedback; add:(product:Product,commit:(product:Product)=>void)=>Promise<void>};
+type PresentationRequest = Omit<QuoteRequest,'destination'> & {destination: Omit<QuoteRequest['destination'],'coordinates'> & {coordinates?:QuoteRequest['destination']['coordinates']}};
+type Context = {choices:Record<string,string>; select:(product:string,id:string)=>void; request:PresentationRequest; quantities:Record<string,number>; quote:(request:QuoteRequest)=>Promise<DeliveryQuote>; storeId?:string; busyId?:string; feedback?:Feedback; add:(product:Product,commit:(product:Product)=>void)=>Promise<void>};
 const PresentationContext=createContext<Context | null>(null);
 
-export function PresentationProvider({request, quantities, children, deliveryQuote}: {request:QuoteRequest; quantities:Record<string,number>; children:React.ReactNode; deliveryQuote?:DeliveryQuote | null}) {
+export function PresentationProvider({request, quantities, children, deliveryQuote}: {request:PresentationRequest; quantities:Record<string,number>; children:React.ReactNode; deliveryQuote?:DeliveryQuote | null}) {
   const [choices,setChoices]=useState<Record<string,string>>({});
   const [busyId,setBusyId]=useState<string>();
   const [feedback,setFeedback]=useState<Feedback>();
@@ -32,8 +33,10 @@ export function PresentationProvider({request, quantities, children, deliveryQuo
       const before=JSON.stringify(live.current), snapshot=live.current.request;
       const productId=product.parentProductId || product.id;
       try {
+        if (!snapshot.destination.address.trim() || !snapshot.destination.coordinates) throw new Error('Ingresa y confirma tu dirección antes de agregar.');
+        const confirmedRequest: QuoteRequest = {...snapshot,destination:{...snapshot.destination,coordinates:snapshot.destination.coordinates}};
         // This write-facing check bypasses the display cache. Stock is still revalidated at checkout.
-        await validateCartAddition({product,request:snapshot,quote:api.getDeliveryQuote,isCurrent:()=>JSON.stringify(live.current)===before,commit});
+        await validateCartAddition({product,request:confirmedRequest,quote:api.getDeliveryQuote,isCurrent:()=>JSON.stringify(live.current)===before,commit});
         cache.current.clear();
         setFeedback({productId,variantId:product.variantId,text:`Agregado al carrito: ${product.presentation}`,error:false});
       } catch(error) {
@@ -55,7 +58,7 @@ export function usePresentation(product:Product) {
   const [result,setResult]=useState<{key:string;quote:DeliveryQuote|null}>();
   const [revision,retry]=useState(0);
   const hasDestination=!!ctx.request.destination.address.trim() && Number.isFinite(ctx.request.destination.coordinates?.lat) && Number.isFinite(ctx.request.destination.coordinates?.lng);
-  const request:QuoteRequest={...ctx.request,items:selected ? prospectiveItems(ctx.request.items || [],selected) : []};
+  const request:QuoteRequest | null=ctx.request.destination.coordinates ? {...ctx.request,destination:{...ctx.request.destination,coordinates:ctx.request.destination.coordinates},items:selected ? prospectiveItems(ctx.request.items || [],selected) : []} : null;
   const key=JSON.stringify(request);
   useEffect(()=>{
     const el=selectorRef.current;
@@ -65,7 +68,7 @@ export function usePresentation(product:Product) {
     observer.observe(el);return()=>observer.disconnect();
   },[product.id]);
   useEffect(()=>{
-    if(!selected || !hasSalePrice(selected) || !hasDestination || !visible) return;
+    if(!request || !selected || !hasSalePrice(selected) || !hasDestination || !visible) return;
     let cancelled=false;
     setResult(undefined);
     ctx.quote(request).then(quote=>{if(!cancelled)setResult({key,quote});}).catch(()=>{if(!cancelled)setResult({key,quote:null});});

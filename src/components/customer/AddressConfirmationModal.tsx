@@ -1,5 +1,5 @@
 import { TERRITORY_OPTIONS } from '../../lib/territoryConfig';
-import { AddressTerritory } from '../../lib/addressGeography';
+import { AddressTerritory, validDestinationCoordinates } from '../../lib/addressGeography';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
 import { 
@@ -31,7 +31,8 @@ interface AddressConfirmationModalProps {
   onClose: () => void;
   currentAddress: string;
   currentDetails: string;
-  currentCoordinates: LatLng;
+  currentCoordinates?: LatLng;
+  currentTerritory?: AddressTerritory;
   onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote) => void;
   stores: Store[];
   cartItems?: CartItem[];
@@ -60,23 +61,25 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   currentAddress,
   currentDetails,
   currentCoordinates,
+  currentTerritory,
   onConfirmAddress,
   stores,
   cartItems,
   products = [],
 }) => {
-  const [addressInput, setAddressInput] = useState(currentAddress || 'Calle 3 #78-20, Kennedy Central, Bogotá');
+  const [addressInput, setAddressInput] = useState(currentAddress ?? '');
   const [detailsInput, setDetailsInput] = useState(currentDetails ?? '');
-  const [pinCoordinates, setPinCoordinates] = useState<LatLng>(
-    currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 }
-  );
-  const [territory, setTerritory] = useState<AddressTerritory>({});
+  const [pinCoordinates, setPinCoordinates] = useState<Partial<LatLng>>(currentCoordinates ?? {});
+  const destinationPoint = validDestinationCoordinates(pinCoordinates) ? pinCoordinates : null;
+  // Viewport only: this overview is never sent as the customer's destination.
+  const mapCenter = destinationPoint ?? { lat: 4.711, lng: -74.0721 };
+  const [territory, setTerritory] = useState<AddressTerritory>(currentTerritory ?? {});
   const requestSeq = useRef(0);
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const [isAddressSynced, setIsAddressSynced] = useState(true);
+  const [isAddressSynced, setIsAddressSynced] = useState(!!currentAddress?.trim() && validDestinationCoordinates(currentCoordinates));
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
 
@@ -87,9 +90,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
 
   // Request authoritative quote from backend
-  const evaluateAddressQuote = useCallback(async (coords: LatLng, addr: string, geo: AddressTerritory = {}) => {
+  const evaluateAddressQuote = useCallback(async (coords: Partial<LatLng>, addr: string, geo: AddressTerritory = {}) => {
     const seq = ++requestSeq.current;
     setQuote(null);
+    if (!addr.trim() || !validDestinationCoordinates(coords)) { setIsEvaluating(false); return; }
     setIsEvaluating(true);
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
@@ -125,20 +129,30 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   // Synchronize inputs when modal opens
   useEffect(() => {
     if (isOpen) {
-      const initialAddr = currentAddress || 'Calle 3 #78-20, Kennedy Central, Bogotá';
+      const initialAddr = currentAddress ?? '';
       const initialDetails = currentDetails ?? '';
-      const initialCoords = currentCoordinates?.lat ? currentCoordinates : { lat: 4.6365, lng: -74.1448 };
+      const initialCoords = currentCoordinates ?? {};
+      ++requestSeq.current;
+      ++reverseGeocodeReqSeqRef.current;
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
 
       setAddressInput(initialAddr);
       setDetailsInput(initialDetails);
       setPinCoordinates(initialCoords);
-      setIsAddressSynced(true);
+      setIsAddressSynced(!!initialAddr.trim() && validDestinationCoordinates(initialCoords));
+      setQuote(null);
+      setTerritory(currentTerritory ?? {});
+      setIsGeocoding(false);
+      setIsEvaluating(false);
       setGeocodeError(null);
       setIsReverseGeocoding(false);
-      reverseGeocodeReqSeqRef.current = 0;
 
-      evaluateAddressQuote(initialCoords, initialAddr);
+      if (initialAddr.trim() && validDestinationCoordinates(initialCoords)) evaluateAddressQuote(initialCoords, initialAddr, currentTerritory);
     }
+    return () => {
+      ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
+      if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    };
   }, [isOpen]);
 
   /**
@@ -205,11 +219,12 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
   // Manejo de escritura manual de la dirección
   const handleAddressInputChange = (val: string) => {
-    setAddressInput(val); setQuote(null); setTerritory({}); setGeocodeError(null); setIsAddressSynced(false);
+    setAddressInput(val); setPinCoordinates({}); setQuote(null); setTerritory({}); setGeocodeError(null); setIsAddressSynced(false);
     ++requestSeq.current;
     const seq=++reverseGeocodeReqSeqRef.current;
     setIsReverseGeocoding(false); setIsGeocoding(true);
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    if (!val.trim()) { setIsGeocoding(false); return; }
     debounceTimeoutRef.current=setTimeout(async()=>{
       const result=val.trim() ? await api.forwardGeocode(val) : null;
       if(seq!==reverseGeocodeReqSeqRef.current) return;
@@ -221,14 +236,23 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     },500);
   };
   const confirmDestinationPoint = () => {
+    if (!addressInput.trim() || !destinationPoint) return;
     ++reverseGeocodeReqSeqRef.current;
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     setIsGeocoding(false); setIsReverseGeocoding(false); setIsAddressSynced(true); setGeocodeError(null);
-    evaluateAddressQuote(pinCoordinates,addressInput,territory);
+    evaluateAddressQuote(destinationPoint,addressInput,territory);
+  };
+
+  const handleCoordinateChange = (axis: 'lat' | 'lng', value: string) => {
+    ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    setQuote(null); setIsAddressSynced(false); setIsGeocoding(false); setIsReverseGeocoding(false); setIsEvaluating(false);
+    setPinCoordinates(previous => ({...previous,[axis]:value.trim() ? Number(value) : undefined}));
   };
 
   // Requisito 4: Al confirmar, onConfirmAddress debe recibir los datos de esa misma ubicación
   const canConfirm = 
+    !!addressInput.trim() && !!destinationPoint &&
     !isEvaluating && !isGeocoding && 
     !isReverseGeocoding && 
     isAddressSynced && 
@@ -237,9 +261,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     (quote.availableModes.turbo || quote.availableModes.turboDividido || quote.availableModes.scheduled);
 
   const handleConfirm = () => {
-    if (canConfirm && quote) {
+    if (canConfirm && quote && destinationPoint) {
       // Requisito 5: Conserva lo escrito en «Torre / Apto / Portería» (detailsInput)
-      onConfirmAddress(addressInput, detailsInput, pinCoordinates, quote);
+      onConfirmAddress(addressInput, detailsInput, destinationPoint, quote);
       onClose();
     }
   };
@@ -258,19 +282,6 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     !!quote?.autoSwitchedToScheduled ||
     isScheduledOnly ||
     (!isTurboLocality && !!quote?.availableModes?.scheduled);
-
-  const PRESET_LOCATIONS = [
-    { label: 'Kennedy', locality: 'Kennedy', address: 'Calle 3 #78-20, Kennedy Central, Bogotá', turbo: true },
-    { label: 'Suba', locality: 'Suba', address: 'Carrera 107 #143-31, Suba Pinar, Bogotá', turbo: true },
-    { label: 'Engativá', locality: 'Engativá', address: 'Calle 64 #70-30, Álamos, Engativá, Bogotá', turbo: true },
-    { label: 'Usaquén', locality: 'Usaquén', address: 'Calle 140 #11-45, Cedritos, Usaquén, Bogotá', turbo: false },
-    { label: 'Chapinero', locality: 'Chapinero', address: 'Carrera 7 #53-20, Chapinero, Bogotá', turbo: false },
-    { label: 'Centro', locality: 'Santa Fe', address: 'Calle 11 #15-53, La Candelaria / Centro, Bogotá', turbo: false },
-  ];
-
-  const handleSelectPreset = (preset: typeof PRESET_LOCATIONS[0]) => {
-    handleAddressInputChange(preset.address);
-  };
 
   if (!isOpen) return null;
 
@@ -304,37 +315,6 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           
-          {/* Quick preset locations for rapid testing */}
-          <div className="space-y-1.5">
-            <div className="flex items-center justify-between text-[11px] text-slate-500 font-semibold">
-              <span>Probar por localidad de Bogotá:</span>
-              <span className="text-[10px] text-slate-400">⚡ Turbo: Kennedy, Suba, Engativá · 📅 Programado: Resto de la ciudad</span>
-            </div>
-            <div className="flex gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              {PRESET_LOCATIONS.map((preset) => {
-                const isActive = addressInput.includes(preset.locality);
-                return (
-                  <button
-                    key={preset.label}
-                    type="button"
-                    onClick={() => handleSelectPreset(preset)}
-                    className={`px-2.5 py-1 rounded-xl text-[11px] font-bold shrink-0 transition border ${
-                      isActive
-                        ? preset.turbo
-                          ? 'bg-emerald-600 text-white border-emerald-600 shadow-xs'
-                          : 'bg-blue-600 text-white border-blue-600 shadow-xs'
-                        : preset.turbo
-                        ? 'bg-emerald-50 text-emerald-800 border-emerald-200 hover:bg-emerald-100'
-                        : 'bg-blue-50 text-blue-800 border-blue-200 hover:bg-blue-100'
-                    }`}
-                  >
-                    <span>{preset.turbo ? '⚡' : '📅'} {preset.label}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
           {/* Address Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2 space-y-1">
@@ -367,7 +347,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                   type="text"
                   value={addressInput}
                   onChange={e => handleAddressInputChange(e.target.value)}
-                  placeholder="Escribe tu dirección (ej: Carrera 79A #2-05, Kennedy)"
+                  aria-label="Dirección de entrega"
+                  placeholder="Escribe tu dirección de entrega"
                   className={`w-full pl-9 pr-9 py-2.5 text-xs bg-slate-50 border rounded-xl focus:bg-white focus:outline-none focus:border-red-500 font-medium transition shadow-2xs ${
                     isReverseGeocoding ? 'border-red-400 bg-red-50/20' : 'border-slate-200'
                   }`}
@@ -382,9 +363,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
             {/* Requisito 5: Conserva lo escrito en «Torre / Apto / Portería» */}
             <div className="space-y-1">
-              <label className="text-[11px] font-bold text-slate-700">Torre / Apto / Portería (Opcional)</label>
+              <label htmlFor="delivery-details" className="text-[11px] font-bold text-slate-700">Torre / Apto / Portería (Opcional)</label>
               <input
                 type="text"
+                id="delivery-details"
                 value={detailsInput}
                 onChange={e => setDetailsInput(e.target.value)}
                 className="w-full px-3 py-2.5 text-xs bg-slate-50 border border-slate-200 rounded-xl focus:bg-white focus:outline-none focus:border-red-500 font-medium transition shadow-2xs"
@@ -405,9 +387,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             </label>
             <p className="text-xs">También puedes confirmar el punto exacto del destino. El servidor valida su localidad y cobertura urbana.</p>
             <div className="flex gap-2">
-              {(['lat','lng'] as const).map(axis=><label key={axis} className="text-xs min-w-0">{axis==='lat'?'Latitud del destino':'Longitud del destino'}<input aria-label={axis==='lat'?'Latitud del destino':'Longitud del destino'} type="number" step="any" value={pinCoordinates[axis]} onChange={e=>{++requestSeq.current;setQuote(null);setIsAddressSynced(false);setPinCoordinates({...pinCoordinates,[axis]:Number(e.target.value)})}} className="w-full border rounded p-2" /></label>)}
+              {(['lat','lng'] as const).map(axis=><label key={axis} className="text-xs min-w-0">{axis==='lat'?'Latitud del destino':'Longitud del destino'}<input aria-label={axis==='lat'?'Latitud del destino':'Longitud del destino'} type="number" step="any" value={pinCoordinates[axis] ?? ''} onChange={e=>handleCoordinateChange(axis,e.target.value)} className="w-full border rounded p-2" /></label>)}
             </div>
-            <button onClick={confirmDestinationPoint} className="text-xs font-bold text-red-700 underline">Validar este destino</button>
+            <button onClick={confirmDestinationPoint} disabled={!addressInput.trim() || !destinationPoint} className="text-xs font-bold text-red-700 underline disabled:text-slate-400">Validar este destino</button>
           </details>
 
           {/* Banner obligatorio de transición a Envío Programado */}
@@ -448,15 +430,15 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 <span>Mueve el pin o haz clic en el mapa para ubicar tu dirección</span>
               </div>
               <span className="font-mono text-[10px] text-slate-400 hidden sm:inline">
-                {pinCoordinates.lat.toFixed(4)}, {pinCoordinates.lng.toFixed(4)}
+                {destinationPoint ? `${destinationPoint.lat.toFixed(4)}, ${destinationPoint.lng.toFixed(4)}` : 'Punto de entrega pendiente'}
               </span>
             </div>
 
             <div className="h-56 min-[669px]:h-72 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
               <APIProvider apiKey={apiKey}>
                 <Map
-                  defaultCenter={pinCoordinates}
-                  defaultZoom={14}
+                  defaultCenter={mapCenter}
+                  defaultZoom={destinationPoint ? 14 : 11}
                   mapId="BOLT_PETS_MAP"
                   className="w-full h-full"
                   gestureHandling="greedy"
@@ -464,11 +446,11 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                   onClick={handleMapClick}
                   internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
                 >
-                  <MapRecenter center={pinCoordinates} />
+                  <MapRecenter center={mapCenter} />
 
                   {/* Customer Adjustable Red Delivery Pin */}
-                  <AdvancedMarker
-                    position={pinCoordinates}
+                  {destinationPoint && <AdvancedMarker
+                    position={destinationPoint}
                     title="Punto de entrega de tu pedido"
                     draggable={true}
                     onDragEnd={handlePinDragEnd}
@@ -481,7 +463,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                         {isReverseGeocoding ? 'Consultando...' : 'Ajusta el pin aquí'}
                       </span>
                     </div>
-                  </AdvancedMarker>
+                  </AdvancedMarker>}
 
                   {/* Enabled Turbo Hubs in Bogotá */}
                   {stores

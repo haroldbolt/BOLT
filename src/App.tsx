@@ -82,7 +82,7 @@ export default function App() {
 
   // App data state
   const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
-  const [currentStore, setCurrentStore] = useState<Store>(INITIAL_STORES[0]);
+  const [currentStore, setCurrentStore] = useState<Store | null>(null);
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
 
@@ -267,10 +267,10 @@ export default function App() {
   const [unreadNotificationsCount, setUnreadNotificationsCount] = useState<number>(() => pushService.getUnreadCount());
 
   // Delivery Address & Authoritative Delivery Quote context
-  const [customerAddress, setCustomerAddress] = useState<string>('Calle 3 #78-20, Kennedy Central, Bogotá');
+  const [customerAddress, setCustomerAddress] = useState<string>('');
   const [customerAddressDetails, setCustomerAddressDetails] = useState<string>('');
-  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng>({ lat: 4.6365, lng: -74.1448 });
-  const [customerTerritory, setCustomerTerritory] = useState<{municipality?:string;locality?:string;neighborhood?:string}>({municipality:'Bogotá D.C.',locality:'Kennedy'});
+  const [customerCoordinates, setCustomerCoordinates] = useState<LatLng | undefined>();
+  const [customerTerritory, setCustomerTerritory] = useState<{municipality?:string;locality?:string;neighborhood?:string}>({});
   const [deliveryQuote, setDeliveryQuote] = useState<DeliveryQuote | null>(null);
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
@@ -373,6 +373,7 @@ export default function App() {
   useEffect(() => {
     let cancelled = false;
     setDeliveryQuote(null);
+    if (!customerAddress.trim() || !customerCoordinates) { setCurrentStore(null); return; }
     if (catalogLoading || catalogError || unavailableCartItems.length) return;
     const fetchQuote = async () => {
       try {
@@ -716,7 +717,7 @@ export default function App() {
           <WishlistView
             collections={wishlistCollections}
             products={products}
-            selectedStoreId={currentStore.id}
+            selectedStoreId={currentStore?.id || ''}
             cartQuantities={cartQuantities}
             onAddToCart={handleAddToCart}
             onAddCollectionToCart={handleMoveCollectionToCart}
@@ -733,7 +734,7 @@ export default function App() {
         ) : selectedCategory === 'Farmacia' ? (
           <FarmaciaView
             products={products}
-            selectedStoreId={currentStore.id}
+            selectedStoreId={currentStore?.id || ''}
             cartQuantities={cartQuantities}
             onAddToCart={handleAddToCart}
             onUpdateQuantity={handleUpdateQuantity}
@@ -810,7 +811,7 @@ export default function App() {
                         isFavorite={!!favorites[prod.id]}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
-                        selectedStoreId={currentStore.id}
+                        selectedStoreId={currentStore?.id || ''}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
                         isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1008,7 +1009,7 @@ export default function App() {
                       isFavorite={!!favorites[prod.id]}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
-                      selectedStoreId={currentStore.id}
+                      selectedStoreId={currentStore?.id || ''}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
                       isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1048,7 +1049,7 @@ export default function App() {
                         isFavorite={!!favorites[prod.id]}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
-                        selectedStoreId={currentStore.id}
+                        selectedStoreId={currentStore?.id || ''}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
                         isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1093,7 +1094,7 @@ export default function App() {
                         isFavorite={!!favorites[prod.id]}
                         onToggleFavorite={handleToggleFavorite}
                         onOpenDetails={(p) => setDetailProduct(p)}
-                        selectedStoreId={currentStore.id}
+                        selectedStoreId={currentStore?.id || ''}
                         isCompared={compareProducts.some(p => p.id === prod.id)}
                         onToggleCompare={handleToggleCompare}
                         isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1130,7 +1131,7 @@ export default function App() {
                       isFavorite={!!favorites[prod.id]}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
-                      selectedStoreId={currentStore.id}
+                      selectedStoreId={currentStore?.id || ''}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
                       isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1166,7 +1167,7 @@ export default function App() {
                       isFavorite={!!favorites[prod.id]}
                       onToggleFavorite={handleToggleFavorite}
                       onOpenDetails={(p) => setDetailProduct(p)}
-                      selectedStoreId={currentStore.id}
+                      selectedStoreId={currentStore?.id || ''}
                       isCompared={compareProducts.some(p => p.id === prod.id)}
                       onToggleCompare={handleToggleCompare}
                       isInWishlist={wishlistProductIds.has(prod.id)}
@@ -1191,7 +1192,7 @@ export default function App() {
         onUpdateQuantity={handleUpdateQuantity}
         isFavorite={detailProduct ? !!favorites[detailProduct.id] : false}
         onToggleFavorite={handleToggleFavorite}
-        selectedStoreId={currentStore.id}
+        selectedStoreId={currentStore?.id || ''}
         isCompared={detailProduct ? compareProducts.some(p => p.id === detailProduct.id) : false}
         onToggleCompare={handleToggleCompare}
         isInWishlist={detailProduct ? wishlistProductIds.has(detailProduct.id) : false}
@@ -1216,7 +1217,7 @@ export default function App() {
         cartQuantities={cartQuantities}
         onAddToCart={handleAddToCart}
         onUpdateQuantity={handleUpdateQuantity}
-        selectedStoreId={currentStore.id}
+        selectedStoreId={currentStore?.id || ''}
       />
 
       {/* Compare Limit Toast Notification */}
@@ -1242,6 +1243,7 @@ export default function App() {
         onRefreshCatalog={() => void refreshCatalog()}
         onProceedToCheckout={async () => {
           if (cartBlockReason || !cartItems.length) return;
+          if (!customerAddress.trim() || !customerCoordinates) { setIsCartOpen(false); setIsAddressModalOpen(true); return; }
           if (await refreshCatalog()) { setIsCartOpen(false); setIsCheckoutOpen(true); }
         }}
         currentStore={currentStore}
@@ -1282,6 +1284,7 @@ export default function App() {
         currentAddress={customerAddress}
         currentDetails={customerAddressDetails}
         currentCoordinates={customerCoordinates}
+        currentTerritory={customerTerritory}
         onConfirmAddress={handleConfirmAddress}
         stores={stores}
         cartItems={cartItems}

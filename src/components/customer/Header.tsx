@@ -4,7 +4,7 @@ import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../.
 import { DeliveryQuote } from '../../lib/deliveryService';
 
 interface HeaderProps {
-  currentStore: Store;
+  currentStore: Store | null;
   allStores: Store[];
   onSelectStore: (store: Store) => void;
   selectedCategory: MainCategory;
@@ -300,9 +300,11 @@ export const Header: React.FC<HeaderProps> = ({
                   ? 'bg-blue-900/95 hover:bg-blue-900 text-blue-100 border-blue-400/50 shadow-blue-950/20'
                   : 'bg-emerald-600 hover:bg-emerald-500 text-white border-emerald-400/50 shadow-emerald-950/25'
               }`}
-              title={isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Entrega ultra-rápida Turbo en Bogotá'}
+              title={!customerAddress ? 'Ingresa y confirma tu dirección de entrega' : isScheduledDelivery ? 'Modalidad: Envío Programado. Haz clic para cambiar franja.' : 'Entrega ultra-rápida Turbo en Bogotá'}
             >
-              {isScheduledDelivery ? (
+              {!customerAddress ? (
+                <><MapPin className="w-4 h-4" /><span>Confirma tu dirección para ver las entregas</span></>
+              ) : isScheduledDelivery ? (
                 <>
                   <Calendar className="w-4 h-4 text-yellow-300 shrink-0" />
                   <span className="font-bold">
@@ -425,7 +427,7 @@ export const Header: React.FC<HeaderProps> = ({
 
             <div className="mt-4 space-y-2.5">
               {allStores.map((store) => {
-                const isSelected = store.id === currentStore.id;
+                const isSelected = store.id === currentStore?.id;
                 const isInactive = !store.isActive;
                 return (
                   <div

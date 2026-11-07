@@ -13,7 +13,7 @@ interface CartDrawerProps {
   onUpdateQuantity: (p: Product, q: number) => void;
   onClearCart: () => void;
   onProceedToCheckout: () => void;
-  currentStore: Store;
+  currentStore: Store | null;
   unavailableItems?: CartReference[];
   onRemoveUnavailable?: (ref: CartReference) => void;
   pendingCount?: number;
@@ -155,7 +155,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span>Transporte ({deliveryQuote?.assignedStoreName || currentStore.name}):</span>
+                <span>Transporte ({deliveryQuote?.assignedStoreName || currentStore?.name || 'Sede pendiente de confirmar'}):</span>
                 {shipping === 0 ? (
                   <span className="font-bold text-emerald-600">¡GRATIS!</span>
                 ) : (

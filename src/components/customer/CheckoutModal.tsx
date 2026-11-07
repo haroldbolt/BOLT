@@ -19,7 +19,7 @@ interface CheckoutModalProps {
   cartItems: CartItem[];
   cartBlockReason?: string;
   onRefreshCatalog?: () => void;
-  currentStore: Store;
+  currentStore: Store | null;
   onOrderSuccess: (orderId: string) => void;
   customerAddress?: string;
   customerAddressDetails?: string;
@@ -52,12 +52,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [customerName, setCustomerName] = useState('Juan David Gómez');
   const [customerPhone, setCustomerPhone] = useState('+57 312 890 1234');
   const [customerEmail, setCustomerEmail] = useState('juan.gomez@ejemplo.com');
-  const [address, setAddress] = useState(
-    customerAddress || (currentStore.id === 'HUB_KENNEDY'
-      ? 'Calle 3 #78-20, Kennedy Central, Bogotá'
-      : currentStore.address)
-  );
-  const [addressDetails, setAddressDetails] = useState(customerAddressDetails || 'Apto 502, Torre 2');
+  const [address, setAddress] = useState(customerAddress ?? '');
+  const [addressDetails, setAddressDetails] = useState(customerAddressDetails ?? '');
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WOMPI_CARD');
   const [tip, setTip] = useState(2000);
@@ -109,8 +105,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   // Synchronize inputs when modal opens
   useEffect(() => {
     if (isOpen) {
-      if (customerAddress) setAddress(customerAddress);
-      if (customerAddressDetails) setAddressDetails(customerAddressDetails);
+      setAddress(customerAddress ?? '');
+      setAddressDetails(customerAddressDetails ?? '');
     }
   }, [isOpen, customerAddress, customerAddressDetails]);
 
@@ -152,6 +148,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
     try {
       if (cartBlockReason || !cartItems.length) throw new Error(cartBlockReason || 'Tu carrito está vacío.');
+      if (!customerAddress?.trim() || !customerCoordinates) throw new Error('Ingresa y confirma tu dirección antes de continuar.');
       const scheduledWindowPayload: ScheduledDeliveryWindow | undefined =
         selectedMode === 'PROGRAMADO' && selectedSlot
           ? {
@@ -204,10 +201,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           neighborhood: deliveryQuote?.destination.neighborhood,
           details: addressDetails,
           porteriaPolicy,
-          coordinates: customerCoordinates || {
-            lat: 4.6365,
-            lng: -74.1448,
-          },
+          coordinates: customerCoordinates,
         },
         paymentMethod,
         tip,
@@ -233,7 +227,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   };
 
   const isEligibleForAny =
-    !!deliveryQuote?.basketValidated && (deliveryQuote.availableModes.turbo ||
+    !!customerAddress?.trim() && !!customerCoordinates && !!deliveryQuote?.basketValidated && (deliveryQuote.availableModes.turbo ||
     deliveryQuote.availableModes.turboDividido || deliveryQuote.availableModes.scheduled);
 
   if (!isOpen) return null;
@@ -509,7 +503,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
             <input
               type="text"
-              placeholder="Dirección completa (ej. Calle 3 #78-20, Kennedy)"
+              placeholder="Ingresa y confirma tu dirección de entrega"
               value={address}
               readOnly
               onClick={onChangeAddress}
