@@ -1,12 +1,14 @@
 # Bolt Pets Colombia — Plataforma Integrada de Domicilios Turbo y Programados
 
-Plataforma full-stack de comercio electrónico y operaciones logísticas para la entrega ultra-rápida (Turbo en ≤ 25 min y radio de 6 km) y programada de alimentos, farmacia veterinaria y accesorios para mascotas en Bogotá, Colombia.
+Plataforma full-stack de comercio electrónico y operaciones logísticas para entregas Turbo y Programadas en las zonas habilitadas de Bogotá, Soacha, Chía y Cajicá. La cotización y la disponibilidad se validan en el servidor.
+
+**Revisión técnica:** comenzar por [la guía para el ingeniero](docs/REVISION-INGENIERIA.md), que explica la rama de trabajo, las pruebas y cómo reproducir una simulación aislada.
 
 ## Arquitectura y Componentes
 - **Frontend**: React 19 SPA con Vite y Tailwind CSS v4.
 - **Backend**: Servidor Express modular (`server.ts`) con middlewares de Vite en desarrollo y API REST `/api/v1/*`.
 - **Zonas Horarias y Moneda**: Zona horaria oficial `America/Bogota` (GMT-5) y moneda Pesos Colombianos (`$ COP`).
-- **Mapeo y Rutas**: Google Maps Platform (`@vis.gl/react-google-maps`) con geocodificación, cálculo de distancias geodésicas (Haversine) y estimación de ruta vial para motocicletas.
+- **Mapeo y Rutas**: Google Maps Platform (`@vis.gl/react-google-maps`) con geocodificación y cálculo de distancias geodésicas (Haversine). La asignación admite una fuente de ETA por ruta; sin una fuente configurada, muestra distancia estimada sin prometer minutos de recogida.
 
 ## Bodegas de Despacho (Hubs)
 1. **Bolt Pets Kennedy** (`HUB_KENNEDY`): Carrera 79A #2-05, Bogotá (`gid://shopify/Location/115617857816`).
@@ -16,7 +18,8 @@ Plataforma full-stack de comercio electrónico y operaciones logísticas para la
 
 ## Reglas de Negocio
 - **Turbo**: Radio máximo de 6.000 metros (6 km) y tiempo de entrega estimado ≤ 25 minutos (1.500 segundos).
-- **Turbo Dividido**: Pedidos elegibles cuyo peso total supera los 60 kg son particionados automáticamente en múltiples envíos de motocicletas (≤ 25 kg c/u) con plazo común de 25 min.
+- **Turbo Dividido**: Una compra puede generar varios despachos de unidades cerradas. Cada despacho admite 50 kg de producto como base; el margen acumulado de hasta 3 kg se limita a extras ligeros explícitamente elegibles. Comida y arena no usan ese margen. Siempre se valida capacidad física con embalaje, dimensiones y disponibilidad. El máximo operativo es configurable; no hay un límite fijo de tres repartidores. Ver [reglas de transporte](docs/TURBO-DESPACHOS.md).
+- **Cobertura**: Solo las zonas habilitadas de Bogotá, Soacha, Chía y Cajicá; Sumapaz permanece excluido. Chía y Cajicá usan Programado desde Suba con el servicio aprobado de Bogotá, sujeto a capacidad y cupos. Ver [configuración municipal](docs/COBERTURA-MUNICIPAL.md).
 - **Envíos Programados**: Tres franjas oficiales:
   - Horario 1: 09:00–14:00 (Corte el mismo día: 10:00).
   - Horario 2: 14:00–18:00 (Corte el mismo día: 12:00).

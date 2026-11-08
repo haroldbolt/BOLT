@@ -5,7 +5,8 @@ import {externalAvailability} from './externalDelivery';
 export function applyTransportQuote(q: DeliveryQuote, req: QuoteRequest, stores: Store[], products: Product[], context: TransportContext): DeliveryQuote {
   if(!req.items?.length || ['ADDRESS_NEEDS_CONFIRMATION','OUT_OF_COVERAGE','INSUFFICIENT_STOCK','STORE_CLOSED'].includes(q.eligibilityStatus) || !q.assignedStoreId) return q;
   // Preserve the geographical/slot rejection instead of replacing it with a capacity success.
-  if(['SLOT_CAPACITY_EXCEEDED','MODE_UNAVAILABLE'].includes(q.reasonCode || '') && !q.recommendedMode) {
+  const rejectedSlot = !!req.scheduledWindow && (q.reasonCode==='SLOT_CAPACITY_EXCEEDED' || (q.selectedSlotInvalid===true && q.reasonCode==='MODE_UNAVAILABLE')) && !q.recommendedMode;
+  if(['SLOT_CAPACITY_EXCEEDED','MODE_UNAVAILABLE'].includes(q.reasonCode || '') && !q.recommendedMode && !rejectedSlot) {
     q.basketValidated=false;
     return q;
   }
@@ -17,15 +18,21 @@ export function applyTransportQuote(q: DeliveryQuote, req: QuoteRequest, stores:
   // Scheduled capacity is checked separately against its territorial store and each explicit slot.
   const scheduledStore=stores.find(s=>s.id===q.territoryInfo?.assignedStoreId);
   const scheduledPlans=new Map<string,ReturnType<typeof planTransport>>();
-  if(q.scheduledEligible && scheduledStore) for(const slot of q.scheduledSlots) {
+  if((q.scheduledEligible || rejectedSlot) && scheduledStore) for(const slot of q.scheduledSlots) {
     if(slot.availableCapacity<=0 || slot.cutoffPassed) continue;
     const key=`${slot.date}|${slot.slotId}`;
     const plan=planTransport(req.items,products,scheduledStore.id,'PROGRAMADO',context,key);
     scheduledPlans.set(key,plan);
-    if(!plan.feasible) slot.availableCapacity=0;
+    if(!plan.feasible) {slot.availableCapacity=0;slot.unavailableReason='TRANSPORT';slot.unavailableMessage=plan.message;}
   }
   q.scheduledEligible=q.scheduledEligible && q.scheduledSlots.some(s=>s.availableCapacity>0);
   q.availableModes.scheduled=q.scheduledEligible;
+  if(rejectedSlot) {
+    // Check alternative dates without accepting or replacing the rejected selection.
+    q.availableModes.scheduled=q.scheduledSlots.some(s=>s.availableCapacity>0 && !s.cutoffPassed);
+    q.basketValidated=false;
+    return q;
+  }
   const selected=req.scheduledWindow;
   const selectedKey=selected ? `${selected.date}|${selected.slotId}` : undefined;
   let turbo = q.availableModes.turbo || q.availableModes.turboDividido
@@ -51,7 +58,7 @@ export function applyTransportQuote(q: DeliveryQuote, req: QuoteRequest, stores:
     q.eligibilityStatus='ELIGIBLE';
   }
   if(!plan?.feasible || (req.requestedMode==='PROGRAMADO' && !q.scheduledEligible)) {
-    const diagnostic=plan || planTransport(req.items,products,q.assignedStoreId,'TURBO',context);
+    const diagnostic=plan || [...scheduledPlans.values()][0] || planTransport(req.items,products,q.assignedStoreId,q.effectiveMode==='PROGRAMADO'?'PROGRAMADO':'TURBO',context,selectedKey);
     q.transportPlan=diagnostic; q.reasonCode=diagnostic.reasonCode; q.message=diagnostic.message;
     q.basketValidated=false; q.recommendedMode=null; q.eligibilityStatus='ESTIMATE_UNAVAILABLE';
     q.availableModes.turbo=false; q.availableModes.turboDividido=false; return q;

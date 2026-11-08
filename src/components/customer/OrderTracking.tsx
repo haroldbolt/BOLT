@@ -1,3 +1,4 @@
+import {CustomerDispatches} from '../dispatch/CustomerDispatches';
 import { WarehouseSummary } from './WarehouseSummary';
 import { resolveOrderWarehouse } from '../../lib/warehouseAssignment';
 import React, { useEffect, useState, useRef } from 'react';
@@ -17,6 +18,7 @@ declare const google: any;
 
 interface OrderTrackingProps {
   orderId: string;
+  guestOnly?: boolean;
   onBack: () => void;
 }
 
@@ -47,7 +49,9 @@ const MapController: React.FC<{
   return null;
 };
 
-export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack }) => {
+export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack, guestOnly=false }) => {
+  const [loadError,setLoadError]=useState('');
+  const generation=useRef(0);
   const [order, setOrder] = useState<Order | null>(null);
   const [trackingData, setTrackingData] = useState<any>(null);
   const [loading, setLoading] = useState(true);
@@ -64,31 +68,31 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
   const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
 
   const loadData = async () => {
+    const request=++generation.current;
     try {
-      const ord = await api.getOrder(orderId);
-      setOrder(ord);
-      pushService.notifyWarehouseAssignment(ord);
-      const tracking = await api.getTracking(orderId, ord.isSplitOrder ? ord.childShipments?.[activeShipmentIndex]?.shipmentId : undefined);
-      setTrackingData(tracking);
-    } catch (e) {
-      console.error('Error fetching tracking:', e);
-    } finally {
-      setLoading(false);
-    }
+      const ord = await api.getOrder(orderId,guestOnly);
+      const tracking = await api.getTracking(orderId, ord.isSplitOrder ? ord.childShipments?.[activeShipmentIndex]?.shipmentId : undefined,guestOnly);
+      if(request!==generation.current)return;
+      setOrder(ord);setTrackingData(tracking);setLoadError('');
+      pushService.notifyWarehouseAssignment(ord);pushService.notifyDispatchEvents(ord);
+    } catch (e:any) {
+      if(request!==generation.current)return;
+      setLoadError(e.message||'No se pudo consultar el seguimiento');setOrder(null);setTrackingData(null);
+    } finally {if(request===generation.current)setLoading(false)}
   };
-
   useEffect(() => {
-    loadData();
-    const interval = setInterval(loadData, 5000);
-    return () => clearInterval(interval);
-  }, [orderId, activeShipmentIndex]);
+    setLoading(true);setOrder(null);setTrackingData(null);
+    void loadData();
+    const interval = setInterval(()=>void loadData(), 5000);
+    return () => {++generation.current;clearInterval(interval)};
+  }, [orderId, activeShipmentIndex,guestOnly]);
 
   const handleCancelOrder = async () => {
     if (!order) return;
     try {
       setCancelling(true);
       setCancelError(null);
-      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE', order.isSplitOrder ? order.childShipments?.[activeShipmentIndex]?.shipmentId : undefined);
+      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE', order.isSplitOrder ? order.childShipments?.[activeShipmentIndex]?.shipmentId : undefined,guestOnly);
       await loadData();
     } catch (e: any) {
       setCancelError(e.message || 'No se pudo cancelar el pedido');
@@ -97,6 +101,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
     }
   };
 
+  if(loadError&&!order)return <div className="min-h-screen bg-slate-50 p-8"><p role="alert">{loadError}</p><button className="p-3 text-red-700 underline" onClick={()=>void loadData()}>Reintentar</button><button className="p-3 underline" onClick={onBack}>Volver</button></div>;
   if (loading || !order) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
@@ -115,7 +120,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
 
   const effectiveStatus = currentChild ? currentChild.fulfillmentStatus : order.fulfillmentStatus;
   const effectiveDriver = currentChild?.driver || order.driver;
-  const externalOffer=(currentChild?.transportLoad || order.transportLoad)?.vehicle.externalOffer;
+  const confirmedDispatch=(order as any).dispatches?.find((d:any)=>d.shipmentId===currentChild?.shipmentId);
+  const externalOffer=confirmedDispatch?.driverConfirmed && confirmedDispatch.provider!=='Flota propia BOLT' ? {providerName:confirmedDispatch.provider}:undefined;
   const effectiveSecretCode = currentChild?.secretDeliveryCode || order.secretDeliveryCode;
 
   const hubCoords = trackingData?.hubCoordinates || order.deliveryAddress.coordinates;
@@ -186,7 +192,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           </div>
 
           <div className="p-5 space-y-4 flex-1">
-            <WarehouseSummary order={order} />
+            <WarehouseSummary order={order} /><CustomerDispatches order={order} onSelect={setActiveShipmentIndex}/>
             {/* Multi-Shipment Tabs for Split Orders */}
             {isSplitOrder && (
               <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
@@ -235,7 +241,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                       {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}
                     </span>
                   ) : (
-                    <span>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></span>
+                    <span>{order.dispatchStatusMessage || <>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></>}</span>
                   )}
                 </h2>
                 <p className="text-[11px] text-slate-500 mt-1">
@@ -651,7 +657,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
                     {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}
                   </span>
                 ) : (
-                  <span>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></span>
+                  <span>{order.dispatchStatusMessage || <>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></>}</span>
                 )}
               </h2>
             </div>
@@ -673,7 +679,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack })
           </p>
         </div>
 
-        <div className="mx-5 mb-3"><WarehouseSummary order={order} /></div>
+        <div className="mx-5 mb-3"><WarehouseSummary order={order} /><CustomerDispatches order={order} onSelect={setActiveShipmentIndex}/></div>
 
         {/* Assigned Driver Profile Card */}
         {effectiveDriver && (

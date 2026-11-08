@@ -1,3 +1,7 @@
+import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
+import {DispatchService} from './src/lib/dispatchService';
+import {mountDispatchRoutes,mountOrderAccess} from './src/lib/dispatchRoutes';
+import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/coverageConfig';
 import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
@@ -19,7 +23,7 @@ import { fileURLToPath } from 'url';
 import { createServer as createViteServer } from 'vite';
 import { INITIAL_PRODUCTS, INITIAL_STORES } from './src/data/seedData';
 import { Order, Product, Store, DriverProfile, GPSTelemetry, OrderActor, ActorRole } from './src/types';
-import { evaluateDeliveryQuote, DELIVERY_CONFIG, deliveryQuoteEndpoint, validateScheduledBooking, generateScheduledSlots } from './src/lib/deliveryService';
+import { evaluateDeliveryQuote, DELIVERY_CONFIG, validateScheduledBooking, generateScheduledSlots } from './src/lib/deliveryService';
 import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
@@ -36,16 +40,10 @@ import {
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
-// Helper para extraer el actor autenticado u operacional desde cabeceras/payload
-function extractActor(req: Request, defaultRole: ActorRole = 'BODEGA'): OrderActor {
-  const role = ((req.headers['x-actor-role'] as string) || req.body?.role || defaultRole) as any;
-  const id = (req.headers['x-actor-id'] as string) || req.body?.actorId;
-  const name = (req.headers['x-actor-name'] as string) || req.body?.actorName || (
-    role === 'CLIENTE' ? 'Cliente Web' :
-    role === 'CONDUCTOR' ? 'Carlos Rodríguez (Conductor)' :
-    'Operador Bodega'
-  );
-  return { role, id, name };
+// Identity is derived exclusively from verified server sessions or an order capability.
+function extractActor(req:Request, _defaultRole?:ActorRole):OrderActor {
+  const session=(req as any).adminSession;
+  return session?{role:'ADMINISTRADOR',id:session.userId,name:session.name}:{role:'CLIENTE',id:(req as any).authorizedOrderId};
 }
 
 // Authoritative in-memory state initialized from local catalog repository (persisted overrides + 3.830 productos agrupados)
@@ -63,10 +61,14 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 const catalogOperations = new CatalogOperations({file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),products:()=>catalogRepository.getAllProducts(true),stores:()=>stores,orders:()=>ordersRepository.getAllOrders()});
 const transportRepository = new TransportRepository();
-function transportContext() { return {config:transportRepository.read().config,drivers:ordersRepository.getAllDrivers(),orders:ordersRepository.getAllOrders()}; }
+const isDispatchSimulation=simulationEnabled();
+const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
+const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[]});
+function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
 function quoteForPurchase(request: any) {
+  request={...request,destination:enrichDestination(request.destination)};
   const quote=evaluateDeliveryQuote(request,stores,products,ordersRepository.getAllOrders(),transportContext());
-  if(quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
+  if(quote.recommendedMode && quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
     destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
     charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,products.find(p=>p.id===i.productId)?.price]).sort(),
   })).digest('hex');
@@ -74,11 +76,13 @@ function quoteForPurchase(request: any) {
 }
 async function startServer() {
   acquireCatalogWriterLock();
+  if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
-  app.use(cors());
+  if(isDispatchSimulation)app.use((req,res,next)=>{const origin=req.get('Origin');if(!/^127\.0\.0\.1(:\d+)?$/.test(req.get('Host')||'') || origin && origin!==`http://127.0.0.1:${PORT}`)return res.status(403).json({error:'Simulación disponible únicamente en su origen local'});next()});
+  app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
   app.use(express.json({ limit: '15mb' }));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
   app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
@@ -173,6 +177,16 @@ async function startServer() {
     next();
   }
 
+  mountDispatchRoutes(app,dispatchService,ordersRepository,requireAdminAuth);
+  if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth);
+  else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
+  app.use('/api/v1/operations',requireAdminAuth);
+  mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token));
+  // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
+  let dispatchTickRunning=false;
+  const dispatchTimer=setInterval(async()=>{if(dispatchTickRunning||!Object.keys(ordersRepository.dispatchState.runs).length)return;dispatchTickRunning=true;try{await dispatchService.tick()}catch{console.error('[Dispatch] worker failed; durable state retained')}finally{dispatchTickRunning=false}},1000);
+  dispatchTimer.unref();
+
   // ==========================================
   // /api/v1 ROUTES
   // ==========================================
@@ -265,7 +279,7 @@ async function startServer() {
 
   const presentOrder = (order: Order) => {
     const warehouse=stores.find(store=>store.id===order.storeId);
-    return {...order, warehouseAssignment:order.warehouseAssignment,
+    return {...order, dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
       storeName:order.warehouseAssignment?.store.name || warehouse?.name || '',
       warehouse:order.warehouseAssignment?.store || describeWarehouse(warehouse)};
   };
@@ -273,7 +287,7 @@ async function startServer() {
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
-    const quote=quoteForPurchase({...req.body, destination: enrichDestination(req.body.destination)});
+    const quote=quoteForPurchase(req.body);
     return res.json({...quote,warehouse:describeWarehouse(stores.find(store=>store.id===quote.assignedStoreId))});
   });
 
@@ -301,13 +315,14 @@ async function startServer() {
           .trim();
 
         const territory = parseAddressComponents(first.address_components);
-        const resolved = enrichDestination({...territory, coordinates: first.geometry?.location});
+        const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
 
         return res.json({
           address,
           formattedAddress: address,
           rawAddress: raw,
           municipality: resolved.municipality,
+          countryCode: resolved.countryCode,
           locality: resolved.locality,
           neighborhood: territory.neighborhood,
           status: 'OK',
@@ -330,7 +345,7 @@ async function startServer() {
 
     const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
     try {
-      const searchTarget = String(address).toLowerCase().includes('bogot') ? String(address) : `${address}, Bogotá, Colombia`;
+      const searchTarget = String(address); // Country bias only; never append a municipality.
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchTarget)}&key=${apiKey}&components=country:CO&language=es&region=co`
       );
@@ -353,6 +368,7 @@ async function startServer() {
           coordinates: location ? { lat: Number(location.lat.toFixed(6)), lng: Number(location.lng.toFixed(6)) } : null,
           formattedAddress: formatted,
           municipality: resolved.municipality,
+          countryCode: resolved.countryCode,
           locality: resolved.locality,
           neighborhood: territory.neighborhood,
           status: 'OK',
@@ -376,7 +392,7 @@ async function startServer() {
         if(creationRequestId.length>150) return res.status(400).json({error:'Identificador de solicitud inválido'});
         const previous=ordersRepository.getOrderByCreationRequest(creationRequestId);
         if(previous) return previous.creationRequestFingerprint===creationRequestFingerprint
-          ? res.status(200).json(presentOrder(previous)) : res.status(409).json({error:'La solicitud ya fue utilizada con otros datos.'});
+          ? res.status(200).json({...presentOrder(previous),guestAccessToken:dispatchService.guestToken(previous)}) : res.status(409).json({error:'La solicitud ya fue utilizada con otros datos.'});
       }
       const {
         storeId,
@@ -444,6 +460,7 @@ async function startServer() {
               (!scheduledWindow.slotId || slot.slotId === scheduledWindow.slotId) &&
               (!scheduledWindow.startTime || slot.startTime === scheduledWindow.startTime) &&
               (!scheduledWindow.windowId || slot.windowId === scheduledWindow.windowId));
+            if(!canonicalSlot || canonicalSlot.cutoffPassed || canonicalSlot.availableCapacity<=0) return res.status(400).json({code:'SLOT_CAPACITY_EXCEEDED',error:'La franja seleccionada ya no está disponible. Elige otra franja.'});
             Object.assign(scheduledWindow, canonicalSlot);
             const bookingVal = validateScheduledBooking(scheduledWindow);
             if (!bookingVal.valid) {
@@ -522,7 +539,7 @@ async function startServer() {
       // ETA calculado dinámicamente según la cotización
       const estimatedMinutes = evaluatedQuote?.estimatedMinutes || (effectiveDeliveryMode === 'PROGRAMADO' ? 180 : 25);
       const promiseEnd = effectiveDeliveryMode === 'PROGRAMADO' && scheduledWindow
-        ? `${scheduledWindow.date}T${scheduledWindow.endTime}:00.000Z`
+        ? `${scheduledWindow.date}T${scheduledWindow.endTime}:00-05:00`
         : new Date(Date.now() + estimatedMinutes * 60 * 1000).toISOString();
 
       const newOrderId = `ORD-${crypto.randomUUID()}`;
@@ -532,8 +549,6 @@ async function startServer() {
       if (isSplitOrder && evaluatedQuote?.turboDividido?.shipments) {
         let accumulatedCash = 0;
         childShipments = evaluatedQuote.turboDividido.shipments.map((plan: any, idx: number) => {
-          // Asignar conductor inicial de la flota disponible en bodega
-          const assignedDriver = evaluatedQuote.transportPlan.shipments[idx].vehicle.externalOffer?.driver || drivers.find(d=>d.id===evaluatedQuote.transportPlan.shipments[idx].driverId);
           const isLast = idx === evaluatedQuote.turboDividido.shipments.length - 1;
           
           // Asignación proporcional de efectivo contra entrega
@@ -582,15 +597,6 @@ async function startServer() {
             fulfillmentStatus: 'CONFIRMADO',
             secretDeliveryCode: nextDeliveryCode(),
             estimatedDeliveryMinutes: plan.estimatedArrivalSeconds/60 || estimatedMinutes,
-            driver: assignedDriver ? {
-              id: assignedDriver.id,
-              name: assignedDriver.name,
-              phone: assignedDriver.phone,
-              vehiclePlate: assignedDriver.vehiclePlate,
-              vehicleType: assignedDriver.vehicleType,
-              rating: assignedDriver.rating,
-              photo: assignedDriver.photo,
-            } : undefined,
             timestamps: {
               confirmedAt: new Date().toISOString(),
             },
@@ -602,7 +608,6 @@ async function startServer() {
         creationRequestId, creationRequestFingerprint,
         transportConfirmation: evaluatedQuote.confirmationToken,
         transportLoad: !isSplitOrder ? evaluatedQuote.transportPlan.shipments[0] : undefined,
-        driver: !isSplitOrder ? evaluatedQuote.transportPlan.shipments[0].vehicle.externalOffer?.driver || drivers.find(d=>d.id===evaluatedQuote.transportPlan.shipments[0].driverId) : undefined,
         id: newOrderId,
         orderNumber: newOrderNum,
         createdAt: new Date().toISOString(),
@@ -663,11 +668,11 @@ async function startServer() {
         },
       };
 
-      const createResult = ordersRepository.createOrder(newOrder, products, assignedStore);
+      const createResult = dispatchService.createOrder(newOrder, products, assignedStore);
       if (!createResult.success) {
         return res.status(400).json({ error: createResult.error });
       }
-      return res.status(201).json(presentOrder(createResult.order!));
+      return res.status(201).json({...presentOrder(createResult.order!),guestAccessToken:dispatchService.guestToken(createResult.order!)});
     } catch (e: any) {
       console.error('Error creating order:', e);
       return res.status(500).json({ error: e.message || 'Error interno del servidor' });
@@ -675,7 +680,7 @@ async function startServer() {
   });
 
   // Get orders
-  app.get('/api/v1/orders', (req: Request, res: Response) => {
+  app.get('/api/v1/orders', requireAdminAuth, (req: Request, res: Response) => {
     const { storeId, status } = req.query;
     let list = ordersRepository.getAllOrders();
     if (storeId) list = list.filter(o => o.storeId === storeId);
@@ -691,7 +696,7 @@ async function startServer() {
   });
 
   // Get audit history of an order
-  app.get('/api/v1/orders/:orderId/history', (req: Request, res: Response) => {
+  app.get('/api/v1/orders/:orderId/history', requireAdminAuth, (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
     res.json({
@@ -706,7 +711,7 @@ async function startServer() {
   app.post('/api/v1/orders/:orderId/cancel', (req: Request, res: Response) => {
     const { reason, role, actorName } = req.body;
     const actor = extractActor(req, role || 'CLIENTE');
-    if (actorName) actor.name = actorName;
+
 
     const result = ordersRepository.transitionStatus(req.params.orderId, 'CANCELADO', actor, {
       shipmentId:req.body.shipmentId,
@@ -718,6 +723,7 @@ async function startServer() {
       return res.status(result.code || 400).json({ error: result.error });
     }
 
+    dispatchService.synchronizeOrders();
     res.json({ message: 'Pedido cancelado exitosamente', order: result.order });
   });
 
@@ -748,13 +754,17 @@ async function startServer() {
     const child=shipmentId ? order.childShipments?.find(s=>s.shipmentId===shipmentId) : undefined;
     if(shipmentId && !child) return res.status(404).json({error:'Entrega no encontrada en esta compra.'});
     const tracked=child || order;
-    const latestTelemetry = ordersRepository.getLatestTelemetry(order.id, shipmentId);
+    const lastPoint=ordersRepository.getLatestTelemetry(order.id,shipmentId);
+    const latestTelemetry=tracked.fulfillmentStatus==='EN_CAMINO'&&lastPoint&&Date.now()-lastPoint.timestamp<=ordersRepository.dispatchState.config.locationMaxAgeSeconds*1000?lastPoint:null;
 
     res.json({
       orderId: order.id,
       shipmentId,
       orderNumber: order.orderNumber,
       status: tracked.fulfillmentStatus,
+      dispatches:dispatchService.customerDispatches(order.id),
+      dispatchStatusMessage:dispatchService.customerMessage(order.id),
+      locationStale:!!lastPoint&&!latestTelemetry,
       deliveryMode: order.deliveryMode || 'TURBO',
       warehouse:presentOrder(order).warehouse,
       warehouseAssignment:order.warehouseAssignment,
@@ -793,7 +803,7 @@ async function startServer() {
   });
 
   // GPS Telemetry History (breadcrumbs for audit and live route rendering)
-  app.get('/api/v1/orders/:orderId/telemetry/history', (req: Request, res: Response) => {
+  app.get('/api/v1/orders/:orderId/telemetry/history', requireAdminAuth, (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
@@ -809,222 +819,11 @@ async function startServer() {
   });
 
   // Verify delivery with customer secret code (supports entire order or individual child shipment)
-  app.post('/api/v1/orders/:orderId/verify-delivery', (req: Request, res: Response) => {
-    const { deliveryCode, shipmentId } = req.body;
-    if (!deliveryCode) {
-      return res.status(400).json({ error: 'Se requiere el código secreto de entrega de 4 dígitos.' });
-    }
-
-    const actor = extractActor(req, 'CONDUCTOR');
-    const result = ordersRepository.verifyDelivery(req.params.orderId, deliveryCode, actor, shipmentId, products);
-
-    if (!result.success) {
-      return res.status(result.code || 403).json({ error: result.error });
-    }
-
-    res.json({
-      message: shipmentId ? 'Envío verificado y entregado exitosamente' : 'Entrega verificada exitosamente',
-      childShipment: result.childShipment,
-      order: result.order,
-    });
-  });
+  app.post('/api/v1/orders/:orderId/verify-delivery', (_req,res)=>res.status(409).json({error:'Confirma la entrega desde la asignación autenticada de BOLT Conductor.'}));
 
   // ==========================================
   // BOLT CONDUCTOR ANDROID SHARED CONTRACT ROUTES
   // ==========================================
-
-  app.get('/api/v1/driver/profile', (_req: Request, res: Response) => {
-    const currentDrivers = ordersRepository.getAllDrivers();
-    res.json(currentDrivers[0]);
-  });
-
-  app.post('/api/v1/driver/shift', (req: Request, res: Response) => {
-    const { action } = req.body;
-    const currentDrivers = ordersRepository.getAllDrivers();
-    const driver = currentDrivers[0];
-    driver.isOnline = action === 'START';
-    driver.currentStatus = driver.isOnline ? 'DISPONIBLE' : 'FUERA_DE_TURNO';
-    res.json({ message: `Turno ${driver.isOnline ? 'iniciado' : 'finalizado'}`, driver });
-  });
-
-  app.get('/api/v1/driver/assignments', (_req: Request, res: Response) => {
-    const all = ordersRepository.getAllOrders();
-    const activeOrder = all.find(o => 
-      (o.driver?.id === 'DRV-CARLOS-01' && o.fulfillmentStatus !== 'ENTREGADO' && o.fulfillmentStatus !== 'CANCELADO') ||
-      (o.childShipments?.some(c => c.driver?.id === 'DRV-CARLOS-01' && c.fulfillmentStatus !== 'ENTREGADO' && c.fulfillmentStatus !== 'CANCELADO'))
-    );
-    res.json({ activeAssignment: activeOrder || null });
-  });
-
-  app.post('/api/v1/driver/assignments/:assignmentId/accept', (req: Request, res: Response) => {
-    const assignmentId = req.params.assignmentId;
-    const all = ordersRepository.getAllOrders();
-    let targetOrder = all.find(o => o.assignmentId === assignmentId);
-    let targetShipmentId: string | undefined;
-
-    if (!targetOrder) {
-      for (const o of all) {
-        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
-        if (child) {
-          targetOrder = o;
-          targetShipmentId = child.shipmentId;
-          break;
-        }
-      }
-    }
-
-    if (!targetOrder) {
-      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
-    }
-
-    res.json({
-      message: 'Asignación aceptada por el conductor',
-      assignmentId,
-      orderId: targetOrder.id,
-      shipmentId: targetShipmentId,
-    });
-  });
-
-  app.post('/api/v1/driver/assignments/:assignmentId/pickup', (req: Request, res: Response) => {
-    const assignmentId = req.params.assignmentId;
-    const all = ordersRepository.getAllOrders();
-    let targetOrder = all.find(o => o.assignmentId === assignmentId);
-    let targetShipmentId: string | undefined;
-
-    if (!targetOrder) {
-      for (const o of all) {
-        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
-        if (child) {
-          targetOrder = o;
-          targetShipmentId = child.shipmentId;
-          break;
-        }
-      }
-    }
-
-    if (!targetOrder) {
-      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
-    }
-
-    const actor = extractActor(req, 'CONDUCTOR');
-    const result = ordersRepository.confirmPickup(targetOrder.id, actor, targetShipmentId);
-    if (!result.success) {
-      return res.status(result.code || 400).json({ error: result.error });
-    }
-
-    res.json({
-      message: 'Recogida física verificada en bodega. Pedido en camino.',
-      order: result.order,
-      childShipment: result.childShipment,
-    });
-  });
-
-  app.post('/api/v1/driver/assignments/:assignmentId/delivered', (req: Request, res: Response) => {
-    const assignmentId = req.params.assignmentId;
-    const { deliveryCode, recipientNotes } = req.body;
-
-    if (!deliveryCode) {
-      return res.status(400).json({ error: 'Se requiere el código de entrega de 4 dígitos.' });
-    }
-
-    const all = ordersRepository.getAllOrders();
-    let targetOrder = all.find(o => o.assignmentId === assignmentId);
-    let targetShipmentId: string | undefined;
-
-    if (!targetOrder) {
-      for (const o of all) {
-        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
-        if (child) {
-          targetOrder = o;
-          targetShipmentId = child.shipmentId;
-          break;
-        }
-      }
-    }
-
-    if (!targetOrder) {
-      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
-    }
-
-    const actor = extractActor(req, 'CONDUCTOR');
-    const result = ordersRepository.verifyDelivery(targetOrder.id, deliveryCode, actor, targetShipmentId, products);
-    if (!result.success) {
-      return res.status(result.code || 403).json({ error: result.error });
-    }
-
-    res.json({
-      message: 'Entrega verificada exitosamente',
-      order: result.order,
-      childShipment: result.childShipment,
-      recipientNotes,
-    });
-  });
-
-  app.post('/api/v1/driver/assignments/:assignmentId/incident', (req: Request, res: Response) => {
-    const assignmentId = req.params.assignmentId;
-    const { incidentType, description } = req.body;
-
-    const all = ordersRepository.getAllOrders();
-    let targetOrder = all.find(o => o.assignmentId === assignmentId);
-    let targetShipmentId: string | undefined;
-
-    if (!targetOrder) {
-      for (const o of all) {
-        const child = o.childShipments?.find(c => c.assignmentId === assignmentId);
-        if (child) {
-          targetOrder = o;
-          targetShipmentId = child.shipmentId;
-          break;
-        }
-      }
-    }
-
-    if (!targetOrder) {
-      return res.status(404).json({ error: `Asignación no encontrada: ${assignmentId}` });
-    }
-
-    const actor = extractActor(req, 'CONDUCTOR');
-    const result = ordersRepository.reportIncident(
-      targetOrder.id,
-      actor,
-      incidentType || 'NOVEDAD_RUTA',
-      description || 'Incidencia en ruta',
-      targetShipmentId
-    );
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json({
-      message: 'Incidencia registrada exitosamente',
-      order: result.order,
-    });
-  });
-
-  app.post('/api/v1/driver/gps', (req: Request, res: Response) => {
-    const telemetry: GPSTelemetry = req.body;
-    if (!telemetry || !telemetry.orderId || typeof telemetry.latitude !== 'number' || typeof telemetry.longitude !== 'number') {
-      return res.status(400).json({ error: 'Datos de telemetría incompletos (se requieren orderId, latitude y longitude)' });
-    }
-
-    const actor = extractActor(req, 'CONDUCTOR');
-    if (req.headers['x-driver-id']) {
-      actor.id = String(req.headers['x-driver-id']);
-    }
-
-    const result = ordersRepository.recordTelemetry(telemetry, actor);
-    if (!result.success) {
-      return res.status(result.code || 400).json({ error: result.error });
-    }
-
-    const totalCount = ordersRepository.getTelemetryHistory(telemetry.orderId, telemetry.shipmentId).length;
-    res.json({
-      status: 'telemetry_received',
-      point: result.point,
-      count: totalCount,
-    });
-  });
 
   // ==========================================
   // OPERATIONS DASHBOARD ROUTES
@@ -1036,6 +835,11 @@ async function startServer() {
       return res.status(400).json({ error: 'Se requiere especificar el parámetro status' });
     }
 
+    if(['REPARTIDOR_ASIGNADO','EN_CAMINO','ENTREGADO'].includes(status))return res.status(409).json({error:'Usa el flujo autenticado del despacho para asignar, recoger o entregar.'});
+    const order=ordersRepository.getOrderById(req.params.orderId);
+    const selected=shipmentId?order?.childShipments?.find(s=>s.shipmentId===shipmentId):order;
+    const run=selected?.assignmentId?ordersRepository.dispatchState.runs[selected.assignmentId]:undefined;
+    if(status==='CANCELADO'&&run&&(['ASSIGNED','PICKED_UP','INCIDENT','OFFER_PENDING'].includes(run.status)||run.external&&!['CANCELLED','REJECTED'].includes(run.external.status)))return res.status(409).json({error:'Libera la asignación o gestiona la custodia antes de cancelar.'});
     const actor = extractActor(req, 'BODEGA');
     const result = ordersRepository.transitionStatus(req.params.orderId, status, actor, {
       shipmentId,
@@ -1072,20 +876,12 @@ async function startServer() {
     res.json({ message: 'Revisión farmacéutica registrada', order });
   });
 
-  app.post('/api/v1/operations/orders/:orderId/assign-driver', (req: Request, res: Response) => {
-    const { driverId, shipmentId } = req.body;
-    const actor = extractActor(req, 'COORDINADOR');
-    const result = ordersRepository.assignDriver(req.params.orderId, driverId || 'DRV-CARLOS-01', actor, shipmentId);
-
-    if (!result.success) {
-      return res.status(400).json({ error: result.error });
-    }
-
-    res.json({
-      message: 'Conductor asignado exitosamente',
-      order: result.order,
-      childShipment: result.childShipment,
-    });
+  app.post('/api/v1/operations/orders/:orderId/assign-driver', async (req,res)=>{
+    const order=ordersRepository.getOrderById(req.params.orderId);
+    const target=req.body.shipmentId?order?.childShipments?.find(s=>s.shipmentId===req.body.shipmentId):order;
+    if(!order||!target)return res.status(404).json({error:'Despacho no encontrado'});
+    if(!ordersRepository.dispatchState.runs[target.assignmentId!])return res.status(409).json({error:'Registra y reconcilia la operación histórica antes de asignar.'});
+    try{await dispatchService.search(target.assignmentId!,extractActor(req).id);return res.json({message:'Búsqueda iniciada; la asignación requiere aceptación.',dispatches:dispatchService.customerDispatches(order.id)})}catch{return res.status(409).json({error:'No se pudo iniciar la búsqueda'})}
   });
 
   // Confirm physical return of cancelled dispatched order
@@ -1138,7 +934,7 @@ async function startServer() {
   });
 
   // Verify and calibrate warehouse dispatch entrance
-  app.post('/api/v1/stores/:id/verify-entrance', (req: Request, res: Response) => {
+  app.post('/api/v1/stores/:id/verify-entrance', requireAdminAuth, (req: Request, res: Response) => {
     const store = stores.find(s => s.id === req.params.id);
     if (!store) return res.status(404).json({ error: 'Bodega no encontrada' });
 
@@ -1249,6 +1045,12 @@ async function startServer() {
     if(!result.success) return res.status(400).json({error:result.error});
     res.json({product:result.product});
   });
+
+  // Read-only administrative view. Configuration changes require a reviewed repository change.
+  app.get('/api/v1/admin/coverage', requireAdminAuth, (_req,res)=>res.json({
+    municipalities:COVERAGE_MUNICIPALITIES.map(m=>({...m,scheduledServiceReady:scheduledServiceReady(m.scheduledService)})),
+    configurationSource:'src/data/coverageConfig.ts',
+  }));
 
   app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
     const { q, category, status } = req.query;
@@ -1387,7 +1189,7 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, '0.0.0.0', () => {
+  app.listen(PORT, isDispatchSimulation?'127.0.0.1':'0.0.0.0', () => {
     console.log(`Bolt Pets Authoritative Full-Stack Server running on port ${PORT}`);
   });
 }

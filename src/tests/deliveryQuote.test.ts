@@ -77,7 +77,7 @@ async function runTests() {
   const quoteKennedy = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Calle 3 #78-20, Kennedy Central, Bogotá',
+        address: 'Calle 3 #78-20, Kennedy Central, Bogotá', municipality:'Bogotá', locality:'Kennedy',
         coordinates: kennedyClient,
       },
     },
@@ -123,7 +123,7 @@ async function runTests() {
   const quoteCentro = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Calle 11 #15-53, Centro, Bogotá',
+        address: 'Calle 11 #15-53, Centro, Bogotá',municipality:'Bogotá',locality:'La Candelaria',
         coordinates: centroClient,
       },
     },
@@ -145,9 +145,9 @@ async function runTests() {
     INITIAL_PRODUCTS
   );
   assert(quoteFar.availableModes.turbo === false, 'Destino > 6.000m o fuera de Kennedy/Suba/Engativá deshabilita Turbo');
-  assert(quoteFar.availableModes.scheduled === false, 'Chía permanece fuera del territorio habilitado');
-  assert(quoteFar.eligibilityStatus === 'OUT_OF_COVERAGE', 'Municipio excluido tiene rechazo geográfico explícito');
-  assert(quoteFar.reasonCode === 'TERRITORY_OUT_OF_COVERAGE', 'La exclusión de Chía es territorial, no un radio ampliado');
+  assert(quoteFar.availableModes.scheduled === true, 'Chía reutiliza el servicio Programado aprobado de Bogotá');
+  assert(quoteFar.territoryInfo?.isCovered === true, 'Chía es una zona geográficamente habilitada');
+  assert(quoteFar.assignedStoreId === 'HUB_SUBA', 'Chía se atiende desde Suba');
 
   // Test 10: Strict 1,500s Time Boundary Test
   // Create an artificial candidate store at distance where total seconds exceeds 1500s but distance is <= 6000m
@@ -187,7 +187,7 @@ async function runTests() {
   const exact60kgQuote = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Calle 3 #78-20, Kennedy Central',
+        address: 'Calle 3 #78-20, Kennedy Central', municipality:'Bogotá', locality:'Kennedy',
         coordinates: kennedyClient,
       },
       items: [
@@ -205,7 +205,7 @@ async function runTests() {
   const heavy60kgPlusQuote = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Calle 3 #78-20, Kennedy Central',
+        address: 'Calle 3 #78-20, Kennedy Central', municipality:'Bogotá', locality:'Kennedy',
         coordinates: kennedyClient,
       },
       items: [
@@ -238,7 +238,7 @@ async function runTests() {
   const caseAQuote = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Calle 3 #78-20, Kennedy Central',
+        address: 'Calle 3 #78-20, Kennedy Central', municipality:'Bogotá', locality:'Kennedy',
         coordinates: kennedyClient,
       },
       items: [{ productId: 'prod-nexgard-spectra-m', quantity: 1 }],
@@ -261,7 +261,7 @@ async function runTests() {
   const caseCQuote = evaluateDeliveryQuote(
     {
       destination: {
-        address: 'Carrera 7 #120-15, Usaquén, Bogotá',
+        address: 'Carrera 7 #120-15, Usaquén, Bogotá',municipality:'Bogotá',locality:'Usaquén',
         coordinates: usaquenClient,
       },
       items: [{ productId: 'prod-nexgard-spectra-m', quantity: 1 }],
@@ -471,7 +471,7 @@ async function runTests() {
 
   const quoteOutOfStock = evaluateDeliveryQuote(
     {
-      destination: { address: 'Calle 3 #78-20, Kennedy Central', coordinates: clientCoord },
+      destination: { address: 'Calle 3 #78-20, Kennedy Central', municipality:'Bogotá', locality:'Kennedy', coordinates: clientCoord },
       items: [{ productId: zeroStockKennedyCatalog[0].id, quantity: 1 }],
     },
     INITIAL_STORES,

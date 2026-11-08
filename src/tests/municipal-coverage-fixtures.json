@@ -1,0 +1,93 @@
+[
+  {
+    "name": "Cajicá",
+    "address": "Calle 2 #4-07, Cajicá, Cundinamarca",
+    "coordinates": {
+      "lat": 4.916705,
+      "lng": -74.025399
+    },
+    "formattedAddress": "Cl. 2 #4-07, Cajicá, Colombia",
+    "municipality": "Cajicá",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.482002+00:00; municipality independently validated against DANE MGN 2024"
+  },
+  {
+    "name": "Cota",
+    "address": "Carrera 5 #12-14, Cota, Cundinamarca",
+    "coordinates": {
+      "lat": 4.809501,
+      "lng": -74.101627
+    },
+    "formattedAddress": "Cra. 5 #12-14, Cota, Colombia",
+    "municipality": "COTA",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.368943+00:00; municipality independently validated against DANE MGN 2024"
+  },
+  {
+    "name": "Madrid",
+    "address": "Calle 6 #3-55, Madrid, Cundinamarca",
+    "coordinates": {
+      "lat": 4.730565,
+      "lng": -74.262683
+    },
+    "formattedAddress": "Cl. 6 #3-55, Madrid, Colombia",
+    "municipality": "MADRID",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.456061+00:00; municipality independently validated against DANE MGN 2024"
+  },
+  {
+    "name": "Funza",
+    "address": "Carrera 14 #12-20, Funza, Cundinamarca",
+    "coordinates": {
+      "lat": 4.71626,
+      "lng": -74.213314
+    },
+    "formattedAddress": "Carrera 14 #12-20, Funza, Colombia",
+    "municipality": "FUNZA",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.184286+00:00; municipality independently validated against DANE MGN 2024"
+  },
+  {
+    "name": "Mosquera",
+    "address": "Calle 2 #2-15, Mosquera, Cundinamarca",
+    "coordinates": {
+      "lat": 4.704399,
+      "lng": -74.23055
+    },
+    "formattedAddress": "Cl. 2 #2-15, Mosquera, Colombia",
+    "municipality": "MOSQUERA",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.458802+00:00; municipality independently validated against DANE MGN 2024"
+  },
+  {
+    "name": "Sibaté",
+    "address": "Calle 10 #8-01, Sibaté, Cundinamarca",
+    "coordinates": {
+      "lat": 4.492351,
+      "lng": -74.259703
+    },
+    "formattedAddress": "Cl. 10 # 8-1, Sibaté, Colombia",
+    "municipality": "SIBATÉ",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.115476+00:00; municipality independently validated against DANE MGN 2024"
+  },
+  {
+    "name": "Zipaquirá",
+    "address": "Carrera 7 #4-11, Zipaquirá, Cundinamarca",
+    "coordinates": {
+      "lat": 5.02332,
+      "lng": -74.004443
+    },
+    "formattedAddress": "Cra. 7 #4-11, Zipaquirá, Colombia",
+    "municipality": "ZIPAQUIRÁ",
+    "countryCode": "CO",
+    "status": "OK",
+    "source": "Google Maps Geocoding API through BOLT, 2026-11-07T07:20:57.449273+00:00; municipality independently validated against DANE MGN 2024"
+  }
+]

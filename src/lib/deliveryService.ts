@@ -1,3 +1,4 @@
+import { COVERAGE_MUNICIPALITIES, coverageMunicipality, scheduledServiceReady, type CoverageMunicipality } from '../data/coverageConfig';
 import { applyTransportQuote } from './transportQuote';
 import { DEFAULT_TRANSPORT_CONFIG, type TransportContext, type TransportPlan } from './transportPlanner';
 import { WAREHOUSES } from '../data/warehouseConfig';
@@ -34,128 +35,6 @@ export const TURBO_ALLOWED_LOCALITIES = ['KENNEDY', 'SUBA', 'ENGATIVA'] as const
 export type TurboLocality = typeof TURBO_ALLOWED_LOCALITIES[number];
 
 /**
- * Detecta la localidad de Bogotá mediante análisis de texto de dirección y coordenadas geográficas.
- */
-export function detectBogotaLocality(coords?: { lat: number; lng: number } | null, addressText?: string): string {
-  const clean = (addressText || '').toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
-
-  // 1. Detección por texto y barrios conocidos con precedencia
-  if (
-    clean.includes('kennedy') || clean.includes('castilla') || clean.includes('timiza') || 
-    clean.includes('tintal') || clean.includes('patio bonito') || clean.includes('carvajal') || 
-    clean.includes('mandalay') || clean.includes('bavaria') || clean.includes('villa alsacia')
-  ) {
-    return 'KENNEDY';
-  }
-  if (
-    clean.includes('suba') || clean.includes('rincon') || clean.includes('tibabuyes') || 
-    clean.includes('pinar') || clean.includes('lombardia') || clean.includes('niza') || 
-    clean.includes('colina campestre') || clean.includes('colina') || clean.includes('mazuren') || 
-    clean.includes('prado veraniego') || clean.includes('san jose de baviera')
-  ) {
-    return 'SUBA';
-  }
-  if (
-    clean.includes('engativa') || clean.includes('alamos') || clean.includes('villas') || 
-    clean.includes('minuto de dios') || clean.includes('quirigua') || clean.includes('normandia') || 
-    clean.includes('boyaca real') || clean.includes('santa cecilia') || clean.includes('garces navas') ||
-    clean.includes('calle 72')
-  ) {
-    return 'ENGATIVA';
-  }
-  if (
-    clean.includes('usaquen') || clean.includes('cedritos') || clean.includes('santa barbara') || 
-    clean.includes('san patricio') || clean.includes('calle 140') || clean.includes('calle 116') || 
-    clean.includes('calle 127') || clean.includes('unicentro') || clean.includes('torca') ||
-    clean.includes('santa ana') || clean.includes('la carolina')
-  ) {
-    return 'USAQUEN';
-  }
-  if (
-    clean.includes('chapinero') || clean.includes('lourdes') || clean.includes('rosales') || 
-    clean.includes('chico') || clean.includes('antiguo country') || clean.includes('marly') || 
-    clean.includes('javeriana') || clean.includes('el retiro')
-  ) {
-    return 'CHAPINERO';
-  }
-  if (
-    clean.includes('teusaquillo') || clean.includes('salitre') || clean.includes('palermo') || 
-    clean.includes('la soledad') || clean.includes('quinta paredes') || clean.includes('ciudad salitre')
-  ) {
-    return 'TEUSAQUILLO';
-  }
-  if (
-    clean.includes('fontibon') || clean.includes('modelia') || clean.includes('hayuelos') || 
-    clean.includes('capellania') || clean.includes('aeropuerto') || clean.includes('zona franca')
-  ) {
-    return 'FONTIBON';
-  }
-  if (
-    clean.includes('candelaria') || clean.includes('centro') || clean.includes('santa fe') || 
-    clean.includes('martires') || clean.includes('las cruces') || clean.includes('plaza de bolivar')
-  ) {
-    return 'CENTRO_HISTORICO';
-  }
-  if (clean.includes('bosa') || clean.includes('el recreo') || clean.includes('san pablo')) {
-    return 'BOSA';
-  }
-  if (clean.includes('barrios unidos') || clean.includes('castellana') || clean.includes('alcazares') || clean.includes('polo')) {
-    return 'BARRIOS_UNIDOS';
-  }
-  if (clean.includes('puente aranda') || clean.includes('ciudad montes')) {
-    return 'PUENTE_ARANDA';
-  }
-
-  // 2. Detección por polígonos/cuadrícula de coordenadas geográficas
-  if (coords && typeof coords.lat === 'number' && typeof coords.lng === 'number' && !isNaN(coords.lat) && !isNaN(coords.lng)) {
-    const { lat, lng } = coords;
-
-    // Kennedy: lat ~4.590 - 4.665, lng ~ -74.195 - -74.135
-    if (lat >= 4.590 && lat <= 4.665 && lng >= -74.195 && lng <= -74.135) {
-      return 'KENNEDY';
-    }
-    // Suba: lat ~4.710 - 4.825, lng ~ -74.135 - -74.045
-    if (lat >= 4.710 && lat <= 4.825 && lng >= -74.135 && lng <= -74.045) {
-      return 'SUBA';
-    }
-    // Engativá: lat ~4.670 - 4.730, lng ~ -74.148 - -74.085
-    if (lat >= 4.670 && lat <= 4.730 && lng >= -74.148 && lng <= -74.085) {
-      return 'ENGATIVA';
-    }
-    // Fontibón: lat ~4.640 - 4.685, lng ~ -74.165 - -74.110
-    if (lat >= 4.640 && lat <= 4.685 && lng >= -74.165 && lng <= -74.110) {
-      return 'FONTIBON';
-    }
-    // Usaquén: lat ~4.680 - 4.800, lng >= -74.055 && lng <= -74.010
-    if (lat >= 4.680 && lat <= 4.800 && lng >= -74.055 && lng <= -74.010) {
-      return 'USAQUEN';
-    }
-    // Chapinero: lat ~4.625 - 4.685, lng >= -74.070 && lng <= -74.030
-    if (lat >= 4.625 && lat <= 4.685 && lng >= -74.070 && lng <= -74.030) {
-      return 'CHAPINERO';
-    }
-    // Teusaquillo: lat ~4.620 - 4.665, lng >= -74.095 && lng <= -74.065
-    if (lat >= 4.620 && lat <= 4.665 && lng >= -74.095 && lng <= -74.065) {
-      return 'TEUSAQUILLO';
-    }
-    // Centro / La Candelaria / Santa Fe: lat ~4.585 - 4.620, lng >= -74.085 && lng <= -74.050
-    if (lat >= 4.585 && lat <= 4.620 && lng >= -74.085 && lng <= -74.050) {
-      return 'CENTRO_HISTORICO';
-    }
-    // Bosa: lat ~4.580 - 4.630, lng >= -74.210 && lng <= -74.165
-    if (lat >= 4.580 && lat <= 4.630 && lng >= -74.210 && lng <= -74.165) {
-      return 'BOSA';
-    }
-    // Barrios Unidos: lat ~4.650 - 4.690, lng >= -74.090 && lng <= -74.055
-    if (lat >= 4.650 && lat <= 4.690 && lng >= -74.090 && lng <= -74.055) {
-      return 'BARRIOS_UNIDOS';
-    }
-  }
-
-  return 'OTRA_LOCALIDAD_BOGOTA';
-}
-
-/**
  * Obtiene el nombre amigable de la localidad de Bogotá.
  */
 export function getBogotaLocalityName(localityCode: string): string {
@@ -181,7 +60,7 @@ export const DELIVERY_CONFIG = {
   scheduledCoverageRadiusMeters: SCHEDULED_COVERAGE_RADIUS_METERS,
   maxScheduledWeightGrams: MAX_SCHEDULED_WEIGHT_GRAMS,
   scheduledDelivery: SCHEDULED_DELIVERY_CONFIG,
-  configVersion: '2026.3-UNIT-CAPACITY',
+  configVersion: '2026.4-MUNICIPAL-COVERAGE',
   defaultPrepReadySeconds: 180, // 3 min alistamiento base de farmacia / alimentos
   itemPickSeconds: 15,          // 15 seg por ítem adicional en picking
   courierReadySeconds: 120,     // 2 min disponibilidad de repartidor en bodega
@@ -270,6 +149,8 @@ export interface ScheduledSlot {
   commercialHook: string; // "Pide antes de las 10:00 a. m. y recibe hoy de 9:00 a. m. a 2:00 p. m."
   countdownNotice?: string; // "⏰ Últimos 35 minutos para elegir esta franja"
   minutesUntilCutoff?: number; // 35
+  unavailableReason?: 'CAPACITY' | 'TRANSPORT';
+  unavailableMessage?: string;
   availableCapacity: number;
   maxCapacity: number;
   cutoffPassed: boolean;
@@ -331,6 +212,9 @@ export interface DeliveryQuote {
     scheduled: boolean;
   };
   recommendedMode: DeliveryMode | null;
+  // Effective UI mode remains known even when an operational check is pending.
+  effectiveMode?: DeliveryMode;
+  selectedSlotInvalid?: boolean;
 
   // Detalles Turbo
   assignedStoreId?: string;
@@ -837,9 +721,9 @@ function evaluateDeliveryQuoteInternal(
   }
 
   // Validación de localidad en Bogotá
-  const detectedLocality = (canonicalizeBogotaLocality(destination.locality) || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '') || detectBogotaLocality(destination.coordinates, destination.address);
+  const detectedLocality = (canonicalizeBogotaLocality(destination.locality) || '').toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '');
   const detectedLocalityName = getBogotaLocalityName(detectedLocality);
-  const isTurboLocality = TURBO_ALLOWED_LOCALITIES.includes(detectedLocality as any);
+  const isTurboLocality = !!coverageMunicipality(destination.municipality)?.modes.some(m=>m==='TURBO' || m==='TURBO_DIVIDIDO') && TURBO_ALLOWED_LOCALITIES.includes(detectedLocality as any);
 
   // Bodegas activas con Turbo habilitado (Kennedy, Álamos, Suba)
   const activeTurboStores = stores.filter(s => s.isActive && s.turboEnabled && (!s.enabledModes || !!s.scheduledLocalities?.length || !!s.scheduledMunicipalities?.length) && (!s.enabledModes || s.enabledModes.includes('TURBO') || s.enabledModes.includes('TURBO_DIVIDIDO')));
@@ -872,7 +756,7 @@ function evaluateDeliveryQuoteInternal(
       roadDistanceKm: 0,
       scheduledEligible: false,
       scheduledSlots: [],
-      territoryInfo: territoryAssignment,
+      territoryInfo: {...territoryAssignment,status:'OUT_OF_COVERAGE',isCovered:false,assignedStoreId:null,assignedStoreName:null},
       municipality: territoryAssignment.municipality,
       locality: territoryAssignment.locality,
       calculatedAt: now.toISOString(),
@@ -890,7 +774,7 @@ function evaluateDeliveryQuoteInternal(
     return {
       quoteId,
       eligibilityStatus: DeliveryStatus.ADDRESS_NEEDS_CONFIRMATION,
-      reasonCode: 'LOCALITY_NEEDS_CONFIRMATION',
+      reasonCode: territoryAssignment.municipality ? 'LOCALITY_NEEDS_CONFIRMATION' : 'MUNICIPALITY_NEEDS_CONFIRMATION',
       message: territoryAssignment.reason || 'Por favor confirma tu localidad o municipio para validar la cobertura y bodega.',
       availableModes: { turbo: false, turboDividido: false, scheduled: false },
       recommendedMode: null,
@@ -1286,7 +1170,7 @@ function evaluateDeliveryQuoteInternal(
 
 // One result for store, checkout and order creation. Slots are populated from
 // the server's order repository; a full slot is an operational rejection.
-export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOTA_TURBO_WAREHOUSES, products: Product[] = [], slotOrders: any[] = [], transport: TransportContext = {config:DEFAULT_TRANSPORT_CONFIG,drivers:[],orders:slotOrders}): DeliveryQuote {
+export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOTA_TURBO_WAREHOUSES, products: Product[] = [], slotOrders: any[] = [], transport: TransportContext = {config:DEFAULT_TRANSPORT_CONFIG,drivers:[],orders:slotOrders}, coverageConfig: CoverageMunicipality[] = COVERAGE_MUNICIPALITIES): DeliveryQuote {
   const quantities=new Map<string,number>();
   for(const i of req.items || []) quantities.set(i.productId,(quantities.get(i.productId)||0)+i.quantity);
   req={...req,items:[...quantities].map(([productId,quantity])=>({productId,quantity}))};
@@ -1300,15 +1184,24 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
     quote.availableModes.turboDividido &&= turboStore.enabledModes.includes('TURBO_DIVIDIDO');
     if((quote.recommendedMode==='TURBO' && !quote.availableModes.turbo) || (quote.recommendedMode==='TURBO_DIVIDIDO' && !quote.availableModes.turboDividido)) quote.recommendedMode='PROGRAMADO';
   }
+  const policy=coverageMunicipality(territory.municipality,coverageConfig);
+  if(!policy?.active) return {...quote,eligibilityStatus:'OUT_OF_COVERAGE',reasonCode:'TERRITORY_OUT_OF_COVERAGE',message:'Municipio no habilitado.',availableModes:{turbo:false,turboDividido:false,scheduled:false},scheduledEligible:false,scheduledSlots:[],recommendedMode:null,basketValidated:false};
+  quote.effectiveMode = req.requestedMode==='PROGRAMADO' || !policy.modes.some(m=>m==='TURBO'||m==='TURBO_DIVIDIDO') ? 'PROGRAMADO' : quote.recommendedMode || undefined;
+  quote.availableModes.turbo &&= policy.modes.includes('TURBO');
+  quote.availableModes.turboDividido &&= policy.modes.includes('TURBO_DIVIDIDO');
+  const service=typeof policy.scheduledService==='object' ? policy.scheduledService : undefined;
+  const serviceReady=policy.modes.includes('PROGRAMADO') && scheduledServiceReady(policy.scheduledService);
   const store = stores.find(s => s.id === territory.assignedStoreId);
   const stockOK = !(req.items || []).some(item => {
     const p = products.find(p=>p.id===item.productId || p.sku===item.productId || p.productoId===item.productId);
     return !p || !Number.isInteger(item.quantity) || item.quantity<=0 || (p.stockByStore[store?.id || ''] || 0)-(p.reservedStockByStore[store?.id || ''] || 0)<item.quantity;
   });
-  quote.scheduledSlots = quote.scheduledSlots.map(slot=>({...slot, availableCapacity: Math.max(0,10-slotOrders.filter(o=>o.deliveryMode==='PROGRAMADO' && o.storeId===store?.id && o.status!=='CANCELADO' && o.fulfillmentStatus!=='CANCELADO' && o.scheduledWindow?.date===slot.date && (o.scheduledWindow.slotId===slot.slotId || o.scheduledWindow.startTime===slot.startTime)).length)}));
-  quote.scheduledEligible = !!store?.isActive && (!store.enabledModes || store.enabledModes.includes('PROGRAMADO')) && stockOK;
+  quote.scheduledSlots = quote.scheduledSlots.map(slot=>({...slot, maxCapacity:service?.capacityPerWindow ?? slot.maxCapacity, availableCapacity: Math.max(0,(service?.capacityPerWindow ?? 10)-slotOrders.filter(o=>o.deliveryMode==='PROGRAMADO' && o.storeId===store?.id && o.status!=='CANCELADO' && o.fulfillmentStatus!=='CANCELADO' && o.scheduledWindow?.date===slot.date && (o.scheduledWindow.slotId===slot.slotId || o.scheduledWindow.startTime===slot.startTime)).length)}));
+  quote.scheduledSlots.forEach(slot=>{if(slot.availableCapacity<=0) slot.unavailableReason='CAPACITY'});
+  if(service && serviceReady) quote.scheduledSlots=quote.scheduledSlots.filter(slot=>service.windowIds.includes(slot.windowId) && service.weekdays.includes(new Date(slot.date+'T12:00:00Z').getUTCDay()));
+  quote.scheduledEligible = serviceReady && !!store?.isActive && (!store.enabledModes || store.enabledModes.includes('PROGRAMADO')) && stockOK;
   quote.availableModes.scheduled = quote.scheduledEligible;
-  if (req.requestedMode === 'PROGRAMADO' || quote.recommendedMode === 'PROGRAMADO') {
+  if (quote.effectiveMode === 'PROGRAMADO' || quote.recommendedMode === 'PROGRAMADO') {
     quote.assignedStoreId = store?.id; quote.assignedStoreName = store?.name;
     quote.assignedStoreAddress = store?.address;
     if(store) {
@@ -1326,45 +1219,28 @@ export function evaluateDeliveryQuote(req: QuoteRequest, stores: Store[] = BOGOT
       && (!selected.slotId || s.slotId===selected.slotId)
       && (!selected.windowId || s.windowId===selected.windowId)
       && (!selected.startTime || s.startTime===selected.startTime));
-    const reason = !store?.isActive ? ['STORE_INACTIVE','La bodega territorial asignada está inactiva.']
+    quote.selectedSlotInvalid=serviceReady && !!store?.isActive && (!store.enabledModes || store.enabledModes.includes('PROGRAMADO')) && stockOK && !!selected && !slot;
+    const reason = !serviceReady ? [policy.modes.includes('PROGRAMADO') ? 'SCHEDULED_SERVICE_PENDING' : 'MODE_UNAVAILABLE',policy.modes.includes('PROGRAMADO') ? `Zona habilitada en ${policy.name}. La ruta, tarifa y horarios de Programado desde ${store?.customerName || store?.name || 'la sede asignada'} están pendientes de verificación. Aún no es posible confirmar una entrega.` : 'Programado no está habilitado en este municipio.']
+      : !store?.isActive ? ['STORE_INACTIVE','La bodega territorial asignada está inactiva.']
       : store.enabledModes && !store.enabledModes.includes('PROGRAMADO') ? ['MODE_UNAVAILABLE','La sede territorial no tiene habilitado el envío programado.']
       : !stockOK ? ['INSUFFICIENT_STOCK','Inventario insuficiente en la bodega territorial asignada. Ajusta tu carrito.']
       : selected && !slot ? ['MODE_UNAVAILABLE','La franja seleccionada ya no está disponible. Elige otra franja.']
-      : (slot ? slot.availableCapacity<=0 : !quote.scheduledSlots.some(s=>s.availableCapacity>0)) ? ['SLOT_CAPACITY_EXCEEDED','La franja no tiene cupo. Selecciona otro horario.'] : null;
+      : (slot ? slot.availableCapacity<=0 : !quote.scheduledSlots.some(s=>s.availableCapacity>0)) ? ['SLOT_CAPACITY_EXCEEDED',selected && quote.scheduledSlots.some(s=>s.date===selected.date && s.availableCapacity>0 && !s.cutoffPassed) ? 'La franja no tiene cupo. Selecciona otro horario.' : 'No hay horarios disponibles para esta fecha. Elige otro día'] : null;
     if (reason) {
       quote.reasonCode=reason[0]; quote.message=reason[1];
       quote.eligibilityStatus = reason[0]==='STORE_INACTIVE' ? 'STORE_CLOSED' : reason[0]==='INSUFFICIENT_STOCK' ? 'INSUFFICIENT_STOCK' : 'ESTIMATE_UNAVAILABLE';
       quote.scheduledEligible=false; quote.availableModes.scheduled=false; quote.recommendedMode=null;
     }
   }
-  return applyTransportQuote(quote,req,stores,products,transport);
+  if(!serviceReady) {
+    quote.scheduledEligible=false;quote.availableModes.scheduled=false;quote.scheduledSlots=[];
+    if(!quote.availableModes.turbo && !quote.availableModes.turboDividido) {quote.recommendedMode=null;quote.basketValidated=false;return quote;}
+  }
+  const context=service ? {...transport,config:{...transport.config,pricing:service.pricing}} : transport;
+  return applyTransportQuote(quote,req,stores,products,context);
 }
 
 // Alias funcional
 export const quoteDelivery = evaluateDeliveryQuote;
 
-// ============================================================================
-// 10. MANEJADOR AUTÓNOMO DEL ENDPOINT '/api/v1/delivery/quote'
-// ============================================================================
-
-export function deliveryQuoteEndpoint(
-  req: { body: QuoteRequest },
-  res: { status: (code: number) => { json: (data: any) => any }; json: (data: any) => any },
-  customStores?: Store[],
-  customProducts?: Product[]
-) {
-  try {
-    const quote = evaluateDeliveryQuote(
-      req.body,
-      customStores || BOGOTA_TURBO_WAREHOUSES,
-      customProducts || []
-    );
-    return res.json(quote);
-  } catch (error: any) {
-    console.error('Error en /api/v1/delivery/quote:', error);
-    return res.status(500).json({
-      error: error.message || 'Error interno al calcular cotización de entrega',
-      eligibilityStatus: DeliveryStatus.ESTIMATE_UNAVAILABLE,
-    });
-  }
-}
+// HTTP adapters live in server.ts and must resolve destination geometry before evaluating.

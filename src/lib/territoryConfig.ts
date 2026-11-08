@@ -1,48 +1,7 @@
 import { WAREHOUSES } from '../data/warehouseConfig';
-/**
- * @license
- * SPDX-License-Identifier: Apache-2.0
- * BOLT PETS — CONFIGURACIÓN Y ASIGNACIÓN TERRITORIAL AUTORITATIVA
- * 
- * Reglas de distribución territorial para pedidos PROGRAMADOS:
- * 
- * 1. BODEGA KENNEDY (HUB_KENNEDY):
- *    - 12 Localidades de Bogotá:
- *      1. Kennedy
- *      2. Bosa
- *      3. Ciudad Bolívar
- *      4. Tunjuelito
- *      5. Usme
- *      6. Rafael Uribe Uribe
- *      7. San Cristóbal
- *      8. Antonio Nariño
- *      9. Puente Aranda
- *      10. Los Mártires
- *      11. Santa Fe (y variante Santafé)
- *      12. La Candelaria
- *    - Municipio adicional asignado a Kennedy:
- *      - Soacha (zona urbana y cobertura habilitada)
- *      * IMPORTANTE: Soacha es un municipio independiente, NO es localidad de Bogotá.
- * 
- * 2. BODEGA ÁLAMOS (HUB_ALAMOS):
- *    - 5 Localidades de Bogotá:
- *      1. Engativá
- *      2. Fontibón
- *      3. Teusaquillo
- *      4. Barrios Unidos
- *      5. Chapinero
- * 
- * 3. BODEGA SUBA (HUB_SUBA):
- *    - 2 Localidades de Bogotá:
- *      1. Suba
- *      2. Usaquén
- * 
- * 4. EXCLUSIÓN DE COBERTURA:
- *    - Sumapaz: queda fuera de la cobertura estándar inicial.
- *    - Otros municipios de Cundinamarca (Chía, Cota, Cajicá, Mosquera, Funza, etc.):
- *      quedan fuera de cobertura estándar.
- */
-
+import { COVERAGE_MUNICIPALITIES, coverageMunicipality, normalizeTerritoryString } from '../data/coverageConfig';
+export { normalizeTerritoryString } from '../data/coverageConfig';
+// Programado: existing locality-to-warehouse registry + explicit municipality policy.
 export const TERRITORIAL_WAREHOUSES = {
   KENNEDY: WAREHOUSES.find(s=>s.id==='HUB_KENNEDY')!,
   ALAMOS: WAREHOUSES.find(s=>s.id==='HUB_ALAMOS')!,
@@ -66,10 +25,7 @@ export const EXCLUDED_BOGOTA_LOCALITIES = [
 ] as const;
 
 // Municipios habilitados
-export const SUPPORTED_MUNICIPALITIES = [
-  'Bogotá D.C.',
-  'Soacha',
-] as const;
+export const SUPPORTED_MUNICIPALITIES = COVERAGE_MUNICIPALITIES.filter(m=>m.active).map(m=>m.name);
 
 export type BogotaCoveredLocality =
   | typeof KENNEDY_LOCALITIES[number]
@@ -91,17 +47,6 @@ export interface TerritorialAssignmentResult {
 /**
  * Normaliza cadenas de texto para comparación tolerante a acentos y mayúsculas
  */
-export function normalizeTerritoryString(str?: string | null): string {
-  if (!str) return '';
-  return str
-    .toLowerCase()
-    .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[.,\-_#/]/g, ' ')
-    .replace(/\s+/g, ' ')
-    .trim();
-}
-
 /**
  * Canónica de nombres de localidad en Bogotá
  */
@@ -151,186 +96,35 @@ export function isSoachaMunicipality(text?: string | null): boolean {
 
 /**
  * Extrae de forma segura municipio y localidad a partir de componentes estructurados
- * o dirección completa SIN confundir nombres de calles aislados.
+ * sin inferir territorios de la dirección escrita.
  */
-export function extractTerritoryFromInput(input: {
-  municipality?: string | null;
-  locality?: string | null;
-  address?: string | null;
-  coordinates?: { lat: number; lng: number } | null;
-}): {
-  municipality: string;
-  locality?: string;
-  isConfirmed: boolean;
-  rawMatched?: string;
-} {
-  const explicitMun = input.municipality?.trim();
-  const explicitLoc = input.locality?.trim();
-  const addressText = input.address || '';
-
-  // 1. Caso Soacha explícito
-  if (explicitMun && isSoachaMunicipality(explicitMun)) {
-    return {
-      municipality: 'Soacha',
-      locality: explicitLoc || undefined,
-      isConfirmed: true,
-      rawMatched: 'Soacha',
-    };
-  }
-
-  // 3. Localidad explícita proporcionada en Bogotá
-  if (explicitLoc) {
-    const canonical = canonicalizeBogotaLocality(explicitLoc);
-    if (canonical) {
-      return {
-        municipality: explicitMun || 'Bogotá D.C.',
-        locality: canonical,
-        isConfirmed: true,
-        rawMatched: canonical,
-      };
-    }
-  }
-
-  // 4. Extracción desde la dirección escrita separada por comas (ej: "Calle 72 #97-18, Engativá, Bogotá")
-  // Regla estricta: NO buscar palabras sueltas dentro de la calle (ej: "Calle Chapinero").
-  // Se requiere que la localidad aparezca delimitada por comas, paréntesis o prefijo de localidad.
-  const segments = addressText.split(/[,;\(\)]/).map(s => s.trim());
-  for (const seg of segments) {
-    const canonical = canonicalizeBogotaLocality(seg);
-    if (canonical) {
-      return {
-        municipality: explicitMun || 'Bogotá D.C.',
-        locality: canonical,
-        isConfirmed: true,
-        rawMatched: canonical,
-      };
-    }
-  }
-
-  // Comprobar prefijos formales como "Localidad Chapinero", "Barrio Cedritos, Usaquén"
-  const normAddress = normalizeTerritoryString(addressText);
-  for (const loc of [
-    ...KENNEDY_LOCALITIES,
-    ...ALAMOS_LOCALITIES,
-    ...SUBA_LOCALITIES,
-    ...EXCLUDED_BOGOTA_LOCALITIES,
-  ]) {
-    const normLoc = normalizeTerritoryString(loc);
-    // Buscar límites de palabra o patrones formales como "localidad de ..." o "... bogota"
-    const regex = new RegExp(`(?:localidad(?:\\s+de)?\\s+${normLoc}|\\b${normLoc}\\s+bogota|\\bbogota\\s+${normLoc})`, 'i');
-    if (regex.test(normAddress)) {
-      return {
-        municipality: explicitMun || 'Bogotá D.C.',
-        locality: loc,
-        isConfirmed: true,
-        rawMatched: loc,
-      };
-    }
-  }
-
-  // 5. Coordenadas geográficas como sugerencia secundaria cuando la dirección no lo indica
-  // Nota: Las coordenadas solo ayudan a sugerir, no sobreescriben la dirección escrita.
-  if (input.coordinates && typeof input.coordinates.lat === 'number' && typeof input.coordinates.lng === 'number') {
-    const { lat, lng } = input.coordinates;
-    // Soacha urbano aproximado
-    if (lat >= 4.540 && lat <= 4.605 && lng >= -74.240 && lng <= -74.195) {
-      return {
-        municipality: 'Soacha',
-        isConfirmed: false, // Requiere confirmación si solo vino por coordenadas
-      };
-    }
-  }
-
-  return {
-    municipality: explicitMun || 'Bogotá D.C.',
-    locality: undefined,
-    isConfirmed: false,
-  };
+export function extractTerritoryFromInput(input: {municipality?:string|null;locality?:string|null;address?:string|null;coordinates?:{lat:number;lng:number}|null}) {
+  // Never infer municipality/locality from street text, neighborhood, or a bounding box.
+  const policy=coverageMunicipality(input.municipality);
+  const municipality=policy?.name || input.municipality?.trim() || '';
+  const locality=policy?.code==='11001' ? canonicalizeBogotaLocality(input.locality) || undefined : undefined;
+  return {municipality,locality,isConfirmed:!!municipality && (policy?.code!=='11001' || !!locality)};
 }
 
 /**
  * Resuelve autoritativamente la asignación territorial para pedidos PROGRAMADOS:
  * - Kennedy: 12 localidades de Bogotá + Soacha
  * - Álamos: 5 localidades de Bogotá
- * - Suba: 2 localidades de Bogotá
+ * - Suba: Suba, Usaquén, Chía y Cajicá
  * - Sumapaz: Fuera de cobertura estándar
- * - Municipios no cubiertos (Chía, etc.): Fuera de cobertura
+ * - Municipios no incluidos expresamente: fuera de cobertura
  */
-export function resolveTerritorialAssignment(input: {
-  municipality?: string | null;
-  locality?: string | null;
-  address?: string | null;
-  coordinates?: { lat: number; lng: number } | null;
-}): TerritorialAssignmentResult {
-  const extracted = extractTerritoryFromInput(input);
-
-  // 1. Validación de Soacha
-  const municipalStore=WAREHOUSES.find(s=>s.scheduledMunicipalities?.includes(extracted.municipality));
-  if (extracted.municipality === 'Soacha' && municipalStore) {
-    return {
-      status: 'ASSIGNED',
-      assignedStoreId: municipalStore.id,
-      assignedStoreName: municipalStore.name,
-      municipality: 'Soacha',
-      locality: undefined,
-      isCovered: true,
-      reason: 'Pedido programado en Soacha asignado autoritativamente a Bodega Kennedy.',
-    };
-  }
-
-  // 2. Validación de otros municipios fuera de Bogotá / Soacha
-  const normMun = normalizeTerritoryString(extracted.municipality);
-  const isBogota = ['bogota', 'bogota d c', 'bogota dc'].includes(normMun);
-  if (!isBogota && !isSoachaMunicipality(extracted.municipality)) {
-    // Municipios como Chía, Cota, Mosquera, etc.
-    return {
-      status: 'OUT_OF_COVERAGE',
-      assignedStoreId: null,
-      assignedStoreName: null,
-      municipality: extracted.municipality || 'Municipio no cubierto',
-      isCovered: false,
-      reason: `El municipio "${extracted.municipality}" se encuentra fuera del área de cobertura estándar habilitada. Actualmente atendemos Bogotá D.C. y Soacha.`,
-    };
-  }
-
-  // 3. Validación de localidad en Bogotá
-  const canonicalLoc = canonicalizeBogotaLocality(extracted.locality);
-
-  if (!canonicalLoc) {
-    return {
-      status: 'NEEDS_CONFIRMATION',
-      assignedStoreId: null,
-      assignedStoreName: null,
-      municipality: 'Bogotá D.C.',
-      isCovered: false,
-      reason: 'No fue posible identificar la localidad de Bogotá con certeza. Por favor selecciona tu localidad antes de confirmar el pedido.',
-    };
-  }
-
-  // 4. Caso Sumapaz (exclusión explícita)
-  if (canonicalLoc === 'Sumapaz') {
-    return {
-      status: 'OUT_OF_COVERAGE',
-      assignedStoreId: null,
-      assignedStoreName: null,
-      municipality: 'Bogotá D.C.',
-      locality: 'Sumapaz',
-      isCovered: false,
-      reason: 'Sumapaz queda fuera de la cobertura estándar inicial para entregas programadas.',
-    };
-  }
-
-  const store=WAREHOUSES.find(s=>s.scheduledLocalities?.includes(canonicalLoc));
-  if(store) return {status:'ASSIGNED',assignedStoreId:store.id,assignedStoreName:store.name,municipality:'Bogotá D.C.',locality:canonicalLoc,isCovered:true,reason:`Localidad ${canonicalLoc} asignada a ${store.name}.`};
-
-  return {
-    status: 'NEEDS_CONFIRMATION',
-    assignedStoreId: null,
-    assignedStoreName: null,
-    municipality: 'Bogotá D.C.',
-    isCovered: false,
-    reason: 'Localidad no reconocida. Por favor selecciona tu localidad de entrega.',
-  };
+export function resolveTerritorialAssignment(input: {municipality?:string|null;locality?:string|null;address?:string|null;coordinates?:{lat:number;lng:number}|null}): TerritorialAssignmentResult {
+  const extracted=extractTerritoryFromInput(input);
+  const policy=coverageMunicipality(extracted.municipality);
+  const result:TerritorialAssignmentResult={status:'NEEDS_CONFIRMATION',assignedStoreId:null,assignedStoreName:null,municipality:extracted.municipality,locality:extracted.locality,isCovered:false};
+  if(!extracted.municipality) return {...result,reason:'Municipio pendiente de identificar. Completa la dirección y confirma el punto de entrega.'};
+  if(!policy?.active) return {...result,status:'OUT_OF_COVERAGE',reason:'El municipio no está habilitado para entregas de BOLT.'};
+  if(policy.code==='11001' && !extracted.locality) return {...result,reason:'Localidad de Bogotá pendiente de identificar. Completa o confirma el punto de entrega.'};
+  if(extracted.locality==='Sumapaz') return {...result,status:'OUT_OF_COVERAGE',reason:'Sumapaz queda fuera de la cobertura estándar inicial.'};
+  const store=policy.code==='11001' ? WAREHOUSES.find(s=>s.scheduledLocalities?.includes(extracted.locality!)) : WAREHOUSES.find(s=>s.id===policy.scheduledStoreId);
+  return store ? {...result,status:'ASSIGNED',isCovered:true,assignedStoreId:store.id,assignedStoreName:store.name,reason:`${extracted.locality || policy.name} asignado a ${store.name}.`}
+    : {...result,reason:'La asignación territorial de la sede está pendiente de configurar.'};
 }
 
 /**

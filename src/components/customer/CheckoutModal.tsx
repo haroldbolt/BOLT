@@ -99,7 +99,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (selectedScheduledWindowProp?.slotId && availableSlots.some(s => s.slotId === selectedScheduledWindowProp.slotId)) {
       return selectedScheduledWindowProp.slotId;
     }
-    return availableSlots[0]?.slotId || '';
+    return '';
   });
 
   // Synchronize inputs when modal opens
@@ -123,10 +123,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     if (!isOpen) return;
     if (selectedScheduledWindowProp?.slotId && availableSlots.some(s => s.slotId === selectedScheduledWindowProp.slotId)) {
       setSelectedSlotId(selectedScheduledWindowProp.slotId);
-    } else if (!availableSlots.some(s=>s.slotId===selectedSlotId) && availableSlots.length > 0) {
-      setSelectedSlotId(availableSlots[0].slotId);
-      onSelectScheduledWindow?.(availableSlots[0]);
-    }
+    } else {setSelectedSlotId('');}
   }, [isOpen, selectedScheduledWindowProp, availableSlots]);
 
   // Informative flag for veterinary medicines
@@ -698,13 +695,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {errorMessage && <button type="button" className="text-sm font-bold text-red-600 underline" onClick={onRefreshCatalog}>Actualizar carrito y volver a confirmar</button>}
           <button
             type="submit"
-            disabled={isSubmitting || !isEligibleForAny || !!cartBlockReason || !cartItems.length}
+            disabled={isSubmitting || !isEligibleForAny || !!cartBlockReason || !cartItems.length || (selectedMode==='PROGRAMADO' && !selectedSlot)}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition active:scale-98 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (
               <span>Procesando pago seguro...</span>
             ) : cartBlockReason || !isEligibleForAny ? (
               <span>{cartBlockReason || deliveryQuote?.message || 'Validando disponibilidad del carrito…'}</span>
+            ) : selectedMode === 'PROGRAMADO' && !selectedSlot ? (
+              <span>Selecciona una franja para continuar</span>
             ) : selectedMode === 'PROGRAMADO' ? (
               <>
                 <span>Confirmar y Programar Entrega ({formatCOP(total)})</span>
