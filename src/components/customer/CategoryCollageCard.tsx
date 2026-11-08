@@ -1,6 +1,7 @@
-import React from 'react';
-import { ChevronRight } from 'lucide-react';
+import React, {useState} from 'react';
+import { ChevronRight, Package } from 'lucide-react';
 import { MainCategory, Product } from '../../types';
+import {categoryImageCandidates} from '../../lib/productImages';
 
 interface CategoryCollageCardProps {
   title: string;
@@ -19,16 +20,16 @@ export const CategoryCollageCard: React.FC<CategoryCollageCardProps> = ({
   onSelectCategory,
   isSpecial = false,
 }) => {
-  // Take up to 4 images for the collage
-  const collageImages = products.slice(0, 4).map(p => p.image);
-  while (collageImages.length < 4 && products.length > 0) {
-    collageImages.push(products[0].image);
-  }
+  const [failed, setFailed] = useState<Set<string>>(() => new Set());
+  const collageImages = categoryImageCandidates(products, category).filter(img => !failed.has(img.src)).slice(0, 4);
+  const activeCount = products.filter(p => (!p.status || p.status === 'ACTIVE') && (p.category === category || category === 'Farmacia' && p.category === 'Antipulgas')).length;
 
   return (
-    <div
+    <button
+      type="button"
+      aria-label={`${title}, ${activeCount} productos`}
       onClick={() => onSelectCategory(category)}
-      className={`rounded-3xl p-3.5 border transition cursor-pointer flex flex-col justify-between group hover:shadow-md ${
+      className={`text-left rounded-3xl p-3.5 border transition cursor-pointer flex flex-col justify-between group hover:shadow-md ${
         isSpecial
           ? 'bg-red-50/50 border-red-200 hover:border-red-400'
           : 'bg-white border-slate-200/80 hover:border-slate-300'
@@ -42,7 +43,7 @@ export const CategoryCollageCard: React.FC<CategoryCollageCardProps> = ({
             {title}
           </h4>
           <p className="text-[11px] text-slate-500 font-medium">
-            {count} {count === 1 ? 'producto' : 'productos'}
+            {activeCount} {activeCount === 1 ? 'producto' : 'productos'}
           </p>
         </div>
         <div className="w-6 h-6 rounded-full bg-slate-100 group-hover:bg-red-600 group-hover:text-white flex items-center justify-center text-slate-400 transition">
@@ -50,19 +51,17 @@ export const CategoryCollageCard: React.FC<CategoryCollageCardProps> = ({
         </div>
       </div>
 
-      {/* 4-Image Grid Collage */}
-      <div className="grid grid-cols-2 gap-1.5 aspect-square rounded-2xl overflow-hidden bg-slate-50 p-1">
-        {collageImages.map((img, idx) => (
-          <div key={idx} className="w-full h-full rounded-xl overflow-hidden bg-white">
-            <img
-              src={img}
-              alt=""
-              className="w-full h-full object-cover group-hover:scale-105 transition duration-300"
-              loading="lazy"
-            />
+      <div className={`grid ${collageImages.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5 aspect-square rounded-2xl overflow-hidden bg-slate-50 p-1`}>
+        {collageImages.length ? collageImages.map((img, idx) => (
+          <div key={img.src} className={`min-h-0 min-w-0 rounded-xl overflow-hidden bg-white ${collageImages.length === 3 && idx === 0 ? 'row-span-2' : ''}`}>
+            <img src={img.src} alt={img.alt}
+              className="w-full h-full object-contain p-1 group-hover:scale-105 transition duration-300" loading="lazy"
+              onError={() => setFailed(previous => new Set([...previous, img.src]))} />
           </div>
-        ))}
+        )) : <div className="flex flex-col items-center justify-center text-slate-400 gap-2" aria-label="Imágenes de categoría por confirmar">
+          <Package className="w-10 h-10" aria-hidden="true"/><span className="text-[11px]">Explorar productos</span>
+        </div>}
       </div>
-    </div>
+    </button>
   );
 };

@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import { saleVariant } from '../../lib/variantCommerce';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import {
@@ -47,6 +48,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
 
   // Image Upload Modal
   const [isImageModalOpen, setIsImageModalOpen] = useState(false);
+  const [imageVariantId,setImageVariantId]=useState('');
   const [imageTargetProduct, setImageTargetProduct] = useState<Product | null>(null);
   const [uploadPreview, setUploadPreview] = useState<string | null>(null);
   const [uploadFilename, setUploadFilename] = useState<string>('');
@@ -129,6 +131,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
   // Open Image Upload Modal
   const handleOpenImageModal = (product: Product) => {
     setImageTargetProduct(product);
+    setImageVariantId('');
     setUploadPreview(null);
     setUploadFilename('');
     setIsImageModalOpen(true);
@@ -162,15 +165,14 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
         currentGallery.push(uploadRes.url);
       }
 
-      const updates: Partial<Product> = {
-        gallery: currentGallery,
-      };
-      if (makePrimary) {
-        updates.image = uploadRes.url;
-      }
-
-      const updatedProd = await api.updateAdminProduct(imageTargetProduct.id, updates);
-      setProducts(prev => prev.map(p => p.id === imageTargetProduct.id ? updatedProd : p));
+      const variant=imageTargetProduct.presentaciones?.find(v=>v.varianteId===imageVariantId);
+      await api.applyCatalogImages([{
+        productId:imageTargetProduct.id,source:uploadRes.url,checkedAt:new Date().toISOString(),reason:'Fotografía seleccionada por administrador para el producto/presentación indicado.',
+        gallery:{before:imageTargetProduct.gallery||[],after:currentGallery},
+        ...(variant ? {variants:[{variantId:variant.varianteId,before:variant.foto||'',after:uploadRes.url}]} : makePrimary ? {image:{before:imageTargetProduct.image,after:uploadRes.url}} : {}),
+      }]);
+      const updatedProd=(await api.getAdminCatalog({q:imageTargetProduct.name})).find(p=>p.id===imageTargetProduct.id);
+      if(updatedProd)setProducts(prev => prev.map(p => p.id === imageTargetProduct.id ? updatedProd : p));
       setIsImageModalOpen(false);
       showNotification(`Imagen guardada exitosamente para "${imageTargetProduct.name}".`);
       onRefreshCatalog?.();
@@ -194,7 +196,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
       originalPrice: undefined,
       presentation: 'Unidad',
       weightKg: 1,
-      image: 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800',
+      image: '',
       description: '',
       requiresPrescription: false,
       storageCondition: 'TEMPERATURA_AMBIENTE',
@@ -516,7 +518,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                       <td className="p-3.5">
                         <div className="flex items-center gap-3">
                           <div className="relative group shrink-0">
-                            <img
+                            <ProductImage
                               src={product.image}
                               alt=""
                               className="w-11 h-11 rounded-xl object-cover border border-slate-200 bg-slate-100 shadow-2xs"
@@ -776,7 +778,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                   <img
                     src={uploadPreview}
                     alt="Preview"
-                    className="w-16 h-16 rounded-xl object-cover border border-slate-300 shadow-2xs"
+                    className="w-16 h-16 rounded-xl object-contain border border-slate-300 shadow-2xs"
                   />
                   <div className="min-w-0 flex-1">
                     <p className="text-xs font-bold text-slate-900 truncate">{uploadFilename || 'Imagen seleccionada'}</p>
@@ -785,17 +787,25 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                 </div>
               ) : (
                 <div className="flex items-center gap-3 p-3 bg-slate-50 rounded-2xl border border-slate-100">
-                  <img
-                    src={imageTargetProduct.image}
+                  <ProductImage
+                    src={imageVariantId ? imageTargetProduct.presentaciones?.find(v=>v.varianteId===imageVariantId)?.foto : imageTargetProduct.image}
                     alt="Actual"
                     className="w-14 h-14 rounded-xl object-cover border border-slate-200"
                   />
                   <div>
                     <span className="text-[10px] font-bold text-slate-400 uppercase">Fotografía actual</span>
-                    <p className="text-xs text-slate-600 truncate max-w-xs">{imageTargetProduct.image}</p>
+                    <p className="text-xs text-slate-600 truncate max-w-xs">{imageVariantId ? imageTargetProduct.presentaciones?.find(v=>v.varianteId===imageVariantId)?.foto || 'Imagen por confirmar' : imageTargetProduct.image || 'Imagen por confirmar'}</p>
                   </div>
                 </div>
               )}
+
+              <label className="block text-xs font-bold text-slate-700">Fotografía correspondiente a
+                <select aria-label="Presentación de la fotografía" value={imageVariantId} onChange={e=>setImageVariantId(e.target.value)} className="block mt-2 w-full border border-slate-200 rounded-xl p-3">
+                  <option value="">Imagen principal del producto</option>
+                  {imageTargetProduct.presentaciones?.map(v=><option key={v.varianteId} value={v.varianteId}>{v.nombre} · {v.sku || v.varianteId.split('/').pop()}</option>)}
+                </select>
+                <span className="block text-[11px] font-normal text-slate-500 mt-2">Comprueba marca, presentación, contenido y concentración antes de guardar.</span>
+              </label>
 
               {/* Existing gallery thumbnails */}
               {imageTargetProduct.gallery && imageTargetProduct.gallery.length > 1 && (
@@ -804,23 +814,39 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                   <div className="flex items-center gap-2 overflow-x-auto pb-1">
                     {imageTargetProduct.gallery.map((imgUrl, idx) => (
                       <div key={idx} className="relative group shrink-0">
-                        <img
+                        <ProductImage
                           src={imgUrl}
                           alt=""
                           className={`w-12 h-12 rounded-lg object-cover border ${imgUrl === imageTargetProduct.image ? 'border-red-600 ring-2 ring-red-600/30' : 'border-slate-200'}`}
                         />
-                        {imgUrl !== imageTargetProduct.image && (
+                        {imgUrl !== (imageVariantId ? imageTargetProduct.presentaciones?.find(v=>v.varianteId===imageVariantId)?.foto : imageTargetProduct.image) && (
                           <button
                             type="button"
                             onClick={async () => {
-                              const updated = await api.updateAdminProduct(imageTargetProduct.id, { image: imgUrl });
-                              setProducts(prev => prev.map(p => p.id === imageTargetProduct.id ? updated : p));
-                              setImageTargetProduct(updated);
-                              showNotification('Foto principal actualizada.');
+                              if (isUploading) return;
+                              setIsUploading(true);
+                              try {
+                                const variant = imageTargetProduct.presentaciones?.find(v=>v.varianteId===imageVariantId);
+                                await api.applyCatalogImages([{
+                                  productId: imageTargetProduct.id,
+                                  ...(variant ? {variants:[{variantId:variant.varianteId,before:variant.foto||'',after:imgUrl}]} : {image: { before: imageTargetProduct.image, after: imgUrl }}),
+                                  source: imgUrl, checkedAt: new Date().toISOString(),
+                                  reason: 'Administrador seleccionó una fotografía de la galería para el producto/presentación indicado.',
+                                }]);
+                                const updated = (await api.getAdminCatalog({q:imageTargetProduct.name})).find(p=>p.id===imageTargetProduct.id);
+                                if (updated) {
+                                  setProducts(prev => prev.map(p => p.id === imageTargetProduct.id ? updated : p));
+                                  setImageTargetProduct(updated);
+                                }
+                                onRefreshCatalog?.();
+                                showNotification(variant ? 'Foto de presentación actualizada.' : 'Foto principal actualizada.');
+                              } catch (err: any) { setError(err.message || 'No fue posible guardar la imagen.'); }
+                              finally { setIsUploading(false); }
                             }}
-                            className="absolute inset-0 bg-slate-900/70 text-white rounded-lg flex items-center justify-center text-[9px] font-bold opacity-0 group-hover:opacity-100 transition"
+                            disabled={isUploading}
+                            className="absolute inset-0 bg-slate-900/70 text-white rounded-lg flex items-center justify-center text-[9px] font-bold opacity-0 group-hover:opacity-100 focus-visible:opacity-100 transition"
                           >
-                            Hacer Principal
+                            {imageVariantId ? 'Usar para presentación' : 'Hacer Principal'}
                           </button>
                         )}
                       </div>
@@ -847,7 +873,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                   {isUploading && (
                     <div className="w-3.5 h-3.5 border-2 border-white border-t-transparent rounded-full animate-spin"></div>
                   )}
-                  <span>Establecer como Foto Principal</span>
+                  <span>{imageVariantId ? 'Guardar foto de presentación' : 'Establecer como Foto Principal'}</span>
                 </button>
               </div>
             </div>
@@ -1012,12 +1038,12 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                       type="text"
                       value={editingProduct.image}
                       onChange={e => setEditingProduct({ ...editingProduct, image: e.target.value })}
-                      placeholder="https://images.unsplash.com/..."
+                      placeholder="URL de una fotografía verificada del producto"
                       required
                       className="w-full px-3.5 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-xs font-mono focus:outline-none focus:ring-2 focus:ring-red-600 focus:bg-white"
                     />
                     {editingProduct.image && (
-                      <img
+                      <ProductImage
                         src={editingProduct.image}
                         alt="Preview"
                         className="w-10 h-10 rounded-lg object-cover border border-slate-200 shrink-0"

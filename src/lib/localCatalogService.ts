@@ -199,7 +199,7 @@ class LocalCatalogService {
       }));
 
       // Foto principal: producto o primera variante
-      const primaryPhoto = p.foto || presentaciones[0]?.foto || 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800';
+      const primaryPhoto = p.foto || presentaciones[0]?.foto || '';
 
       // Stock por bodega: productos de catálogo sin inventario asignado se marcan en 0
       const stockByStore: Record<string, number> = {
@@ -235,7 +235,7 @@ class LocalCatalogService {
         presentation: primaryPresentationName,
         weightKg: 0,
         image: primaryPhoto,
-        gallery: presentaciones.map(pr => pr.foto).filter(Boolean),
+        gallery: [...new Set(presentaciones.map(pr => pr.foto).filter(Boolean))],
         description: p.descripcion || '',
         stockByStore,
         reservedStockByStore,

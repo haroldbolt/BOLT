@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import React from 'react';
 import {PresentationSelector} from './PresentationSelector';
 import {usePresentation} from './PresentationContext';
@@ -118,7 +119,7 @@ export const ProductCard: React.FC<ProductCardProps> = ({
       </div>
 
       <button type="button" onClick={()=>onOpenDetails(product)} className="w-full aspect-square shrink-0 rounded-2xl overflow-hidden bg-slate-50" aria-label={`Ver ${product.name}`}>
-        <img src={displayProduct.image} alt={`${product.name}${selected ? ` · ${selected.presentation}` : ''}`} className="w-full h-full object-contain group-hover:scale-105 transition duration-300" loading="lazy" />
+        <ProductImage src={displayProduct.image} alt={`${product.name}${selected ? ` · ${selected.presentation}` : ''}`} className="w-full h-full object-contain group-hover:scale-105 transition duration-300" loading="lazy" />
       </button>
       <div className="flex flex-col flex-1 min-w-0 pt-3">
         <p className="min-h-4 text-[11px] text-slate-500 font-medium truncate">{product.brand ? `Por ${product.brand}` : ''}</p>

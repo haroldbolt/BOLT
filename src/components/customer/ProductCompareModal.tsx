@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import React from 'react';
 import { Product } from '../../types';
 import { X, Scale, Plus, Minus, Check, AlertCircle, ShoppingBag, Trash2, FileText, Snowflake } from 'lucide-react';
@@ -124,7 +125,7 @@ export const ProductCompareModal: React.FC<ProductCompareModalProps> = ({
 
                       {/* Image & Brand */}
                       <div className="flex flex-col items-center text-center space-y-2">
-                        <img
+                        <ProductImage
                           src={prod.image}
                           alt={prod.name}
                           className="w-20 h-20 object-cover rounded-xl bg-white border border-slate-100 p-1"

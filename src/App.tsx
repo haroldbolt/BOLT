@@ -583,6 +583,10 @@ export default function App() {
     return list;
   }, [baseCategoryOrSearchProducts, productFilters]);
 
+  // Keep image-heavy catalogs responsive without hiding products from search or counts.
+  const [visibleProductCount,setVisibleProductCount]=useState(48);
+  useEffect(()=>setVisibleProductCount(48),[searchQuery,selectedCategory,currentTab,productFilters,currentStore?.id]);
+
   // Rails data
   const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [products]);
   const favoriteProducts = useMemo(() => products.filter(p => !!favorites[p.id]), [products, favorites]);
@@ -799,7 +803,7 @@ export default function App() {
                   </div>
                 ) : (
                   <div className="grid grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-3 xl:grid-cols-4 gap-3">
-                    {filteredProducts.map(prod => (
+                    {filteredProducts.slice(0,visibleProductCount).map(prod => (
                       <ProductCard
                         key={prod.id}
                         product={prod}
@@ -816,6 +820,7 @@ export default function App() {
                         onOpenSaveToWishlist={handleOpenSaveToWishlist}
                       />
                     ))}
+                    {filteredProducts.length > visibleProductCount && <button type="button" onClick={()=>setVisibleProductCount(count=>count+48)} className="col-span-full rounded-xl border border-slate-200 bg-white p-3 font-bold text-sm text-red-700 hover:bg-red-50">Ver más productos ({Math.min(visibleProductCount,filteredProducts.length)} de {filteredProducts.length})</button>}
                   </div>
                 )}
               </div>
@@ -997,7 +1002,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                {lightningDeals.map(prod => (
+                {lightningDeals.slice(0,12).map(prod => (
                   <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                     <ProductCard
                       product={prod}
@@ -1037,7 +1042,7 @@ export default function App() {
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                  {favoriteProducts.map(prod => (
+                  {favoriteProducts.slice(0,12).map(prod => (
                     <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                       <ProductCard
                         product={prod}
@@ -1082,7 +1087,7 @@ export default function App() {
                 </div>
 
                 <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                  {reorderProducts.map(prod => (
+                  {reorderProducts.slice(0,12).map(prod => (
                     <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                       <ProductCard
                         product={prod}
@@ -1119,7 +1124,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                {recommendedProducts.map(prod => (
+                {recommendedProducts.slice(0,12).map(prod => (
                   <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                     <ProductCard
                       product={prod}
@@ -1155,7 +1160,7 @@ export default function App() {
               </div>
 
               <div className="flex gap-3 overflow-x-auto no-scrollbar pb-2 snap-x">
-                {newProducts.map(prod => (
+                {newProducts.slice(0,12).map(prod => (
                   <div key={prod.id} className="min-w-[170px] sm:min-w-[200px] snap-start">
                     <ProductCard
                       product={prod}
