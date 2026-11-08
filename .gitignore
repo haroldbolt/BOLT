@@ -10,3 +10,9 @@ coverage/
 .gmp_cache/
 .bolt-private/
 server.js
+
+# Private fulfillment migration evidence and recovery snapshots
+.bolt-storage/
+
+# Instance data; never commit customer or administrative state
+src/data/persisted-*.json

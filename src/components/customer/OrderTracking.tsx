@@ -101,7 +101,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack, g
     }
   };
 
-  if(loadError&&!order)return <div className="min-h-screen bg-slate-50 p-8"><p role="alert">{loadError}</p><button className="p-3 text-red-700 underline" onClick={()=>void loadData()}>Reintentar</button><button className="p-3 underline" onClick={onBack}>Volver</button></div>;
+  if(loadError&&!order)return <div className="min-h-screen bg-slate-50 p-8"><p role="alert">{loadError}</p><a href="/recuperar-seguimiento" className="block p-3 text-red-700 underline">Recuperar seguimiento privado</a><button className="p-3 text-red-700 underline" onClick={()=>void loadData()}>Reintentar</button><button className="p-3 underline" onClick={onBack}>Volver</button></div>;
   if (loading || !order) {
     return (
       <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">

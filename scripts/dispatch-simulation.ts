@@ -29,7 +29,7 @@ fs.cpSync(source, dest, {
       !rel
         .split(path.sep)
         .some((s) =>
-          ["node_modules", ".git", ".bolt-private", "dist"].includes(s),
+          ["node_modules", ".git", ".bolt-private", ".bolt-storage", "dist"].includes(s),
         ) &&
       !base.startsWith("persisted-") &&
       !base.startsWith(".env") &&

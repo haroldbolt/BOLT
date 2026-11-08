@@ -448,6 +448,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       setErrorMessage(null);
       const order=orders.find(o=>o.id===orderId);
       const target=shipmentId?order?.childShipments?.find(c=>c.shipmentId===shipmentId):order;
+      setActiveTab('DESPACHOS');
       await api.assignDriver(orderId, '', shipmentId);
       setActiveTab('DESPACHOS');
       await loadData();

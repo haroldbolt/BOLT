@@ -1377,12 +1377,26 @@ export class DispatchService {
   }
   reconcileLegacy(
     dispatchId: string,
-    input: { driverId?: string; cashDueCOP: number; note: string },
+    input: { driverId?: string; cashDueCOP: number; note: string; pickupEvidence?: {pickedUpAt:string; sourceReference:string} },
     adminId: string,
   ) {
     return this.repo.transaction(() => {
       const r = this.run(dispatchId),
         { order, shipment } = this.target(r);
+      const fingerprint=hash(JSON.stringify({driverId:input.driverId||null,cashDueCOP:input.cashDueCOP,note:input.note?.trim(),pickupEvidence:input.pickupEvidence||null}));
+      if(r.legacyReconciliation){
+        if(r.legacyReconciliation.fingerprint!==fingerprint)fail("RECONCILIATION_CONFLICT","La conciliación ya fue completada con otros datos. Revisa la auditoría.");
+        return {ok:true,replayed:true};
+      }
+      if(shipment.fulfillmentStatus==="EN_CAMINO"&&!shipment.driver)fail("CUSTODY_REQUIRED","Resuelve primero la custodia física del pedido histórico");
+      let historicalPickup=shipment.timestamps.pickedUpAt;
+      if(shipment.fulfillmentStatus==="EN_CAMINO" && !historicalPickup){
+        const evidence=input.pickupEvidence;
+        const at=Date.parse(evidence?.pickedUpAt||"");
+        if(!evidence || !Number.isFinite(at) || at>this.now() || at<Date.parse(order.createdAt) || !/^[\w./:-]{8,160}$/.test(evidence.sourceReference||""))
+          fail("PICKUP_EVIDENCE_REQUIRED","Falta evidencia de la recogida histórica: fecha comprobada y referencia del soporte. Conservamos EN_CAMINO y la custodia pendiente.");
+        historicalPickup=evidence!.pickedUpAt;
+      }
       if (
         r.reason !== "LEGACY_ASSIGNMENT_REQUIRES_RECONCILIATION" ||
         terminal(shipment.fulfillmentStatus)
@@ -1438,11 +1452,11 @@ export class DispatchService {
         d.activeAssignmentId = r.id;
         d.activeOrderId = order.id;
         d.isOnline = true;
-        d.currentStatus = shipment.timestamps.pickedUpAt
+        d.currentStatus = historicalPickup
           ? "EN_CAMINO_CLIENTE"
           : "EN_RUTA_A_HUB";
-        r.pickedUpAt = shipment.timestamps.pickedUpAt
-          ? Date.parse(shipment.timestamps.pickedUpAt)
+        r.pickedUpAt = historicalPickup
+          ? Date.parse(historicalPickup)
           : undefined;
         r.status = r.pickedUpAt ? "PICKED_UP" : "ASSIGNED";
       } else {
@@ -1454,6 +1468,7 @@ export class DispatchService {
         r.status = "PENDING";
       }
       r.cashDue = input.cashDueCOP;
+      r.legacyReconciliation={fingerprint,at:this.now(),actorId:adminId,...(input.pickupEvidence?{pickupEvidence:structuredClone(input.pickupEvidence)}:{})};
       r.reason = undefined;
       this.event("LEGACY_RECONCILED", adminId, r.id, input.note.slice(0, 200));
       return { ok: true };
@@ -1840,8 +1855,29 @@ export class DispatchService {
           .map(({ id, at, type }) => ({ id, at, type })),
       }));
   }
+  historicalOrders() {
+    return this.repo.getAllOrders().map(order=>{
+      const runs=Object.values(this.state.runs).filter(r=>r.orderId===order.id);
+      const closed=terminal(order.fulfillmentStatus);
+      return {id:order.id,code:order.purchaseCode||order.orderNumber,storeId:order.storeId,status:order.fulfillmentStatus,
+        classification:closed?'CLOSED':!runs.length?'UNREGISTERED':runs.some(r=>r.reason==='LEGACY_ASSIGNMENT_REQUIRES_RECONCILIATION')?'RECONCILIATION_PENDING':'REGISTERED',
+        canRegister:!closed&&order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION'&&!runs.length,
+        dispatches:runs.map(r=>{const {shipment}=this.target(r);return {id:r.id,code:r.code,status:r.status,reason:r.reason,driverId:shipment.driver?.id,cashDueCOP:order.payment.method==='CASH_ON_DELIVERY'?order.payment.cashToCollect:null,pickedUpAt:shipment.timestamps.pickedUpAt,needsPickupEvidence:shipment.fulfillmentStatus==='EN_CAMINO'&&!shipment.timestamps.pickedUpAt,needsReconciliation:r.reason==='LEGACY_ASSIGNMENT_REQUIRES_RECONCILIATION',reconciledAt:r.legacyReconciliation?.at};})};
+    });
+  }
+  registerHistoricalOrder(id:string,actorId:string) {
+    return this.repo.transaction(()=>{
+      const order=this.repo.getOrderById(id);if(!order)fail('NOT_FOUND','Pedido no encontrado',404);
+      if(terminal(order!.fulfillmentStatus))return {registered:false,closed:true};
+      if(order!.fulfillmentStatus==='PENDIENTE_CONFIRMACION')fail('ORDER_NOT_CONFIRMED','Primero verifica y confirma la compra mediante el flujo existente.');
+      const before=Object.values(this.state.runs).some(r=>r.orderId===id);this.registerOrder(order!,true);
+      if(!before)this.event('LEGACY_REGISTERED',actorId,undefined,id);
+      return {registered:true,replayed:before};
+    });
+  }
   adminView() {
     return {
+      historicalOrders:this.historicalOrders(),
       config: this.state.config,
       providers: DISABLED_LIVE_PROVIDERS,
       simulation: !!this.deps.simulation,

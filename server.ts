@@ -1,3 +1,4 @@
+import {mountTrackingRecovery} from './src/lib/trackingRecovery';
 import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
 import {DispatchService} from './src/lib/dispatchService';
 import {mountDispatchRoutes,mountOrderAccess} from './src/lib/dispatchRoutes';
@@ -76,6 +77,7 @@ function quoteForPurchase(request: any) {
 }
 async function startServer() {
   acquireCatalogWriterLock();
+  acquireCatalogWriterLock(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'));
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
@@ -178,6 +180,7 @@ async function startServer() {
   }
 
   mountDispatchRoutes(app,dispatchService,ordersRepository,requireAdminAuth);
+  mountTrackingRecovery(app,ordersRepository,dispatchService,requireAdminAuth);
   if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth);
   else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
   app.use('/api/v1/operations',requireAdminAuth);

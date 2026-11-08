@@ -1,3 +1,4 @@
+import {FulfillmentStorage} from './fulfillmentStorage';
 import {newDispatchState, type DispatchState} from '../types/dispatch';
 import { makeWarehouseAssignment } from './warehouseAssignment';
 import { WAREHOUSES } from '../data/warehouseConfig';
@@ -74,17 +75,14 @@ export class OrdersRepository {
   private snapshot() {return structuredClone({orders:this.orders,drivers:this.drivers,audit:this.auditHistory,telemetry:this.telemetryHistory,dispatch:this.dispatchState})}
   private restore(s:any) {this.orders=s.orders;this.drivers=s.drivers;this.auditHistory=s.audit;this.telemetryHistory=s.telemetry;this.dispatchState=s.dispatch}
   private persistUnified() {
-    const temp=this.fulfillmentFile+'.tmp';
-    const fd=fs.openSync(temp,'w',0o600);
-    try {fs.writeFileSync(fd,JSON.stringify({version:1,...this.snapshot()}));fs.fsyncSync(fd)} finally {fs.closeSync(fd)}
-    fs.renameSync(temp,this.fulfillmentFile);this.unified=true;
+    new FulfillmentStorage(this.dataDir).commit(this.snapshot());this.unified=true;
   }
   /** One synchronous writer (server lock). All dispatch/order/driver changes commit in one atomic rename. */
   public transaction<T>(fn:()=>T):T {
     if(this.inTransaction)return fn();
-    const before=this.snapshot();this.inTransaction=true;
+    const before=this.snapshot(),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
     try {const value=fn();this.persistUnified();return value}
-    catch(error){if(JSON.stringify(this.snapshot())!==JSON.stringify(before))this.restore(before);throw error}
+    catch(error){const durable=new FulfillmentStorage(this.dataDir).read();if((durable?.revision||0)>previousRevision)this.restore(durable);else if(JSON.stringify(this.snapshot())!==JSON.stringify(before))this.restore(before);throw error}
     finally {this.inTransaction=false}
   }
   public flush() {if(!this.inTransaction)this.persistUnified()}
@@ -110,8 +108,7 @@ export class OrdersRepository {
    */
   public init() {
     if(fs.existsSync(this.fulfillmentFile)) {
-      const data=JSON.parse(fs.readFileSync(this.fulfillmentFile,'utf8'));
-      if(data.version!==1 || !Array.isArray(data.orders) || !data.dispatch || !Array.isArray(data.drivers))throw Error('Estado operativo inválido; restaurar respaldo. No se cargan semillas.');
+      const data=new FulfillmentStorage(this.dataDir).read();
       this.restore(data);this.unified=true;this.initialized=true;return;
     }
     if (!fs.existsSync(this.dataDir)) {
@@ -225,7 +222,7 @@ export class OrdersRepository {
 
   private saveOrders() {
     if(this.inTransaction)return;
-    if(this.unified){this.persistUnified();return;}
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       const temp=this.ordersFile+'.tmp';
       fs.writeFileSync(temp, JSON.stringify(this.orders, null, 2), 'utf-8');
@@ -238,7 +235,7 @@ export class OrdersRepository {
 
   private saveDrivers() {
     if(this.inTransaction)return;
-    if(this.unified){this.persistUnified();return;}
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       fs.writeFileSync(this.driversFile, JSON.stringify(this.drivers, null, 2), 'utf-8');
     } catch (e) {
@@ -248,7 +245,7 @@ export class OrdersRepository {
 
   private saveAudit() {
     if(this.inTransaction)return;
-    if(this.unified){this.persistUnified();return;}
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       fs.writeFileSync(this.auditFile, JSON.stringify(this.auditHistory, null, 2), 'utf-8');
     } catch (e) {
@@ -258,7 +255,7 @@ export class OrdersRepository {
 
   private saveTelemetry() {
     if(this.inTransaction)return;
-    if(this.unified){this.persistUnified();return;}
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       fs.writeFileSync(this.telemetryFile, JSON.stringify(this.telemetryHistory, null, 2), 'utf-8');
     } catch (e) {

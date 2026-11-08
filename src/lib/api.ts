@@ -1,3 +1,4 @@
+import {backendAuthorization} from './backendRequest';
 import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint, DeliveryTracking } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
@@ -11,8 +12,8 @@ function guestOrderTokens():Record<string,string>{try{return {...guestOrderMemor
 function saveOrderAccess(id:string,token:string){guestOrderMemory={...guestOrderTokens(),[id]:token};try{localStorage.setItem(guestOrderKey,JSON.stringify(guestOrderMemory))}catch{}}
 function authorizedFetch(url:RequestInfo|URL,init:RequestInit={},guestOnly=false){
   const headers=new Headers(init.headers),path=String(url),match=path.match(/\/orders\/([^/?]+)/);
-  if(!guestOnly && /\/(operations|admin|orders)(\/|$|\?)/.test(path)){const token=api.getStoredAdminToken();if(token&&!headers.has('Authorization'))headers.set('Authorization',`Bearer ${token}`);}
-  if(match){const token=guestOrderTokens()[decodeURIComponent(match[1])];if(token)headers.set('X-Order-Token',token);}
+  if(!guestOnly){const origin=typeof window==='undefined'?'http://localhost':window.location.origin;const auth=backendAuthorization(url,api.getStoredAdminToken(),origin);if(auth.has('Authorization')&&!headers.has('Authorization'))headers.set('Authorization',auth.get('Authorization')!);}
+  if(match && new URL(path,typeof window==='undefined'?'http://localhost':window.location.origin).origin===(typeof window==='undefined'?'http://localhost':window.location.origin) && new URL(path,'http://localhost').pathname.startsWith('/api/v1/orders/')){const token=guestOrderTokens()[decodeURIComponent(match[1])];if(token)headers.set('X-Order-Token',token);}
   return fetch(url,{...init,headers});
 }
 
@@ -336,7 +337,7 @@ export const api = {
   // ==========================================
 
   getStoredAdminToken(): string | null {
-    return localStorage.getItem('bolt_admin_token') || sessionStorage.getItem('bolt_admin_token');
+    try{return localStorage.getItem('bolt_admin_token') || sessionStorage.getItem('bolt_admin_token');}catch{return null;}
   },
 
   setStoredAdminToken(token: string | null): void {

@@ -1,3 +1,4 @@
+import {HistoricalOperations} from './HistoricalOperations';
 import { DriverAccounts, SettleDriver } from "./DriverAccounts";
 import React, { useCallback, useState } from "react";
 import { dispatchClient, pickupText } from "../../lib/dispatchClient";
@@ -65,6 +66,7 @@ export function DispatchManager({
       {q.loading && <p role="status">Consultando operación…</p>}
       {data && (
         <>
+          <HistoricalOperations orders={data.historicalOrders.filter(o=>!storeFilter||storeFilter.includes(o.storeId))} onChanged={q.refresh}/>
           <div className="grid sm:grid-cols-4 gap-3">
             {[
               [

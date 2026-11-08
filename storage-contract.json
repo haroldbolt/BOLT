@@ -1,0 +1,1 @@
+{"format":"bolt-fulfillment","readVersions":[0,1,2],"writeVersion":2,"legacyFiles":"input-only; never authoritative after v2 publication","recovery":"Use this schema-2 revision or a tested compatible successor. Never run pre-schema-2 main against a transitioned installation."}

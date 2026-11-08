@@ -110,6 +110,7 @@ export interface DispatchRun {
   pinFailures: number;
   pinLockedUntil?: number;
   releaseRequested?: boolean;
+  legacyReconciliation?: { fingerprint:string; at:number; actorId:string; pickupEvidence?: {pickedUpAt:string; sourceReference:string} };
   transfer?: {
     from: string;
     to: string;
@@ -127,6 +128,7 @@ export interface DispatchEvent {
   detail?: string;
 }
 export interface DispatchState {
+  recoveries?: Record<string, import("../lib/trackingRecovery").RecoveryCase>;
   version: 1;
   counter: number;
   config: DispatchConfig;

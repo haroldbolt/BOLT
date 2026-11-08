@@ -23,7 +23,7 @@ Requisitos del proyecto: Git, Node 22 y npm. Usar un directorio nuevo y una inst
 ```sh
 git clone --branch codex/asignacion-conductores https://github.com/haroldbolt/BOLT.git bolt-revision
 cd bolt-revision
-npm ci
+bun install --frozen-lockfile
 npm run lint
 npm run build
 npm test

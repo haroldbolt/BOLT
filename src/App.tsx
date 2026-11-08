@@ -1,3 +1,4 @@
+import {TrackingRecovery} from './components/customer/TrackingRecovery';
 import {DriverPanel} from './components/dispatch/DriverPanel';
 import {DispatchSimulation} from './components/dispatch/DispatchSimulation';
 import {SimulationBanner} from './components/dispatch/DispatchUi';
@@ -596,6 +597,7 @@ export default function App() {
   // -------------------------------------------------------------
   // RENDER: ORDER TRACKING PAGE (/pedido/:orderId)
   // -------------------------------------------------------------
+  if(currentPath==='/recuperar-seguimiento')return <TrackingRecovery/>;
   if(currentPath==='/conductor')return <DriverPanel/>;
   if(currentPath==='/simulacion')return <DispatchSimulation/>;
   if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;

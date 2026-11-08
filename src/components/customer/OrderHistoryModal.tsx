@@ -184,6 +184,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
             </button>
           </div>
 
+          <a href="/recuperar-seguimiento" className="text-red-700 text-sm underline">Recuperar seguimiento de una compra anterior</a>
           {/* Sub-Tabs: Historial vs Perfil */}
           <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-2xl text-xs font-bold">
             <button

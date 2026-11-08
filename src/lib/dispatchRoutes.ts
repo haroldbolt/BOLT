@@ -207,15 +207,7 @@ export function mountDispatchRoutes(
   );
   app.post(
     "/api/v1/admin/dispatch/orders/:orderId/register",
-    handler((req) =>
-      repo.transaction(() => {
-        const o = repo.getOrderById(req.params.orderId);
-        if (!o)
-          throw new DispatchError(404, "NOT_FOUND", "Pedido no encontrado");
-        s.registerOrder(o, true);
-        return { registered: true };
-      }),
-    ),
+    handler((req) => s.registerHistoricalOrder(req.params.orderId,aid(req))),
   );
   app.post(
     "/api/v1/admin/dispatch/:id/reconcile-legacy",
