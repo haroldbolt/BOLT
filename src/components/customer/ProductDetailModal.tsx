@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import {PresentationSelector} from './PresentationSelector';
 import {usePresentation} from './PresentationContext';
 import {hasSalePrice} from '../../lib/presentationSelection';
@@ -43,7 +44,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
 
   const presentation = usePresentation(product);
   const {selected: selectedProduct, availability, selectorRef, selectedId, select, focusSelector, quantity: quantityInCart} = presentation;
-  const displayImage = selectedProduct?.image || product.image;
+  const displayImage = selectedProduct ? selectedProduct.image : product.image;
   const displayPresentation = selectedProduct?.presentation || 'Selecciona una presentación';
   const displaySku = selectedProduct?.sku || 'No disponible';
   const blocked = presentation.busy || (!!selectedProduct && !availability.canAdd);
@@ -117,7 +118,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
         <div className="min-[669px]:grid min-[669px]:grid-cols-2">
           {/* Product Image */}
           <div className="w-full aspect-4/3 min-[669px]:aspect-square bg-slate-50 flex items-center justify-center relative overflow-hidden">
-            <img
+            <ProductImage
               src={displayImage}
               alt={product.name}
               className="w-full h-full object-cover transition-all duration-300"

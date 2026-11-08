@@ -1,6 +1,6 @@
 # Integración revisable de #9 y #10
 
-Esta rama se origina en main f4fba7c y conserva sus cuatro archivos del PR #11 por hash Git. Incorpora #9 mediante un merge con dos padres. Los borradores originales no se modifican ni se cierran. La recuperación compatible indicada más abajo es el commit de correcciones del #9 de esta rama, antes del merge de fotografías #10; su SHA figura en el PR.
+Esta rama se origina en main f4fba7c y conserva sus cuatro archivos del PR #11 por hash Git. Incorpora #9 mediante un merge con dos padres. Los borradores originales no se modifican ni se cierran. La recuperación compatible indicada más abajo es el commit de correcciones del #9 de esta rama, antes del merge de fotografías #10; su SHA es `ba71174c6330515f9d2d3f6dc0c36214e3e780c8`.
 
 ## Históricos en administración
 
@@ -67,3 +67,72 @@ La revisión de recuperación mantiene el backend corregido y todos los estados 
 storageTransition.test.ts comprueba interrupciones antes/después de publicación, reanudación, conflicto de fuente, conservación de movimientos posteriores y rechazo de lectores incompatibles. historicalIntegrationHttp.test.ts prueba nueve estados con HTTP real aislado, autorización por rol, recuperación abierta/cerrada, evidencia de custodia, reintentos, secretos ausentes de listados/auditoría, inventario y reinicio. Los cuatro archivos #11 se conservan; nuevas pruebas van en archivos independientes. Las pruebas de imágenes se incorporan al comando general al integrar #10.
 
 Para ejecutar en el entorno restringido puede usarse `node --import tsx src/tests/<suite>` en vez del lanzador tsx. La evidencia del PR distingue tests de componentes del recorrido real en navegador.
+
+## Evidencia final de esta integración — 8 de noviembre de 2026
+
+Referencias verificadas nuevamente: main `f4fba7c9a1c4539c279bf480c50dd18a3c6dae3a`, #9 `0c0df85da521bfb3fa5594cb2a58828a4f78de11`, #10 `eb91d86759b7df6a88750430331b980842df0e3d`. No cambiaron durante el trabajo. Rama: `codex/integracion-segura-20261108`. La integración tiene merges con los originales como padres; no se sustituyó main por el árbol de otra rama.
+
+### Causas y correcciones
+
+| Problema | Causa | Corrección |
+| --- | --- | --- |
+| Históricos invisibles / 409 sin recorrido | El panel recorría runs, mientras los históricos solo existían en OrdersRepository; los endpoints no tenían formularios | historicalOrders y HistoricalOperations muestran todos los estados, permiten registro y conciliación con auditoría. El 409 protege pendientes reales. |
+| EN_CAMINO sin pickedUpAt | reconcileLegacy elegía ASSIGNED si faltaba el timestamp, aunque el histórico estaba en camino | Validación anterior a cualquier mutación; conserva incidencia y EN_CAMINO. Evidencia alternativa con fecha y soporte permite PICKED_UP; no se inventa la fecha original. |
+| Seguimiento histórico bloqueado | No existía capacidad privada para algunos pedidos anteriores, incluidos cerrados | Solicitud opaca con clave local y hash servidor; aprobación administrativa con evidencia; emisión mediante la capacidad existente sin registrar despachos. |
+| verifyStoreEntrance 401 | La llamada usaba fetch sin la sesión de las operaciones administrativas | authorizedFetch con lista explícita de rutas y mismo origen; autenticación separada de validación de coordenadas. |
+| Reversión con estados divergentes | #9 persistía fulfillment mientras código anterior leía archivos legacy | Snapshot autoritativo v2, backup/journal recuperable, lector compatible y comprobación previa al arranque. Legacy es solo evidencia. |
+| Métrica negativa encontrada en navegador | Asignación histórica anterior a la fecha de registro en el motor nuevo | Excluir intervalos históricos no medidos del promedio; conservar totales operativos. No se convierten en cero ficticio. |
+
+### Comprobaciones ejecutadas
+
+- TypeScript, compilación y las **22 suites** del comando test: correctas. Detalle en [suites.json](review-evidence/suites.json).
+- Después del hallazgo visual: TypeScript, rebuild y regresiones HTTP de históricos, 19 casos de despachos, almacenamiento e imágenes ejecutadas de nuevo; correctas. El cliente real `api.applyCatalogImages` envía sesión y aplica un parche de prueba por el endpoint protegido.
+- Nueve estados históricos aislados: pendiente de confirmar, confirmado, alistamiento, listo, en camino con/sin fecha y sin custodio, entregado y cancelado. Registro/conciliación, intentos inválidos, replay, recuperación asistida de todos ellos, reinicio y conservación comercial comprobados por HTTP.
+- Auth bodega: 401 sin sesión y cabecera de rol; 403 token inválido y conductor; 400 administrador con coordenadas nulas; 200 administrador con coordenadas del fixture. No prueba presencia física.
+- Imágenes: rechazo de campos comerciales y conflictos, idempotencia, fotografía de variante, carga alternativa, categorías y carga progresiva, auditoría y reinicio. No se aplicó el lote de 536 productos en instalaciones operativas.
+- Reversión **entre servidores compilados** en una copia ficticia: completar una entrega con código nuevo, detenerlo, rechazar main antiguo, iniciar el servidor del commit ba71174 con almacenamiento actual. Pedido y despacho ENTREGADO/DELIVERED, códigos, cantidades, importes, auditoría, recuperación y catálogo preservados. El launcher transmite SIGTERM al proceso hijo. [Resultado](review-evidence/rollback.json).
+
+### Navegador real, datos ficticios
+
+En el entorno aislado de revisión se hizo registro → conciliación de saldo → oferta al conductor elegible para HIST-READY; para HIST-WAY se vio el dato de recogida pendiente, se aportó una fecha histórica de fixture con referencia y se obtuvo PICKED_UP/EN_CAMINO con el custodio original. Al reiniciar se conservaron ambos códigos y estados.
+
+Para HIST-CLOSED se solicitó recuperación desde cliente, se aprobó con evidencia ficticia explícita desde administración, se cerró la sesión administrativa y se abrió seguimiento en la ruta de invitado. Continuó ENTREGADO sin nuevo despacho. La capacidad privada sobrevivió al reinicio; la sesión administrativa requirió volver a autenticarse.
+
+Tarjetas revisadas a 1280×720 y 390×844: variante de fixture 1 kg/$25.000 → 2 kg/$40.000, precio principal actualizado; chips sin precio; presentación única 15 kg seleccionada. En móvil el ancho del documento fue 390 px, sin desbordamiento horizontal. El botón de compra permaneció bloqueado con dirección pendiente. La correspondencia selección/carrito/checkout se comprobó mediante las suites existentes; no se creó un pedido de catálogo desde ese navegador.
+
+![Custodia pendiente](review-evidence/admin-custodia-pendiente.jpg)
+![Custodia conciliada y conservada tras reiniciar](review-evidence/admin-conciliacion-completada.jpg)
+![Seguimiento privado de histórico cerrado](review-evidence/seguimiento-historico-cerrado.jpg)
+![Variantes y precio principal en móvil](review-evidence/tarjeta-movil.jpg)
+![Presentación única seleccionada](review-evidence/presentacion-unica-movil.jpg)
+
+### Reproducir en otra copia aislada
+
+Desde el checkout de revisión, instalar dependencias y compilar. Crear una carpeta nueva (el generador rechaza una existente):
+
+```
+node --import tsx src/tests/createIntegrationReview.ts ../bolt-dispatch-simulation-integracion
+BOLT_DISPATCH_SIMULATION=1 NODE_ENV=production PORT=3042 node --import tsx scripts/fulfillment-storage.ts run ../bolt-dispatch-simulation-integracion/.bolt-private/orders ../bolt-dispatch-simulation-integracion
+```
+
+Abrir `http://127.0.0.1:3042/simulacion`, ingresar a la simulación y abrir Administración → Despachos. Credenciales ficticias generadas quedan privadas en la copia. No copiar sus archivos persisted, credenciales o configuración de flota a una instalación real.
+
+### Pendientes y decisiones humanas
+
+- Verificar titularidad de históricos sin capacidad previa; cotejar comprobantes/documentos mediante administración autorizada. Los datos de contacto conocidos no bastan.
+- Resolver custodia, fecha histórica de recogida, cuentas de conductor, saldo pendiente y capacidades cuando falte evidencia. Sin fecha comprobable, EN_CAMINO sigue pendiente; no asignar una recogida nueva.
+- Configurar flota, rutas y disponibilidad reales. Rappi e inDrive siguen desactivados; la simulación no demuestra disponibilidad de producción.
+- Aplicar transición por instalación con un escritor detenido, respaldo actual y aceptación operativa. No se migró ninguna instalación real en esta tarea.
+- #10 integra código y un plan, no su aplicación automática. El informe original de fotografías registra 1.413 campos vacíos y 9.396 registros pendientes de verificación visual. Estas cifras son de su auditoría, no una nueva certificación de empaques. Revisar fuentes y posibles ediciones posteriores antes de cada lote. Véase [IMAGENES-CATALOGO.md](IMAGENES-CATALOGO.md).
+- Reversión soportada a ba71174 mantiene el backend corregido. Incluye también la corrección de promedios históricos. No volver a main antiguo contra v2. Se conserva almacenamiento comercial, auth, uploads y configuración actuales **además** de BOLT_DATA_DIR.
+
+### Archivos del PR #11 conservados sin cambios
+
+| Archivo | SHA Git blob |
+| --- | --- |
+| src/components/customer/PresentationSelector.tsx | 31b407ba7ea8115db6270048eff3dabd494842a3 |
+| src/lib/presentationDisplay.ts | e7999d2091eef2cb861132533faa445072fc4a67 |
+| src/tests/catalogPurchase.test.tsx | 35d1d46113c3ebf6eea62dea92cdb494e434bdd8 |
+| src/tests/presentationSelection.test.tsx | 6b5dca4c0dcc510175f8955ab7578be3107ceb41 |
+
+Inventario de archivos: [INTEGRACION-ARCHIVOS.md](INTEGRACION-ARCHIVOS.md).

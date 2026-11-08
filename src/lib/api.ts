@@ -493,6 +493,11 @@ export const api = {
     return data.product;
   },
 
+  async applyCatalogImages(patches: import('./catalogImagePatch').CatalogImagePatch[]): Promise<{changed:number}> {
+    const res=await authorizedFetch(`${BASE_URL}/admin/catalog/images/apply`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({patches})});
+    const data=await res.json();if(!res.ok)throw new Error(data.error||'No se pudo guardar la fotografía');return data;
+  },
+
   async uploadCatalogImage(dataUrl: string, filename?: string): Promise<{ url: string; filename: string; size: number }> {
     const token = this.getStoredAdminToken();
     const res = await authorizedFetch(`${BASE_URL}/admin/catalog/upload-image`, {

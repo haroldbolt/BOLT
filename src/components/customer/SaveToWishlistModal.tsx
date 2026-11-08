@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import React, { useState } from 'react';
 import { Bookmark, X, Plus, Check, FolderPlus, Sparkles } from 'lucide-react';
 import { Product, WishlistCollection } from '../../types';
@@ -66,7 +67,7 @@ export const SaveToWishlistModal: React.FC<SaveToWishlistModalProps> = ({
 
         {/* Product Preview Card */}
         <div className="p-4 bg-slate-50 border-b border-slate-100 flex items-center gap-3">
-          <img
+          <ProductImage
             src={product.image}
             alt={product.name}
             className="w-14 h-14 object-cover rounded-2xl border border-slate-200 bg-white p-1 shrink-0"

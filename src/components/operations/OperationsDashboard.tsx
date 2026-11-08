@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import {DispatchManager} from '../dispatch/DispatchManager';
 import { GroupedDispatches } from './GroupedDispatches';
 import { TransportManagerTab } from './TransportManagerTab';
@@ -1757,7 +1758,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       return (
                         <tr key={prod.id} className="hover:bg-slate-50/80">
                           <td className="p-3.5 flex items-center gap-2.5">
-                            <img src={prod.image} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                            <ProductImage src={prod.image} alt="" className="w-8 h-8 rounded-lg object-cover" />
                             <div>
                               <p className="font-bold text-slate-900 leading-tight">{prod.name}</p>
                               <p className="text-[11px] text-slate-400">{prod.presentation}</p>

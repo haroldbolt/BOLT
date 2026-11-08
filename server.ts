@@ -577,7 +577,7 @@ async function startServer() {
               presentation: catalogItem?.presentation || '',
               price: pi.price,
               quantity: pi.quantity,
-              image: catalogItem?.image || 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800',
+              image: catalogItem?.image || '',
               weightKg: pi.unitWeightKg,
               requiresPrescription: !!catalogItem?.requiresPrescription,
               picked: false,
@@ -1148,6 +1148,13 @@ async function startServer() {
   });
   app.post('/api/v1/admin/catalog/batches/:id/reverse',requireAdminAuth,(req,res)=>{
     try{res.json(catalogOperations.reverse(req.params.id,(req as any).adminSession));}catch(e:any){res.status(409).json({error:e.message});}
+  });
+
+  app.post('/api/v1/admin/catalog/images/apply', requireAdminAuth, (req,res)=>{
+    try {
+      const result=catalogRepository.applyImagePatches(req.body.patches,(req as any).adminSession);
+      products=catalogOperations.getSalesProducts();res.json(result);
+    }catch(error:any){res.status(409).json({error:error.message});}
   });
 
   app.post('/api/v1/admin/catalog/upload-image', requireAdminAuth, (req: Request, res: Response) => {
