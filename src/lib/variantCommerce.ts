@@ -28,7 +28,7 @@ export function saleVariant(product: Product, variantId?: string): Product {
     presentation: presentationLabel(product,variant.varianteId),
     weightKg: variant.transport ? variant.transport.weightGrams / 1000 : weightKg,
     transport: variant.transport,
-    image: variant.foto || product.image,
+    image: Object.hasOwn(product.variantImages || {},variant.varianteId) ? product.variantImages![variant.varianteId] : (variant.foto || product.image),
     price: variant.price ?? (isFirst ? product.price : 0),
     originalPrice: isFirst ? product.originalPrice : undefined,
     discountPercent: isFirst && product.originalPrice && product.originalPrice>(variant.price ?? product.price) ? Math.round((1-(variant.price ?? product.price)/product.originalPrice)*100) : undefined,

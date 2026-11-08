@@ -1,0 +1,14 @@
+{
+  "passed": true,
+  "from": "integration #9 fixes + #10 + metrics correction",
+  "to": "ba71174c6330515f9d2d3f6dc0c36214e3e780c8",
+  "data": "isolated fictional copy",
+  "postTransitionDelivery": "ENTREGADO / DELIVERED preserved by compiled fixed-9 server over HTTP",
+  "codes": true,
+  "amountsQuantities": true,
+  "catalogPricesStockReservations": true,
+  "assignmentAudit": true,
+  "recoveryCases": true,
+  "incompatibleMainRefusedBeforeStart": true,
+  "managedStopTerminatesChild": true
+}

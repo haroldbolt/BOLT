@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import React from 'react';
 import { Product } from '../../types';
 import { Scale, X, ArrowRight, Trash2 } from 'lucide-react';
@@ -45,7 +46,7 @@ export const ProductCompareBar: React.FC<ProductCompareBarProps> = ({
           <div className="flex items-center gap-1.5 pl-2 border-l border-slate-700/60">
             {compareProducts.map((prod) => (
               <div key={prod.id} className="relative group shrink-0">
-                <img
+                <ProductImage
                   src={prod.image}
                   alt={prod.name}
                   className="w-8 h-8 sm:w-9 sm:h-9 rounded-lg object-cover bg-white p-0.5 border border-slate-700"

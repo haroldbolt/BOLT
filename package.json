@@ -5,13 +5,16 @@
   "type": "module",
   "scripts": {
     "dev": "DISABLE_HMR=true tsx server.ts",
-    "start": "node server.js",
+    "start": "node --import tsx scripts/fulfillment-storage.ts run ${BOLT_DATA_DIR:-src/data} .",
     "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
-    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts && tsx src/tests/catalogAdmin.test.ts && tsx src/tests/coverageRegression.test.ts && tsx src/tests/warehouseNotifications.test.ts && tsx src/tests/catalogBatch.test.ts && tsx src/tests/presentationSelection.test.tsx && tsx src/tests/catalogPurchase.test.tsx && tsx src/tests/guestCart.test.tsx && tsx src/tests/transport.test.ts",
-    "catalog:batch": "node --import tsx scripts/catalog-batch.ts"
+    "test": "tsx src/tests/deliveryQuote.test.ts && tsx src/tests/foldableResponsive.test.ts && tsx src/tests/orderStateMachine.test.ts && tsx src/tests/catalogAdmin.test.ts && tsx src/tests/coverageRegression.test.ts && tsx src/tests/warehouseNotifications.test.ts && tsx src/tests/catalogBatch.test.ts && tsx src/tests/presentationSelection.test.tsx && tsx src/tests/catalogPurchase.test.tsx && tsx src/tests/guestCart.test.tsx && tsx src/tests/transport.test.ts && tsx src/tests/municipalCoverage.test.ts && tsx src/tests/scheduledDestination.test.tsx && tsx src/tests/guestAddresses.test.tsx && tsx src/tests/dispatch.test.ts && tsx src/tests/dispatchServer.test.ts && tsx src/tests/dispatchPanels.test.tsx && tsx src/tests/dispatchSimulation.test.ts && tsx src/tests/storageTransition.test.ts && tsx src/tests/historicalIntegrationHttp.test.ts && tsx src/tests/productImages.test.tsx && tsx src/tests/productImagesHttp.test.ts",
+    "catalog:batch": "node --import tsx scripts/catalog-batch.ts",
+    "dispatch:simulation": "node --import tsx scripts/dispatch-simulation.ts",
+    "storage": "node --import tsx scripts/fulfillment-storage.ts",
+    "test:images": "tsx src/tests/productImages.test.tsx && tsx src/tests/productImagesHttp.test.ts"
   },
   "dependencies": {
     "@google/genai": "^2.4.0",

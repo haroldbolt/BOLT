@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import React, { useState } from 'react';
 import { 
   Bookmark, Plus, ShoppingBag, Trash2, Edit2, Check, 
@@ -221,7 +222,7 @@ export const WishlistView: React.FC<WishlistViewProps> = ({
                     <div>
                       {/* Product Basic Row */}
                       <div className="flex gap-3">
-                        <img
+                        <ProductImage
                           src={product.image}
                           alt={product.name}
                           onClick={() => onOpenProductDetails(product)}

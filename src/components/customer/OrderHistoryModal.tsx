@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import { resolveOrderWarehouse } from '../../lib/warehouseAssignment';
 import React, { useState, useMemo, useEffect } from 'react';
 import { 
@@ -184,6 +185,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
             </button>
           </div>
 
+          <a href="/recuperar-seguimiento" className="text-red-700 text-sm underline">Recuperar seguimiento de una compra anterior</a>
           {/* Sub-Tabs: Historial vs Perfil */}
           <div className="grid grid-cols-2 gap-1.5 bg-slate-100 p-1 rounded-2xl text-xs font-bold">
             <button
@@ -384,7 +386,7 @@ export const OrderHistoryModal: React.FC<OrderHistoryModalProps> = ({
                         <div className="space-y-2">
                           {order.items.map(item => (
                             <div key={item.productId} className="flex items-center gap-2.5">
-                              <img
+                              <ProductImage
                                 src={item.image}
                                 alt={item.name}
                                 className="w-10 h-10 rounded-xl object-cover bg-slate-50 border border-slate-100 shrink-0"

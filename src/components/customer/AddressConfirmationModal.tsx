@@ -6,7 +6,7 @@ import {
   MapPin, X, CheckCircle2, AlertTriangle, Clock, 
   Search, ChevronRight, Calendar, Info, Compass, Sparkles, Navigation, Loader2
 } from 'lucide-react';
-import { DeliveryQuote, LatLng, DELIVERY_CONFIG, detectBogotaLocality, getBogotaLocalityName, TURBO_ALLOWED_LOCALITIES } from '../../lib/deliveryService';
+import { DeliveryQuote, LatLng, DELIVERY_CONFIG, TURBO_ALLOWED_LOCALITIES } from '../../lib/deliveryService';
 import { api } from '../../lib/api';
 import { Store, CartItem, Product } from '../../types';
 
@@ -33,7 +33,9 @@ interface AddressConfirmationModalProps {
   currentDetails: string;
   currentCoordinates?: LatLng;
   currentTerritory?: AddressTerritory;
-  onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote) => void;
+  onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote, metadata?: {name:string;isDefault:boolean}) => boolean | void;
+  savedAddressOptions?: {name:string;isDefault:boolean};
+  saveError?: string;
   stores: Store[];
   cartItems?: CartItem[];
   products?: Product[];
@@ -49,9 +51,6 @@ function formatCleanBogotaAddress(raw: string): string {
     .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
     .replace(/,\s*Cundinamarca/gi, '')
     .trim();
-  if (!cleaned.toLowerCase().includes('bogot')) {
-    cleaned = `${cleaned}, Bogotá`;
-  }
   return cleaned;
 }
 
@@ -63,10 +62,13 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   currentCoordinates,
   currentTerritory,
   onConfirmAddress,
+  savedAddressOptions, saveError,
   stores,
   cartItems,
   products = [],
 }) => {
+  const [savedName,setSavedName]=useState(savedAddressOptions?.name || '');
+  const [savedDefault,setSavedDefault]=useState(savedAddressOptions?.isDefault || false);
   const [addressInput, setAddressInput] = useState(currentAddress ?? '');
   const [detailsInput, setDetailsInput] = useState(currentDetails ?? '');
   const [pinCoordinates, setPinCoordinates] = useState<Partial<LatLng>>(currentCoordinates ?? {});
@@ -107,7 +109,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             address: addr,
             details: detailsInput,
             coordinates: coords,
-            ...geo,
+            municipality:geo.municipality, locality:geo.locality, neighborhood:geo.neighborhood,
           },
           items: cartItems?.map(i => ({ productId: i.product.id, quantity: i.quantity })),
         },
@@ -136,6 +138,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       ++reverseGeocodeReqSeqRef.current;
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
 
+      setSavedName(savedAddressOptions?.name || '');setSavedDefault(savedAddressOptions?.isDefault || false);
       setAddressInput(initialAddr);
       setDetailsInput(initialDetails);
       setPinCoordinates(initialCoords);
@@ -252,19 +255,18 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
   // Requisito 4: Al confirmar, onConfirmAddress debe recibir los datos de esa misma ubicación
   const canConfirm = 
-    !!addressInput.trim() && !!destinationPoint &&
+    (!savedAddressOptions || !!savedName.trim()) && !!addressInput.trim() && !!destinationPoint &&
     !isEvaluating && !isGeocoding && 
     !isReverseGeocoding && 
     isAddressSynced && 
     !geocodeError &&
     !!quote && 
-    (quote.availableModes.turbo || quote.availableModes.turboDividido || quote.availableModes.scheduled);
+    quote.eligibilityStatus !== 'ADDRESS_NEEDS_CONFIRMATION';
 
   const handleConfirm = () => {
     if (canConfirm && quote && destinationPoint) {
       // Requisito 5: Conserva lo escrito en «Torre / Apto / Portería» (detailsInput)
-      onConfirmAddress(addressInput, detailsInput, destinationPoint, quote);
-      onClose();
+      if(onConfirmAddress(addressInput,detailsInput,destinationPoint,quote,savedAddressOptions?{name:savedName,isDefault:savedDefault}:undefined)!==false) onClose();
     }
   };
 
@@ -276,12 +278,12 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const detectedLocality = useMemo(() => {
     return quote?.locality || ''; 
   }, [quote?.detectedLocality, pinCoordinates, addressInput]);
-  const localityName = quote?.locality || 'Pendiente de identificar';
+  const localityName = quote?.locality || quote?.municipality || 'Pendiente de identificar';
   const isTurboLocality = (TURBO_ALLOWED_LOCALITIES as readonly string[]).includes(detectedLocality.toUpperCase().normalize('NFD').replace(/[\u0300-\u036f]/g, ''));
-  const isAutoSwitchedToScheduled =
+  const isAutoSwitchedToScheduled = !!quote?.availableModes?.scheduled && (
     !!quote?.autoSwitchedToScheduled ||
     isScheduledOnly ||
-    (!isTurboLocality && !!quote?.availableModes?.scheduled);
+    (!isTurboLocality && !!quote?.availableModes?.scheduled));
 
   if (!isOpen) return null;
 
@@ -300,12 +302,12 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 ¿Dónde entregamos tu pedido?
               </h3>
               <p className="text-[11px] text-slate-500 font-medium">
-                Cobertura urbana por localidad · Turbo hasta 6 km y 25 min
+                Zonas habilitadas de Bogotá, Soacha, Chía y Cajicá
               </p>
             </div>
           </div>
           <button
-            onClick={onClose}
+            onClick={onClose} aria-label="Cerrar formulario de dirección"
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
           >
             <X className="w-4 h-4" />
@@ -315,18 +317,23 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           
+          {savedAddressOptions && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
+            <label className="block text-xs font-bold text-slate-700">Nombre de la dirección<input aria-label="Nombre de la dirección guardada" value={savedName} maxLength={60} onChange={e=>setSavedName(e.target.value)} className="block w-full mt-1 p-3 rounded-xl border border-slate-200 bg-white text-sm"/></label>
+            <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={savedDefault} onChange={e=>setSavedDefault(e.target.checked)}/>Usar como predeterminada</label>
+            {saveError && <p role="status" className="text-xs text-amber-800">{saveError}</p>}
+          </div>}
           {/* Address Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2 space-y-1">
               <label className="text-[11px] font-bold text-slate-700 flex items-center justify-between">
                 <span className="flex items-center gap-1.5">
-                  <span>Dirección en Bogotá</span>
+                  <span>Dirección de entrega</span>
                   <span className={`text-[10px] px-2 py-0.2 rounded-full font-bold border ${
                     isTurboLocality
                       ? 'bg-emerald-50 text-emerald-800 border-emerald-200'
                       : 'bg-blue-50 text-blue-800 border-blue-200'
                   }`}>
-                    Localidad: {localityName} {isTurboLocality ? '⚡' : '📅'}
+                    {quote?.locality ? 'Localidad' : 'Municipio'}: {localityName} {isTurbo ? '⚡' : isScheduledOnly ? '📅' : ''}
                   </span>
                 </span>
                 {isReverseGeocoding ? (
@@ -491,7 +498,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
               {isReverseGeocoding && (
                 <div className="absolute top-2 left-2 bg-slate-900/90 text-white backdrop-blur-xs px-2.5 py-1.5 rounded-xl text-[10px] font-bold flex items-center gap-1.5 shadow-lg z-10 animate-in fade-in border border-white/20">
                   <Loader2 className="w-3.5 h-3.5 text-yellow-400 animate-spin" />
-                  <span>Obteniendo dirección en Bogotá...</span>
+                  <span>Obteniendo dirección del destino...</span>
                 </div>
               )}
 
@@ -561,7 +568,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                             Envío Programado Disponible
                           </span>
                           <span className="text-[11px] font-bold bg-white/80 text-blue-900 px-2 py-0.5 rounded-md border border-blue-200">
-                            Franjas horarias en Bogotá
+                            Franjas horarias disponibles
                           </span>
                         </>
                       )}
@@ -612,9 +619,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                     ✓ Envío Programado disponible
                   </span>
                 )}
-                <span className="text-slate-600">
-                  Distancia: <strong>{quote.geographicDistanceKm} km</strong> • Ruta vial: <strong>{quote.roadDistanceKm} km</strong>
-                </span>
+                {!isOutOfAllCoverage && quote.assignedStoreId && <span className="text-slate-600">
+                  Distancia: <strong>{quote.geographicDistanceKm} km</strong> • Ruta vial estimada: <strong>{quote.roadDistanceKm} km</strong>
+                </span>}
               </div>
 
               {/* Detailed ETA Components Breakdown */}
@@ -669,7 +676,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             ) : isTurboDividido ? (
               <span className="text-amber-800 font-bold">✓ Distribución por capacidad verificada para esta compra</span>
             ) : isScheduledOnly ? (
-              <span className="text-blue-800 font-bold">✓ Disponible para Envío Programado en Bogotá</span>
+              <span className="text-blue-800 font-bold">✓ Disponible para Envío Programado</span>
             ) : (
               <span className="text-rose-700 font-bold">{quote?.eligibilityStatus === 'OUT_OF_COVERAGE' ? 'Ubicación fuera de cobertura' : quote?.message || 'Completa y valida tu dirección'}</span>
             )}
@@ -701,7 +708,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 <span>Esperando dirección...</span>
               ) : (
                 <>
-                  <span>{isAutoSwitchedToScheduled ? 'Continuar con Envío Programado' : 'Confirmar dirección'}</span>
+                  <span>{savedAddressOptions ? 'Guardar cambios' : 'Confirmar dirección'}</span>
                   <ChevronRight className="w-4 h-4" />
                 </>
               )}

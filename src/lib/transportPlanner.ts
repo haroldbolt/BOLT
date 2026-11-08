@@ -36,7 +36,7 @@ function isLight(p: Product, t: TransportAttributes, config: TransportConfig) {
 }
 function occupied(context: TransportContext, driverId: string, mode: string, slot?: string, excludeOrderId?: string) {
   return context.orders.some(o=>o.id!==excludeOrderId && (o.childShipments?.length ? o.childShipments : [o]).some(s=> {
-    if(s.driver?.id!==driverId || s.fulfillmentStatus==='ENTREGADO' || s.fulfillmentStatus==='CANCELADO' && !s.physicalReturnPending) return false;
+    if((s.driver?.id || s.transportLoad?.driverId)!==driverId || s.fulfillmentStatus==='ENTREGADO' || s.fulfillmentStatus==='CANCELADO' && !s.physicalReturnPending) return false;
     if(mode==='PROGRAMADO') return o.deliveryMode==='PROGRAMADO' && `${o.scheduledWindow?.date}|${o.scheduledWindow?.slotId}`===slot;
     return o.deliveryMode!=='PROGRAMADO' || ['EN_CAMINO','REPARTIDOR_ASIGNADO'].includes(s.fulfillmentStatus) || !!s.physicalReturnPending;
   }));
@@ -45,7 +45,7 @@ export function availableVehicles(context: TransportContext, storeId: string, mo
   const external=externalAvailability(context.config,Date.now(),{storeId,mode});
   return [...context.config.vehicles,...external.vehicles].filter(v=>v.enabled && v.storeIds.includes(storeId) && v.modes.includes(mode) && !occupied(context,v.driverId,mode,slot,excludeOrderId) && (v.externalOffer
     ? mode==='PROGRAMADO' ? !!slot && v.scheduledSlots.includes(slot) : v.externalOffer.estimatedMinutes<=25
-    : context.drivers.some(d=>d.id===v.driverId && (mode==='PROGRAMADO' ? !!slot && v.scheduledSlots.includes(slot) : d.isOnline && d.currentStatus==='DISPONIBLE' && !d.activeOrderId))));
+    : context.drivers.some(d=>d.id===v.driverId && d.operationalEligible!==false && (mode==='PROGRAMADO' ? !!slot && v.scheduledSlots.includes(slot) : d.isOnline && d.currentStatus==='DISPONIBLE' && !d.activeOrderId))));
 }
 /** Conservative orthogonal packing, disjoint free boxes. Whole packaged units, no compression. */
 function boxesFit(units: Unit[], vehicle: TransportVehicle) {

@@ -1,3 +1,4 @@
+import { COVERAGE_MUNICIPALITIES } from './coverageConfig';
 import type { Store } from '../types';
 
 // Single operational registry. A new store starts with no coverage unless explicitly assigned.
@@ -29,7 +30,7 @@ export const SCHEDULED_TERRITORIES: Record<string,readonly string[]> = {
 ]
 };
 
-export const SCHEDULED_MUNICIPALITIES: Record<string,readonly string[]> = {HUB_KENNEDY:['Soacha']};
+export const SCHEDULED_MUNICIPALITIES: Record<string,readonly string[]> = Object.fromEntries([...new Set(COVERAGE_MUNICIPALITIES.map(m=>m.scheduledStoreId).filter(Boolean))].map(id=>[id,COVERAGE_MUNICIPALITIES.filter(m=>m.scheduledStoreId===id).map(m=>m.name)]));
 
 export const WAREHOUSES: Store[] = ([
   {

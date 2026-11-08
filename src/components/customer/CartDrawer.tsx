@@ -1,3 +1,4 @@
+import {ProductImage} from '../common/ProductImage';
 import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import type { DeliveryQuote } from '../../lib/deliveryService';
 import React from 'react';
@@ -105,7 +106,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                   key={item.product.id}
                   className="bg-white p-3 rounded-2xl border border-slate-100 shadow-xs flex items-center gap-3"
                 >
-                  <img
+                  <ProductImage
                     src={item.product.image}
                     alt={item.product.name}
                     className="w-16 h-16 rounded-xl object-cover bg-slate-50 shrink-0"

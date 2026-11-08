@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import { Product, ProductPresentation, Store, MainCategory, Species, StorageCondition } from '../types';
+import {imageMetadataPatch, type CatalogImagePatch} from './catalogImagePatch';
 import { localCatalogService } from './localCatalogService';
 
 export interface CatalogAuditEntry {
@@ -92,9 +93,12 @@ export class CatalogRepository {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      fs.writeFileSync(CATALOG_OVERRIDE_PATH, JSON.stringify(data, null, 2), 'utf-8');
+      const temp = `${CATALOG_OVERRIDE_PATH}.${process.pid}.tmp`;
+      fs.writeFileSync(temp, JSON.stringify(data, null, 2), {encoding:'utf-8',mode:0o600});
+      fs.renameSync(temp,CATALOG_OVERRIDE_PATH);
     } catch (err) {
       console.error('[CatalogRepository] Error saving catalog overrides file:', err);
+      throw err;
     }
   }
 
@@ -134,7 +138,8 @@ export class CatalogRepository {
       list.unshift(mergedCustom);
     }
 
-    this.mergedProductsCache = list;
+    this.mergedProductsCache = list.map(p => ({...p, presentaciones:p.presentaciones?.map(v =>
+      Object.hasOwn(p.variantImages || {},v.varianteId) ? {...v,foto:p.variantImages![v.varianteId]} : v)}));
   }
 
   public getAllProducts(includeInactive = true): Product[] {
@@ -191,7 +196,7 @@ export class CatalogRepository {
       originalPrice: productData.originalPrice ? Math.round(productData.originalPrice) : undefined,
       presentation: productData.presentation?.trim() || 'Unidad',
       weightKg: productData.weightKg || 1,
-      image: productData.image?.trim() || 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800',
+      image: productData.image?.trim() || '',
       gallery: productData.gallery || (productData.image ? [productData.image] : []),
       description: productData.description?.trim() || '',
       stockByStore: productData.stockByStore || {
@@ -218,7 +223,7 @@ export class CatalogRepository {
           varianteId: `var-${newId}-1`,
           nombre: productData.presentation?.trim() || 'Presentación Principal',
           sku: newSku,
-          foto: productData.image?.trim() || 'https://images.unsplash.com/photo-1589924691995-400dc9ecc119?w=800',
+          foto: productData.image?.trim() || '',
           bodegaIds: defaultBodegaIds,
         },
       ],
@@ -316,6 +321,26 @@ export class CatalogRepository {
     this.rebuildMergedCache();
 
     return { success: true, product: this.getProductById(id) };
+  }
+
+  /** Single durable write; only image fields, optimistic conflict checks and audit. */
+  public applyImagePatches(patches:CatalogImagePatch[], actor:{email:string;name:string}) {
+    if(!Array.isArray(patches)||patches.length>10000||new Set(patches.map(p=>p.productId)).size!==patches.length)throw new Error('Lote de imágenes inválido.');
+    const changes=patches.map(patch=>{
+      const product=this.getProductById(patch.productId);
+      if(!product)throw new Error(`Producto no encontrado: ${patch.productId}`);
+      return {patch,product,metadata:imageMetadataPatch(product,patch)};
+    }).filter(x=>Object.keys(x.metadata).length);
+    if(!changes.length)return {changed:0};
+    const previousOverrides=new Map(this.overrides),previousCustom=new Map(this.customProducts),previousAudit=[...this.auditLog];
+    try {
+      for(const {patch,product,metadata} of changes){
+        if(this.customProducts.has(product.id))this.customProducts.set(product.id,{...this.customProducts.get(product.id)!,...metadata});
+        else this.overrides.set(product.id,{...(this.overrides.get(product.id)||{}),...metadata});
+        this.auditLog.unshift({id:`img-${Date.now()}-${product.id}`,timestamp:new Date().toISOString(),actor,action:'SET_IMAGE',productId:product.id,productName:product.name,details:{...patch}});
+      }
+      this.saveToDisk();this.rebuildMergedCache();return {changed:changes.length};
+    }catch(error){this.overrides=previousOverrides;this.customProducts=previousCustom;this.auditLog=previousAudit;this.rebuildMergedCache();throw error;}
   }
 
   public toggleProductStatus(

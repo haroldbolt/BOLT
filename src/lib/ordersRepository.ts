@@ -1,3 +1,5 @@
+import {FulfillmentStorage} from './fulfillmentStorage';
+import {newDispatchState, type DispatchState} from '../types/dispatch';
 import { makeWarehouseAssignment } from './warehouseAssignment';
 import { WAREHOUSES } from '../data/warehouseConfig';
 import type { Store } from '../types';
@@ -65,6 +67,26 @@ export class OrdersRepository {
   private auditHistory: OrderStatusHistoryEntry[] = [];
   private telemetryHistory: Record<string, GPSTelemetry[]> = {};
   private initialized = false;
+  private inTransaction = false;
+  private unified = false;
+  private fulfillmentFile: string;
+  public dispatchState: DispatchState = newDispatchState();
+
+  private snapshot() {return structuredClone({orders:this.orders,drivers:this.drivers,audit:this.auditHistory,telemetry:this.telemetryHistory,dispatch:this.dispatchState})}
+  private restore(s:any) {this.orders=s.orders;this.drivers=s.drivers;this.auditHistory=s.audit;this.telemetryHistory=s.telemetry;this.dispatchState=s.dispatch}
+  private persistUnified() {
+    new FulfillmentStorage(this.dataDir).commit(this.snapshot());this.unified=true;
+  }
+  /** One synchronous writer (server lock). All dispatch/order/driver changes commit in one atomic rename. */
+  public transaction<T>(fn:()=>T):T {
+    if(this.inTransaction)return fn();
+    const before=this.snapshot(),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
+    try {const value=fn();this.persistUnified();return value}
+    catch(error){const durable=new FulfillmentStorage(this.dataDir).read();if((durable?.revision||0)>previousRevision)this.restore(durable);else if(JSON.stringify(this.snapshot())!==JSON.stringify(before))this.restore(before);throw error}
+    finally {this.inTransaction=false}
+  }
+  public flush() {if(!this.inTransaction)this.persistUnified()}
+  public addDriver(driver:DriverProfile) {if(this.drivers.some(d=>d.id===driver.id))throw Error('Conductor duplicado');this.drivers.push(driver)}
   private dataDir: string;
   private ordersFile: string;
   private driversFile: string;
@@ -77,6 +99,7 @@ export class OrdersRepository {
     this.driversFile = options?.driversFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-drivers.json') : DRIVERS_FILE);
     this.auditFile = options?.auditFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-audit.json') : AUDIT_FILE);
     this.telemetryFile = options?.telemetryFile || (options?.dataDir ? path.join(options.dataDir, 'persisted-telemetry.json') : TELEMETRY_FILE);
+    this.fulfillmentFile=path.join(this.dataDir,'persisted-fulfillment.json');
     this.init();
   }
 
@@ -84,6 +107,10 @@ export class OrdersRepository {
    * Carga los datos desde el almacenamiento persistente en disco o desde los datos semilla
    */
   public init() {
+    if(fs.existsSync(this.fulfillmentFile)) {
+      const data=new FulfillmentStorage(this.dataDir).read();
+      this.restore(data);this.unified=true;this.initialized=true;return;
+    }
     if (!fs.existsSync(this.dataDir)) {
       try {
         fs.mkdirSync(this.dataDir, { recursive: true });
@@ -194,6 +221,8 @@ export class OrdersRepository {
   }
 
   private saveOrders() {
+    if(this.inTransaction)return;
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       const temp=this.ordersFile+'.tmp';
       fs.writeFileSync(temp, JSON.stringify(this.orders, null, 2), 'utf-8');
@@ -205,6 +234,8 @@ export class OrdersRepository {
   }
 
   private saveDrivers() {
+    if(this.inTransaction)return;
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       fs.writeFileSync(this.driversFile, JSON.stringify(this.drivers, null, 2), 'utf-8');
     } catch (e) {
@@ -213,6 +244,8 @@ export class OrdersRepository {
   }
 
   private saveAudit() {
+    if(this.inTransaction)return;
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       fs.writeFileSync(this.auditFile, JSON.stringify(this.auditHistory, null, 2), 'utf-8');
     } catch (e) {
@@ -221,6 +254,8 @@ export class OrdersRepository {
   }
 
   private saveTelemetry() {
+    if(this.inTransaction)return;
+    if(this.unified || this.initialized){this.persistUnified();return;}
     try {
       fs.writeFileSync(this.telemetryFile, JSON.stringify(this.telemetryHistory, null, 2), 'utf-8');
     } catch (e) {

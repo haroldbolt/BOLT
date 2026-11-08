@@ -1,8 +1,10 @@
+import {ProductImage} from '../common/ProductImage';
+import {DispatchManager} from '../dispatch/DispatchManager';
 import { GroupedDispatches } from './GroupedDispatches';
 import { TransportManagerTab } from './TransportManagerTab';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { 
-  ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
+  Truck, ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
   Settings, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, UserCheck, 
   Search, RefreshCw, Key, Download, Sparkles, Phone, MapPin, Calendar,
   Building2, ShoppingBag, Navigation, Radio, Play, Square, Battery,
@@ -27,7 +29,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   onViewOrderTracking,
 }) => {
   const [currentRole, setCurrentRole] = useState<OperationRole>('ADMINISTRADOR');
-  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'CATALOGO' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR'>('PEDIDOS');
+  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'CATALOGO' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR' | 'DESPACHOS'>(new URLSearchParams(window.location.search).get('tab')==='DESPACHOS'?'DESPACHOS':'PEDIDOS');
   const [deliveryModeFilter, setDeliveryModeFilter] = useState<'TODOS' | 'TURBO' | 'TURBO_DIVIDIDO' | 'PROGRAMADO'>('TODOS');
   
   // Seguridad y sesión administrativa
@@ -213,6 +215,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [enteredPin,setEnteredPin]=useState('');
   // Handle stage change with role authorization and PIN validation
   const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus, shipmentId?: string, reason?: string, deliveryCode?: string) => {
+    if(['REPARTIDOR_ASIGNADO','EN_CAMINO','ENTREGADO'].includes(status)){setActiveTab('DESPACHOS');setErrorMessage('La asignación requiere aceptación. La recogida y entrega se confirman desde BOLT Conductor.');return;}
     try {
       setErrorMessage(null);
       const targetOrder = orders.find(o => o.id === orderId);
@@ -446,8 +449,9 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       setErrorMessage(null);
       const order=orders.find(o=>o.id===orderId);
       const target=shipmentId?order?.childShipments?.find(c=>c.shipmentId===shipmentId):order;
-      if(!target?.driver?.id)throw Error('Selecciona un conductor disponible en operaciones.');
-      await api.assignDriver(orderId, target.driver.id, shipmentId);
+      setActiveTab('DESPACHOS');
+      await api.assignDriver(orderId, '', shipmentId);
+      setActiveTab('DESPACHOS');
       await loadData();
       if (selectedOrder && selectedOrder.id === orderId) {
         const updated = await api.getOrder(orderId);
@@ -794,6 +798,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       <nav className="bg-white border-b border-slate-200 px-4 py-2 sticky top-14 z-30 shadow-xs">
         <div className="max-w-7xl mx-auto flex items-center gap-1 overflow-x-auto no-scrollbar text-xs font-bold">
           {[
+            { id: 'DESPACHOS', label: 'Despachos y asignación', icon: Truck },
             { id: 'PEDIDOS', label: 'Tablero de Pedidos', count: storeOrders.length, icon: Boxes },
             { id: 'PROGRAMADAS', label: 'Entregas Programadas', count: scheduledOrders.length, icon: Calendar },
             { id: 'BODEGAS', label: 'Bodegas y Mapas', count: stores.filter(s => s.turboEnabled).length, icon: Building2 },
@@ -1753,7 +1758,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                       return (
                         <tr key={prod.id} className="hover:bg-slate-50/80">
                           <td className="p-3.5 flex items-center gap-2.5">
-                            <img src={prod.image} alt="" className="w-8 h-8 rounded-lg object-cover" />
+                            <ProductImage src={prod.image} alt="" className="w-8 h-8 rounded-lg object-cover" />
                             <div>
                               <p className="font-bold text-slate-900 leading-tight">{prod.name}</p>
                               <p className="text-[11px] text-slate-400">{prod.presentation}</p>
@@ -1894,371 +1899,8 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         {/* ============================================================== */}
         {/* TAB 7: BOLT CONDUCTOR GPS EN VIVO & CONTRATOS DE INTEGRACIÓN */}
         {/* ============================================================== */}
-        {activeTab === 'CONDUCTOR' && (
-          <div className="space-y-6">
-            <div>
-              <div className="flex items-center justify-between flex-wrap gap-2">
-                <div>
-                  <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                    <Radio className="w-5 h-5 text-red-600 animate-pulse" />
-                    <span>Consola de Transmisión GPS en Vivo — Bolt Conductor</span>
-                  </h2>
-                  <p className="text-xs text-slate-500">
-                    Captura y transmisión satelital con cadencia estricta de 5 segundos vinculada exclusivamente a entregas en <strong className="text-slate-800">EN_CAMINO</strong>.
-                  </p>
-                </div>
-
-                <div className="flex items-center gap-2">
-                  <span className={`text-xs font-bold px-3 py-1.5 rounded-full flex items-center gap-1.5 ${
-                    gpsTrackingActive 
-                      ? 'bg-emerald-100 text-emerald-800 border border-emerald-300' 
-                      : 'bg-slate-100 text-slate-600'
-                  }`}>
-                    <span className={`w-2.5 h-2.5 rounded-full ${gpsTrackingActive ? 'bg-emerald-600 animate-ping' : 'bg-slate-400'}`}></span>
-                    <span>{gpsTrackingActive ? 'Transmisión Activa (5s)' : 'En Espera de Entrega'}</span>
-                  </span>
-                </div>
-              </div>
-            </div>
-
-            {/* Panel de Control y Captura de Coordenadas */}
-            <div className="bg-white rounded-3xl border border-slate-200 p-5 md:p-6 shadow-xs space-y-5">
-              {/* Perfil del Conductor & Permisos del Navegador */}
-              <div className="grid grid-cols-1 md:grid-cols-3 gap-4 pb-4 border-b border-slate-100">
-                <div className="flex items-center gap-3">
-                  <div className="w-12 h-12 rounded-2xl bg-slate-900 text-white flex items-center justify-center font-bold text-lg shadow-xs">
-                    🏍️
-                  </div>
-                  <div>
-                    <h4 className="font-black text-sm text-slate-900">Carlos Rodríguez</h4>
-                    <p className="text-xs text-slate-500">ID: <strong className="font-mono text-slate-700">DRV-CARLOS-01</strong></p>
-                    <p className="text-[11px] text-slate-400">Moto Yamaha FZ 2.0 • TPK-44E</p>
-                  </div>
-                </div>
-
-                {/* Permisos de Geolocalización en Navegador */}
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col justify-between text-xs space-y-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="font-bold text-slate-500 uppercase text-[10px]">Permiso GPS Navegador:</span>
-                    <button
-                      onClick={checkGpsPermission}
-                      className="text-[10px] text-blue-600 hover:text-blue-800 font-bold flex items-center gap-1"
-                    >
-                      <RefreshCw className="w-3 h-3" />
-                      <span>Revisar</span>
-                    </button>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    {gpsPermissionStatus === 'granted' && (
-                      <span className="text-emerald-700 font-black flex items-center gap-1 text-xs">
-                        <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                        <span>Permiso Concedido (Alta Precisión)</span>
-                      </span>
-                    )}
-                    {gpsPermissionStatus === 'prompt' && (
-                      <span className="text-amber-700 font-bold flex items-center gap-1 text-xs">
-                        <AlertTriangle className="w-4 h-4 text-amber-600" />
-                        <span>Pendiente de Aprobación en Navegador</span>
-                      </span>
-                    )}
-                    {gpsPermissionStatus === 'denied' && (
-                      <span className="text-rose-700 font-bold flex items-center gap-1 text-xs">
-                        <XCircle className="w-4 h-4 text-rose-600" />
-                        <span>Permiso Bloqueado en Ajustes</span>
-                      </span>
-                    )}
-                    {gpsPermissionStatus === 'unsupported' && (
-                      <span className="text-slate-500 font-bold flex items-center gap-1 text-xs">
-                        <XCircle className="w-4 h-4 text-slate-400" />
-                        <span>No Soportado por Dispositivo</span>
-                      </span>
-                    )}
-                  </div>
-                  <p className="text-[10px] text-slate-400">
-                    {gpsPermissionStatus === 'denied' 
-                      ? 'Haga clic en el candado de la URL para desbloquear el acceso a Ubicación.'
-                      : 'El navegador solicitará acceso a la ubicación física de este equipo.'}
-                  </p>
-                </div>
-
-                {/* Batería y Hardware Móvil */}
-                <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 flex flex-col justify-between text-xs space-y-1.5">
-                  <span className="font-bold text-slate-500 uppercase text-[10px]">Telemetría del Dispositivo:</span>
-                  <div className="flex items-center justify-between">
-                    <span className="text-slate-600">Batería móvil:</span>
-                    <strong className="text-emerald-600 font-mono text-sm">
-                      {gpsBatteryPercent !== null ? `${gpsBatteryPercent}%` : '85% (Est.)'}
-                    </strong>
-                  </div>
-                  <div className="flex items-center justify-between text-[11px] text-slate-500">
-                    <span>Protocolo:</span>
-                    <span className="font-mono font-bold text-slate-700">HTTPS / REST POST</span>
-                  </div>
-                </div>
-              </div>
-
-              {/* Selector de Pedido Activo */}
-              <div className="space-y-3">
-                <div className="flex items-center justify-between">
-                  <label className="text-xs font-black text-slate-800 uppercase tracking-wide flex items-center gap-1.5">
-                    <Boxes className="w-4 h-4 text-slate-600" />
-                    <span>Seleccionar Entrega Activa para Transmisión</span>
-                  </label>
-                  <span className="text-[11px] text-slate-400 font-medium">
-                    Regla: Sólo pedidos en camino
-                  </span>
-                </div>
-
-                {orders.filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO').length === 0 ? (
-                  <div className="p-4 bg-amber-50 rounded-2xl border border-amber-200 text-xs text-amber-900 space-y-2">
-                    <p className="font-bold flex items-center gap-1.5">
-                      <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0" />
-                      <span>No hay entregas activas en ruta en este momento</span>
-                    </p>
-                    <p className="text-[11px] text-amber-800">
-                      Para iniciar la transmisión GPS, asigne un conductor y despache un pedido a estado <strong className="font-black">EN CAMINO</strong> en la pestaña <button onClick={() => setActiveTab('PEDIDOS')} className="underline font-bold">Tablero de Pedidos</button>.
-                    </p>
-                  </div>
-                ) : (
-                  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-3">
-                    {orders
-                      .filter(o => o.fulfillmentStatus === 'EN_CAMINO' || o.fulfillmentStatus === 'REPARTIDOR_ASIGNADO')
-                      .map(ord => {
-                        const isThisOrderActive = gpsTrackingActive && gpsActiveOrderId === ord.id;
-                        return (
-                          <div
-                            key={ord.id}
-                            className={`p-4 rounded-2xl border-2 transition text-xs space-y-2.5 ${
-                              isThisOrderActive
-                                ? 'border-emerald-500 bg-emerald-50/50 shadow-sm'
-                                : 'border-slate-200 bg-slate-50 hover:bg-slate-100/80'
-                            }`}
-                          >
-                            <div className="flex items-start justify-between">
-                              <div>
-                                <span className="font-black text-slate-900 text-sm">{ord.orderNumber}</span>
-                                <p className="text-[11px] text-slate-500 font-medium truncate">{ord.customer.name}</p>
-                              </div>
-                              <span className={`text-[10px] font-black px-2 py-0.5 rounded-full ${
-                                ord.fulfillmentStatus === 'EN_CAMINO'
-                                  ? 'bg-yellow-400 text-red-950'
-                                  : 'bg-blue-100 text-blue-800'
-                              }`}>
-                                {ord.fulfillmentStatus}
-                              </span>
-                            </div>
-
-                            <div className="text-[11px] text-slate-600 space-y-0.5">
-                              <p className="truncate">📍 {ord.deliveryAddress.address}</p>
-                              <p>⚖️ {ord.totals.totalWeightKg} kg • {ord.deliveryMode}</p>
-                              {ord.secretDeliveryCode && (
-                                <p>🔑 PIN: <strong className="text-red-600 font-mono font-bold">{ord.secretDeliveryCode}</strong></p>
-                              )}
-                            </div>
-
-                            <div className="pt-2 border-t border-slate-200 flex items-center gap-2">
-                              {isThisOrderActive ? (
-                                <button
-                                  onClick={() => stopGpsTelemetry('Transmisión detenida por el conductor')}
-                                  className="w-full bg-rose-600 hover:bg-rose-700 text-white font-black text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
-                                >
-                                  <Square className="w-3.5 h-3.5 fill-current" />
-                                  <span>Detener Transmisión GPS</span>
-                                </button>
-                              ) : (
-                                <button
-                                  onClick={() => startGpsTelemetry(ord.id)}
-                                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-black text-xs py-2 rounded-xl flex items-center justify-center gap-1.5 transition shadow-xs"
-                                >
-                                  <Play className="w-3.5 h-3.5 fill-current text-yellow-400" />
-                                  <span>{ord.fulfillmentStatus === 'EN_CAMINO' ? 'Iniciar GPS (5s)' : 'Marcar En Ruta y Transmitir'}</span>
-                                </button>
-                              )}
-                            </div>
-                          </div>
-                        );
-                      })}
-                  </div>
-                )}
-              </div>
-
-              {/* Métricas e Instrumentación en Tiempo Real */}
-              <div className="pt-2 border-t border-slate-100">
-                <h4 className="font-extrabold text-xs text-slate-700 uppercase tracking-wider mb-3">
-                  Telemetría Activa & Satélites GPS
-                </h4>
-
-                <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Cadencia de Envío</span>
-                    <p className="text-base font-black text-slate-900 mt-0.5">5.0 segundos</p>
-                    <div className="mt-1 flex items-center gap-1.5">
-                      <div className="w-full bg-slate-200 h-1.5 rounded-full overflow-hidden">
-                        <div
-                          className="bg-yellow-500 h-full transition-all duration-1000"
-                          style={{ width: `${((5 - gpsCountdown) / 5) * 100}%` }}
-                        ></div>
-                      </div>
-                      <span className="text-[10px] font-mono font-bold text-slate-600 shrink-0">
-                        {gpsTrackingActive ? `${gpsCountdown}s` : '--'}
-                      </span>
-                    </div>
-                  </div>
-
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Coordenadas Actuales</span>
-                    <p className="text-xs font-mono font-bold text-slate-800 mt-1 truncate">
-                      {gpsLastPoint ? `${gpsLastPoint.latitude.toFixed(5)}, ${gpsLastPoint.longitude.toFixed(5)}` : 'Sin transmisión'}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      {gpsLastPoint ? 'Bogotá D.C., Colombia' : 'Presione Iniciar'}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Precisión Satelital</span>
-                    <p className="text-base font-black text-emerald-600 mt-0.5">
-                      {gpsLastPoint ? `±${gpsLastPoint.accuracy} m` : '--'}
-                    </p>
-                    <p className="text-[10px] text-slate-500 mt-0.5">
-                      {gpsLastPoint?.speed ? `${(gpsLastPoint.speed * 3.6).toFixed(1)} km/h` : '0 km/h en moto'}
-                    </p>
-                  </div>
-
-                  <div className="bg-slate-50 p-3.5 rounded-2xl border border-slate-200">
-                    <span className="text-[10px] font-bold text-slate-400 uppercase">Paquetes Transmitidos</span>
-                    <p className="text-base font-black text-slate-900 mt-0.5 font-mono">
-                      {gpsPointsSent}
-                    </p>
-                    <p className="text-[10px] text-slate-400 mt-0.5">
-                      Secuencia #{gpsSequenceRef.current > 1 ? gpsSequenceRef.current - 1 : 0}
-                    </p>
-                  </div>
-                </div>
-              </div>
-
-              {/* Registro en Vivo de Telemetría (Live Telemetry Log Stream) */}
-              <div className="pt-2 border-t border-slate-100 space-y-2">
-                <div className="flex items-center justify-between">
-                  <h4 className="font-extrabold text-xs text-slate-700 uppercase tracking-wider">
-                    Registro de Envíos al Servidor (/api/v1/driver/gps)
-                  </h4>
-                  {gpsHistoryLog.length > 0 && (
-                    <button
-                      onClick={() => setGpsHistoryLog([])}
-                      className="text-[11px] text-slate-400 hover:text-slate-600 font-bold"
-                    >
-                      Limpiar consola
-                    </button>
-                  )}
-                </div>
-
-                {gpsHistoryLog.length === 0 ? (
-                  <div className="p-4 bg-slate-50 rounded-2xl border border-slate-100 text-center text-xs text-slate-400 italic">
-                    {gpsTrackingActive ? 'Esperando primer ciclo de transmisión...' : 'Inicie una transmisión para visualizar el registro de telemetría.'}
-                  </div>
-                ) : (
-                  <div className="bg-slate-900 text-slate-100 rounded-2xl p-3 font-mono text-[11px] max-h-48 overflow-y-auto space-y-1.5 shadow-inner">
-                    {gpsHistoryLog.map((log, idx) => (
-                      <div key={idx} className="flex items-center justify-between border-b border-slate-800 pb-1">
-                        <div className="flex items-center gap-2">
-                          <span className={`w-2 h-2 rounded-full ${log.status === 'OK' ? 'bg-emerald-400' : 'bg-rose-500'}`}></span>
-                          <span className="text-slate-400">[{log.time}]</span>
-                          <span className="text-yellow-400 font-bold">#{log.seq}</span>
-                          <span>Lat: {log.lat.toFixed(5)}, Lng: {log.lng.toFixed(5)}</span>
-                          <span className="text-slate-400">(±{log.accuracy}m)</span>
-                        </div>
-                        <div>
-                          {log.status === 'OK' ? (
-                            <span className="text-emerald-400 font-bold text-[10px] bg-emerald-950/80 px-1.5 py-0.2 rounded">
-                              200 OK
-                            </span>
-                          ) : (
-                            <span className="text-rose-400 font-bold text-[10px] bg-rose-950/80 px-1.5 py-0.2 rounded" title={log.message}>
-                              ERR: {log.message || '400'}
-                            </span>
-                          )}
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                )}
-              </div>
-            </div>
-
-            <div>
-              <h3 className="font-extrabold text-sm text-slate-900 mb-1">Documentación Técnica & Contratos de Integración</h3>
-              <p className="text-xs text-slate-500">
-                Especificaciones formales para la aplicación Android nativa y esquemas OpenAPI 3.0.
-              </p>
-            </div>
-
-            {/* Downloadable integration contract files */}
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-red-50 text-red-600 flex items-center justify-center font-bold">
-                    MD
-                  </div>
-                  <div>
-                    <h4 className="font-black text-sm text-slate-900">driver-integration-contract.md</h4>
-                    <p className="text-xs text-slate-500">Especificación para la App Android nativa</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Contiene ciclo de vida de la asignación, cadencias GPS (5s/15s), tolerancia de pérdida de señal, endpoints `/api/v1/driver/*` y pruebas físicas en dispositivo.
-                </p>
-                <button
-                  onClick={() => downloadContract('contract')}
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Descargar Contrato Android (Markdown)</span>
-                </button>
-              </div>
-
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-3">
-                <div className="flex items-center gap-2.5">
-                  <div className="w-10 h-10 rounded-xl bg-amber-50 text-amber-600 flex items-center justify-center font-bold">
-                    YAML
-                  </div>
-                  <div>
-                    <h4 className="font-black text-sm text-slate-900">openapi.yaml</h4>
-                    <p className="text-xs text-slate-500">Especificación OpenAPI 3.0 completa</p>
-                  </div>
-                </div>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  Esquemas JSON, validaciones de código de entrega, subida de telemetría y endpoints autenticados para clientes y operaciones.
-                </p>
-                <button
-                  onClick={() => downloadContract('openapi')}
-                  className="w-full bg-slate-900 hover:bg-slate-800 text-white font-bold text-xs py-2.5 rounded-xl flex items-center justify-center gap-1.5 transition"
-                >
-                  <Download className="w-3.5 h-3.5" />
-                  <span>Descargar Especificación OpenAPI 3.0</span>
-                </button>
-              </div>
-            </div>
-
-            {/* Business Integrations Status */}
-            <div className="bg-white rounded-3xl border border-slate-200 p-5 space-y-3 shadow-xs">
-              <h3 className="font-extrabold text-sm text-slate-900">Estado de Conectores Empresariales</h3>
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs">
-                {integrations && Object.entries(integrations).map(([key, item]: [string, any]) => (
-                  <div key={key} className="p-3.5 bg-slate-50 rounded-2xl border border-slate-100 flex items-start justify-between">
-                    <div>
-                      <p className="font-bold text-slate-900">{item.name}</p>
-                      <p className="text-[11px] text-slate-500 mt-0.5">Última sincronización: {formatTimeBogota(item.lastSync || Date.now())}</p>
-                    </div>
-                    <span className="text-[10px] font-extrabold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-full">
-                      {item.status}
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          </div>
-        )}
+        {activeTab === 'DESPACHOS' && <DispatchManager storeFilter={selectedStoreId==='ALL_ACTIVE'?activeStoresExceptCentroIds:[selectedStoreId]} authenticated={!!adminUser} onAuthenticate={()=>setIsAdminAuthModalOpen(true)}/>}
+        {activeTab === 'CONDUCTOR' && <section className="p-6 bg-white border rounded-2xl space-y-4"><h2 className="font-black text-xl">BOLT Conductor</h2><p>Cada conductor ingresa con su propia cuenta para aceptar ofertas, confirmar recogidas y entregar con el PIN del cliente.</p><a href="/conductor" target="_blank" rel="noopener" className="inline-block bg-red-600 text-white font-bold px-5 py-3 rounded-xl">Abrir BOLT Conductor</a></section>}
       </main>
 
       {/* Modal de Auditoría y Trazabilidad de Estados del Servidor */}
