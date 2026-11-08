@@ -125,6 +125,7 @@ try {
  const known=finalView.orders.find((o:any)=>o.id==='AUDIT-onway').dispatches[0];
  const unknown=finalView.orders.find((o:any)=>o.id==='AUDIT-onway_missing_pickup').dispatches[0];
  assert.equal(known.status,'PICKED_UP');assert.equal(unknown.status,'PICKED_UP');assert.equal(unknown.pickedUpAt,Date.parse(now));
+ assert.equal(finalView.metrics.averageAssignmentSeconds,null,'Historical registration is not a measured assignment duration');
  evidence.missingPickupTimestamp={fulfillmentStatus:'EN_CAMINO',reconciliationStatus:noTimestamp.status,dispatchStatus:unknown.status,driverPreserved:unknown.driverId===drivers[1].id};
  const runsBeforeRecovery=(await request('/admin/dispatch')).data.orders.length;
  for(const f of fixtures){

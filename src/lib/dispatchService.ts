@@ -1915,16 +1915,19 @@ export class DispatchService {
   metrics() {
     const runs = Object.values(this.state.runs),
       assigned = runs.filter((r) => r.assignedAt),
-      picked = runs.filter((r) => r.arrivedAt && r.pickedUpAt);
+      // Registration time is not the beginning of a historical assignment.
+      // Keep those runs in operational totals, but exclude unmeasured intervals.
+      measuredAssignments = assigned.filter((r) => !r.legacyReconciliation && Number.isFinite(r.assignedAt) && r.assignedAt! >= (r.searchStartedAt ?? r.createdAt)),
+      picked = runs.filter((r) => r.arrivedAt && r.pickedUpAt && r.pickedUpAt >= r.arrivedAt);
     return {
       dispatches: runs.length,
       assigned: assigned.length,
-      averageAssignmentSeconds: assigned.length
-        ? assigned.reduce(
+      averageAssignmentSeconds: measuredAssignments.length
+        ? measuredAssignments.reduce(
             (n, r) =>
               n + (r.assignedAt! - (r.searchStartedAt ?? r.createdAt)) / 1000,
             0,
-          ) / assigned.length
+          ) / measuredAssignments.length
         : null,
       averageWarehouseWaitSeconds: picked.length
         ? picked.reduce(
