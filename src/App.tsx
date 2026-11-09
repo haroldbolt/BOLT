@@ -1,3 +1,4 @@
+import {deleteEntrancePhoto,cleanAbandonedEntrancePhotos} from './lib/entrancePhotos';
 import {TrackingRecovery} from './components/customer/TrackingRecovery';
 import {DriverPanel} from './components/dispatch/DriverPanel';
 import {DispatchSimulation} from './components/dispatch/DispatchSimulation';
@@ -277,6 +278,13 @@ export default function App() {
   const [coverageAlert,setCoverageAlert]=useState(false);
   const addressBook = useGuestAddresses();
   const addressStore = addressBook.store;
+  const photoReferences=useMemo(()=>[...addressBook.addresses.map(a=>a.referencePhotoId),addressBook.current?.referencePhotoId].filter((id):id is string=>!!id),[addressBook.addresses,addressBook.current]);
+  const previousPhotos=useRef<string[]>(photoReferences);
+  useEffect(()=>{
+    for(const id of previousPhotos.current)if(!photoReferences.includes(id))void deleteEntrancePhoto(id);
+    previousPhotos.current=photoReferences;
+    void cleanAbandonedEntrancePhotos(photoReferences);
+  },[photoReferences]);
   const customerAddress = addressBook.current?.address || '';
   const customerAddressDetails = addressBook.current?.details || '';
   const customerCoordinates = addressBook.current?.coordinates;
@@ -294,6 +302,7 @@ export default function App() {
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
+  const [requestCurrentLocationOnOpen, setRequestCurrentLocationOnOpen] = useState(false);
   const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
 
   // Guided Onboarding Coach Mark Tour state (activates on first visit)
@@ -421,15 +430,16 @@ export default function App() {
   },[customerAddress,customerAddressDetails,customerCoordinates,customerTerritory,addressBook.selectionRevision,stores,products,cartItems,selectedDeliveryMode,selectedScheduledWindow,catalogLoading,catalogError,unavailableCartItems]);
 
   const openAddressBook = () => {setAddressBookMessage('');setIsAddressBookOpen(true)};
-  const editDeliveryAddress = (saved?:SavedAddress) => {
+  const editDeliveryAddress = (saved?:SavedAddress, useCurrentLocation=false) => {
+    setRequestCurrentLocationOnOpen(useCurrentLocation);
     setEditingAddress(saved || null);
     setAddressDraft(saved || null);
     setAddressBookMessage('');
     setIsAddressBookOpen(false);
     setIsAddressModalOpen(true);
   };
-  const handleConfirmAddress = (address:string,details:string,coordinates:LatLng,q:DeliveryQuote,metadata?:{name:string;isDefault:boolean}) => {
-    const destination:AddressDestination={address,details,coordinates,municipality:q.municipality,locality:q.locality,neighborhood:q.destination.neighborhood};
+  const handleConfirmAddress = (address:string,details:string,coordinates:LatLng,q:DeliveryQuote,metadata?:{name:string;isDefault:boolean;referencePhotoId?:string;saveAddress?:boolean}) => {
+    const destination:AddressDestination={address,details,coordinates,referencePhotoId:metadata?.referencePhotoId,municipality:q.municipality,locality:q.locality,neighborhood:q.destination.neighborhood};
     if(editingAddress) {
       const result=addressStore.update(editingAddress.id,destination,metadata?.name || editingAddress.name,metadata?.isDefault ?? editingAddress.isDefault);
       setAddressBookMessage(result.message);
@@ -437,6 +447,7 @@ export default function App() {
     } else {
       invalidateDestination();
       addressStore.confirm(destination);
+      if(metadata?.saveAddress){const saved=addressStore.saveCurrent(metadata.name,metadata.isDefault);if(!saved.ok){setAddressBookMessage(saved.message);return false;}}
       setAddressBookMessage('Dirección confirmada. Puedes guardarla con un nombre o continuar.');
     }
     setIsAddressBookOpen(true);
@@ -1264,6 +1275,7 @@ export default function App() {
         currentStore={currentStore}
         customerAddress={customerAddress}
         customerAddressDetails={customerAddressDetails}
+        referencePhotoId={addressBook.current?.referencePhotoId}
         customerCoordinates={customerCoordinates}
         deliveryQuote={deliveryQuote}
         selectedMode={selectedDeliveryMode}
@@ -1286,6 +1298,7 @@ export default function App() {
         addresses={addressBook.addresses} current={addressBook.current} quote={deliveryQuote}
         warning={addressBook.warning} message={addressBookMessage}
         onAdd={()=>editDeliveryAddress()} onEdit={editDeliveryAddress}
+        onUseCurrentLocation={()=>editDeliveryAddress(undefined,true)}
         onUse={id=>{invalidateDestination();setAddressBookMessage('');if(!addressStore.select(id))setAddressBookMessage('Esta dirección ya no está guardada. Selecciona otra.')}}
         onRemove={id=>{const active=addressStore.remove(id);if(active){invalidateDestination();setAddressBookMessage('Eliminaste la dirección en uso. Selecciona otra antes de confirmar el pedido.')}else setAddressBookMessage('Dirección eliminada.')}}
         onDefault={id=>{addressStore.setDefault(id);setAddressBookMessage('Dirección predeterminada actualizada. La dirección de esta compra se conserva hasta que elijas otra.')}}
@@ -1296,7 +1309,10 @@ export default function App() {
       {/* Address Confirmation & Coverage Modal */}
       <AddressConfirmationModal
         isOpen={isAddressModalOpen}
+        requestCurrentLocationOnOpen={requestCurrentLocationOnOpen}
         onClose={() => {setIsAddressModalOpen(false);setIsAddressBookOpen(true)}}
+        onConfirmed={()=>{setIsAddressModalOpen(false);setIsAddressBookOpen(false)}}
+        currentPhotoId={addressDraft?.referencePhotoId}
         currentAddress={addressDraft?.address || ''}
         currentDetails={addressDraft?.details || ''}
         currentCoordinates={addressDraft?.coordinates}

@@ -1,3 +1,4 @@
+import {OrderEntrancePhoto} from '../customer/OrderEntrancePhoto';
 import React, { useCallback, useEffect, useRef, useState } from "react";
 import {
   dispatchClient,
@@ -91,6 +92,7 @@ function Task({
           <h3 className="font-bold">Entregar en</h3>
           <p>{task.destination.address}</p>
           <p>{task.destination.details}</p>
+          <OrderEntrancePhoto orderId={task.orderId} dispatchId={task.dispatchId} audience="driver"/>
           {task.customerPhone && (
             <a href={"tel:" + task.customerPhone} className="underline">
               Contactar al cliente

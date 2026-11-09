@@ -1,8 +1,10 @@
+import {validPhotoId} from './entrancePhotoShared';
 import { validDestinationCoordinates } from './addressGeography';
 
 export const GUEST_ADDRESSES_KEY = 'bolt_pets_guest_addresses_v1';
 export const DEVICE_ADDRESSES_NOTICE = 'Direcciones guardadas en este dispositivo';
 export interface AddressDestination {
+  referencePhotoId?: string;
   address: string;
   details: string;
   coordinates: {lat:number;lng:number};
@@ -23,6 +25,7 @@ export function cleanDestination(value:any): AddressDestination | null {
   if(!value || !text(value.address) || !validDestinationCoordinates(value.coordinates) || (value.details!==undefined && (typeof value.details!=='string' || value.details.length>1000))) return null;
   const result:AddressDestination={address:value.address.trim(),details:value.details?.trim() || '',coordinates:{lat:value.coordinates.lat,lng:value.coordinates.lng}};
   for(const key of ['municipality','locality','neighborhood'] as const) if(text(value[key],150)) result[key]=value[key].trim();
+  if(validPhotoId(value.referencePhotoId))result.referencePhotoId=value.referencePhotoId;
   return result;
 }
 const normalized=(value:string)=>value.trim().replace(/\s+/g,' ').toLocaleLowerCase('es-CO');
@@ -82,7 +85,7 @@ export class GuestAddressStore {
   confirm(destination:AddressDestination) {
     const clean=cleanDestination(destination);if(!clean)return false;
     const data=this.latest(),existing=data.addresses.find(a=>addressIdentity(a)===addressIdentity(clean));
-    this.commit({...data,current:{...clean,...(existing?{savedId:existing.id}:{})}},true);return true;
+    this.commit({...data,current:{...clean,...(existing && existing.referencePhotoId===clean.referencePhotoId?{savedId:existing.id}:{})}},true);return true;
   }
   select(id:string) {
     const data=this.latest(),saved=data.addresses.find(a=>a.id===id);if(!saved)return false;
@@ -94,7 +97,7 @@ export class GuestAddressStore {
     const data=this.latest();if(!data.current)return {ok:false,message:'Confirma una dirección antes de guardarla.'};
     if(selectionIdentity(data.current)!==expected){this.reload();return {ok:false,message:'La dirección activa cambió en otra pestaña. Revisa el destino antes de guardarlo.'};}
     const duplicate=data.addresses.find(a=>addressIdentity(a)===addressIdentity(data.current!));
-    if(duplicate) {this.commit({...data,current:{...cleanDestination(duplicate)!,savedId:duplicate.id}});return {ok:true,message:`Esta dirección ya está guardada como ${duplicate.name}.`};}
+    if(duplicate) {const updated={...duplicate,referencePhotoId:data.current.referencePhotoId};this.commit({...data,addresses:data.addresses.map(a=>a.id===duplicate.id?updated:a),current:{...cleanDestination(updated)!,savedId:duplicate.id}});return {ok:true,message:`Esta dirección ya está guardada como ${duplicate.name}.`};}
     const saved:SavedAddress={...cleanDestination(data.current)!,id:crypto.randomUUID(),name:name.trim(),isDefault};
     this.commit({addresses:[...data.addresses.map(a=>isDefault?{...a,isDefault:false}:a),saved],current:{...cleanDestination(saved)!,savedId:saved.id}});
     return {ok:true,message:'Dirección guardada.'};

@@ -1,3 +1,4 @@
+import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
 import {mountTrackingRecovery} from './src/lib/trackingRecovery';
 import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
 import {DispatchService} from './src/lib/dispatchService';
@@ -185,6 +186,7 @@ async function startServer() {
   else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
   app.use('/api/v1/operations',requireAdminAuth);
   mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token));
+  mountEntrancePhotos(app,ordersRepository,dispatchService,path.join(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'),'private-entrance-photos'));
   // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
   let dispatchTickRunning=false;
   const dispatchTimer=setInterval(async()=>{if(dispatchTickRunning||!Object.keys(ordersRepository.dispatchState.runs).length)return;dispatchTickRunning=true;try{await dispatchService.tick()}catch{console.error('[Dispatch] worker failed; durable state retained')}finally{dispatchTickRunning=false}},1000);

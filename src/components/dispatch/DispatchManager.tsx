@@ -1,3 +1,4 @@
+import {OrderEntrancePhoto} from '../customer/OrderEntrancePhoto';
 import {HistoricalOperations} from './HistoricalOperations';
 import { DriverAccounts, SettleDriver } from "./DriverAccounts";
 import React, { useCallback, useState } from "react";
@@ -115,6 +116,7 @@ export function DispatchManager({
                   Ver seguimiento
                 </a>
               </header>
+              <div className="px-4"><OrderEntrancePhoto orderId={order.id} audience="admin"/></div>
               <div className="grid lg:grid-cols-2 gap-4 p-4">
                 {order.dispatches.map((d) => (
                   <section

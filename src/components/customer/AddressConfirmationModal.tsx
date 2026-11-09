@@ -1,3 +1,4 @@
+import {EntrancePhotoPicker} from './EntrancePhotoPicker';
 import { TERRITORY_OPTIONS } from '../../lib/territoryConfig';
 import { AddressTerritory, validDestinationCoordinates } from '../../lib/addressGeography';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
@@ -9,6 +10,8 @@ import {
 import { DeliveryQuote, LatLng, DELIVERY_CONFIG, TURBO_ALLOWED_LOCALITIES } from '../../lib/deliveryService';
 import { api } from '../../lib/api';
 import { Store, CartItem, Product } from '../../types';
+import { DeviceLocationRequest } from '../../lib/deviceLocation';
+import { CurrentLocationAction } from './CurrentLocationAction';
 
 declare const google: any;
 
@@ -28,12 +31,15 @@ const MapRecenter: React.FC<MapRecenterProps> = ({ center }) => {
 
 interface AddressConfirmationModalProps {
   isOpen: boolean;
+  requestCurrentLocationOnOpen?: boolean;
   onClose: () => void;
+  onConfirmed?: () => void;
+  currentPhotoId?: string;
   currentAddress: string;
   currentDetails: string;
   currentCoordinates?: LatLng;
   currentTerritory?: AddressTerritory;
-  onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote, metadata?: {name:string;isDefault:boolean}) => boolean | void;
+  onConfirmAddress: (address: string, details: string, coordinates: LatLng, quote: DeliveryQuote, metadata?: {name:string;isDefault:boolean;referencePhotoId?:string;saveAddress?:boolean}) => boolean | void;
   savedAddressOptions?: {name:string;isDefault:boolean};
   saveError?: string;
   stores: Store[];
@@ -56,7 +62,8 @@ function formatCleanBogotaAddress(raw: string): string {
 
 export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> = ({
   isOpen,
-  onClose,
+  requestCurrentLocationOnOpen = false,
+  onClose, onConfirmed, currentPhotoId,
   currentAddress,
   currentDetails,
   currentCoordinates,
@@ -67,6 +74,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   cartItems,
   products = [],
 }) => {
+  const [photoId,setPhotoId]=useState<string|undefined>(currentPhotoId);
+  const [saveAddress,setSaveAddress]=useState(false);
+  const [photoNotice,setPhotoNotice]=useState('');
+  const detachPhoto=()=>{if(photoId)setPhotoNotice('Cambiaste el destino. Agrega una foto de esta entrada si lo deseas.');setPhotoId(undefined)};
   const [savedName,setSavedName]=useState(savedAddressOptions?.name || '');
   const [savedDefault,setSavedDefault]=useState(savedAddressOptions?.isDefault || false);
   const [addressInput, setAddressInput] = useState(currentAddress ?? '');
@@ -84,6 +95,21 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const [isAddressSynced, setIsAddressSynced] = useState(!!currentAddress?.trim() && validDestinationCoordinates(currentCoordinates));
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
+  const [isLocating, setIsLocating] = useState(false);
+  const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
+  const deviceLocationRef = useRef<DeviceLocationRequest | null>(null);
+  if (!deviceLocationRef.current) deviceLocationRef.current = new DeviceLocationRequest();
+  const locationSeq = useRef(0);
+  const locationPending = useRef(false);
+  const autoLocationStarted = useRef(false);
+
+  const cancelDeviceLocation = () => {
+    ++locationSeq.current;
+    deviceLocationRef.current?.cancel();
+    locationPending.current = false;
+    setIsLocating(false); setLocationError(null); setLocationAccuracy(null);
+  };
 
   const debounceTimeoutRef = useRef<any>(null);
   const abortControllerRef = useRef<AbortController | null>(null);
@@ -138,6 +164,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       ++reverseGeocodeReqSeqRef.current;
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
 
+      setPhotoId(currentPhotoId);setPhotoNotice('');setSaveAddress(false);
       setSavedName(savedAddressOptions?.name || '');setSavedDefault(savedAddressOptions?.isDefault || false);
       setAddressInput(initialAddr);
       setDetailsInput(initialDetails);
@@ -149,10 +176,14 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       setIsEvaluating(false);
       setGeocodeError(null);
       setIsReverseGeocoding(false);
+      cancelDeviceLocation();
 
       if (initialAddr.trim() && validDestinationCoordinates(initialCoords)) evaluateAddressQuote(initialCoords, initialAddr, currentTerritory);
     }
     return () => {
+      ++locationSeq.current;
+      deviceLocationRef.current?.cancel();
+      locationPending.current = false;
       ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
       if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     };
@@ -164,6 +195,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
    * Mantiene en sincronía el pin, la dirección y la cotización.
    */
   const triggerReverseGeocode = useCallback((newCoords: LatLng) => {
+    detachPhoto();
     const reqId = ++reverseGeocodeReqSeqRef.current;
     ++requestSeq.current; setQuote(null); setTerritory({});
     setIsReverseGeocoding(true); setIsAddressSynced(false); setGeocodeError(null);
@@ -174,8 +206,39 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         setAddressInput(result.address); setTerritory(result); setIsAddressSynced(true);
         evaluateAddressQuote(newCoords,result.address,result);
       } else setGeocodeError('No se pudo identificar la dirección del pin. Conservamos tu dirección; confirma sus datos o intenta de nuevo.');
-    }).finally(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setIsReverseGeocoding(false)});
-  },[evaluateAddressQuote]);
+    }).catch(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setGeocodeError('No se pudo consultar la dirección. Intenta de nuevo o escribe y valida el destino.');})
+      .finally(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setIsReverseGeocoding(false)});
+  },[evaluateAddressQuote,photoId]);
+
+  const handleUseCurrentLocation = async () => {
+    if (locationPending.current) return;
+    locationPending.current = true;
+    const seq = ++locationSeq.current;
+    ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
+    if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    setQuote(null); setIsEvaluating(false); setIsGeocoding(false); setIsReverseGeocoding(false);
+    setGeocodeError(null); setLocationError(null); setLocationAccuracy(null); setIsLocating(true);
+    try {
+      const location = await deviceLocationRef.current!.request();
+      if (!location || seq !== locationSeq.current) return;
+      setPinCoordinates(location.coordinates);
+      setLocationAccuracy(location.accuracyMeters);
+      triggerReverseGeocode(location.coordinates);
+    } catch (error) {
+      if (seq === locationSeq.current) setLocationError(error instanceof Error ? error.message : 'No pudimos obtener tu ubicación. Escribe tu dirección o intenta de nuevo.');
+    } finally {
+      if (seq === locationSeq.current) { locationPending.current = false; setIsLocating(false); }
+    }
+  };
+
+  // Only the explicit action in the saved-address list requests this; never on a first visit/reload.
+  useEffect(() => {
+    if (!isOpen) { autoLocationStarted.current = false; return; }
+    if (requestCurrentLocationOnOpen && !autoLocationStarted.current) {
+      autoLocationStarted.current = true;
+      void handleUseCurrentLocation();
+    }
+  }, [isOpen, requestCurrentLocationOnOpen]);
 
   // Requisito 1: En handlePinDragEnd, al soltar el pin, actualiza sus coordenadas y consulta la dirección mediante geocodificación inversa de Google Maps
   const handlePinDragEnd = (e: any) => {
@@ -192,6 +255,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         lat: Number(lat.toFixed(6)),
         lng: Number(lng.toFixed(6)),
       };
+      cancelDeviceLocation();
       setPinCoordinates(newCoords);
       triggerReverseGeocode(newCoords);
     }
@@ -215,6 +279,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         lat: Number(lat.toFixed(6)),
         lng: Number(lng.toFixed(6)),
       };
+      cancelDeviceLocation();
       setPinCoordinates(newCoords);
       triggerReverseGeocode(newCoords);
     }
@@ -222,6 +287,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
   // Manejo de escritura manual de la dirección
   const handleAddressInputChange = (val: string) => {
+    cancelDeviceLocation();
+    detachPhoto();
     setAddressInput(val); setPinCoordinates({}); setQuote(null); setTerritory({}); setGeocodeError(null); setIsAddressSynced(false);
     ++requestSeq.current;
     const seq=++reverseGeocodeReqSeqRef.current;
@@ -240,6 +307,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   };
   const confirmDestinationPoint = () => {
     if (!addressInput.trim() || !destinationPoint) return;
+    cancelDeviceLocation();
     ++reverseGeocodeReqSeqRef.current;
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     setIsGeocoding(false); setIsReverseGeocoding(false); setIsAddressSynced(true); setGeocodeError(null);
@@ -247,6 +315,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   };
 
   const handleCoordinateChange = (axis: 'lat' | 'lng', value: string) => {
+    detachPhoto();
+    cancelDeviceLocation();
     ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     setQuote(null); setIsAddressSynced(false); setIsGeocoding(false); setIsReverseGeocoding(false); setIsEvaluating(false);
@@ -255,8 +325,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
   // Requisito 4: Al confirmar, onConfirmAddress debe recibir los datos de esa misma ubicación
   const canConfirm = 
-    (!savedAddressOptions || !!savedName.trim()) && !!addressInput.trim() && !!destinationPoint &&
-    !isEvaluating && !isGeocoding && 
+    (!(savedAddressOptions || saveAddress) || !!savedName.trim()) && !!addressInput.trim() && !!destinationPoint &&
+    !isLocating && !isEvaluating && !isGeocoding && 
     !isReverseGeocoding && 
     isAddressSynced && 
     !geocodeError &&
@@ -266,7 +336,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const handleConfirm = () => {
     if (canConfirm && quote && destinationPoint) {
       // Requisito 5: Conserva lo escrito en «Torre / Apto / Portería» (detailsInput)
-      if(onConfirmAddress(addressInput,detailsInput,destinationPoint,quote,savedAddressOptions?{name:savedName,isDefault:savedDefault}:undefined)!==false) onClose();
+      if(onConfirmAddress(addressInput,detailsInput,destinationPoint,quote,{name:savedName,isDefault:savedDefault,referencePhotoId:photoId,saveAddress})!==false) (onConfirmed || onClose)();
     }
   };
 
@@ -316,8 +386,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
+          <CurrentLocationAction onClick={()=>void handleUseCurrentLocation()} busy={isLocating} error={locationError} accuracyMeters={locationAccuracy}/>
           
-          {savedAddressOptions && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
+          {!savedAddressOptions && <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={saveAddress} onChange={e=>setSaveAddress(e.target.checked)}/>Guardar esta dirección en este dispositivo</label>}
+          {(savedAddressOptions || saveAddress) && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
             <label className="block text-xs font-bold text-slate-700">Nombre de la dirección<input aria-label="Nombre de la dirección guardada" value={savedName} maxLength={60} onChange={e=>setSavedName(e.target.value)} className="block w-full mt-1 p-3 rounded-xl border border-slate-200 bg-white text-sm"/></label>
             <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={savedDefault} onChange={e=>setSavedDefault(e.target.checked)}/>Usar como predeterminada</label>
             {saveError && <p role="status" className="text-xs text-amber-800">{saveError}</p>}
@@ -385,6 +457,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             <summary className="text-xs font-bold cursor-pointer">Completar o confirmar el punto de entrega</summary>
             <label className="block text-xs font-bold">Localidad (si falta identificarla)
               <select aria-label="Localidad de entrega" value={territory.locality || ''} onChange={e=>{
+                cancelDeviceLocation();
                 const next={...territory, municipality:'Bogotá D.C.',locality:e.target.value};
                 setTerritory(next); evaluateAddressQuote(pinCoordinates,addressInput,next);
               }} className="block w-full p-2 border rounded-lg">
@@ -510,6 +583,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
               )}
             </div>
           </div>
+
+          <EntrancePhotoPicker key={`${pinCoordinates.lat}|${pinCoordinates.lng}|${addressInput}`} photoId={photoId} onChange={setPhotoId} disabled={!isAddressSynced || !destinationPoint}/>
+          {photoNotice && <p role="status" className="text-xs text-slate-600">{photoNotice}</p>}
 
           {/* Dynamic Delivery Quote & Mode Evaluation Card */}
           {quote && (
@@ -662,9 +738,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         </div>
 
         {/* Footer Actions */}
-        <div className="p-4 border-t border-slate-100 bg-slate-50 flex items-center justify-between gap-3">
+        <div className="p-4 border-t border-slate-100 bg-slate-50 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
           <div className="text-xs text-slate-600">
-            {isReverseGeocoding ? (
+            {isLocating ? <span className="text-slate-600">Esperando la ubicación del dispositivo…</span> : isReverseGeocoding ? (
               <span className="text-red-600 font-bold flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
                 Actualizando dirección por movimiento de pin...
@@ -692,9 +768,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             <button
               onClick={handleConfirm}
               disabled={!canConfirm}
-              className="bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black text-xs px-5 py-2.5 rounded-xl shadow-md transition disabled:cursor-not-allowed flex items-center gap-1.5"
+              className="bg-red-600 hover:bg-red-700 disabled:bg-slate-300 text-white font-black text-sm min-h-11 px-5 py-2.5 rounded-xl shadow-md transition disabled:cursor-not-allowed flex items-center gap-1.5"
             >
-              {isReverseGeocoding ? (
+              {isLocating ? <span>Obteniendo ubicación…</span> : isReverseGeocoding ? (
                 <>
                   <Loader2 className="w-3.5 h-3.5 animate-spin" />
                   <span>Obteniendo dirección...</span>
@@ -708,7 +784,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 <span>Esperando dirección...</span>
               ) : (
                 <>
-                  <span>{savedAddressOptions ? 'Guardar cambios' : 'Confirmar dirección'}</span>
+                  <span>{savedAddressOptions ? 'Guardar cambios' : 'Usar esta dirección'}</span>
                   <ChevronRight className="w-4 h-4" />
                 </>
               )}
