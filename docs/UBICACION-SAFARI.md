@@ -41,3 +41,13 @@ Se mantiene la espera de lectura de 12 segundos de la API. La salvaguarda para u
 La aprobación de pruebas automatizadas no certifica el hardware ni los permisos del iPhone. Falta la comprobación física del usuario antes de integrar.
 
 Referencias de permisos: [Apple: ajustes de sitios en Safari](https://support.apple.com/guide/iphone/browse-the-web-privately-iphb01fc3c85/ios), [Apple: Localización](https://support.apple.com/en-us/102515), [WebKit: estado de Permissions API que puede requerir recarga](https://bugs.webkit.org/show_bug.cgi?id=275268). Consultadas el 10 de noviembre de 2026.
+
+## Evidencia en la demo y revisión final
+
+- Demo HTTPS: https://bolt-demo-demo.up.railway.app. Revisión en PR #15 sobre #14; main sin integrar.
+- La demo sirvió el bundle nuevo y la solicitud real pasó al estado de espera. El navegador integrado no proporcionó coordenadas y mostró el mensaje de tiempo agotado; Escribir dirección enfocó el campo y permitió continuar. El carrito permaneció con 2 líneas y subtotal 65.000 COP de las pruebas anteriores.
+- Las cuatro compras mantuvieron IDs y estados, así como IDs/estados de sus despachos tras el despliegue. No se creó un pedido por solicitar ubicación. El hash del payload completo varía porque la API añade la antigüedad de la estimación de recogida; no se interpreta como hash del almacenamiento persistido.
+- La prueba en Safari de escritorio llegó al acceso privado, pero se interrumpió al cambiar el usuario de pestaña; no se certifica desde ella el aviso nativo de permisos. La prueba continuó en el navegador integrado.
+- Se corrigió además un caso detectado visualmente: después de un resultado válido, cerrar, reabrir y denegar podía recalcular con una referencia del render anterior. Se conserva la cotización solo para el borrador sin cambios y se elimina esa recalculación al denegar. Comprobación visual posterior: formulario vacío, municipio pendiente, ningún mensaje de Suba ni confirmación habilitada.
+- Después de este ajuste final aprobaron de nuevo TypeScript, build y las suites de ubicación/Safari, direcciones guardadas y cobertura municipal. La ejecución completa previa aprobó 26 suites.
+- El acceso y los permisos reales del iPhone del usuario siguen pendientes de confirmación física. No se ha modificado el permiso del dispositivo ni se promete que Safari vuelva a preguntar si el usuario ya eligió Denegar.

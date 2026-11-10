@@ -220,7 +220,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     const seq = ++locationSeq.current;
     ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    setQuote(null); setIsEvaluating(false); setIsGeocoding(false); setIsReverseGeocoding(false);
+    // Keep a quote for the unchanged draft until a new location actually arrives.
+    // Opening the form resets it separately; never restore a previous render's draft on denial.
+    setIsEvaluating(false); setIsGeocoding(false); setIsReverseGeocoding(false);
     setGeocodeError(null); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null); setIsLocating(true);
     try {
       const location = await attempt.result;
@@ -232,7 +234,6 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       if (seq === locationSeq.current) {
         setLocationError(error instanceof Error ? error.message : 'No pudimos obtener tu ubicación. Escribe tu dirección o intenta de nuevo.');
         setLocationErrorKind(error instanceof DeviceLocationError ? error.kind : 'unavailable');
-        if (isAddressSynced && validDestinationCoordinates(pinCoordinates)) void evaluateAddressQuote(pinCoordinates, addressInput, territory);
       }
     } finally {
       if (seq === locationSeq.current) { locationPending.current = false; setIsLocating(false); }
