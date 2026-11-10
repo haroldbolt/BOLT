@@ -18,7 +18,7 @@ if(Object.values(destinations).some(f=>!f?.coordinates))throw Error('Falta un fi
 let scenario='Cedritos',calls=0,gestureCalls=0,pending:PositionCallback|undefined;
 let update=()=>{};
 const point=()=>destinations[scenario] || destinations.Cedritos;
-const position=(f=point())=>({coords:{latitude:f.coordinates.lat,longitude:f.coordinates.lng,accuracy:18},timestamp:Date.now()}) as GeolocationPosition;
+const position=(f=point())=>({coords:{latitude:f.coordinates.lat,longitude:f.coordinates.lng,accuracy:18},timestamp:Date.now()-(scenario==='Lectura de hace 20 segundos'?20000:0)}) as GeolocationPosition;
 Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition(success:PositionCallback,error:PositionErrorCallback){
   calls++;if(navigator.userActivation?.isActive)gestureCalls++;update();
   if(scenario==='Respuesta pendiente'){pending=success;return;}
@@ -45,7 +45,7 @@ function Review(){
   return <div className="p-4 space-y-3 bg-slate-50 min-h-screen">
     <h1 className="font-bold">Simulación de ubicación · BOLT</h1>
     <p>Datos de prueba. No consulta tu ubicación real ni crea pedidos.</p>
-    <label>Escenario <select aria-label="Escenario de ubicación" className="border p-2" defaultValue={scenario} onChange={e=>{scenario=e.target.value;refresh()}}>{[...Object.keys(destinations),'Permiso denegado','Sin señal','Tiempo agotado','Respuesta pendiente','Geocodificación fallida'].map(s=><option key={s}>{s}</option>)}</select></label>
+    <label>Escenario <select aria-label="Escenario de ubicación" className="border p-2" defaultValue={scenario} onChange={e=>{scenario=e.target.value;refresh()}}>{[...Object.keys(destinations),'Permiso denegado','Sin señal','Tiempo agotado','Respuesta pendiente','Geocodificación fallida','Lectura de hace 20 segundos'].map(s=><option key={s}>{s}</option>)}</select></label>
     <button className="border p-2" onClick={()=>setBookOpen(true)}>Abrir direcciones</button>
     <button className="border p-2" onClick={()=>{pending?.(position(destinations.Cedritos));pending=undefined;refresh()}}>Resolver ubicación pendiente</button>
     <output className="block" aria-label="Resultado de simulación">Consultas al dispositivo: {calls}. Consultas con gesto: {gestureCalls}. Confirmaciones: {confirmations}. Direcciones guardadas: {book.addresses.length}. Destino confirmado: {book.current?.address || 'Ninguno'}.</output>

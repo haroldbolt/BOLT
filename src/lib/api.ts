@@ -1,3 +1,4 @@
+import type {AddressSearchResult} from './addressSearch';
 import {backendAuthorization} from './backendRequest';
 import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint, DeliveryTracking } from '../types';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
@@ -56,14 +57,16 @@ export const api = {
     }
   },
 
-  async forwardGeocode(address: string): Promise<{ coordinates: { lat: number; lng: number } | null; formattedAddress: string; municipality?: string; locality?: string; neighborhood?: string } | null> {
+  async forwardGeocode(address: string, municipality: string): Promise<AddressSearchResult> {
     try {
-      const res = await authorizedFetch(`${BASE_URL}/geocode/forward?address=${encodeURIComponent(address)}`);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch (e) {
-      console.warn('api.forwardGeocode request failed:', e);
-      return null;
+      const query=new URLSearchParams({address,municipality});
+      const res = await authorizedFetch(`${BASE_URL}/geocode/forward?${query}`,{cache:'no-store'});
+      if (!res.ok) throw Error('Address lookup unavailable');
+      const result=await res.json();
+      if(!Array.isArray(result?.candidates)) throw Error('Address search response changed; retry after reload');
+      return result;
+    } catch {
+      return {status:'UNAVAILABLE',candidates:[],message:'No pudimos consultar el mapa. Conservamos tu dirección; intenta de nuevo.'};
     }
   },
 

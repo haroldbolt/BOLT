@@ -2,9 +2,9 @@ import React from 'react';
 import { Loader2, Navigation } from 'lucide-react';
 import type {DeviceLocationFailure} from '../../lib/deviceLocation';
 
-export function CurrentLocationAction({ onClick, busy = false, error, errorKind, onManualAddress, accuracyMeters }: {
+export function CurrentLocationAction({ onClick, busy = false, error, errorKind, onManualAddress, accuracyMeters, ageSeconds }: {
   onClick: () => void; busy?: boolean; error?: string | null; errorKind?: DeviceLocationFailure | null;
-  onManualAddress?: () => void; accuracyMeters?: number | null;
+  onManualAddress?: () => void; accuracyMeters?: number | null; ageSeconds?: number | null;
 }) {
   return <div className="space-y-2">
     <button type="button" onClick={onClick} disabled={busy} aria-busy={busy}
@@ -27,6 +27,6 @@ export function CurrentLocationAction({ onClick, busy = false, error, errorKind,
       </div>}
     </div>}
     {onManualAddress && (busy || error) && <button type="button" onClick={onManualAddress} className="min-h-11 px-3 py-2 text-sm font-semibold text-slate-700 underline rounded-xl focus-visible:ring-2 focus-visible:ring-red-500">Escribir dirección</button>}
-    {accuracyMeters != null && <p role="status" className="rounded-xl bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">Ubicación aproximada · precisión reportada: {Math.max(1, Math.round(accuracyMeters)).toLocaleString('es-CO')} m. Revisa la dirección y ajusta el punto de entrega si hace falta.</p>}
+    {accuracyMeters != null && <p role="status" className="rounded-xl bg-blue-50 p-3 text-xs leading-relaxed text-blue-900">Ubicación aproximada · precisión reportada: {Math.max(1, Math.round(accuracyMeters)).toLocaleString('es-CO')} m.{ageSeconds != null && ageSeconds > 5 ? ` Lectura obtenida hace ${ageSeconds} segundos.` : ''} Revisa la dirección y ajusta el punto de entrega si hace falta.</p>}
   </div>;
 }

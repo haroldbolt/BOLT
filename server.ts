@@ -1,3 +1,4 @@
+import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
 import {mountTrackingRecovery} from './src/lib/trackingRecovery';
 import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
@@ -326,8 +327,8 @@ async function startServer() {
           address,
           formattedAddress: address,
           rawAddress: raw,
-          municipality: resolved.municipality,
-          countryCode: resolved.countryCode,
+          municipality: resolved.municipality || territory.municipality,
+          countryCode: resolved.countryCode || territory.countryCode,
           locality: resolved.locality,
           neighborhood: territory.neighborhood,
           status: 'OK',
@@ -349,42 +350,10 @@ async function startServer() {
     }
 
     const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
-    try {
-      const searchTarget = String(address); // Country bias only; never append a municipality.
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?address=${encodeURIComponent(searchTarget)}&key=${apiKey}&components=country:CO&language=es&region=co`
-      );
-      const data: any = await response.json();
-
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const first = data.results[0];
-        const location = first.geometry?.location;
-        const raw = first.formatted_address;
-        let formatted = raw
-          .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-          .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-          .replace(/,\s*Cundinamarca/gi, '')
-          .trim();
-
-        const territory = parseAddressComponents(first.address_components);
-        const resolved = enrichDestination({...territory, coordinates: first.geometry?.location});
-
-        return res.json({
-          coordinates: location ? { lat: Number(location.lat.toFixed(6)), lng: Number(location.lng.toFixed(6)) } : null,
-          formattedAddress: formatted,
-          municipality: resolved.municipality,
-          countryCode: resolved.countryCode,
-          locality: resolved.locality,
-          neighborhood: territory.neighborhood,
-          status: 'OK',
-        });
-      } else {
-        return res.status(404).json({ error: 'Dirección no encontrada', status: data.status });
-      }
-    } catch (err: any) {
-      console.error('Error en geocodificación directa:', err);
-      return res.status(500).json({ error: 'Error al consultar geocodificación directa' });
-    }
+    const municipality=typeof req.query.municipality==='string' ? req.query.municipality : '';
+    const result=await searchDeliveryAddress(String(address).slice(0,500),municipality.slice(0,100),apiKey);
+    res.set('Cache-Control','no-store');
+    return res.json(result);
   });
 
   // Create Order with transactional stock reservation & delivery policy validation

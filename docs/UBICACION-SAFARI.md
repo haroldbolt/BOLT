@@ -51,3 +51,37 @@ Referencias de permisos: [Apple: ajustes de sitios en Safari](https://support.ap
 - Se corrigió además un caso detectado visualmente: después de un resultado válido, cerrar, reabrir y denegar podía recalcular con una referencia del render anterior. Se conserva la cotización solo para el borrador sin cambios y se elimina esa recalculación al denegar. Comprobación visual posterior: formulario vacío, municipio pendiente, ningún mensaje de Suba ni confirmación habilitada.
 - Después de este ajuste final aprobaron de nuevo TypeScript, build y las suites de ubicación/Safari, direcciones guardadas y cobertura municipal. La ejecución completa previa aprobó 26 suites.
 - El acceso y los permisos reales del iPhone del usuario siguen pendientes de confirmación física. No se ha modificado el permiso del dispositivo ni se promete que Safari vuelva a preguntar si el usuario ya eligió Denegar.
+
+
+## Corrección del reporte de Santa Marta — 2026-11-10
+
+La demo anterior (eb11dee) enviaba la calle sin municipio a Google, limitada solamente al país, y elegía `results[0]`. Se reprodujo por HTTP: `calle 11 #15-53` devolvía Santa Marta; la misma calle con Bogotá devolvía Bogotá, Los Mártires / Voto Nacional. La cotización seguía excluyendo Santa Marta, pero el pin elegido automáticamente era incorrecto para la intención del cliente.
+
+Ahora el formulario solicita el municipio (sin predeterminarlo), consulta con esa restricción y muestra los resultados para elegir. No coloca automáticamente el primer resultado ni cambia el texto escrito. Los polígonos del servidor verifican el municipio de las coordenadas; el municipio escogido no concede cobertura. Cota y otros municipios se pueden localizar mediante «Otro municipio», pero continúan bloqueados para entrega. Los resultados parciales, de una vía o de una ciudad no se toman como direcciones completas. Cambiar texto/municipio cancela la selección, pin, cotización y respuestas anteriores.
+
+La captura del teléfono muestra el rechazo de una lectura recibida, no una denegación de permiso. Antes se agrupaban coordenadas, precisión y hora inválidas en un mismo mensaje, con una tolerancia temporal de cinco segundos. Sin la lectura original no puede afirmarse qué condición exacta falló en ese iPhone. La corrección acepta lecturas de hasta un minuto como aproximadas, informa su antigüedad cuando supera cinco segundos y mantiene la revisión/confirmación de la dirección. Una lectura más antigua activa una espera acotada de una nueva lectura; el seguimiento se detiene al obtenerla, al cancelar o al agotar el plazo. Coordenadas/precisión inválidas, lectura antigua y hora no verificable tienen mensajes diferentes. No se registra la ubicación del teléfono en logs.
+
+### Contrato y archivos
+
+- `server.ts`: endpoint de búsqueda con municipio obligatorio y sin selección implícita; la consulta inversa conserva el nombre real del proveedor cuando queda fuera del mapa local, sin habilitar cobertura.
+- `src/lib/forwardGeocoding.ts`: restricción Google, verificación geográfica independiente y candidatos.
+- `src/lib/addressSearch.ts`: contrato tipado de resultados.
+- `src/lib/api.ts`: envío de municipio, sin caché, respuesta controlada si la versión del servidor no coincide.
+- `src/components/customer/AddressConfirmationModal.tsx`: selector, elección explícita y descarte de respuestas obsoletas.
+- `src/lib/deviceLocation.ts` y `CurrentLocationAction.tsx`: antigüedad y errores específicos, limpieza de la espera de GPS.
+- `src/tests/addressLocationRegression.test.ts`, `deviceLocation.test.tsx`, `deviceLocationReview.tsx` y `package.json`: regresiones y simulación aislada.
+
+### Comprobaciones
+
+- Suite completa: 27 suites aprobaron; TypeScript y compilación aprobaron. Tras el endurecimiento adicional del cotejo de municipio se repitieron las suites de ubicación, direcciones guardadas y cobertura, además de TypeScript/compilación.
+- Regresiones nuevas: municipio ausente, Bogotá explícita, respuesta Santa Marta, proveedor con ciudad manipulada, coordenadas de Cota, ciudades fuera del mapa local, coincidencias parciales, múltiples candidatos, proveedor no disponible; lectura reciente de 20 segundos, lectura antigua seguida de una fresca, cancelación, vencimiento y hora futura.
+- HTTP y navegador aislado: calle reportada → Bogotá / Los Mártires → Programado / HUB_KENNEDY. Cota permanece excluida; Cota → Chía retira el rechazo y asigna Programado / Suba. GPS ficticio de Cedritos con 20 segundos de antigüedad muestra Usaquén / Suba sin confirmar ni crear pedido.
+- Marco de 390 px: municipio, dirección y resultado seleccionable visibles; no es una prueba física de iPhone.
+- Los cuatro blobs protegidos del PR #11 permanecen idénticos: PresentationSelector, presentationDisplay, catalogPurchase.test y presentationSelection.test.
+- No se modificaron catálogo, inventarios, reservas ni históricos. Rappi/inDrive siguen desactivados. Pendiente: comprobación del GPS del teléfono del usuario después de recargar la demo.
+
+### Cómo probar
+
+Recarga la demo. Agrega dirección → Municipio de entrega «Bogotá D.C.» → escribe `calle 11 #15-53` → elige el resultado «Cl. 11 #15-53, Bogotá, Colombia» → revisa el mapa y confirma. Debe indicar Los Mártires y Programado desde Kennedy. «Usar mi ubicación actual» continúa siendo opcional y requiere permiso del dispositivo. No es necesario borrar el carrito ni el almacenamiento.
+
+Referencias de implementación: [componentes del geocodificador Google](https://developers.google.com/maps/documentation/geocoding/guides-v3/requests-geocoding) y [fecha de adquisición de una lectura](https://developer.mozilla.org/en-US/docs/Web/API/GeolocationPosition/timestamp). No se modifica `main` en esta etapa.

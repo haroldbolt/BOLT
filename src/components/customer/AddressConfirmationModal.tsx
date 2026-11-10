@@ -1,3 +1,5 @@
+import {COVERAGE_MUNICIPALITIES, coverageMunicipality} from '../../data/coverageConfig';
+import type {AddressSearchCandidate} from '../../lib/addressSearch';
 import {EntrancePhotoPicker} from './EntrancePhotoPicker';
 import { TERRITORY_OPTIONS } from '../../lib/territoryConfig';
 import { AddressTerritory, validDestinationCoordinates } from '../../lib/addressGeography';
@@ -81,6 +83,12 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const [savedName,setSavedName]=useState(savedAddressOptions?.name || '');
   const [savedDefault,setSavedDefault]=useState(savedAddressOptions?.isDefault || false);
   const [addressInput, setAddressInput] = useState(currentAddress ?? '');
+  const [municipalityInput,setMunicipalityInput]=useState(currentTerritory?.municipality || '');
+  const [otherMunicipality,setOtherMunicipality]=useState(!!currentTerritory?.municipality && !coverageMunicipality(currentTerritory.municipality));
+  const [addressCandidates,setAddressCandidates]=useState<AddressSearchCandidate[]>([]);
+  const [searchMessage,setSearchMessage]=useState('');
+  const [locatedAddress,setLocatedAddress]=useState('');
+  const [locationAge,setLocationAge]=useState<number|null>(null);
   const [detailsInput, setDetailsInput] = useState(currentDetails ?? '');
   const [pinCoordinates, setPinCoordinates] = useState<Partial<LatLng>>(currentCoordinates ?? {});
   const destinationPoint = validDestinationCoordinates(pinCoordinates) ? pinCoordinates : null;
@@ -112,7 +120,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     ++locationSeq.current;
     deviceLocationRef.current?.cancel();
     locationPending.current = false;
-    setIsLocating(false); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null);
+    setIsLocating(false); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null); setLocationAge(null);
   };
 
   const debounceTimeoutRef = useRef<any>(null);
@@ -171,6 +179,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       setPhotoId(currentPhotoId);setPhotoNotice('');setSaveAddress(false);
       setSavedName(savedAddressOptions?.name || '');setSavedDefault(savedAddressOptions?.isDefault || false);
       setAddressInput(initialAddr);
+      setMunicipalityInput(currentTerritory?.municipality || '');
+      setOtherMunicipality(!!currentTerritory?.municipality && !coverageMunicipality(currentTerritory.municipality));
+      setAddressCandidates([]);setSearchMessage('');setLocatedAddress('');
       setDetailsInput(initialDetails);
       setPinCoordinates(initialCoords);
       setIsAddressSynced(!!initialAddr.trim() && validDestinationCoordinates(initialCoords));
@@ -202,11 +213,15 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     detachPhoto();
     const reqId = ++reverseGeocodeReqSeqRef.current;
     ++requestSeq.current; setQuote(null); setTerritory({});
+    setAddressCandidates([]);setSearchMessage('');setLocatedAddress('');
+    setMunicipalityInput('');setOtherMunicipality(false);
     setIsReverseGeocoding(true); setIsAddressSynced(false); setGeocodeError(null);
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     api.reverseGeocode(newCoords.lat,newCoords.lng).then(result=>{
       if(reqId!==reverseGeocodeReqSeqRef.current) return;
       if(result?.address) {
+        setMunicipalityInput(result.municipality || '');setOtherMunicipality(!!result.municipality && !coverageMunicipality(result.municipality));
+        setLocatedAddress(result.address);
         setAddressInput(result.address); setTerritory(result); setIsAddressSynced(true);
         evaluateAddressQuote(newCoords,result.address,result);
       } else setGeocodeError('No se pudo identificar la dirección del pin. Conservamos tu dirección; confirma sus datos o intenta de nuevo.');
@@ -223,12 +238,13 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     // Keep a quote for the unchanged draft until a new location actually arrives.
     // Opening the form resets it separately; never restore a previous render's draft on denial.
     setIsEvaluating(false); setIsGeocoding(false); setIsReverseGeocoding(false);
-    setGeocodeError(null); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null); setIsLocating(true);
+    setGeocodeError(null); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null); setLocationAge(null); setIsLocating(true);
     try {
       const location = await attempt.result;
       if (!location || seq !== locationSeq.current) return;
       setPinCoordinates(location.coordinates);
       setLocationAccuracy(location.accuracyMeters);
+      setLocationAge(location.ageSeconds);
       triggerReverseGeocode(location.coordinates);
     } catch (error) {
       if (seq === locationSeq.current) {
@@ -306,25 +322,34 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     }
   };
 
-  // Manejo de escritura manual de la dirección
-  const handleAddressInputChange = (val: string) => {
-    cancelDeviceLocation();
-    detachPhoto();
-    setAddressInput(val); setPinCoordinates({}); setQuote(null); setTerritory({}); setGeocodeError(null); setIsAddressSynced(false);
+  // Never infer the city from street numbers or automatically select the provider's first hit.
+  const searchAddress = (val: string, municipality: string) => {
+    cancelDeviceLocation();detachPhoto();
+    setAddressInput(val);setMunicipalityInput(municipality);
+    setPinCoordinates({});setQuote(null);setTerritory({});setGeocodeError(null);setIsAddressSynced(false);
+    setAddressCandidates([]);setLocatedAddress('');setSearchMessage('');setIsEvaluating(false);
     ++requestSeq.current;
     const seq=++reverseGeocodeReqSeqRef.current;
-    setIsReverseGeocoding(false); setIsGeocoding(true);
+    setIsReverseGeocoding(false);setIsGeocoding(false);
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    if (!val.trim()) { setIsGeocoding(false); return; }
+    if(!municipality.trim()) {if(val.trim())setSearchMessage('Elige el municipio de entrega para ubicar tu dirección.');return;}
+    if(!val.trim()) return;
+    setIsGeocoding(true);
     debounceTimeoutRef.current=setTimeout(async()=>{
-      const result=val.trim() ? await api.forwardGeocode(val) : null;
+      const result=await api.forwardGeocode(val,municipality);
       if(seq!==reverseGeocodeReqSeqRef.current) return;
-      setIsGeocoding(false);
-      if(result?.coordinates) {
-        setPinCoordinates(result.coordinates); setTerritory(result); setIsAddressSynced(true);
-        evaluateAddressQuote(result.coordinates,val,result);
-      } else setGeocodeError('Dirección pendiente de ubicar. Completa la dirección o confirma las coordenadas del destino; no es una exclusión de cobertura.');
+      setIsGeocoding(false);setAddressCandidates(result.candidates);setSearchMessage(result.message);
     },500);
+  };
+  const handleAddressInputChange = (val: string) => searchAddress(val,municipalityInput);
+  const selectAddressCandidate = (candidate:AddressSearchCandidate) => {
+    cancelDeviceLocation();detachPhoto();++reverseGeocodeReqSeqRef.current;
+    if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
+    setAddressCandidates([]);setSearchMessage('');setLocatedAddress(candidate.formattedAddress);
+    setPinCoordinates(candidate.coordinates);setTerritory(candidate);setIsAddressSynced(true);setGeocodeError(null);
+    setIsGeocoding(false);setIsReverseGeocoding(false);
+    // Keep the customer's street text; display the verified provider address alongside it.
+    evaluateAddressQuote(candidate.coordinates,addressInput,candidate);
   };
   const confirmDestinationPoint = () => {
     if (!addressInput.trim() || !destinationPoint) return;
@@ -407,7 +432,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <CurrentLocationAction onClick={handleUseCurrentLocation} busy={isLocating} error={locationError} errorKind={locationErrorKind} onManualAddress={enterAddressManually} accuracyMeters={locationAccuracy}/>
+          <CurrentLocationAction onClick={handleUseCurrentLocation} busy={isLocating} error={locationError} errorKind={locationErrorKind} onManualAddress={enterAddressManually} accuracyMeters={locationAccuracy} ageSeconds={locationAge}/>
           
           {!savedAddressOptions && <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={saveAddress} onChange={e=>setSaveAddress(e.target.checked)}/>Guardar esta dirección en este dispositivo</label>}
           {(savedAddressOptions || saveAddress) && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
@@ -415,6 +440,17 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={savedDefault} onChange={e=>setSavedDefault(e.target.checked)}/>Usar como predeterminada</label>
             {saveError && <p role="status" className="text-xs text-amber-800">{saveError}</p>}
           </div>}
+          <div className="space-y-1">
+            <label htmlFor="delivery-municipality" className="block text-xs font-bold text-slate-700">Municipio de entrega</label>
+            <select id="delivery-municipality" aria-label="Municipio de entrega" value={otherMunicipality?'OTHER':(coverageMunicipality(municipalityInput)?.name || '')}
+              onChange={e=>{const other=e.target.value==='OTHER';setOtherMunicipality(other);searchAddress(addressInput,other?'':e.target.value)}}
+              className="min-h-11 w-full px-3 py-2 text-sm bg-slate-50 border border-slate-200 rounded-xl focus:border-red-500">
+              <option value="">Selecciona el municipio</option>
+              {COVERAGE_MUNICIPALITIES.filter(m=>m.active).map(m=><option key={m.code} value={m.name}>{m.name}</option>)}
+              <option value="OTHER">Otro municipio</option>
+            </select>
+            {otherMunicipality && <input aria-label="Nombre del municipio" value={municipalityInput} onChange={e=>searchAddress(addressInput,e.target.value)} placeholder="Escribe el municipio" className="min-h-11 w-full px-3 py-2 border border-slate-200 rounded-xl text-sm"/>}
+          </div>
           {/* Address Inputs */}
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             <div className="sm:col-span-2 space-y-1">
@@ -475,6 +511,13 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             </div>
           </div>
 
+          {searchMessage && <p role="status" className="text-xs text-slate-600">{searchMessage}</p>}
+          {addressCandidates.length>0 && <div aria-label="Direcciones encontradas" className="space-y-2">
+            {addressCandidates.map(candidate=><button type="button" key={candidate.placeId} onClick={()=>selectAddressCandidate(candidate)} className="min-h-11 w-full text-left rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm hover:border-red-500 focus-visible:ring-2 focus-visible:ring-red-500">
+              <span className="block font-semibold">{candidate.formattedAddress}</span><span className="block text-xs text-slate-500">{candidate.municipality}{candidate.locality?` · ${candidate.locality}`:''} · Elegir esta dirección</span>
+            </button>)}
+          </div>}
+          {locatedAddress && <p role="status" className="rounded-xl bg-blue-50 p-3 text-xs text-blue-950">Punto ubicado: {locatedAddress}. Revisa el mapa antes de confirmar.</p>}
           <details className="p-3 rounded-xl border border-slate-200 space-y-2">
             <summary className="text-xs font-bold cursor-pointer">Completar o confirmar el punto de entrega</summary>
             <label className="block text-xs font-bold">Localidad (si falta identificarla)
