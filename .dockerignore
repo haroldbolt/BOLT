@@ -1,0 +1,14 @@
+node_modules
+dist
+server.js
+.git
+.bolt-private
+.bolt-storage
+.env*
+**/persisted-*.json
+**/private-entrance-photos
+public/uploads
+*.log
+tmp-*
+output
+docs/review-evidence
