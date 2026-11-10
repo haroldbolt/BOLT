@@ -1,0 +1,31 @@
+{
+  "checkedAt": "2026-11-10T05:21:58.382Z",
+  "origin": "https://bolt-demo-demo.up.railway.app",
+  "requestId": "73769d18-5949-48aa-8db1-a54471ee15c0",
+  "photoId": "a86294b6-acee-4a95-9f08-b6220ab5e71b",
+  "purchaseId": "SIM-80fd6a0b-eacf-4a32-87ba-3e869f057425",
+  "purchaseCode": "BP-000001",
+  "shipmentIds": [
+    "SIM-80fd6a0b-eacf-4a32-87ba-3e869f057425-S1",
+    "SIM-80fd6a0b-eacf-4a32-87ba-3e869f057425-S2"
+  ],
+  "quantities": [
+    2,
+    1
+  ],
+  "checks": [
+    "HTTPS health 200",
+    "Anonymous simulator API denied 401",
+    "Private gateway cookie",
+    "Admin login",
+    "Idempotent purchase",
+    "Two whole-unit deliveries",
+    "Unauthorized guest denied 403",
+    "Private guest access",
+    "Sharp JPEG private upload/download on Linux",
+    "Closed recovery remains ENTREGADO",
+    "Driver login and assignments",
+    "Same purchase, shipment IDs and photo after hosted restart"
+  ],
+  "repeated": true
+}

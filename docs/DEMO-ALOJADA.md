@@ -27,7 +27,7 @@ El primer arranque reutiliza `createIntegrationReview.ts` y `dispatch-simulation
 1. **Acceso (3 min).** Abrir la URL HTTPS en celular y computador, introducir la clave, entrar a Cliente. En un navegador nuevo deben estar vacíos dirección, complemento, contacto y carrito.
 2. **Compra (7 min).** Revisar tarjetas de una y varias presentaciones, chips compactos sin precio duplicado, precio principal y carrito persistente. Usar productos reales para revisión visual; para crear pedidos con capacidad comprobable usar `SIM-FOOD-20KG` o `SIM-CARD`, expresamente ficticios.
 3. **Destino (5 min).** Probar Cedritos → Usaquén → Suba, Chía/Cajicá → Programado → Suba y Cota → bloqueo. Dirección, mapa, ubicación del dispositivo y foto opcional requieren confirmación del cliente. Guardar una dirección y recargar. Una falta de capacidad no equivale a exclusión geográfica.
-4. **Operación (10 min).** Abrir `/simulacion`, ingresar, habilitar dos conductores propios ficticios y crear compra de tres bolsas de 20 kg. Administración prepara sus entregas de 40 + 20 kg. Cada conductor acepta, llega, cuenta unidades, recoge y confirma con el PIN facilitado por cliente. Una sola entrega terminada no completa toda la compra. Simular proveedor externo que acepta, demora o rechaza, sin Rappi/inDrive reales.
+4. **Operación (10 min).** Abrir `/simulacion`, ingresar, habilitar los conductores propios ficticios y crear compra de tres bolsas de 20 kg. Administración prepara sus entregas de 40 + 20 kg. Para la primera asignación usar HUB_SUBA 2. HUB_SUBA 1 figura en HIST-WAY y no es elegible mientras conserve esa custodia pendiente; no liberar artificialmente esa asignación. La segunda entrega puede quedar pendiente o utilizar el proveedor externo ficticio autorizado desde el simulador. El conductor acepta, llega, cuenta unidades, recoge y confirma con el PIN facilitado por cliente. Una sola entrega terminada no completa toda la compra. Simular proveedor externo que acepta, demora o rechaza, sin Rappi/inDrive reales.
 5. **Continuidad y decisiones (5 min).** En administración → Despachos → Pedidos anteriores: HIST-READY permite registro/conciliación; HIST-WAY carece de evidencia de recogida y debe mantener el bloqueo; HIST-CLOSED permite recuperar acceso privado sin reabrirse. Acordar responsables y prioridades de producción.
 
 Las posiciones ficticias caducan. Para renovar las de conductores libres usar el simulador; no aumentar la vigencia para fingir disponibilidad. Los horarios de prueba se generan al inicializar, por lo que una demo reutilizada días después necesita actualizar la disponibilidad simulada mediante administración, sin tocar pedidos previos.
@@ -60,7 +60,22 @@ Gateway: autenticación, origen, cookie segura, CSRF, separación de tokens, alt
 - Autorizar el dominio HTTPS en las restricciones de las claves de mapas existentes; revisar separación de clave servidor/cliente y cuotas. No crear credenciales ni ampliar restricciones globalmente desde la demo.
 - Planificar base de datos transaccional, almacenamiento privado de imágenes, backups externos, secretos, monitorización y pruebas de concurrencia antes de escalar réplicas.
 - Verificar medidas, stock, cupos, tarifas y capacidad física reales; muchos productos del catálogo todavía no tienen mediciones logísticas verificadas.
+- La instalación nueva no copia persistencia comercial privada: varios precios y fotografías figuran por confirmar. Usar los artículos SIM para compras reproducibles.
 - Revisar fotografías pendientes; el código de imágenes integrado no significa que todos los empaques hayan sido verificados ni que se haya aplicado un lote pendiente.
 - Pagos, Rappi e inDrive reales y push en segundo plano permanecen pendientes. BOLT Conductor es web, no una app nativa con ubicación continua.
 
 Fuentes de alojamiento consultadas: https://docs.railway.com/volumes y https://docs.railway.com/pricing/free-trial.
+
+## Evidencia de la instalación alojada
+
+- URL: https://bolt-demo-demo.up.railway.app (clave entregada por separado).
+- Commit ejecutado: `372dd7a4ccc67fdfc76169ee35ad51fcc8a03e07`. Deployment Railway: `7346bdc0-de1b-4dbe-9b27-8780694079bd`, SUCCESS.
+- 25/25 suites de BOLT aprobadas en copia aislada; dos suites nuevas del gateway y runtime aprobadas. TypeScript y compilación aprobados en Linux durante el despliegue.
+- HTTP remoto: entrada privada, API anónima rechazada 401, seguimiento sin credencial rechazado 403, compra idempotente dividida 2+1 unidades, foto JPEG privada procesada por Sharp, recuperación HIST-CLOSED conservando ENTREGADO y login de conductor.
+- Reinicio real en Railway: mismos IDs de compra y despachos, mismas cantidades y fotografía privada conservada. No se recrearon fixtures.
+- Navegador: dirección urbana de Usaquén resuelta a Programado/Suba; dos presentaciones SIM con precios 25.000 y 40.000 conservadas como líneas independientes; subtotal 65.000 y persistencia tras recarga. Panel de históricos y Conductor abiertos con autenticación real de simulación.
+- Vista estrecha comprobada a 490 px, sin desbordamiento horizontal. El navegador integrado no aplicó el tamaño solicitado de 390/1280 px; no se presenta esa captura como prueba de teléfono físico ni escritorio de 1280 px.
+- Pendiente de comprobación física: iOS/Android, permisos de cámara/GPS y comportamiento de esos navegadores.
+- El proveedor externo sigue siendo ficticio; Rappi e inDrive reales permanecen desactivados.
+
+Asignación observada en navegador: `BP-000001-E01` pasó a repartidor confirmado tras aceptación de `SIMULACIÓN HUB_SUBA 2`; el conductor quedó ocupado. `E02` sigue pendiente de preparación. Se conserva la custodia histórica de HUB_SUBA 1. Esta compra permite continuar la demo desde recogida sin crear otro pedido.
