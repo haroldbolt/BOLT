@@ -1,3 +1,4 @@
+import {beginDeviceLocation, type DeviceLocationAttempt} from '../lib/deviceLocation';
 // Isolated browser harness; not imported by the customer app or copied into its production build.
 import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
@@ -14,12 +15,12 @@ const destinations:Record<string,any> = {
   Cajicá:municipal.find(f=>f.name==='Cajicá'),Cota:municipal.find(f=>f.name==='Cota'),
 };
 if(Object.values(destinations).some(f=>!f?.coordinates))throw Error('Falta un fixture verificado de ubicación.');
-let scenario='Cedritos',calls=0,pending:PositionCallback|undefined;
+let scenario='Cedritos',calls=0,gestureCalls=0,pending:PositionCallback|undefined;
 let update=()=>{};
 const point=()=>destinations[scenario] || destinations.Cedritos;
 const position=(f=point())=>({coords:{latitude:f.coordinates.lat,longitude:f.coordinates.lng,accuracy:18},timestamp:Date.now()}) as GeolocationPosition;
 Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurrentPosition(success:PositionCallback,error:PositionErrorCallback){
-  calls++;update();
+  calls++;if(navigator.userActivation?.isActive)gestureCalls++;update();
   if(scenario==='Respuesta pendiente'){pending=success;return;}
   const code:Record<string,number>={'Permiso denegado':1,'Sin señal':2,'Tiempo agotado':3};
   if(code[scenario]){queueMicrotask(()=>error({code:code[scenario]} as GeolocationPositionError));return;}
@@ -35,11 +36,11 @@ const memory=new Map<string,string>();
 const addressStore=new GuestAddressStore({getItem:k=>memory.get(k)??null,setItem:(k,v)=>{memory.set(k,v)}});
 
 function Review(){
-  const [,render]=useState(0),[bookOpen,setBookOpen]=useState(true),[formOpen,setFormOpen]=useState(false),[auto,setAuto]=useState(false);
+  const [,render]=useState(0),[bookOpen,setBookOpen]=useState(true),[formOpen,setFormOpen]=useState(false),[attempt,setAttempt]=useState<DeviceLocationAttempt|null>(null);
   const [quote,setQuote]=useState<any>(null),[confirmations,setConfirmations]=useState(0);
   update=()=>render(n=>n+1);
   const book=addressStore.getSnapshot();
-  const open=(location:boolean)=>{setAuto(location);setBookOpen(false);setFormOpen(true)};
+  const open=(location:boolean)=>{attempt?.cancel();setAttempt(location?beginDeviceLocation():null);setBookOpen(false);setFormOpen(true)};
   const refresh=()=>render(n=>n+1);
   return <div className="p-4 space-y-3 bg-slate-50 min-h-screen">
     <h1 className="font-bold">Simulación de ubicación · BOLT</h1>
@@ -47,9 +48,9 @@ function Review(){
     <label>Escenario <select aria-label="Escenario de ubicación" className="border p-2" defaultValue={scenario} onChange={e=>{scenario=e.target.value;refresh()}}>{[...Object.keys(destinations),'Permiso denegado','Sin señal','Tiempo agotado','Respuesta pendiente','Geocodificación fallida'].map(s=><option key={s}>{s}</option>)}</select></label>
     <button className="border p-2" onClick={()=>setBookOpen(true)}>Abrir direcciones</button>
     <button className="border p-2" onClick={()=>{pending?.(position(destinations.Cedritos));pending=undefined;refresh()}}>Resolver ubicación pendiente</button>
-    <output className="block" aria-label="Resultado de simulación">Consultas al dispositivo: {calls}. Confirmaciones: {confirmations}. Direcciones guardadas: {book.addresses.length}. Destino confirmado: {book.current?.address || 'Ninguno'}.</output>
+    <output className="block" aria-label="Resultado de simulación">Consultas al dispositivo: {calls}. Consultas con gesto: {gestureCalls}. Confirmaciones: {confirmations}. Direcciones guardadas: {book.addresses.length}. Destino confirmado: {book.current?.address || 'Ninguno'}.</output>
     <SavedAddressesModal isOpen={bookOpen} onClose={()=>setBookOpen(false)} addresses={book.addresses} current={book.current} quote={quote} warning="" message="" onAdd={()=>open(false)} onUseCurrentLocation={()=>open(true)} onEdit={()=>open(false)} onUse={id=>{addressStore.select(id);refresh()}} onRemove={id=>{addressStore.remove(id);refresh()}} onDefault={id=>{addressStore.setDefault(id);refresh()}} onSave={(name,def)=>{const r=addressStore.saveCurrent(name,def);refresh();return r.ok}} onContinue={()=>setBookOpen(false)}/>
-    <AddressConfirmationModal isOpen={formOpen} requestCurrentLocationOnOpen={auto} onClose={()=>{setFormOpen(false);setBookOpen(true)}} currentAddress="" currentDetails="" stores={INITIAL_STORES} cartItems={[]} products={[]} onConfirmAddress={(address,details,coordinates,q)=>{addressStore.confirm({address,details,coordinates,municipality:q.municipality,locality:q.locality});setQuote(q);setConfirmations(n=>n+1);return true}}/>
+    <AddressConfirmationModal isOpen={formOpen} initialLocationAttempt={attempt} onClose={()=>{setFormOpen(false);setBookOpen(true)}} currentAddress="" currentDetails="" stores={INITIAL_STORES} cartItems={[]} products={[]} onConfirmAddress={(address,details,coordinates,q)=>{addressStore.confirm({address,details,coordinates,municipality:q.municipality,locality:q.locality});setQuote(q);setConfirmations(n=>n+1);return true}}/>
   </div>;
 }
 createRoot(document.getElementById('root')!).render(<React.StrictMode><Review/></React.StrictMode>);

@@ -10,7 +10,7 @@ import {
 import { DeliveryQuote, LatLng, DELIVERY_CONFIG, TURBO_ALLOWED_LOCALITIES } from '../../lib/deliveryService';
 import { api } from '../../lib/api';
 import { Store, CartItem, Product } from '../../types';
-import { DeviceLocationRequest } from '../../lib/deviceLocation';
+import { DeviceLocationRequest, DeviceLocationError, beginDeviceLocation, type DeviceLocationAttempt, type DeviceLocationFailure } from '../../lib/deviceLocation';
 import { CurrentLocationAction } from './CurrentLocationAction';
 
 declare const google: any;
@@ -31,7 +31,7 @@ const MapRecenter: React.FC<MapRecenterProps> = ({ center }) => {
 
 interface AddressConfirmationModalProps {
   isOpen: boolean;
-  requestCurrentLocationOnOpen?: boolean;
+  initialLocationAttempt?: DeviceLocationAttempt | null;
   onClose: () => void;
   onConfirmed?: () => void;
   currentPhotoId?: string;
@@ -62,7 +62,7 @@ function formatCleanBogotaAddress(raw: string): string {
 
 export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> = ({
   isOpen,
-  requestCurrentLocationOnOpen = false,
+  initialLocationAttempt = null,
   onClose, onConfirmed, currentPhotoId,
   currentAddress,
   currentDetails,
@@ -97,18 +97,22 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
+  const [locationErrorKind, setLocationErrorKind] = useState<DeviceLocationFailure | null>(null);
+  const addressInputRef = useRef<HTMLInputElement>(null);
+  const activeLocationAttempt = useRef<DeviceLocationAttempt | null>(null);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
   const deviceLocationRef = useRef<DeviceLocationRequest | null>(null);
   if (!deviceLocationRef.current) deviceLocationRef.current = new DeviceLocationRequest();
   const locationSeq = useRef(0);
   const locationPending = useRef(false);
-  const autoLocationStarted = useRef(false);
 
-  const cancelDeviceLocation = () => {
+  const cancelDeviceLocation = (preserveInitial = false) => {
+    if (!preserveInitial || activeLocationAttempt.current !== initialLocationAttempt) activeLocationAttempt.current?.cancel();
+    activeLocationAttempt.current = null;
     ++locationSeq.current;
     deviceLocationRef.current?.cancel();
     locationPending.current = false;
-    setIsLocating(false); setLocationError(null); setLocationAccuracy(null);
+    setIsLocating(false); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null);
   };
 
   const debounceTimeoutRef = useRef<any>(null);
@@ -176,7 +180,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       setIsEvaluating(false);
       setGeocodeError(null);
       setIsReverseGeocoding(false);
-      cancelDeviceLocation();
+      cancelDeviceLocation(true);
 
       if (initialAddr.trim() && validDestinationCoordinates(initialCoords)) evaluateAddressQuote(initialCoords, initialAddr, currentTerritory);
     }
@@ -210,35 +214,51 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       .finally(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setIsReverseGeocoding(false)});
   },[evaluateAddressQuote,photoId]);
 
-  const handleUseCurrentLocation = async () => {
-    if (locationPending.current) return;
+  const consumeDeviceLocation = async (attempt: DeviceLocationAttempt) => {
+    activeLocationAttempt.current = attempt;
     locationPending.current = true;
     const seq = ++locationSeq.current;
     ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
     setQuote(null); setIsEvaluating(false); setIsGeocoding(false); setIsReverseGeocoding(false);
-    setGeocodeError(null); setLocationError(null); setLocationAccuracy(null); setIsLocating(true);
+    setGeocodeError(null); setLocationError(null); setLocationErrorKind(null); setLocationAccuracy(null); setIsLocating(true);
     try {
-      const location = await deviceLocationRef.current!.request();
+      const location = await attempt.result;
       if (!location || seq !== locationSeq.current) return;
       setPinCoordinates(location.coordinates);
       setLocationAccuracy(location.accuracyMeters);
       triggerReverseGeocode(location.coordinates);
     } catch (error) {
-      if (seq === locationSeq.current) setLocationError(error instanceof Error ? error.message : 'No pudimos obtener tu ubicación. Escribe tu dirección o intenta de nuevo.');
+      if (seq === locationSeq.current) {
+        setLocationError(error instanceof Error ? error.message : 'No pudimos obtener tu ubicación. Escribe tu dirección o intenta de nuevo.');
+        setLocationErrorKind(error instanceof DeviceLocationError ? error.kind : 'unavailable');
+        if (isAddressSynced && validDestinationCoordinates(pinCoordinates)) void evaluateAddressQuote(pinCoordinates, addressInput, territory);
+      }
     } finally {
       if (seq === locationSeq.current) { locationPending.current = false; setIsLocating(false); }
     }
   };
 
-  // Only the explicit action in the saved-address list requests this; never on a first visit/reload.
+  const handleUseCurrentLocation = () => {
+    if (locationPending.current) return;
+    // No permissions.query(), await or effect before the native request.
+    const attempt = beginDeviceLocation(deviceLocationRef.current!);
+    void consumeDeviceLocation(attempt);
+  };
+
+  // Subscribe to a request already started by the saved-address button.
+  // StrictMode may subscribe twice, but it must not issue another native request.
   useEffect(() => {
-    if (!isOpen) { autoLocationStarted.current = false; return; }
-    if (requestCurrentLocationOnOpen && !autoLocationStarted.current) {
-      autoLocationStarted.current = true;
-      void handleUseCurrentLocation();
-    }
-  }, [isOpen, requestCurrentLocationOnOpen]);
+    if (!isOpen) { cancelDeviceLocation(); return; }
+    if (initialLocationAttempt) void consumeDeviceLocation(initialLocationAttempt);
+    return () => { ++locationSeq.current; };
+  }, [isOpen, initialLocationAttempt]);
+
+  const enterAddressManually = () => {
+    cancelDeviceLocation();
+    addressInputRef.current?.focus();
+    if (isAddressSynced && validDestinationCoordinates(pinCoordinates)) void evaluateAddressQuote(pinCoordinates, addressInput, territory);
+  };
 
   // Requisito 1: En handlePinDragEnd, al soltar el pin, actualiza sus coordenadas y consulta la dirección mediante geocodificación inversa de Google Maps
   const handlePinDragEnd = (e: any) => {
@@ -386,7 +406,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <CurrentLocationAction onClick={()=>void handleUseCurrentLocation()} busy={isLocating} error={locationError} accuracyMeters={locationAccuracy}/>
+          <CurrentLocationAction onClick={handleUseCurrentLocation} busy={isLocating} error={locationError} errorKind={locationErrorKind} onManualAddress={enterAddressManually} accuracyMeters={locationAccuracy}/>
           
           {!savedAddressOptions && <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={saveAddress} onChange={e=>setSaveAddress(e.target.checked)}/>Guardar esta dirección en este dispositivo</label>}
           {(savedAddressOptions || saveAddress) && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
@@ -424,6 +444,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 <Search className="w-4 h-4 absolute left-3 top-2.5 text-slate-400" />
                 <input
                   type="text"
+                  ref={addressInputRef}
                   value={addressInput}
                   onChange={e => handleAddressInputChange(e.target.value)}
                   aria-label="Dirección de entrega"

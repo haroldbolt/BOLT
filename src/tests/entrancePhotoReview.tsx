@@ -178,7 +178,6 @@ function Review() {
       <AddressConfirmationModal
         isOpen={open}
         onClose={() => setOpen(false)}
-        requestCurrentLocationOnOpen={!editing}
         currentAddress={editing?.address || ""}
         currentDetails={editing?.details || ""}
         currentCoordinates={editing?.coordinates}

@@ -1,3 +1,4 @@
+import {beginDeviceLocation, type DeviceLocationAttempt} from './lib/deviceLocation';
 import {deleteEntrancePhoto,cleanAbandonedEntrancePhotos} from './lib/entrancePhotos';
 import {TrackingRecovery} from './components/customer/TrackingRecovery';
 import {DriverPanel} from './components/dispatch/DriverPanel';
@@ -302,7 +303,7 @@ export default function App() {
   const [selectedDeliveryMode, setSelectedDeliveryMode] = useState<DeliveryMode>('TURBO');
   const [selectedScheduledWindow, setSelectedScheduledWindow] = useState<ScheduledDeliveryWindow | null>(null);
   const [isAddressModalOpen, setIsAddressModalOpen] = useState(false);
-  const [requestCurrentLocationOnOpen, setRequestCurrentLocationOnOpen] = useState(false);
+  const [initialLocationAttempt, setInitialLocationAttempt] = useState<DeviceLocationAttempt | null>(null);
   const [isScheduledModalOpen, setIsScheduledModalOpen] = useState(false);
 
   // Guided Onboarding Coach Mark Tour state (activates on first visit)
@@ -431,7 +432,10 @@ export default function App() {
 
   const openAddressBook = () => {setAddressBookMessage('');setIsAddressBookOpen(true)};
   const editDeliveryAddress = (saved?:SavedAddress, useCurrentLocation=false) => {
-    setRequestCurrentLocationOnOpen(useCurrentLocation);
+    initialLocationAttempt?.cancel();
+    // Start in this user gesture, BEFORE the modal mounts or any asynchronous work.
+    const attempt = useCurrentLocation ? beginDeviceLocation() : null;
+    setInitialLocationAttempt(attempt);
     setEditingAddress(saved || null);
     setAddressDraft(saved || null);
     setAddressBookMessage('');
@@ -1309,8 +1313,8 @@ export default function App() {
       {/* Address Confirmation & Coverage Modal */}
       <AddressConfirmationModal
         isOpen={isAddressModalOpen}
-        requestCurrentLocationOnOpen={requestCurrentLocationOnOpen}
-        onClose={() => {setIsAddressModalOpen(false);setIsAddressBookOpen(true)}}
+        initialLocationAttempt={initialLocationAttempt}
+        onClose={() => {initialLocationAttempt?.cancel();setIsAddressModalOpen(false);setIsAddressBookOpen(true)}}
         onConfirmed={()=>{setIsAddressModalOpen(false);setIsAddressBookOpen(false)}}
         currentPhotoId={addressDraft?.referencePhotoId}
         currentAddress={addressDraft?.address || ''}
