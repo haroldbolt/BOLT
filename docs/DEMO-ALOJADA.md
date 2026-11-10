@@ -4,7 +4,7 @@ Preparada para la reunión del 10 de noviembre de 2026. Es una instalación inde
 
 ## Arquitectura del despliegue
 
-Railway ejecuta el Dockerfile con Node 22.22.0 y dependencias de bun.lock instaladas con Bun 1.3.12. Un volumen de 500 MB en `/data` conserva el directorio `bolt-dispatch-simulation-meeting`. Debe existir una sola réplica y un solo escritor. El puerto público 8080 pertenece al gateway; el servidor original de BOLT escucha en 127.0.0.1:3030 y mantiene su bloqueo de origen local.
+Railway ejecuta el Dockerfile con Node 22.22.0 y dependencias de bun.lock instaladas con Bun 1.4.4. Un volumen de 500 MB en `/data` conserva el directorio `bolt-dispatch-simulation-meeting`. Debe existir una sola réplica y un solo escritor. El puerto público 8080 pertenece al gateway; el servidor original de BOLT escucha en 127.0.0.1:3030 y mantiene su bloqueo de origen local.
 
 El gateway exige una clave de reunión, genera una cookie firmada HttpOnly/Secure/SameSite=Strict de 12 horas y valida el origen. No sustituye la sesión administrativa, la del conductor ni el acceso privado de cada pedido. Solo el chequeo `/__demo/health` es anónimo y devuelve disponibilidad, sin datos. Los participantes autorizados pueden consultar las cuentas ficticias del simulador; no usar esta instancia con información personal u operacional real.
 
