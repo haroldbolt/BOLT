@@ -1,3 +1,4 @@
+import { acceptsDemoOrigin } from './src/lib/demoOrigin';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
@@ -87,7 +88,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
-  if(isDispatchSimulation)app.use((req,res,next)=>{const origin=req.get('Origin');if(!/^127\.0\.0\.1(:\d+)?$/.test(req.get('Host')||'') || origin && origin!==`http://127.0.0.1:${PORT}`)return res.status(403).json({error:'Simulación disponible únicamente en su origen local'});next()});
+  if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
   app.use(express.json({ limit: '15mb' }));

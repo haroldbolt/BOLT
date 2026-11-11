@@ -8,7 +8,7 @@ import {
   addOAuthServerContext,
 } from "better-auth/api";
 import { symmetricDecrypt } from "better-auth/crypto";
-import type { CustomerConfig } from "./config";
+import { customerEmailConfigured, type CustomerConfig } from "./config";
 import type { CustomerDB } from "./database";
 import { LEGAL_VERSION, legalDocuments } from "./legal";
 export const legalHashes = Object.fromEntries(
@@ -174,6 +174,12 @@ export function createCustomerAuth(
       cookiePrefix: "bolt_customer",
       useSecureCookies: config.origin.startsWith("https:"),
       defaultCookieAttributes: { httpOnly: true, sameSite: "lax", path: "/" },
+      // Apple returns via cross-site POST. Only the short-lived state proof needs
+      // SameSite=None; session cookies remain Lax and state validation stays on.
+      ...(config.apple && config.origin.startsWith("https:") ? { cookies: {
+        state: { attributes: { sameSite: "none" as const, secure: true } },
+        oauth_state: { attributes: { sameSite: "none" as const, secure: true } },
+      } } : {}),
       disableCSRFCheck: false,
     },
     session: {
@@ -207,10 +213,10 @@ export function createCustomerAuth(
       },
     },
     socialProviders: {
-      ...(config.smtp && config.google
+      ...(customerEmailConfigured(config) && config.google
         ? { google: { ...config.google, disableImplicitSignUp: true } }
         : {}),
-      ...(config.smtp && config.apple
+      ...(customerEmailConfigured(config) && config.apple
         ? {
             apple: {
               ...config.apple,
@@ -221,7 +227,7 @@ export function createCustomerAuth(
         : {}),
     },
     emailAndPassword: {
-      enabled: !!config.smtp,
+      enabled: customerEmailConfigured(config),
       minPasswordLength: 12,
       maxPasswordLength: 128,
       requireEmailVerification: true,

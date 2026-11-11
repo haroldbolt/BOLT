@@ -1,8 +1,10 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import express from "express";
+import crypto from "node:crypto";
+import { sql } from "kysely";
 import { toNodeHandler, fromNodeHeaders } from "better-auth/node";
 import { createCustomerAuth, legalHashes } from "./auth";
-import { readCustomerConfig, type CustomerConfig } from "./config";
+import { readCustomerConfig, customerEmailConfigured, type CustomerConfig } from "./config";
 import {
   connectCustomerDatabase,
   assertCustomerSchema,
@@ -62,10 +64,10 @@ export async function mountCustomerAccounts(
       simulation: !!override,
       configured: !!instance,
       registrationEnabled:
-        !!instance && !!config?.smtp && !!config?.legalApproved,
-      email: !!instance && !!config?.smtp,
-      google: !!instance && !!config?.smtp && !!config?.google,
-      apple: !!instance && !!config?.smtp && !!config?.apple,
+        !!instance && customerEmailConfigured(config) && !!config?.legalApproved,
+      email: !!instance && customerEmailConfigured(config),
+      google: !!instance && customerEmailConfigured(config) && !!config?.google,
+      apple: !!instance && customerEmailConfigured(config) && !!config?.apple,
       legalVersion: LEGAL_VERSION,
       legalHashes,
       legalStatus: !override && config?.legalApproved ? "approved" : "draft",
@@ -253,9 +255,16 @@ export async function mountCustomerAccounts(
     guarded(async (req, res, session) => {
       if (typeof req.body.enabled !== "boolean")
         return res.status(400).json({ error: "Preferencia inválida" });
-      await instance!.audit(session.user.id, "MARKETING_CHANGED", {
-        enabled: req.body.enabled,
-        version: LEGAL_VERSION,
+      // Serialize changes per account and keep their timestamps strictly ordered.
+      // Two rapid toggles must never make an older opt-in override withdrawal.
+      const subject = crypto.createHmac("sha256", config!.secret).update(`audit:${session.user.id}`).digest("hex");
+      await db!.transaction().execute(async tx => {
+        await sql`select pg_advisory_xact_lock(hashtext(${`marketing:${session.user.id}`}))`.execute(tx);
+        await tx.insertInto("customer_audit").values({
+          id: crypto.randomUUID(), subject_hash: subject, event: "MARKETING_CHANGED",
+          evidence: JSON.stringify({ enabled: req.body.enabled, version: LEGAL_VERSION }),
+          created_at: sql`greatest(clock_timestamp(), coalesce((select max(created_at) from customer_audit where subject_hash=${subject} and event='MARKETING_CHANGED'), '-infinity'::timestamptz) + interval '1 microsecond')`,
+        }).execute();
       });
       res.json({ ok: true });
     }),

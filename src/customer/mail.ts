@@ -1,9 +1,24 @@
 import crypto from "node:crypto";
 import nodemailer from "nodemailer";
 import { symmetricEncrypt, symmetricDecrypt } from "better-auth/crypto";
-import type { CustomerConfig } from "./config";
+import { customerEmailConfigured, type CustomerConfig } from "./config";
 import type { CustomerDB } from "./database";
 import type { CustomerMail } from "./auth";
+// Fixed HTTPS endpoint. No provider response body, private URL or credential is logged.
+export async function sendCustomerMailHTTP(
+  config: NonNullable<CustomerConfig["resend"]>, mail: CustomerMail, id: string,
+) {
+  const response = await fetch("https://api.resend.com/emails", {
+    method: "POST", redirect: "error", signal: AbortSignal.timeout(15000),
+    headers: { Authorization: `Bearer ${config.apiKey}`, "Content-Type": "application/json",
+      "Idempotency-Key": `bolt-customer/${id}` },
+    body: JSON.stringify({ from: config.from, to: [mail.to], subject: mail.subject,
+      text: `${mail.subject}\n\n${mail.url}\n\nSi no solicitaste esta acción, ignora este mensaje. No compartas este enlace.` }),
+  });
+  if (!response.ok) { await response.body?.cancel(); throw Error("Transactional email provider unavailable"); }
+  const data = await response.json().catch(() => null);
+  if (!data || typeof data.id !== "string" || !data.id) throw Error("Transactional email acceptance missing");
+}
 export function customerMailer(config: CustomerConfig, db: CustomerDB) {
   const transport = config.smtp
     ? nodemailer.createTransport({
@@ -18,7 +33,7 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB) {
     : null;
   return {
     enqueue: async (mail: CustomerMail) => {
-      if (!transport) throw Error("Transactional email is not configured");
+      if (!customerEmailConfigured(config)) throw Error("Transactional email is not configured");
       const url = new URL(mail.url);
       if (url.origin !== config.origin)
         throw Error("Invalid transactional URL");
@@ -38,7 +53,7 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB) {
         .execute();
     },
     drain: async () => {
-      if (!transport) return;
+      if (!customerEmailConfigured(config)) return;
       // Locks coordinate workers. An interrupted SMTP send may resend the same one-use link;
       // it never creates another account, order or authorization.
       await db.transaction().execute(async (tx) => {
@@ -66,7 +81,8 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB) {
                 data: row.encrypted_payload,
               }),
             );
-            await transport.sendMail({
+            if (config.resend) await sendCustomerMailHTTP(config.resend, mail, row.id);
+            else await transport!.sendMail({
               from: config.smtp!.from,
               to: mail.to,
               subject: mail.subject,

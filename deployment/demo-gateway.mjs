@@ -7,7 +7,7 @@ const SESSION_MS = 12 * 60 * 60 * 1000;
 const digest = value => crypto.createHash('sha256').update(value).digest();
 const equal = (a, b) => crypto.timingSafeEqual(digest(a), digest(b));
 
-export function createDemoGateway({ origin, password, sessionKey, upstreamPort, allowLocalHttp = false }) {
+export function createDemoGateway({ origin, password, sessionKey, upstreamPort, allowLocalHttp = false, customerAuth = { enabled: false, google: false, apple: false } }) {
   const publicUrl = new URL(origin);
   const local = allowLocalHttp && publicUrl.protocol === 'http:' && publicUrl.hostname === '127.0.0.1';
   if ((!local && publicUrl.protocol !== 'https:') || publicUrl.origin !== origin || publicUrl.username || publicUrl.password)
@@ -15,6 +15,33 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
   if (typeof password !== 'string' || password.length < 16 || sessionKey.length < 32)
     throw Error('Configure a private demo password of at least 16 characters.');
   const cookieName = local ? 'bolt_demo_local_test' : COOKIE;
+  const customerEnabled = customerAuth.enabled === true;
+  const gateSameSite = customerEnabled ? 'Lax' : 'Strict';
+  const returnCookie = local ? 'bolt_demo_return_test' : '__Host-bolt_demo_return';
+  const customerCookie = new RegExp(`^${local ? '' : '__Secure-'}bolt_customer\\.(session_token|session_data|account_data|dont_remember|state|oauth_state)(\\.\\d+)?$`);
+  const getCookie = (req, name) => (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(name + '='))?.slice(name.length + 1);
+  const customerRoute = p => p === '/api/customer' || p.startsWith('/api/customer/') || p.startsWith('/api/customer-auth/');
+  const cookieRoute = p => customerRoute(p) || p === '/api/v1/orders' || p.startsWith('/api/v1/orders/');
+  const safeReturn = value => {
+    if (typeof value !== 'string' || value.length > 1800 || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null;
+    try { const u = new URL(value, origin); return u.origin === origin && (['/cuenta', '/eliminar-cuenta'].includes(u.pathname) || u.pathname.startsWith('/api/customer-auth/')) ? value : null; } catch { return null; }
+  };
+  const continuationKey = crypto.createHmac('sha256', sessionKey).update('customer-return:' + password).digest();
+  const sealReturn = value => {
+    const iv = crypto.randomBytes(12), cipher = crypto.createCipheriv('aes-256-gcm', continuationKey, iv);
+    const encrypted = Buffer.concat([cipher.update(JSON.stringify({ path: value, expires: Date.now() + 600000 })), cipher.final()]);
+    return Buffer.concat([iv, cipher.getAuthTag(), encrypted]).toString('base64url');
+  };
+  const readReturn = req => {
+    try {
+      const value = getCookie(req, returnCookie); if (!value || value.length > 3500) return null;
+      const bytes = Buffer.from(value, 'base64url'), decipher = crypto.createDecipheriv('aes-256-gcm', continuationKey, bytes.subarray(0, 12));
+      decipher.setAuthTag(bytes.subarray(12, 28));
+      const data = JSON.parse(Buffer.concat([decipher.update(bytes.subarray(28)), decipher.final()]).toString());
+      return data.expires > Date.now() && data.expires <= Date.now() + 600000 ? safeReturn(data.path) : null;
+    } catch { return null; }
+  };
+  const returnHeader = (value, maxAge) => `${returnCookie}=${value}; Path=/; HttpOnly; SameSite=Lax; Max-Age=${maxAge}${local ? '' : '; Secure'}`;
   const key = crypto.createHmac('sha256', sessionKey).update(password).digest();
   const sign = body => crypto.createHmac('sha256', key).update(body).digest('base64url');
   const session = () => {
@@ -40,7 +67,7 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
     res.setHeader('Cache-Control', 'no-store');
     res.setHeader('X-Robots-Tag', 'noindex, nofollow, noarchive');
     res.setHeader('X-Content-Type-Options', 'nosniff');
-    res.setHeader('Referrer-Policy', 'same-origin');
+    res.setHeader('Referrer-Policy', customerEnabled ? 'no-referrer' : 'same-origin');
     res.setHeader('X-Frame-Options', 'DENY');
     if (!local) res.setHeader('Strict-Transport-Security', 'max-age=86400');
     const pathname = (req.url || '/').split('?')[0];
@@ -52,11 +79,17 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
       } catch { return send(res, 503, '{"ready":false}', 'application/json'); }
     }
     if (req.headers.host !== publicUrl.host) return send(res, 421, 'Origen no autorizado.');
-    if (req.headers.origin && req.headers.origin !== origin) return send(res, 403, 'Origen no autorizado.');
-    if (!['GET', 'HEAD', 'OPTIONS'].includes(req.method || '') && req.headers.origin !== origin)
+    // Only configured OAuth callbacks may arrive without the private demo cookie.
+    // Better Auth still verifies the state cookie, one-use DB state, PKCE and provider response.
+    const applePost = customerEnabled && customerAuth.apple && pathname === '/api/customer-auth/callback/apple' && req.method === 'POST' && req.headers.origin === 'https://appleid.apple.com';
+    const oauthGet = customerEnabled && req.method === 'GET' && (
+      customerAuth.google && pathname === '/api/customer-auth/callback/google' ||
+      customerAuth.apple && pathname === '/api/customer-auth/callback/apple');
+    if (!applePost && req.headers.origin && req.headers.origin !== origin) return send(res, 403, 'Origen no autorizado.');
+    if (!applePost && !['GET', 'HEAD', 'OPTIONS'].includes(req.method || '') && req.headers.origin !== origin)
       return send(res, 403, 'Confirma la operación desde la demo.');
     if (pathname === '/__demo/logout' && req.method === 'POST') {
-      res.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; SameSite=Strict; Max-Age=0${local ? '' : '; Secure'}`);
+      res.setHeader('Set-Cookie', `${cookieName}=; Path=/; HttpOnly; SameSite=${gateSameSite}; Max-Age=0${local ? '' : '; Secure'}`);
       res.writeHead(303, { Location: '/' }); return res.end();
     }
     if (pathname === '/__demo/login' && req.method === 'POST') {
@@ -69,23 +102,36 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
       if (!equal(new URLSearchParams(body).get('password') || '', password)) {
         failures.push(Date.now()); return send(res, 401, form('Clave incorrecta.'));
       }
-      res.setHeader('Set-Cookie', `${cookieName}=${session()}; Path=/; HttpOnly; SameSite=Strict; Max-Age=${SESSION_MS / 1000}${local ? '' : '; Secure'}`);
-      res.writeHead(303, { Location: '/__demo' }); return res.end();
+      res.setHeader('Set-Cookie', [`${cookieName}=${session()}; Path=/; HttpOnly; SameSite=${gateSameSite}; Max-Age=${SESSION_MS / 1000}${local ? '' : '; Secure'}`, ...(customerEnabled ? [returnHeader('', 0)] : [])]);
+      res.writeHead(303, { Location: customerEnabled && readReturn(req) || '/__demo' }); return res.end();
     }
-    if (!authorized(req)) {
+    if (!authorized(req) && !applePost && !oauthGet) {
+      const continuation = customerEnabled && req.method === 'GET' && safeReturn(req.url);
+      if (continuation) {
+        res.setHeader('Set-Cookie', returnHeader(sealReturn(continuation), 600));
+        return send(res, 200, form());
+      }
       if (pathname.startsWith('/api/')) return send(res, 401, '{"error":"Acceso privado de demo requerido"}', 'application/json');
       return send(res, 200, form());
     }
-    if (pathname === '/__demo') return send(res, 200, `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Revisión</title><style>body{font:18px system-ui;color:#122039;max-width:760px;padding:24px;margin:auto}a,button{display:inline-block;margin:8px;padding:16px;border-radius:12px;border:1px solid #ed0018;color:#b90016;background:white;font:inherit}li{margin:12px 0}strong{color:#ed0018}</style><h1>BOLT · Demo de revisión</h1><p><strong>SIMULACIÓN</strong> · No se cobran pagos ni se solicitan entregas reales.</p><p>Revisión del PR #16: registro y Mi cuenta, junto con las mejoras de ubicación de la demo. Cambios pendientes de integrar a main.</p><p><strong>Registro real pendiente de configuración.</strong> Puedes revisar la bienvenida, formularios y documentos legales. Google, Apple y correo están deshabilitados hasta configurar sus servicios. La clave de esta demo no es una cuenta de cliente.</p><nav><a href="/cuenta">Registro y Mi cuenta</a><a href="/">Cliente</a><a href="/simulacion">Preparar simulación</a><a href="/operacion?tab=DESPACHOS">Administración</a><a href="/conductor">BOLT Conductor</a></nav><ol><li>En Preparar simulación, inicia sesión y habilita dos conductores ficticios.</li><li>Consulta el catálogo y las presentaciones. Para crear pedidos usa el alimento de prueba SIM-FOOD-20KG; tiene medidas ficticias explícitas.</li><li>Prueba Cedritos, Chía y Cajicá con entrega programada desde Suba. Cota debe bloquear la entrega.</li><li>Crea una compra dividida, prepara cada entrega y acepta la oferta en Conductor.</li><li>En administración revisa HIST-READY, HIST-WAY y HIST-CLOSED. La recuperación de HIST-CLOSED no debe reabrirlo.</li></ol><p>Las cuentas del simulador permiten intervenir todos los datos de esta demo. No uses datos personales reales. La ubicación vence: actualiza los conductores libres desde el simulador si no aparecen disponibles.</p><p>La cámara y el GPS requieren permisos del navegador. No equivalen a seguimiento en segundo plano.</p><form method="post" action="/__demo/logout"><button>Salir de la demo</button></form></html>`);
+    if (pathname === '/__demo') return send(res, 200, `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Revisión</title><style>body{font:18px system-ui;color:#122039;max-width:760px;padding:24px;margin:auto}a,button{display:inline-block;margin:8px;padding:16px;border-radius:12px;border:1px solid #ed0018;color:#b90016;background:white;font:inherit}li{margin:12px 0}strong{color:#ed0018}</style><h1>BOLT · Demo de revisión</h1><p><strong>SIMULACIÓN</strong> · No se cobran pagos ni se solicitan entregas reales.</p><p>Revisión del PR #16: registro y Mi cuenta, junto con las mejoras de ubicación de la demo. Cambios pendientes de integrar a main.</p><p>${customerEnabled ? '<strong>Pruebas privadas de cuentas.</strong> Mi cuenta indica los métodos habilitados. Usa únicamente tu propio correo y datos mínimos para las pruebas autorizadas; los pedidos y repartos siguen siendo simulados.' : '<strong>Registro real pendiente de configuración.</strong> Puedes revisar la bienvenida, formularios y documentos legales. Google, Apple y correo están deshabilitados hasta configurar sus servicios.'} La clave de esta demo no es una cuenta de cliente.</p><nav><a href="/cuenta">Registro y Mi cuenta</a><a href="/">Cliente</a><a href="/simulacion">Preparar simulación</a><a href="/operacion?tab=DESPACHOS">Administración</a><a href="/conductor">BOLT Conductor</a></nav><ol><li>En Preparar simulación, inicia sesión y habilita dos conductores ficticios.</li><li>Consulta el catálogo y las presentaciones. Para crear pedidos usa el alimento de prueba SIM-FOOD-20KG; tiene medidas ficticias explícitas.</li><li>Prueba Cedritos, Chía y Cajicá con entrega programada desde Suba. Cota debe bloquear la entrega.</li><li>Crea una compra dividida, prepara cada entrega y acepta la oferta en Conductor.</li><li>En administración revisa HIST-READY, HIST-WAY y HIST-CLOSED. La recuperación de HIST-CLOSED no debe reabrirlo.</li></ol><p>Las cuentas del simulador permiten intervenir todos los datos de esta demo. No uses datos personales reales. La ubicación vence: actualiza los conductores libres desde el simulador si no aparecen disponibles.</p><p>La cámara y el GPS requieren permisos del navegador. No equivalen a seguimiento en segundo plano.</p><form method="post" action="/__demo/logout"><button>Salir de la demo</button></form></html>`);
     const headers = { ...req.headers, host: `127.0.0.1:${upstreamPort}` };
-    if (headers.origin) headers.origin = `http://127.0.0.1:${upstreamPort}`;
+    if (headers.origin && !customerEnabled) headers.origin = `http://127.0.0.1:${upstreamPort}`;
     delete headers.cookie;
+    if (customerEnabled && cookieRoute(pathname)) {
+      const selected = (req.headers.cookie || '').split(';').map(x => x.trim()).filter(x => customerCookie.test(x.split('=')[0]));
+      if (selected.length) headers.cookie = selected.join('; ');
+    }
     for (const header of Object.keys(headers)) if (header.startsWith('x-forwarded-') || header === 'forwarded') delete headers[header];
     // Preserve the app's admin/driver bearer and guest token; never replace them with demo access.
     const proxy = http.request({ hostname: '127.0.0.1', port: upstreamPort, method: req.method, path: req.url, headers }, incoming => {
       const outgoing = { ...incoming.headers };
       delete outgoing['access-control-allow-origin'];
       delete outgoing['set-cookie'];
+      if (customerEnabled && cookieRoute(pathname)) {
+        const selected = (incoming.headers['set-cookie'] || []).filter(x => customerCookie.test(x.split('=')[0]) && !/;\s*Domain=/i.test(x) && /;\s*HttpOnly(?:;|$)/i.test(x) && (local || /;\s*Secure(?:;|$)/i.test(x)));
+        if (selected.length) outgoing['set-cookie'] = selected;
+      }
       outgoing['cache-control'] = 'no-store';
       res.writeHead(incoming.statusCode || 502, outgoing);
       incoming.pipe(res);

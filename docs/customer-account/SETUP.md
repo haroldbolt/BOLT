@@ -2,7 +2,7 @@
 
 ## Estado y decisiones
 
-El código implementa Better Auth 1.7.20 + PostgreSQL, cookies de cliente separadas y proveedores oficiales Google/Apple. Actualmente **no existen accesos de producción** de base de datos, OAuth ni correo. Sin configuración, la tienda permite invitados y los métodos aparecen deshabilitados: no hay una identidad simulada.
+El código implementa Better Auth 1.7.20 + PostgreSQL, cookies de cliente separadas y proveedores oficiales Google/Apple. La configuración de la demo evoluciona por separado: consultar [DEMO-SERVICES.md](./DEMO-SERVICES.md). **No hay una instalación de producción autorizada**. Sin configuración, la tienda permite invitados y los métodos aparecen deshabilitados: no hay una identidad simulada.
 
 Se evaluó [Supabase Auth](https://supabase.com/docs/guides/auth/auth-identity-linking): vincula automáticamente identidades por correo. Se eligió Better Auth para deshabilitar esa vinculación mediante `disableImplicitLinking: true`. Supabase puede alojar **PostgreSQL**, sin usar su Auth ni exponer una clave privilegiada al navegador. Un vínculo nuevo requiere una sesión verificada reciente, una acción explícita y completar la autorización del proveedor; no se permite vincular correos distintos. Un usuario de Apple con correo privado puede tener su cuenta independiente.
 
@@ -18,6 +18,8 @@ Se evaluó [Supabase Auth](https://supabase.com/docs/guides/auth/auth-identity-l
 Las sesiones se revalidan al volver a la pestaña y cada cinco minutos mientras está visible. La respuesta de sesión propaga las cookies renovadas al navegador. Las sesiones vencen en 7 días, se renuevan a partir de 1 día de antigüedad y las acciones sensibles usan una sesión reciente (15 minutos, además de verificación de eliminación por correo). Las cookies son HttpOnly, SameSite=Lax y Secure en HTTPS; no usan localStorage. Hay límites de intentos persistidos en PostgreSQL. No habilitar confianza indiscriminada en cabeceras `X-Forwarded-For`; ajustar y probar la cadena de proxy antes de producción para evitar límites compartidos o IP manipulable.
 
 ## Correo transaccional
+
+Railway Free/Trial/Hobby requiere correo por HTTPS. El adaptador Resend utiliza `BOLT_RESEND_API_KEY` y `BOLT_CUSTOMER_MAIL_FROM`; no configurarlo junto con SMTP. Ver los pasos y límites en [DEMO-SERVICES.md](./DEMO-SERVICES.md).
 
 Configurar SMTP real, remitente empresarial, dominio verificado, SPF/DKIM/DMARC y TLS. El correo `agroabastossas@gmail.com` es un canal empresarial confirmado, **no una credencial SMTP ni prueba de un servicio transaccional contratado**. Para Apple relay, registrar y verificar el origen de correo en Apple Developer.
 

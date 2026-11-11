@@ -2,6 +2,9 @@ import { resumeVerifiedDeletion } from "../customer/deletion";
 /** Protocol tests with signed fixture identities. No Google/Apple credentials or network calls. */
 import assert from "node:assert/strict";
 import fs from "node:fs";
+import http from "node:http";
+import {createDemoGateway} from "../../deployment/demo-gateway.mjs";
+import {acceptsDemoOrigin} from "../lib/demoOrigin";
 import express from "express";
 import { sql } from "kysely";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
@@ -16,7 +19,26 @@ for (const file of ["001-auth.sql", "001-data.sql"])
 const app = express(),
   server = app.listen(0, "127.0.0.1");
 await new Promise<void>((r) => server.once("listening", r));
-const origin = `http://127.0.0.1:${(server.address() as any).port}`;
+const hosted = process.argv.includes('--gateway');
+const backendPort = (server.address() as any).port;
+const origin = hosted ? 'https://demo.example' : `http://127.0.0.1:${backendPort}`;
+let gateway: ReturnType<typeof createDemoGateway> | undefined;
+let gatewayPort = 0;
+const gatePassword = 'ISOLATED-DEMO-PASSWORD-ONLY';
+if (hosted) {
+  app.use((req,res,next)=>acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},backendPort,{BOLT_DEMO_CUSTOMER_ACCOUNTS:'1',BOLT_CUSTOMER_ORIGIN:origin,BOLT_APPLE_SERVICE_ID:'fixture',BOLT_APPLE_CLIENT_SECRET:'fixture'}) ? next() : res.sendStatus(403));
+  gateway = createDemoGateway({origin, password:gatePassword, sessionKey:'ISOLATED-KEY'.repeat(6), upstreamPort:backendPort,customerAuth:{enabled:true,google:true,apple:true}});
+  gateway.listen(0,'127.0.0.1');await new Promise<void>(r=>gateway!.once('listening',r));gatewayPort=(gateway.address() as any).port;
+}
+function throughGateway(input: string | URL | Request, init?: RequestInit): Promise<Response> {
+  const u=new URL(typeof input==='string'?input:input instanceof URL?input.href:input.url);
+  return new Promise((resolve,reject)=>{
+    const headers=Object.fromEntries(new Headers(init?.headers));
+    const req=http.request({hostname:'127.0.0.1',port:gatewayPort,path:u.pathname+u.search,method:init?.method||'GET',headers:{...headers,Host:'demo.example'}},res=>{
+      const chunks:Buffer[]=[];res.on('data',b=>chunks.push(b));res.on('end',()=>{const h=new Headers();for(const [k,v]of Object.entries(res.headers))for(const x of Array.isArray(v)?v:[v])if(x!==undefined)h.append(k,x);resolve(new Response(res.statusCode===204?null:Buffer.concat(chunks),{status:res.statusCode,headers:h}));});
+    });req.on('error',reject);req.end(init?.body?.toString());
+  });
+}
 const config = {
   ...fixtureConfig(origin),
   google: { clientId: "ISOLATED-GOOGLE", clientSecret: "ISOLATED-SECRET" },
@@ -49,7 +71,7 @@ globalThis.fetch = async (input, init) => {
         ? input.href
         : input.url,
   );
-  if (url.origin === origin) return realFetch(input, init);
+  if (url.origin === origin) return hosted ? throughGateway(input, init) : realFetch(input, init);
   if (
     url.href === "https://www.googleapis.com/oauth2/v3/certs" ||
     url.href === "https://appleid.apple.com/auth/keys"
@@ -94,6 +116,7 @@ globalThis.fetch = async (input, init) => {
   throw Error("Unexpected external request in isolated OAuth test");
 };
 const jar = new Map<string, string>();
+const cookieAttributes = new Map<string,string>();
 async function request(
   route: string,
   body?: any,
@@ -105,7 +128,7 @@ async function request(
     redirect: "manual",
     headers: {
       Origin: form ? "https://appleid.apple.com" : origin,
-      Cookie: [...jar].map(([k, v]) => `${k}=${v}`).join("; "),
+      Cookie: [...jar].filter(([k])=>!hosted || !form || /SameSite=None/i.test(cookieAttributes.get(k)||'')).map(([k, v]) => `${k}=${v}`).join("; "),
       ...(body === undefined
         ? {}
         : {
@@ -122,6 +145,7 @@ async function request(
     const p = cookie.split(";")[0],
       i = p.indexOf("=");
     jar.set(p.slice(0, i), p.slice(i + 1));
+    cookieAttributes.set(p.slice(0,i),cookie);
   }
   return {
     status: response.status,
@@ -147,6 +171,11 @@ async function begin(register = true, legal: any = consent) {
   });
 }
 try {
+  if (hosted) {
+    const login=await throughGateway(origin+'/__demo/login',{method:'POST',headers:{Origin:origin},body:new URLSearchParams({password:gatePassword})});
+    for(const cookie of login.headers.getSetCookie()){const pair=cookie.split(';')[0],i=pair.indexOf('=');jar.set(pair.slice(0,i),pair.slice(i+1));cookieAttributes.set(pair.slice(0,i),cookie);}
+    assert.equal(login.status,303);
+  }
   assert.equal((await begin(true, null)).status, 400);
   console.log(
     "PASS OAuth registration requires server-validated legal consent",
@@ -294,6 +323,8 @@ try {
   );
 } finally {
   globalThis.fetch = realFetch;
+  if(gateway){gateway.closeAllConnections();await new Promise<void>(r=>gateway!.close(()=>r()));}
+  server.closeAllConnections();
   await new Promise<void>((r) => server.close(() => r()));
   await db.destroy();
 }

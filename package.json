@@ -20,7 +20,9 @@
     "test:customer": "tsx src/tests/customerAccounts.test.ts && tsx src/tests/customerOAuth.test.ts && tsx src/tests/customerMigration.test.ts && tsx src/tests/customerStorage.test.ts && tsx src/tests/customerOrderIntegration.test.ts",
     "customer:migrate": "node --import tsx scripts/customer/migrate.ts",
     "customer:retry-deletions": "node --import tsx scripts/customer/retry-deletions.ts",
-    "customer:review": "node --import tsx scripts/customer/browser-review.ts"
+    "customer:review": "node --import tsx scripts/customer/browser-review.ts",
+    "customer:provision-demo": "node --import tsx scripts/customer/provision-demo.ts --apply",
+    "test:customer-hosted": "node deployment/demo-gateway.test.mjs && node deployment/demo-customer.test.mjs && tsx src/tests/customerMailHTTP.test.ts && tsx src/tests/customerOAuth.test.ts --gateway"
   },
   "dependencies": {
     "@better-auth/core": "1.7.20",

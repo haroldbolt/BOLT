@@ -3,6 +3,7 @@ export interface CustomerConfig {
   secret: string;
   databaseURL?: string;
   legalApproved: boolean;
+  resend?: { apiKey: string; from: string };
   smtp?: {
     host: string;
     port: number;
@@ -46,12 +47,17 @@ export function readCustomerConfig(
           from: env.BOLT_SMTP_FROM,
         }
       : undefined;
+  const resend = env.BOLT_RESEND_API_KEY && env.BOLT_CUSTOMER_MAIL_FROM
+    ? { apiKey: env.BOLT_RESEND_API_KEY, from: env.BOLT_CUSTOMER_MAIL_FROM }
+    : undefined;
+  if (smtp && resend) throw Error("Choose only one customer mail transport");
   return {
     origin: url.origin,
     secret: env.BOLT_CUSTOMER_SECRET,
     databaseURL: env.BOLT_CUSTOMER_DATABASE_URL,
     legalApproved: env.BOLT_LEGAL_APPROVED_VERSION === "2026-11-10-draft-1",
     smtp,
+    resend,
     google:
       env.BOLT_GOOGLE_CLIENT_ID && env.BOLT_GOOGLE_CLIENT_SECRET
         ? {
@@ -68,6 +74,8 @@ export function readCustomerConfig(
         : undefined,
   };
 }
+export const customerEmailConfigured = (config?: CustomerConfig | null) =>
+  !!(config?.smtp || config?.resend);
 export type CustomerSession = {
   user: {
     id: string;
