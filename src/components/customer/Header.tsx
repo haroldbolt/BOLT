@@ -1,3 +1,4 @@
+import {CATALOG_SECTIONS,type CatalogSection} from '../../lib/brandDirectory';
 import { COVERAGE_NOTICE } from '../../data/coverageConfig';
 import React, { useState } from 'react';
 import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark, Layers } from 'lucide-react';
@@ -9,8 +10,8 @@ interface HeaderProps {
   currentStore: Store | null;
   allStores: Store[];
   onSelectStore: (store: Store) => void;
-  selectedCategory: MainCategory;
-  onSelectCategory: (cat: MainCategory) => void;
+  selectedCategory: CatalogSection;
+  onSelectCategory: (cat: CatalogSection) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
   activeOrdersCount: number;
@@ -38,18 +39,7 @@ interface HeaderProps {
   wishlistCollectionsCount?: number;
 }
 
-const CATEGORIES: MainCategory[] = [
-  'Todo',
-  'Perros',
-  'Gatos',
-  'Alimentos',
-  'Arenas',
-  'Snacks',
-  'Farmacia',
-  'Antipulgas',
-  'Higiene',
-  'Accesorios',
-];
+const CATEGORIES = CATALOG_SECTIONS;
 
 export const Header: React.FC<HeaderProps> = ({
   customerIdentity,

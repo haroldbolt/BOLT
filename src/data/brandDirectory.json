@@ -1,0 +1,3065 @@
+{
+  "source": "https://cultivacenter.com/es/pages/marcas",
+  "verifiedAt": "2026-11-11T20:25:53.708Z",
+  "entries": [
+    {
+      "id": "ag-food-acana",
+      "name": "ACANA",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/agro-logo-acana-oficial.svg?v=1646056672467016247",
+      "source": "https://cultivacenter.com/es/collections/acana",
+      "match": {
+        "vendor": "ACANA"
+      }
+    },
+    {
+      "id": "ag-food-adore",
+      "name": "Adore",
+      "group": "Alimentación y nutrición",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Adore",
+      "match": {
+        "vendor": "Adore"
+      }
+    },
+    {
+      "id": "ag-food-agilitygold",
+      "name": "Agility Gold",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/10.png?v=16244577714438520341",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Agility+Gold",
+      "match": {
+        "vendor": "Agility Gold"
+      }
+    },
+    {
+      "id": "ag-food-alpo",
+      "name": "Alpo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/22_7c9a705b-b034-497b-8420-65f40ec206eb.png?v=14515031074260210672",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Alpo",
+      "match": {
+        "vendor": "Alpo"
+      }
+    },
+    {
+      "id": "ag-food-animallovers",
+      "name": "Animal Lovers",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-animal-lovers-oficial-2026.webp?v=11639414864982002224",
+      "source": "https://cultivacenter.com/es/collections/all/casa-animal-lovers+alimentos",
+      "match": {
+        "tags": [
+          "casa-animal-lovers",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-artu",
+      "name": "Artù",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-artu-oficial-2026.webp?v=8935360378989210171",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Art%C3%B9",
+      "match": {
+        "vendor": "Artù"
+      }
+    },
+    {
+      "id": "ag-food-begginstrips",
+      "name": "Beggin Strips",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-beggin-oficial.png?v=4553681386858194851",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Beggin+Strips",
+      "match": {
+        "vendor": "Beggin Strips"
+      }
+    },
+    {
+      "id": "ag-food-birbo",
+      "name": "Birbo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-birbo-oficial-2026.png?v=10097107113209157525",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Birbo",
+      "match": {
+        "vendor": "Birbo"
+      }
+    },
+    {
+      "id": "ag-food-bonnat",
+      "name": "Bonnat",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/30.webp?v=3455651356119711079",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Bonnat",
+      "match": {
+        "vendor": "Bonnat"
+      }
+    },
+    {
+      "id": "ag-food-brbones",
+      "name": "BR Bones",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-br-bones-oficial-2026.webp?v=3188660024249725471",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=BR+Bones",
+      "match": {
+        "vendor": "BR Bones"
+      }
+    },
+    {
+      "id": "ag-food-brforcat",
+      "name": "BR for Cat",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/32.webp?v=8088132908557237649",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=BR+for+Cat",
+      "match": {
+        "vendor": "BR for Cat"
+      }
+    },
+    {
+      "id": "ag-food-brfordog",
+      "name": "BR for Dog",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/31.webp?v=1172658383479075627",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=BR+for+Dog",
+      "match": {
+        "vendor": "BR for Dog"
+      }
+    },
+    {
+      "id": "ag-food-brforsmallpets",
+      "name": "BR for Small Pets",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-br-for-small-pets-oficial-2026.webp?v=830120693919139264",
+      "source": "https://cultivacenter.com/es/collections/all/casa-br-for-small-pets+alimentos",
+      "match": {
+        "tags": [
+          "casa-br-for-small-pets",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-bravery",
+      "name": "Bravery",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/agro-logo-bravery-oficial.png?v=10248395780087380634",
+      "source": "https://cultivacenter.com/es/collections/bravery",
+      "match": {
+        "vendor": "Bravery"
+      }
+    },
+    {
+      "id": "ag-food-caninecarryouts",
+      "name": "Canine Carry Outs",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-canine-carry-outs-oficial.svg?v=10036647077001958800",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Canine+Carry+Outs",
+      "match": {
+        "vendor": "Canine Carry Outs"
+      }
+    },
+    {
+      "id": "ag-food-canito",
+      "name": "Canito",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-canito-oficial.png?v=11560548745080436497",
+      "source": "https://cultivacenter.com/es/collections/all/casa-canito+alimentos",
+      "match": {
+        "tags": [
+          "casa-canito",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-catchow",
+      "name": "Cat Chow",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/33.webp?v=17664740736708912208",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Cat+Chow",
+      "match": {
+        "vendor": "Cat Chow"
+      }
+    },
+    {
+      "id": "ag-food-chunky",
+      "name": "Chunky",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/12.png?v=5010417964079281187",
+      "source": "https://cultivacenter.com/es/collections/all/casa-chunky",
+      "match": {
+        "tags": [
+          "casa-chunky"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-churu",
+      "name": "Churu",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-churu-oficial.png?v=4524641704449435243",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Churu",
+      "match": {
+        "vendor": "Churu"
+      }
+    },
+    {
+      "id": "ag-food-countryvalue",
+      "name": "Country Value",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-country-value-verificado.jpg?v=3539792868141920503",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Country+Value",
+      "match": {
+        "vendor": "Country Value"
+      }
+    },
+    {
+      "id": "ag-food-dentalife",
+      "name": "Dentalife",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dentalife-oficial.png?v=12340111103531341306",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dentalife",
+      "match": {
+        "vendor": "Dentalife"
+      }
+    },
+    {
+      "id": "ag-food-diamond",
+      "name": "Diamond",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-diamond-oficial.svg?v=16502187449918980039",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Diamond",
+      "match": {
+        "vendor": "Diamond"
+      }
+    },
+    {
+      "id": "ag-food-diamondcare",
+      "name": "Diamond Care",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-diamond-care-oficial.svg?v=7432194766235742808",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Diamond+Care",
+      "match": {
+        "vendor": "Diamond Care"
+      }
+    },
+    {
+      "id": "ag-food-diamondnaturals",
+      "name": "Diamond Naturals",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-diamond-naturals-oficial.svg?v=5213900731399925467",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Diamond+Naturals",
+      "match": {
+        "vendor": "Diamond Naturals"
+      }
+    },
+    {
+      "id": "ag-food-diamondpro89",
+      "name": "Diamond Pro89",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-diamond-pro89-oficial.svg?v=11998790901664841937",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Diamond+Pro89",
+      "match": {
+        "vendor": "Diamond Pro89"
+      }
+    },
+    {
+      "id": "ag-food-dingo",
+      "name": "Dingo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dingo-oficial.webp?v=12006470735117700960",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dingo",
+      "match": {
+        "vendor": "Dingo"
+      }
+    },
+    {
+      "id": "ag-food-disugual",
+      "name": "Disugual",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-disugual.png?v=17597816535040937283",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Disugual",
+      "match": {
+        "vendor": "Disugual"
+      }
+    },
+    {
+      "id": "ag-food-dogchow",
+      "name": "Dog Chow",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/36.webp?v=10123133601952985522",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dog+Chow",
+      "match": {
+        "vendor": "Dog Chow"
+      }
+    },
+    {
+      "id": "ag-food-dogo",
+      "name": "Dogo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dogo-oficial-2026.png?v=3910221484827933044",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dogo",
+      "match": {
+        "vendor": "Dogo"
+      }
+    },
+    {
+      "id": "ag-food-dogourmet",
+      "name": "Dogourmet",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dogourmet-oficial.png?v=4363053699572911553",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dogourmet",
+      "match": {
+        "vendor": "Dogourmet"
+      }
+    },
+    {
+      "id": "ag-food-donkan",
+      "name": "Donkan",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-donkan-oficial.png?v=15128867980964139475",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Donkan",
+      "match": {
+        "vendor": "Donkan"
+      }
+    },
+    {
+      "id": "ag-food-donkat",
+      "name": "Donkat",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-donkat-oficial.png?v=8883227620297728915",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Donkat",
+      "match": {
+        "vendor": "Donkat"
+      }
+    },
+    {
+      "id": "ag-food-dowolf",
+      "name": "DoWolf",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dowolf.png?v=12084283295393806420",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=DoWolf",
+      "match": {
+        "vendor": "DoWolf"
+      }
+    },
+    {
+      "id": "ag-food-drclauders",
+      "name": "Dr. Clauders",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dr-clauder-s-2026.png?v=15858330317998045861",
+      "source": "https://cultivacenter.com/es/collections/all/casa-dr-clauders+alimentos",
+      "match": {
+        "tags": [
+          "casa-dr-clauders",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-emeraldpet",
+      "name": "Emerald Pet",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-emerald-pet-oficial.png?v=11667536594027476108",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Emerald+Pet",
+      "match": {
+        "vendor": "Emerald Pet"
+      }
+    },
+    {
+      "id": "ag-food-evolve",
+      "name": "Evolve",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/39.webp?v=14296276719225145130",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Evolve",
+      "match": {
+        "vendor": "Evolve"
+      }
+    },
+    {
+      "id": "ag-food-excellent",
+      "name": "Excellent",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-excellent-oficial-2026.png?v=14246992738613949667",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Excellent",
+      "match": {
+        "vendor": "Excellent"
+      }
+    },
+    {
+      "id": "ag-food-fancyfeast",
+      "name": "Fancy Feast",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-fancy-feast-oficial.png?v=12834048998286369395",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Fancy+Feast",
+      "match": {
+        "vendor": "Fancy Feast"
+      }
+    },
+    {
+      "id": "ag-food-fawna",
+      "name": "Fawna",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-fawna-oficial-2026.png?v=7620888006207438116",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Fawna",
+      "match": {
+        "vendor": "Fawna"
+      }
+    },
+    {
+      "id": "ag-food-felix",
+      "name": "Felix",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-felix-2026.png?v=8291056987435835277",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Felix",
+      "match": {
+        "vendor": "Felix"
+      }
+    },
+    {
+      "id": "ag-food-filpo",
+      "name": "Filpo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-filpo-oficial.png?v=2290553570387163081",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Filpo",
+      "match": {
+        "vendor": "Filpo"
+      }
+    },
+    {
+      "id": "ag-food-formulanatural",
+      "name": "Fórmula Natural",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-formula-natural.png?v=8257512551603554826",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=F%C3%B3rmula+Natural",
+      "match": {
+        "vendor": "Fórmula Natural"
+      }
+    },
+    {
+      "id": "ag-food-fruitables",
+      "name": "Fruitables",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-fruitables-oficial.svg?v=9077903382702464039",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Fruitables",
+      "match": {
+        "vendor": "Fruitables"
+      }
+    },
+    {
+      "id": "ag-food-gatsy",
+      "name": "Gatsy",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/42.webp?v=16870610818635016112",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Gatsy",
+      "match": {
+        "vendor": "Gatsy"
+      }
+    },
+    {
+      "id": "ag-food-gemon",
+      "name": "Gemon",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-gemon-oficial.png?v=5880629987884263806",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Gemon",
+      "match": {
+        "vendor": "Gemon"
+      }
+    },
+    {
+      "id": "ag-food-gnawlers",
+      "name": "Gnawlers",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-gnawlers-oficial.png?v=8552661996496585594",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Gnawlers",
+      "match": {
+        "vendor": "Gnawlers"
+      }
+    },
+    {
+      "id": "ag-food-gosolutions",
+      "name": "Go! Solutions",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/43.webp?v=7629649315517008672",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Go%21+Solutions",
+      "match": {
+        "vendor": "Go! Solutions"
+      }
+    },
+    {
+      "id": "ag-food-goodboy",
+      "name": "GoodBoy",
+      "group": "Alimentación y nutrición",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=GoodBoy",
+      "match": {
+        "vendor": "GoodBoy"
+      }
+    },
+    {
+      "id": "ag-food-grandvitaequilibrio",
+      "name": "Grand Vita Equilibrio",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-grandvita-equilibrio-oficial.svg?v=15762257707648753858",
+      "source": "https://cultivacenter.com/es/collections/grandvita",
+      "match": {
+        "vendor": "Grand Vita Equilibrio"
+      }
+    },
+    {
+      "id": "ag-food-guabinatural",
+      "name": "Guabi Natural",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-guabi-natural-oficial-2026.png?v=10158600342480142375",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Guabi+Natural",
+      "match": {
+        "vendor": "Guabi Natural"
+      }
+    },
+    {
+      "id": "ag-food-guaumor",
+      "name": "Guaumor",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-guaumor-oficial-2026.png?v=16973764671600525963",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Guaumor",
+      "match": {
+        "vendor": "Guaumor"
+      }
+    },
+    {
+      "id": "ag-food-happytails",
+      "name": "Happy Tails",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-happy-tails.jpg?v=4855351384873220494",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Happy+Tails",
+      "match": {
+        "vendor": "Happy Tails"
+      }
+    },
+    {
+      "id": "ag-food-happybarf",
+      "name": "happyBARF",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-happybarf.png?v=8053173645537301526",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=happyBARF",
+      "match": {
+        "vendor": "happyBARF"
+      }
+    },
+    {
+      "id": "ag-food-hills",
+      "name": "Hills",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/9.png?v=6547825043178024581",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Hills",
+      "match": {
+        "vendor": "Hills"
+      }
+    },
+    {
+      "id": "ag-food-hollidaymv",
+      "name": "Holliday MV",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-holliday-mv-oficial-2026.png?v=10428423854068563590",
+      "source": "https://cultivacenter.com/es/collections/all/casa-holliday+alimentos",
+      "match": {
+        "tags": [
+          "casa-holliday",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-houndations",
+      "name": "Houndations",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-houndations.webp?v=11530491372039894469",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Houndations",
+      "match": {
+        "vendor": "Houndations"
+      }
+    },
+    {
+      "id": "ag-food-hpm",
+      "name": "HPM",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-veterinary-hpm-oficial.png?v=3007471808810211209",
+      "source": "https://cultivacenter.com/es/collections/all/casa-hpm",
+      "match": {
+        "tags": [
+          "casa-hpm"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-inaba",
+      "name": "Inaba",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-inaba-oficial.png?v=11040616138131941725",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Inaba",
+      "match": {
+        "vendor": "Inaba"
+      }
+    },
+    {
+      "id": "ag-food-littlebigpaw",
+      "name": "Little Big Paw",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-littlebigpaw-oficial.png?v=16743880644414116500",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Little+Big+Paw",
+      "match": {
+        "vendor": "Little Big Paw"
+      }
+    },
+    {
+      "id": "ag-food-lovingpets",
+      "name": "Loving Pets",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-loving-pets.webp?v=17164333361209588605",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Loving+Pets",
+      "match": {
+        "vendor": "Loving Pets"
+      }
+    },
+    {
+      "id": "ag-food-manjar",
+      "name": "Manjar",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-manjar-oficial-2026.png?v=11931232063533519904",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Manjar",
+      "match": {
+        "vendor": "Manjar"
+      }
+    },
+    {
+      "id": "ag-food-max",
+      "name": "Max",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/16.png?v=16166527456078495663",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Max",
+      "match": {
+        "vendor": "Max"
+      }
+    },
+    {
+      "id": "ag-food-maxicat",
+      "name": "MaxiCat",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-maxicat-oficial-2026.png?v=13161678076937005808",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=MaxiCat",
+      "match": {
+        "vendor": "MaxiCat"
+      }
+    },
+    {
+      "id": "ag-food-menthic",
+      "name": "Menthic",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-menthic.png?v=4553237098412915865",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Menthic",
+      "match": {
+        "vendor": "Menthic"
+      }
+    },
+    {
+      "id": "ag-food-meowmix",
+      "name": "Meow Mix",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-meow-mix-oficial.svg?v=8451167401124072402",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Meow+Mix",
+      "match": {
+        "vendor": "Meow Mix"
+      }
+    },
+    {
+      "id": "ag-food-michiko",
+      "name": "Michiko",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-michiko-oficial-2026.webp?v=6662936573490749231",
+      "source": "https://cultivacenter.com/es/collections/all/casa-michiko+alimentos",
+      "match": {
+        "tags": [
+          "casa-michiko",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-mirringo",
+      "name": "Mirringo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-mirringo-oficial-2026.png?v=12904112778459277765",
+      "source": "https://cultivacenter.com/es/collections/all/casa-mirringo+alimentos",
+      "match": {
+        "tags": [
+          "casa-mirringo",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-monello",
+      "name": "Monello",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-monello-oficial-2026.png?v=15362728752113506745",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Monello",
+      "match": {
+        "vendor": "Monello"
+      }
+    },
+    {
+      "id": "ag-food-monellobites",
+      "name": "Monello Bites",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-monello-bites-oficial-2026.png?v=12995826172734771194",
+      "source": "https://cultivacenter.com/es/collections/all/casa-monello-bites",
+      "match": {
+        "tags": [
+          "casa-monello-bites"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-monelloselect",
+      "name": "Monello Select",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-monello-select-oficial-2026.png?v=7665131325190328266",
+      "source": "https://cultivacenter.com/es/collections/all/casa-monello-select",
+      "match": {
+        "tags": [
+          "casa-monello-select"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-monge",
+      "name": "Monge",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-monge-oficial.jpg?v=321256480652022261",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Monge",
+      "match": {
+        "vendor": "Monge"
+      }
+    },
+    {
+      "id": "ag-food-morando",
+      "name": "Morando",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-morando.svg?v=17613312216911263029",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Morando",
+      "match": {
+        "vendor": "Morando"
+      }
+    },
+    {
+      "id": "ag-food-mungos",
+      "name": "Mungos",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-mungos-oficial.svg?v=10804839392793008529",
+      "source": "https://cultivacenter.com/es/collections/all/casa-mungos+alimentos",
+      "match": {
+        "tags": [
+          "casa-mungos",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-mypet",
+      "name": "My Pet",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-my-pet-oficial.png?v=4702811895233325983",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=My+Pet",
+      "match": {
+        "vendor": "My Pet"
+      }
+    },
+    {
+      "id": "ag-food-nd",
+      "name": "N&D",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/47.webp?v=15595382101911784165",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=N%26D",
+      "match": {
+        "vendor": "N&D"
+      }
+    },
+    {
+      "id": "ag-food-naturalselect",
+      "name": "Natural Select",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-natural-select-oficial.jpg?v=15518394023751303429",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Natural+Select",
+      "match": {
+        "vendor": "Natural Select"
+      }
+    },
+    {
+      "id": "ag-food-naturo",
+      "name": "Naturo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-naturo-oficial.svg?v=1532589274807220679",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Naturo",
+      "match": {
+        "vendor": "Naturo"
+      }
+    },
+    {
+      "id": "ag-food-nu3pets",
+      "name": "Nu3Pets",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-nu3-pets-oficial.png?v=3474045173036024895",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nu3Pets",
+      "match": {
+        "vendor": "Nu3Pets"
+      }
+    },
+    {
+      "id": "ag-food-nulo",
+      "name": "Nulo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-nulo-oficial-2026.jpg?v=7336402361785250333",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nulo",
+      "match": {
+        "vendor": "Nulo"
+      }
+    },
+    {
+      "id": "ag-food-nupec",
+      "name": "NUPEC",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/agro-logo-nupec-oficial.svg?v=5886879465107693468",
+      "source": "https://cultivacenter.com/es/collections/nupec",
+      "match": {
+        "vendor": "NUPEC"
+      }
+    },
+    {
+      "id": "ag-food-nutranuggets",
+      "name": "Nutra Nuggets",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/17.png?v=6276379678089560696",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nutra-Nuggets",
+      "match": {
+        "vendor": "Nutra-Nuggets"
+      }
+    },
+    {
+      "id": "ag-food-nutrecan",
+      "name": "Nutrecan",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-nutrecan-oficial.png?v=10838008749849024585",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nutrecan",
+      "match": {
+        "vendor": "Nutrecan"
+      }
+    },
+    {
+      "id": "ag-food-nutrion",
+      "name": "Nutrion",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-nutrion-oficial.png?v=1913894460922093761",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nutrion",
+      "match": {
+        "vendor": "Nutrion"
+      }
+    },
+    {
+      "id": "ag-food-nutriss",
+      "name": "Nutriss",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-nutriss-oficial-2026.png?v=436134900835052019",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nutriss",
+      "match": {
+        "vendor": "Nutriss"
+      }
+    },
+    {
+      "id": "ag-food-ohmaigat",
+      "name": "Oh Mai Gat!",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-oh-mai-gat-oficial.png?v=4870326320237795138",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ohmaigat",
+      "match": {
+        "vendor": "Ohmaigat"
+      }
+    },
+    {
+      "id": "ag-food-optimum",
+      "name": "Optimum",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-optimum-oficial.png?v=10618654717216310749",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Optimum",
+      "match": {
+        "vendor": "Optimum"
+      }
+    },
+    {
+      "id": "ag-food-orabone",
+      "name": "Ora Bone",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-ora-bone.jpg?v=8392447364201250697",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ora+Bone",
+      "match": {
+        "vendor": "Ora Bone"
+      }
+    },
+    {
+      "id": "ag-food-orijen",
+      "name": "ORIJEN",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/agro-logo-orijen-oficial.svg?v=13099824142396117126",
+      "source": "https://cultivacenter.com/es/collections/orijen",
+      "match": {
+        "vendor": "ORIJEN"
+      }
+    },
+    {
+      "id": "ag-food-panchoskitchen",
+      "name": "Pancho's Kitchen",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-panchos.png?v=1482989597992361498",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pancho%27s+Kitchen",
+      "match": {
+        "vendor": "Pancho's Kitchen"
+      }
+    },
+    {
+      "id": "ag-food-pazzy",
+      "name": "Pazzy",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pazzy-oficial.webp?v=12431055799607422484",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pazzy",
+      "match": {
+        "vendor": "Pazzy"
+      }
+    },
+    {
+      "id": "ag-food-pedigree",
+      "name": "Pedigree",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pedigree-oficial.png?v=15623991022289383767",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pedigree",
+      "match": {
+        "vendor": "Pedigree"
+      }
+    },
+    {
+      "id": "ag-food-performance",
+      "name": "Performance",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-performance-oficial-2026.webp?v=8471037186617141647",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Performance",
+      "match": {
+        "vendor": "Performance"
+      }
+    },
+    {
+      "id": "ag-food-phoenix",
+      "name": "Phoenix",
+      "group": "Alimentación y nutrición",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Phoenix",
+      "match": {
+        "vendor": "Phoenix"
+      }
+    },
+    {
+      "id": "ag-food-piamontina",
+      "name": "Piamontina",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-piamontina-oficial.png?v=14544095788485050421",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Piamontina",
+      "match": {
+        "vendor": "Piamontina"
+      }
+    },
+    {
+      "id": "ag-food-pixie",
+      "name": "Pixie",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pixie.png?v=12636463249033743483",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pixie+alimentos",
+      "match": {
+        "tags": [
+          "casa-pixie",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-plaisir",
+      "name": "Plaisir",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-plaisir-oficial-2026.png?v=17449078099994873911",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Plaisir",
+      "match": {
+        "vendor": "Plaisir"
+      }
+    },
+    {
+      "id": "ag-food-popnbites",
+      "name": "Pop’n Bites",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pop-n-bites-oficial-2026.webp?v=3704720445360921569",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pop%E2%80%99n+Bites",
+      "match": {
+        "vendor": "Pop’n Bites"
+      }
+    },
+    {
+      "id": "ag-food-predadorpet",
+      "name": "Predador Pet",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-predador-pets.jpg?v=10033084379922151012",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Predador+Pet",
+      "match": {
+        "vendor": "Predador Pet"
+      }
+    },
+    {
+      "id": "ag-food-premio",
+      "name": "Premio",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-premio-oficial-2026.webp?v=9271711081635490838",
+      "source": "https://cultivacenter.com/es/collections/all/casa-premio+alimentos",
+      "match": {
+        "tags": [
+          "casa-premio",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-prestige",
+      "name": "Prestige",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-prestige-oficial-2026.png?v=10302840196617820126",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Prestige",
+      "match": {
+        "vendor": "Prestige"
+      }
+    },
+    {
+      "id": "ag-food-proplan",
+      "name": "Pro Plan",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/19.png?v=9270615454911969993",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pro-plan+alimentos",
+      "match": {
+        "tags": [
+          "casa-pro-plan",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-purinaone",
+      "name": "Purina One",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-purina-one-oficial.png?v=6918442195523958993",
+      "source": "https://cultivacenter.com/es/collections/all/casa-purina-one",
+      "match": {
+        "tags": [
+          "casa-purina-one"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-reelds",
+      "name": "Reeld’s",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-reelds-oficial.png?v=15481121295358383587",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ronik",
+      "match": {
+        "vendor": "Ronik"
+      }
+    },
+    {
+      "id": "ag-food-ringo",
+      "name": "Ringo",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-ringo-oficial-2026.png?v=1595624394723944143",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ringo",
+      "match": {
+        "vendor": "Ringo"
+      }
+    },
+    {
+      "id": "ag-food-royalcanin",
+      "name": "Royal Canin",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/20.png?v=805548421049686828",
+      "source": "https://cultivacenter.com/es/collections/all/casa-royal-canin+alimentos",
+      "match": {
+        "tags": [
+          "casa-royal-canin",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-sheba",
+      "name": "Sheba",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-sheba-oficial.png?v=15346481339641851807",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Sheba",
+      "match": {
+        "vendor": "Sheba"
+      }
+    },
+    {
+      "id": "ag-food-sieger",
+      "name": "Sieger",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-sieger-oficial.webp?v=14091286940635305367",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Sieger",
+      "match": {
+        "vendor": "Sieger"
+      }
+    },
+    {
+      "id": "ag-food-smartbones",
+      "name": "SMARTBONES",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-smartbones-oficial.png?v=10711557465104135736",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=SMARTBONES",
+      "match": {
+        "vendor": "SMARTBONES"
+      }
+    },
+    {
+      "id": "ag-food-snackerygourmet",
+      "name": "Snackery Gourmet",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-snackery-gourmet-oficial.png?v=11314326250498526990",
+      "source": "https://cultivacenter.com/es/collections/all/casa-snackery-gourmet",
+      "match": {
+        "tags": [
+          "casa-snackery-gourmet"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-tasteofthewild",
+      "name": "Taste Of The Wild",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/21.png?v=4850594847346045350",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Taste+Of+The+Wild",
+      "match": {
+        "vendor": "Taste Of The Wild"
+      }
+    },
+    {
+      "id": "ag-food-temptations",
+      "name": "Temptations",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-temptations-oficial.png?v=8840652076141747541",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Temptations",
+      "match": {
+        "vendor": "Temptations"
+      }
+    },
+    {
+      "id": "ag-food-tetra",
+      "name": "Tetra",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tetra.svg?v=6662921941542223687",
+      "source": "https://cultivacenter.com/es/collections/all/casa-tetra+alimentos",
+      "match": {
+        "tags": [
+          "casa-tetra",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-threepets",
+      "name": "Three Pets",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-three-pets.png?v=719349750193665259",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Three+Pets",
+      "match": {
+        "vendor": "Three Pets"
+      }
+    },
+    {
+      "id": "ag-food-tikicat",
+      "name": "Tiki-Cat",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tiki-cat-oficial.webp?v=14209746474857392323",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Tiki-Cat",
+      "match": {
+        "vendor": "Tiki-Cat"
+      }
+    },
+    {
+      "id": "ag-food-tikidog",
+      "name": "Tiki-Dog",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tiki-dog-oficial.svg?v=13926426942534439215",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Tiki-Dog",
+      "match": {
+        "vendor": "Tiki-Dog"
+      }
+    },
+    {
+      "id": "ag-food-tommycat",
+      "name": "Tommy Cat",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tommy-cat-oficial-2026.webp?v=1235933179223396078",
+      "source": "https://cultivacenter.com/es/collections/all/casa-tommy+alimentos+gatos",
+      "match": {
+        "tags": [
+          "casa-tommy",
+          "alimentos",
+          "gatos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-tommydog",
+      "name": "Tommy Dog",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tommy-dog-oficial-2026.webp?v=2350084174121938803",
+      "source": "https://cultivacenter.com/es/collections/all/casa-tommy+alimentos+perros",
+      "match": {
+        "tags": [
+          "casa-tommy",
+          "alimentos",
+          "perros"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-treatys",
+      "name": "Treatys",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-treatys-oficial-2026.webp?v=13266508825789616509",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Treatys",
+      "match": {
+        "vendor": "Treatys"
+      }
+    },
+    {
+      "id": "ag-food-vetlife",
+      "name": "Vet Life",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/7.png?v=6033810829639432792",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Vet+Life",
+      "match": {
+        "vendor": "Vet Life"
+      }
+    },
+    {
+      "id": "ag-food-vitacrunch",
+      "name": "Vita Crunch",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-vita-crunch.jpg?v=9297054587586597381",
+      "source": "https://cultivacenter.com/es/collections/all/casa-vita-crunch+alimentos",
+      "match": {
+        "tags": [
+          "casa-vita-crunch",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-vitagrano",
+      "name": "Vitagrano",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-vitagrano-oficial.png?v=12218337874046925175",
+      "source": "https://cultivacenter.com/es/collections/all/casa-vitagrano+alimentos",
+      "match": {
+        "tags": [
+          "casa-vitagrano",
+          "alimentos"
+        ]
+      }
+    },
+    {
+      "id": "ag-food-vitakraft",
+      "name": "Vitakraft",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-vitakraft-oficial.png?v=17718145187609368363",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Vitakraft",
+      "match": {
+        "vendor": "Vitakraft"
+      }
+    },
+    {
+      "id": "ag-food-vivance",
+      "name": "Vivance",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-vivance-oficial-2026.png?v=5479870132601065430",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Vivance",
+      "match": {
+        "vendor": "Vivance"
+      }
+    },
+    {
+      "id": "ag-food-whiskas",
+      "name": "Whiskas",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-whiskas-oficial.png?v=1500742450717592114",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Whiskas",
+      "match": {
+        "vendor": "Whiskas"
+      }
+    },
+    {
+      "id": "ag-food-wholebark",
+      "name": "Whole Bark",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-whole-bark-identidad-oficial.png?v=7850296969338324585",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Whole+Barf",
+      "match": {
+        "vendor": "Whole Barf"
+      }
+    },
+    {
+      "id": "ag-food-wolf",
+      "name": "Wolf",
+      "group": "Alimentación y nutrición",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Wolf",
+      "match": {
+        "vendor": "Wolf"
+      }
+    },
+    {
+      "id": "ag-food-wowcan",
+      "name": "Wow Can",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-wow-can-oficial.svg?v=13227328723867554421",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Wow+Can",
+      "match": {
+        "vendor": "Wow Can"
+      }
+    },
+    {
+      "id": "ag-food-yowup",
+      "name": "Yowup",
+      "group": "Alimentación y nutrición",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-yowup.svg?v=508584075871539453",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Yowup",
+      "match": {
+        "vendor": "Yowup"
+      }
+    },
+    {
+      "id": "ag-hygiene-angora",
+      "name": "Angora",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Angora",
+      "match": {
+        "vendor": "Angora"
+      }
+    },
+    {
+      "id": "ag-hygiene-animallovers",
+      "name": "Animal Lovers",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-animal-lovers-oficial-2026.webp?v=11639414864982002224",
+      "source": "https://cultivacenter.com/es/collections/all/casa-animal-lovers+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-animal-lovers",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-babycat",
+      "name": "Baby Cat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-baby-cat.jpg?v=16633105623180182495",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Baby+Cat",
+      "match": {
+        "vendor": "Baby Cat"
+      }
+    },
+    {
+      "id": "ag-hygiene-beautypets",
+      "name": "Beauty Pets",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-beauty-pets-oficial-2026.webp?v=3129027692560006812",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Beauty+Pets",
+      "match": {
+        "vendor": "Beauty Pets"
+      }
+    },
+    {
+      "id": "ag-hygiene-binnermascotas",
+      "name": "Binner Mascotas",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-binner-oficial.svg?v=17027396557116656988",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Binner+Mascotas",
+      "match": {
+        "vendor": "Binner Mascotas"
+      }
+    },
+    {
+      "id": "ag-hygiene-biocat",
+      "name": "Bio Cat",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Bio+Cat",
+      "match": {
+        "vendor": "Bio Cat"
+      }
+    },
+    {
+      "id": "ag-hygiene-bonnyvet",
+      "name": "Bonny Vet",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Bonny+Vet",
+      "match": {
+        "vendor": "Bonny Vet"
+      }
+    },
+    {
+      "id": "ag-hygiene-brforsmallpets",
+      "name": "BR for Small Pets",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-br-for-small-pets-oficial-2026.webp?v=830120693919139264",
+      "source": "https://cultivacenter.com/es/collections/all/casa-br-for-small-pets+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-br-for-small-pets",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-calabazapets",
+      "name": "Calabaza Pets",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-calabaza-oficial-2026.webp?v=5018771348376004701",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Calabaza+Pets",
+      "match": {
+        "vendor": "Calabaza Pets"
+      }
+    },
+    {
+      "id": "ag-hygiene-canadalitter",
+      "name": "Canada Litter",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-canada-litter-oficial-2026.webp?v=12541649557617977111",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Canada+Litter",
+      "match": {
+        "vendor": "Canada Litter"
+      }
+    },
+    {
+      "id": "ag-hygiene-canamor",
+      "name": "Canamor",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-canamor-oficial.png?v=16011677076428304319",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Canamor",
+      "match": {
+        "vendor": "Canamor"
+      }
+    },
+    {
+      "id": "ag-hygiene-canito",
+      "name": "Canito",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-canito-oficial.png?v=11560548745080436497",
+      "source": "https://cultivacenter.com/es/collections/all/casa-canito+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-canito",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-catcan",
+      "name": "Catcan",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-catcan.jpg?v=5687864596224845323",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Catcan",
+      "match": {
+        "vendor": "Catcan"
+      }
+    },
+    {
+      "id": "ag-hygiene-comfortkat",
+      "name": "Comfort Kat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-comfort-kat-2026.png?v=13422872893411129122",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Comfort+Kat",
+      "match": {
+        "vendor": "Comfort Kat"
+      }
+    },
+    {
+      "id": "ag-hygiene-dinky",
+      "name": "Dinky",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dinky.jpg?v=4359393483844971389",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dinky",
+      "match": {
+        "vendor": "Dinky"
+      }
+    },
+    {
+      "id": "ag-hygiene-ecocat",
+      "name": "Ecocat",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ecocat",
+      "match": {
+        "vendor": "Ecocat"
+      }
+    },
+    {
+      "id": "ag-hygiene-esbelt",
+      "name": "Esbelt",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Esbelt",
+      "match": {
+        "vendor": "Esbelt"
+      }
+    },
+    {
+      "id": "ag-hygiene-eurolitter",
+      "name": "Eurolitter",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-eurolitter-oficial-2026.webp?v=18015946534241517090",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Eurolitter",
+      "match": {
+        "vendor": "Eurolitter"
+      }
+    },
+    {
+      "id": "ag-hygiene-felinepine",
+      "name": "Feline Pine",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-feline-pine-oficial.png?v=18103191951877538125",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Feline+Pine",
+      "match": {
+        "vendor": "Feline Pine"
+      }
+    },
+    {
+      "id": "ag-hygiene-felineco",
+      "name": "Felineco",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-felineco-oficial.png?v=10952485238178846750",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Felineco",
+      "match": {
+        "vendor": "Felineco"
+      }
+    },
+    {
+      "id": "ag-hygiene-foficat",
+      "name": "Fofi Cat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-foficat-2026.png?v=7446396931471446031",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Fofi+Cat",
+      "match": {
+        "vendor": "Fofi Cat"
+      }
+    },
+    {
+      "id": "ag-hygiene-freemiau",
+      "name": "Freemiau",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-freemiau-2026.png?v=17559089578044499574",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Freemiau",
+      "match": {
+        "vendor": "Freemiau"
+      }
+    },
+    {
+      "id": "ag-hygiene-freshstep",
+      "name": "Fresh Step",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-fresh-step-oficial-2026.png?v=1320595698839138050",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Fresh+Step",
+      "match": {
+        "vendor": "Fresh Step"
+      }
+    },
+    {
+      "id": "ag-hygiene-furminator",
+      "name": "Furminator",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-furminator-oficial.png?v=2506731240933929800",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Furminator",
+      "match": {
+        "vendor": "Furminator"
+      }
+    },
+    {
+      "id": "ag-hygiene-gatissimo",
+      "name": "Gatissimo",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-gatissimo-oficial-2026.webp?v=1993505646355469550",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Gatissimo",
+      "match": {
+        "vendor": "Gatissimo"
+      }
+    },
+    {
+      "id": "ag-hygiene-holliday",
+      "name": "Holliday",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-holliday.png?v=17810854596052891588",
+      "source": "https://cultivacenter.com/es/collections/all/casa-holliday+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-holliday",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-hushpet",
+      "name": "Hushpet",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Hushpet",
+      "match": {
+        "vendor": "Hushpet"
+      }
+    },
+    {
+      "id": "ag-hygiene-kingcat",
+      "name": "King Cat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-king-cat-oficial-2026.webp?v=5596521601578437949",
+      "source": "https://cultivacenter.com/es/collections/all/casa-king-cat",
+      "match": {
+        "tags": [
+          "casa-king-cat"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-michiko",
+      "name": "Michiko",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-michiko-oficial-2026.webp?v=6662936573490749231",
+      "source": "https://cultivacenter.com/es/collections/all/casa-michiko+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-michiko",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-mirringo",
+      "name": "Mirringo",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-mirringo-oficial-2026.png?v=12904112778459277765",
+      "source": "https://cultivacenter.com/es/collections/all/casa-mirringo+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-mirringo",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-mistycat",
+      "name": "MISTY CAT",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=MISTY+CAT",
+      "match": {
+        "vendor": "MISTY CAT"
+      }
+    },
+    {
+      "id": "ag-hygiene-mistypet",
+      "name": "Misty pet",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Misty+pet",
+      "match": {
+        "vendor": "Misty pet"
+      }
+    },
+    {
+      "id": "ag-hygiene-moderna",
+      "name": "Moderna",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-moderna-oficial.svg?v=9858219104240952510",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Moderna",
+      "match": {
+        "vendor": "Moderna"
+      }
+    },
+    {
+      "id": "ag-hygiene-moustache",
+      "name": "Moustache",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-moustache-oficial-2026.webp?v=13672897503616752107",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Moustache",
+      "match": {
+        "vendor": "Moustache"
+      }
+    },
+    {
+      "id": "ag-hygiene-mrmiau",
+      "name": "Mr Miau",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-mr-miau-oficial-2026.webp?v=4888761793479897963",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Mr+Miau",
+      "match": {
+        "vendor": "Mr Miau"
+      }
+    },
+    {
+      "id": "ag-hygiene-naturesmiracle",
+      "name": "Nature's Miracle",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-natures-miracle-oficial.jpg?v=10382978565285844310",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nature%27s+Miracle",
+      "match": {
+        "vendor": "Nature's Miracle"
+      }
+    },
+    {
+      "id": "ag-hygiene-neoclean",
+      "name": "Neo Clean",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-neo-clean.jpg?v=12547961386302406403",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Neo+Clean",
+      "match": {
+        "vendor": "Neo Clean"
+      }
+    },
+    {
+      "id": "ag-hygiene-nobascience",
+      "name": "Noba Science",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-noba-science-oficial-2026.webp?v=1924848376091295549",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Noba+Science",
+      "match": {
+        "vendor": "Noba Science"
+      }
+    },
+    {
+      "id": "ag-hygiene-odourbuster",
+      "name": "Odour Buster",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-odour-buster-oficial.png?v=2912464101313008690",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Odour+Buster",
+      "match": {
+        "vendor": "Odour Buster"
+      }
+    },
+    {
+      "id": "ag-hygiene-petbrand",
+      "name": "Pet Brand",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pet+Brand",
+      "match": {
+        "vendor": "Pet Brand"
+      }
+    },
+    {
+      "id": "ag-hygiene-petsociety",
+      "name": "Pet Society",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pet-society-oficial.png?v=9938005695093989778",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pet+Society",
+      "match": {
+        "vendor": "Pet Society"
+      }
+    },
+    {
+      "id": "ag-hygiene-petspa",
+      "name": "Pet Spa",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pet-spa-oficial.png?v=7344812171846494680",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pet-spa",
+      "match": {
+        "tags": [
+          "casa-pet-spa"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-petys",
+      "name": "Petys",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-petys-oficial.svg?v=6338556992551240588",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Petys",
+      "match": {
+        "vendor": "Petys"
+      }
+    },
+    {
+      "id": "ag-hygiene-premio",
+      "name": "Premio",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-premio-oficial-2026.webp?v=9271711081635490838",
+      "source": "https://cultivacenter.com/es/collections/all/casa-premio+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-premio",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-renovapet",
+      "name": "Renovapet",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Renovapet",
+      "match": {
+        "vendor": "Renovapet"
+      }
+    },
+    {
+      "id": "ag-hygiene-royalcat",
+      "name": "Royal Cat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-royal-cat.jpg?v=4677528949204004025",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Royal+Cat",
+      "match": {
+        "vendor": "Royal Cat"
+      }
+    },
+    {
+      "id": "ag-hygiene-safari",
+      "name": "Safari",
+      "group": "Arenas e higiene",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Safari",
+      "match": {
+        "vendor": "Safari"
+      }
+    },
+    {
+      "id": "ag-hygiene-savic",
+      "name": "Savic",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-savic-oficial.svg?v=2839928378793546099",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Savic",
+      "match": {
+        "vendor": "Savic"
+      }
+    },
+    {
+      "id": "ag-hygiene-sepicat",
+      "name": "Sepicat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-sepicat-oficial.webp?v=8512807081472077114",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Sepicat",
+      "match": {
+        "vendor": "Sepicat"
+      }
+    },
+    {
+      "id": "ag-hygiene-synergylabs",
+      "name": "SynergyLabs",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-synergylabs-oficial.svg?v=8879169528225263270",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=SYNERGY+LA",
+      "match": {
+        "vendor": "SYNERGY LA"
+      }
+    },
+    {
+      "id": "ag-hygiene-tetra",
+      "name": "Tetra",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tetra.svg?v=6662921941542223687",
+      "source": "https://cultivacenter.com/es/collections/all/casa-tetra+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-tetra",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-tommycat",
+      "name": "Tommy Cat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tommy-cat-oficial-2026.webp?v=1235933179223396078",
+      "source": "https://cultivacenter.com/es/collections/all/casa-tommy+higiene-y-cuidado",
+      "match": {
+        "tags": [
+          "casa-tommy",
+          "higiene-y-cuidado"
+        ]
+      }
+    },
+    {
+      "id": "ag-hygiene-tropiclean",
+      "name": "TROPICLEAN",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-tropiclean-oficial.png?v=4213669047662200351",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=TROPICLEAN",
+      "match": {
+        "vendor": "TROPICLEAN"
+      }
+    },
+    {
+      "id": "ag-hygiene-unikat",
+      "name": "Unikat",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-unikat.jpg?v=1374338102341053990",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Unikat",
+      "match": {
+        "vendor": "Unikat"
+      }
+    },
+    {
+      "id": "ag-hygiene-wagsandwiggles",
+      "name": "Wags And Wiggles",
+      "group": "Arenas e higiene",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-wags-wiggles-oficial.png?v=4666021358525758642",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Wags+And+Wiggles",
+      "match": {
+        "vendor": "Wags And Wiggles"
+      }
+    },
+    {
+      "id": "ag-pharma-adaptil",
+      "name": "Adaptil",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-adaptil.png?v=11174508120066420650",
+      "source": "https://cultivacenter.com/es/collections/all/casa-adaptil",
+      "match": {
+        "tags": [
+          "casa-adaptil"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-adnvital",
+      "name": "ADN Vital",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-adn-vital.png?v=646943111101741085",
+      "source": "https://cultivacenter.com/es/collections/all/casa-adn-vital",
+      "match": {
+        "tags": [
+          "casa-adn-vital"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-advantix",
+      "name": "Advantix",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-advantix.png?v=17234005795034792519",
+      "source": "https://cultivacenter.com/es/collections/all/casa-advantix",
+      "match": {
+        "tags": [
+          "casa-advantix"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-advocate",
+      "name": "Advocate",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-advocate.png?v=3778146900344415834",
+      "source": "https://cultivacenter.com/es/collections/all/casa-advocate",
+      "match": {
+        "tags": [
+          "casa-advocate"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-agrovetmarket",
+      "name": "Agrovet Market",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-agrovet-market.png?v=5528456404453060231",
+      "source": "https://cultivacenter.com/es/collections/all/casa-agrovet-market",
+      "match": {
+        "tags": [
+          "casa-agrovet-market"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-agvsaludanimal",
+      "name": "Agv Salud Animal",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-agv-salud-animal.png?v=2197626191582289578",
+      "source": "https://cultivacenter.com/es/collections/all/casa-agv-salud-animal",
+      "match": {
+        "tags": [
+          "casa-agv-salud-animal"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-atrevia",
+      "name": "Atrevia",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-atrevia.webp?v=1638976436521110152",
+      "source": "https://cultivacenter.com/es/collections/all/casa-atrevia",
+      "match": {
+        "tags": [
+          "casa-atrevia"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-basicfarm",
+      "name": "Basic Farm",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-basic-farm.png?v=5480329300772271498",
+      "source": "https://cultivacenter.com/es/collections/all/casa-basic-farm",
+      "match": {
+        "tags": [
+          "casa-basic-farm"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-bayer",
+      "name": "Bayer",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-bayer-oficial.svg?v=3264690385530050034",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Bayer",
+      "match": {
+        "vendor": "Bayer"
+      }
+    },
+    {
+      "id": "ag-pharma-biozoo",
+      "name": "Biozoo",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-biozoo.png?v=18388304856993755710",
+      "source": "https://cultivacenter.com/es/collections/all/casa-biozoo",
+      "match": {
+        "tags": [
+          "casa-biozoo"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-boehringeringelheim",
+      "name": "Boehringer Ingelheim",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-boehringer-ingelheim.png?v=12555712737304579940",
+      "source": "https://cultivacenter.com/es/collections/all/casa-boehringer-ingelheim",
+      "match": {
+        "tags": [
+          "casa-boehringer-ingelheim"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-bravecto",
+      "name": "Bravecto",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/Bravecto.webp?v=3169017743070258351",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Bravecto",
+      "match": {
+        "vendor": "Bravecto"
+      }
+    },
+    {
+      "id": "ag-pharma-bussie",
+      "name": "Bussie",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-bussie.png?v=3722548182931279612",
+      "source": "https://cultivacenter.com/es/collections/all/casa-bussie",
+      "match": {
+        "tags": [
+          "casa-bussie"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-calier",
+      "name": "Calier",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-calier.png?v=1147939878104993200",
+      "source": "https://cultivacenter.com/es/collections/all/casa-calier",
+      "match": {
+        "tags": [
+          "casa-calier"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-california",
+      "name": "California",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-california.png?v=5513020668875630508",
+      "source": "https://cultivacenter.com/es/collections/all/casa-california",
+      "match": {
+        "tags": [
+          "casa-california"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-carval",
+      "name": "Carval",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-carval.png?v=2046813609532935277",
+      "source": "https://cultivacenter.com/es/collections/all/casa-carval",
+      "match": {
+        "tags": [
+          "casa-carval"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-ceva",
+      "name": "Ceva",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-ceva.jpg?v=15161597017181514926",
+      "source": "https://cultivacenter.com/es/collections/all/casa-ceva",
+      "match": {
+        "tags": [
+          "casa-ceva"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-chalver",
+      "name": "Chalver",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-chalver.png?v=16145243191418244063",
+      "source": "https://cultivacenter.com/es/collections/all/casa-chalver",
+      "match": {
+        "tags": [
+          "casa-chalver"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-colvet",
+      "name": "Colvet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-colvet.jpg?v=17341200429857287495",
+      "source": "https://cultivacenter.com/es/collections/all/casa-colvet",
+      "match": {
+        "tags": [
+          "casa-colvet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-credelio",
+      "name": "Credelio",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/34.webp?v=255272372190589345",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Credelio",
+      "match": {
+        "vendor": "Credelio"
+      }
+    },
+    {
+      "id": "ag-pharma-drclauders",
+      "name": "Dr. Clauders",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dr-clauder-s-2026.png?v=15858330317998045861",
+      "source": "https://cultivacenter.com/es/collections/all/casa-dr-clauders+farmacia",
+      "match": {
+        "tags": [
+          "casa-dr-clauders",
+          "farmacia"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-dubro",
+      "name": "Dubro",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-dubro.png?v=4634236627239463500",
+      "source": "https://cultivacenter.com/es/collections/all/casa-dubro",
+      "match": {
+        "tags": [
+          "casa-dubro"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-elanco",
+      "name": "Elanco",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-elanco.png?v=7300485229864436312",
+      "source": "https://cultivacenter.com/es/collections/all/casa-elanco",
+      "match": {
+        "tags": [
+          "casa-elanco"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-esenciasflorales",
+      "name": "Esencias Florales",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-esencias-florales-oficial-2026.png?v=1866706652310590328",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Esencias+Florales",
+      "match": {
+        "vendor": "Esencias Florales"
+      }
+    },
+    {
+      "id": "ag-pharma-euroetika",
+      "name": "EUROETIKA",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-euroetika.svg?v=6197474543592178753",
+      "source": "https://cultivacenter.com/es/collections/all/casa-euroetika",
+      "match": {
+        "tags": [
+          "casa-euroetika"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-feliway",
+      "name": "Feliway",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-feliway.png?v=6883486331256225721",
+      "source": "https://cultivacenter.com/es/collections/all/casa-feliway",
+      "match": {
+        "tags": [
+          "casa-feliway"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-galliprant",
+      "name": "Galliprant",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-galliprant.png?v=8773403387306932412",
+      "source": "https://cultivacenter.com/es/collections/all/casa-galliprant",
+      "match": {
+        "tags": [
+          "casa-galliprant"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-heel",
+      "name": "Heel",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-heel.png?v=17489295991861291450",
+      "source": "https://cultivacenter.com/es/collections/all/casa-heel",
+      "match": {
+        "tags": [
+          "casa-heel"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-holliday",
+      "name": "Holliday",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-holliday.png?v=17810854596052891588",
+      "source": "https://cultivacenter.com/es/collections/all/casa-holliday+farmacia",
+      "match": {
+        "tags": [
+          "casa-holliday",
+          "farmacia"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-invet",
+      "name": "Invet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-invet.png?v=3171415450264156543",
+      "source": "https://cultivacenter.com/es/collections/all/casa-invet",
+      "match": {
+        "tags": [
+          "casa-invet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-labyes",
+      "name": "Labyes",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-labyes.svg?v=10034500629181643950",
+      "source": "https://cultivacenter.com/es/collections/all/casa-labyes",
+      "match": {
+        "tags": [
+          "casa-labyes"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-magnovet",
+      "name": "Magnovet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-magnovet.png?v=18221388648581966695",
+      "source": "https://cultivacenter.com/es/collections/all/casa-magnovet",
+      "match": {
+        "tags": [
+          "casa-magnovet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-msd",
+      "name": "MSD",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-msd.png?v=8871989337531977487",
+      "source": "https://cultivacenter.com/es/collections/all/casa-msd",
+      "match": {
+        "tags": [
+          "casa-msd"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-mungos",
+      "name": "Mungos",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-mungos-oficial.svg?v=10804839392793008529",
+      "source": "https://cultivacenter.com/es/collections/all/casa-mungos+farmacia",
+      "match": {
+        "tags": [
+          "casa-mungos",
+          "farmacia"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-naturalfreshly",
+      "name": "Natural Freshly",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-natural-freshly.png?v=14065137008078034502",
+      "source": "https://cultivacenter.com/es/collections/all/casa-natural-freshly",
+      "match": {
+        "tags": [
+          "casa-natural-freshly"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-nexgard",
+      "name": "Nexgard",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/3.png?v=10661391490972847275",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nexgard",
+      "match": {
+        "vendor": "Nexgard"
+      }
+    },
+    {
+      "id": "ag-pharma-novalfarm",
+      "name": "Novalfarm",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-novalfarm.jpg?v=11517358734636320312",
+      "source": "https://cultivacenter.com/es/collections/all/casa-novalfarm",
+      "match": {
+        "tags": [
+          "casa-novalfarm"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-nutraforz",
+      "name": "Nutraforz",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-nutraforz.png?v=8327391611557143527",
+      "source": "https://cultivacenter.com/es/collections/all/casa-nutraforz",
+      "match": {
+        "tags": [
+          "casa-nutraforz"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-organnact",
+      "name": "Organnact",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-organnact.png?v=9120817772021049372",
+      "source": "https://cultivacenter.com/es/collections/all/casa-organnact",
+      "match": {
+        "tags": [
+          "casa-organnact"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-ourofino",
+      "name": "OUROFINO",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-ourofino.png?v=7542144761298115165",
+      "source": "https://cultivacenter.com/es/collections/all/casa-ourofino",
+      "match": {
+        "tags": [
+          "casa-ourofino"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-petmed",
+      "name": "PetMED",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-petmed.svg?v=5041398380106297922",
+      "source": "https://cultivacenter.com/es/collections/all/casa-petmed",
+      "match": {
+        "tags": [
+          "casa-petmed"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-petprime",
+      "name": "PetPrime",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-petprime.webp?v=484341584272036785",
+      "source": "https://cultivacenter.com/es/collections/all/casa-petprime",
+      "match": {
+        "tags": [
+          "casa-petprime"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-petsandcats",
+      "name": "Pets and Cats",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-pets-and-cats.webp?v=14109519705941364953",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pets-and-cats",
+      "match": {
+        "tags": [
+          "casa-pets-and-cats"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-petscollections",
+      "name": "Pets Collections",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pets-collections.jpg?v=5798430089235169339",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pets-collections",
+      "match": {
+        "tags": [
+          "casa-pets-collections"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-pharmapet",
+      "name": "Pharmapet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pharmapet-oficial-2026.webp?v=5281948986830144730",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pharmapet",
+      "match": {
+        "tags": [
+          "casa-pharmapet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-pharmavet",
+      "name": "Pharmavet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-pharmavet.png?v=14245207096084575856",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pharmavet",
+      "match": {
+        "tags": [
+          "casa-pharmavet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-proplan",
+      "name": "Pro Plan",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/19.png?v=9270615454911969993",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pro-plan+farmacia",
+      "match": {
+        "tags": [
+          "casa-pro-plan",
+          "farmacia"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-proconvet",
+      "name": "Proconvet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-proconvet-oficial.png?v=11298940106472070260",
+      "source": "https://cultivacenter.com/es/collections/all/casa-proconvet",
+      "match": {
+        "tags": [
+          "casa-proconvet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-provet",
+      "name": "Provet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-provet.png?v=15571955891043789133",
+      "source": "https://cultivacenter.com/es/collections/all/casa-provet",
+      "match": {
+        "tags": [
+          "casa-provet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-revolution",
+      "name": "Revolution",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/50.webp?v=9775195565202532055",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Revolution",
+      "match": {
+        "vendor": "Revolution"
+      }
+    },
+    {
+      "id": "ag-pharma-royalcanin",
+      "name": "Royal Canin",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/20.png?v=805548421049686828",
+      "source": "https://cultivacenter.com/es/collections/all/casa-royal-canin+farmacia",
+      "match": {
+        "tags": [
+          "casa-royal-canin",
+          "farmacia"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-seresto",
+      "name": "Seresto",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-seresto.png?v=6420358650014510846",
+      "source": "https://cultivacenter.com/es/collections/all/casa-seresto",
+      "match": {
+        "tags": [
+          "casa-seresto"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-sfc",
+      "name": "Sfc",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-sfc.png?v=13492163450745562018",
+      "source": "https://cultivacenter.com/es/collections/all/casa-sfc",
+      "match": {
+        "tags": [
+          "casa-sfc"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-shedx",
+      "name": "Shed-X",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-shed-x.png?v=9054791364609294245",
+      "source": "https://cultivacenter.com/es/collections/all/casa-shed-x",
+      "match": {
+        "tags": [
+          "casa-shed-x"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-simparica",
+      "name": "Simparica",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/52.webp?v=16580055451145811411",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Simparica",
+      "match": {
+        "vendor": "Simparica"
+      }
+    },
+    {
+      "id": "ag-pharma-thyrotabs",
+      "name": "Thyro Tabs",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-thyro-tabs.png?v=1771528922526938177",
+      "source": "https://cultivacenter.com/es/collections/all/casa-thyro-tabs",
+      "match": {
+        "tags": [
+          "casa-thyro-tabs"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-vecol",
+      "name": "Vecol",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-vecol.png?v=2087436663557213660",
+      "source": "https://cultivacenter.com/es/collections/all/casa-vecol",
+      "match": {
+        "tags": [
+          "casa-vecol"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-veslab",
+      "name": "VESLAB",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-veslab.png?v=3996971924092205617",
+      "source": "https://cultivacenter.com/es/collections/all/casa-veslab",
+      "match": {
+        "tags": [
+          "casa-veslab"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-vetnilpet",
+      "name": "Vetnil Pet",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-vetnil-pet.png?v=13999447088440840143",
+      "source": "https://cultivacenter.com/es/collections/all/casa-vetnil-pet",
+      "match": {
+        "tags": [
+          "casa-vetnil-pet"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-virbac",
+      "name": "Virbac",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-virbac.png?v=7349293725065673308",
+      "source": "https://cultivacenter.com/es/collections/all/casa-virbac",
+      "match": {
+        "tags": [
+          "casa-virbac"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-weiss",
+      "name": "Weiss",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-weiss.png?v=1300261354804675349",
+      "source": "https://cultivacenter.com/es/collections/all/casa-weiss",
+      "match": {
+        "tags": [
+          "casa-weiss"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-zoetis",
+      "name": "Zoetis",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-zoetis.svg?v=4661542999336810975",
+      "source": "https://cultivacenter.com/es/collections/all/casa-zoetis",
+      "match": {
+        "tags": [
+          "casa-zoetis"
+        ]
+      }
+    },
+    {
+      "id": "ag-pharma-zoo",
+      "name": "Zoo",
+      "group": "Farmacología y bienestar",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-farma-logo-zoo.png?v=7783342179421037563",
+      "source": "https://cultivacenter.com/es/collections/all/casa-zoo",
+      "match": {
+        "tags": [
+          "casa-zoo"
+        ]
+      }
+    },
+    {
+      "id": "ag-accessories-afp",
+      "name": "Afp",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-afp-oficial.svg?v=14074193764837805403",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Afp",
+      "match": {
+        "vendor": "Afp"
+      }
+    },
+    {
+      "id": "ag-accessories-alanabandana",
+      "name": "Alana & Bandana",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Alana+%26+Bandana",
+      "match": {
+        "vendor": "Alana & Bandana"
+      }
+    },
+    {
+      "id": "ag-accessories-br",
+      "name": "BR",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=BR",
+      "match": {
+        "vendor": "BR"
+      }
+    },
+    {
+      "id": "ag-accessories-carlosmartinez",
+      "name": "Carlos Martinez",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Carlos+Martinez",
+      "match": {
+        "vendor": "Carlos Martinez"
+      }
+    },
+    {
+      "id": "ag-accessories-catit",
+      "name": "Catit",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-catit-oficial.png?v=11970783130408283080",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Hagen+-+Cat+It",
+      "match": {
+        "vendor": "Hagen - Cat It"
+      }
+    },
+    {
+      "id": "ag-accessories-chuckit",
+      "name": "Chuckit",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-chuckit-oficial.jpg?v=9108766172601871675",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Chuckit",
+      "match": {
+        "vendor": "Chuckit"
+      }
+    },
+    {
+      "id": "ag-accessories-coastalpet",
+      "name": "Coastal Pet",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-coastal-pet-oficial.png?v=16797140040454061256",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Coastal+Pet",
+      "match": {
+        "vendor": "Coastal Pet"
+      }
+    },
+    {
+      "id": "ag-accessories-dalmatas",
+      "name": "Dalmata's",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-dalmatas.png?v=16324759343904938093",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dalmata%27s",
+      "match": {
+        "vendor": "Dalmata's"
+      }
+    },
+    {
+      "id": "ag-accessories-dodopet",
+      "name": "Dodopet",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dodopet",
+      "match": {
+        "vendor": "Dodopet"
+      }
+    },
+    {
+      "id": "ag-accessories-dur",
+      "name": "Dur",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Dur",
+      "match": {
+        "vendor": "Dur"
+      }
+    },
+    {
+      "id": "ag-accessories-ezydog",
+      "name": "Ezydog",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-ezydog-oficial.png?v=14962977793267524831",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ezydog",
+      "match": {
+        "vendor": "Ezydog"
+      }
+    },
+    {
+      "id": "ag-accessories-felcan",
+      "name": "Felcan",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-felcan.jpg?v=7279909410059100551",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Felcan",
+      "match": {
+        "vendor": "Felcan"
+      }
+    },
+    {
+      "id": "ag-accessories-ferplast",
+      "name": "Ferplast",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-ferplast.jpg?v=17632675824227151909",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Ferplast",
+      "match": {
+        "vendor": "Ferplast"
+      }
+    },
+    {
+      "id": "ag-accessories-flips",
+      "name": "Flips",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Flips",
+      "match": {
+        "vendor": "Flips"
+      }
+    },
+    {
+      "id": "ag-accessories-gatitud",
+      "name": "Gatitud",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Gatitud",
+      "match": {
+        "vendor": "Gatitud"
+      }
+    },
+    {
+      "id": "ag-accessories-generico",
+      "name": "Generico",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Generico",
+      "match": {
+        "vendor": "Generico"
+      }
+    },
+    {
+      "id": "ag-accessories-guamba",
+      "name": "Guamba",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Guamba",
+      "match": {
+        "vendor": "Guamba"
+      }
+    },
+    {
+      "id": "ag-accessories-kong",
+      "name": "Kong",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-kong-oficial.png?v=5458282644644029338",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Kong",
+      "match": {
+        "vendor": "Kong"
+      }
+    },
+    {
+      "id": "ag-accessories-lilpals",
+      "name": "Lil Pals",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Lil+Pals",
+      "match": {
+        "vendor": "Lil Pals"
+      }
+    },
+    {
+      "id": "ag-accessories-lopets",
+      "name": "Lopets",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Lopets",
+      "match": {
+        "vendor": "Lopets"
+      }
+    },
+    {
+      "id": "ag-accessories-luisaaldana",
+      "name": "Luisa Aldana",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Luisa+Aldana",
+      "match": {
+        "vendor": "Luisa Aldana"
+      }
+    },
+    {
+      "id": "ag-accessories-luuksup",
+      "name": "Luuks Up",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Luuks+Up",
+      "match": {
+        "vendor": "Luuks Up"
+      }
+    },
+    {
+      "id": "ag-accessories-mpets",
+      "name": "M-Pets",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-m-pets-oficial.svg?v=3332932954193551801",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=M-Pets",
+      "match": {
+        "vendor": "M-Pets"
+      }
+    },
+    {
+      "id": "ag-accessories-milena",
+      "name": "Milena",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Milena",
+      "match": {
+        "vendor": "Milena"
+      }
+    },
+    {
+      "id": "ag-accessories-ninaottosson",
+      "name": "Nina Ottosson",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-nina-ottosson-oficial.png?v=13093779748839170902",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Nina+Ottosson",
+      "match": {
+        "vendor": "Nina Ottosson"
+      }
+    },
+    {
+      "id": "ag-accessories-pawise",
+      "name": "Pawise",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pawise-oficial.svg?v=8829818071017126838",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pawise",
+      "match": {
+        "vendor": "Pawise"
+      }
+    },
+    {
+      "id": "ag-accessories-petantojos",
+      "name": "Pet Antojos",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pet+Antojos",
+      "match": {
+        "vendor": "Pet Antojos"
+      }
+    },
+    {
+      "id": "ag-accessories-petcomfort",
+      "name": "Pet Comfort",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pet+Comfort",
+      "match": {
+        "vendor": "Pet Comfort"
+      }
+    },
+    {
+      "id": "ag-accessories-petskingdom",
+      "name": "Pets Kingdom",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Pets+Kingdom",
+      "match": {
+        "vendor": "Pets Kingdom"
+      }
+    },
+    {
+      "id": "ag-accessories-petstages",
+      "name": "Petstages",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-petstages-oficial.png?v=17570756537669439982",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Petstages",
+      "match": {
+        "vendor": "Petstages"
+      }
+    },
+    {
+      "id": "ag-accessories-petworld",
+      "name": "Petworld",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Petworld",
+      "match": {
+        "vendor": "Petworld"
+      }
+    },
+    {
+      "id": "ag-accessories-pixie",
+      "name": "Pixie",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-pixie.png?v=12636463249033743483",
+      "source": "https://cultivacenter.com/es/collections/all/casa-pixie+accesorios",
+      "match": {
+        "tags": [
+          "casa-pixie",
+          "accesorios"
+        ]
+      }
+    },
+    {
+      "id": "ag-accessories-puppis",
+      "name": "Puppis",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-puppis.png?v=17149048456881875381",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Puppis",
+      "match": {
+        "vendor": "Puppis"
+      }
+    },
+    {
+      "id": "ag-accessories-rogz",
+      "name": "Rogz",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-rogz-oficial.svg?v=8646211520402239758",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Rogz",
+      "match": {
+        "vendor": "Rogz"
+      }
+    },
+    {
+      "id": "ag-accessories-vipets",
+      "name": "Vipets",
+      "group": "Accesorios, paseo y juguetes",
+      "image": null,
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Vipets",
+      "match": {
+        "vendor": "Vipets"
+      }
+    },
+    {
+      "id": "ag-accessories-vitagrano",
+      "name": "Vitagrano",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-vitagrano-oficial.png?v=12218337874046925175",
+      "source": "https://cultivacenter.com/es/collections/all/casa-vitagrano+accesorios",
+      "match": {
+        "tags": [
+          "casa-vitagrano",
+          "accesorios"
+        ]
+      }
+    },
+    {
+      "id": "ag-accessories-wawaw",
+      "name": "Wawaw",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-wawaw.jpg?v=3902177989084780985",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Wawaw",
+      "match": {
+        "vendor": "Wawaw"
+      }
+    },
+    {
+      "id": "ag-accessories-zeedog",
+      "name": "Zeedog",
+      "group": "Accesorios, paseo y juguetes",
+      "image": "https://cultivacenter.com/cdn/shop/files/ag-logo-zeedog-oficial.png?v=12282567315541067373",
+      "source": "https://cultivacenter.com/es/collections/vendors?q=Zeedog",
+      "match": {
+        "vendor": "Zeedog"
+      }
+    }
+  ]
+}
