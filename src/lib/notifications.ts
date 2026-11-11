@@ -62,6 +62,7 @@ export class PushNotificationService {
   }
   getActiveNotification() {return this.latestLiveNotification && Date.now()-this.latestLiveNotification.timestamp<notificationLifetime(this.latestLiveNotification) ? this.latestLiveNotification : null}
   notifyWarehouseAssignment(order: Order): PushNotification | null {
+    if(order.deliveryReview?.status==='PENDING') return null;
     const event=order.warehouseAssignment;
     if(!event?.id || !event.store?.customerName || event.store.id!==order.storeId) return null;
     this.restore();

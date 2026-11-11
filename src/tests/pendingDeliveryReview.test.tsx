@@ -1,3 +1,5 @@
+import {PushNotificationService} from '../lib/notifications';
+import {makeWarehouseAssignment} from '../lib/warehouseAssignment';
 import assert from 'node:assert/strict';
 import React from 'react';
 import {renderToStaticMarkup as render} from 'react-dom/server';
@@ -22,3 +24,5 @@ const receipt=pendingDeliveryOrder({items:[{productId:product.id,quantity:2,pric
 assert.equal(receipt.fulfillmentStatus,'PENDIENTE_CONFIRMACION');assert.equal(receipt.payment.status,'PENDIENTE');assert.equal(receipt.payment.cashToCollect,0);assert.equal(receipt.deliveryMode,undefined);assert.equal(receipt.transportLoad,undefined);assert.equal(receipt.childShipments,undefined);
 const html=render(<PendingDeliveryReceipt order={receipt} onBack={()=>{}} onRefresh={()=>{}} onCancel={()=>{}} cancelling={false} error={null}/>);assert.ok(!html.includes(receipt.secretDeliveryCode));assert.match(html,/Solicitud recibida/);assert.ok(!html.includes('0 kg'));
 console.log('PASS pending review UI: one notice, continue enabled, request without payment/ETA, private receipt without PIN or invented capacity.');
+
+const notifications=new PushNotificationService({getItem:()=>null,setItem:()=>{}});receipt.warehouseAssignment=makeWarehouseAssignment(receipt.id,INITIAL_STORES[0]);assert.equal(notifications.notifyWarehouseAssignment(receipt),null);receipt.deliveryReview!.status='CONFIRMED';assert.ok(notifications.notifyWarehouseAssignment(receipt));
