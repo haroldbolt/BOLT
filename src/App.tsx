@@ -1,3 +1,5 @@
+import {useCustomer} from './customer/client';
+import {FAVORITES_KEY} from './customer/data';
 import {beginDeviceLocation, type DeviceLocationAttempt} from './lib/deviceLocation';
 import {deleteEntrancePhoto,cleanAbandonedEntrancePhotos} from './lib/entrancePhotos';
 import {TrackingRecovery} from './components/customer/TrackingRecovery';
@@ -38,48 +40,12 @@ import { ScheduledDeliveryModal } from './components/customer/ScheduledDeliveryM
 
 import { Product, Store, CartItem, MainCategory, Order, DeliveryMode, ScheduledDeliveryWindow, ProductFilterState, WishlistCollection, WishlistItem } from './types';
 import { DeliveryQuote, LatLng } from './lib/deliveryService';
-import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS } from './data/seedData';
+import { INITIAL_PRODUCTS, INITIAL_STORES } from './data/seedData';
 import { api } from './lib/api';
 import { pushService } from './lib/notifications';
-const INITIAL_WISHLIST_COLLECTIONS: WishlistCollection[] = [
-  {
-    id: 'col-comida-mensual',
-    name: 'Alimento Mensual Max',
-    description: 'Dieta regular y concentrado mensual para entrega Turbo',
-    icon: '🐶',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    items: [
-      { productId: 'prod-rc-maxi-15k', addedAt: new Date().toISOString(), notes: 'Comprar bulto de 15 kg antes del día 25' },
-      { productId: 'prod-proplan-adult-15k', addedAt: new Date().toISOString(), notes: 'Alternativa si no hay Royal Canin' },
-    ],
-  },
-  {
-    id: 'col-farmacia-cuidado',
-    name: 'Farmacia & Prevención',
-    description: 'Antipulgas y desparasitantes trimestrales',
-    icon: '💊',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    items: [
-      { productId: 'prod-nexgard-spectra-m', addedAt: new Date().toISOString(), notes: 'Dosis para Max (10 a 20 kg)' },
-      { productId: 'prod-bravecto-10-20k', addedAt: new Date().toISOString(), notes: 'Protección para 12 semanas' },
-    ],
-  },
-  {
-    id: 'col-snacks-premios',
-    name: 'Snacks & Premios',
-    description: 'Premios de entrenamiento y golosinas húmedas',
-    icon: '🍖',
-    createdAt: new Date().toISOString(),
-    updatedAt: new Date().toISOString(),
-    items: [
-      { productId: 'prod-churu-pollo-4u', addedAt: new Date().toISOString(), notes: 'Churu favorito para consentir a Luna' },
-    ],
-  },
-];
-
 export default function App() {
+  const customerSession=useCustomer();
+  const customerStorage=customerSession.storage;
   // Navigation / Routing
   const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
   const [trackingOrderId, setTrackingOrderId] = useState<string | null>(() => {
@@ -93,7 +59,7 @@ export default function App() {
   // App data state
   const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
-  const [orders, setOrders] = useState<Order[]>(INITIAL_ORDERS);
+  const [orders, setOrders] = useState<Order[]>([]);
 
   // Customer UI state
   const [selectedCategory, setSelectedCategory] = useState<MainCategory>('Todo');
@@ -101,10 +67,8 @@ export default function App() {
   const [searchQuery, setSearchQuery] = useState('');
   const [productFilters, setProductFilters] = useState<ProductFilterState>(INITIAL_FILTER_STATE);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
-  const [favorites, setFavorites] = useState<Record<string, boolean>>({
-    'prod-nexgard-spectra-m': true,
-    'prod-rc-maxi-15k': true,
-  });
+  const [favorites,setFavorites]=useState<Record<string,boolean>>(()=>{try{return JSON.parse(customerStorage?.getItem(FAVORITES_KEY)||'{}')}catch{return {}}});
+  useEffect(()=>{customerStorage?.setItem(FAVORITES_KEY,JSON.stringify(favorites))},[favorites]);
 
   // Product comparison state (max 3 products)
   const [compareProducts, setCompareProducts] = useState<Product[]>([]);
@@ -114,23 +78,23 @@ export default function App() {
   // Wishlist & Custom Collections state
   const [wishlistCollections, setWishlistCollections] = useState<WishlistCollection[]>(() => {
     try {
-      const stored = localStorage.getItem('bolt_pets_wishlist_collections');
+      const stored = customerStorage?.getItem('bolt_pets_wishlist_collections');
       if (stored) {
         return JSON.parse(stored);
       }
     } catch (e) {
       console.warn('Error reading stored wishlist collections:', e);
     }
-    return INITIAL_WISHLIST_COLLECTIONS;
+    return [];
   });
 
   const [saveModalProduct, setSaveModalProduct] = useState<Product | null>(null);
   const [isSaveModalOpen, setIsSaveModalOpen] = useState(false);
 
-  // Sync collections to localStorage
+  // Persist lists in the current guest/device or authenticated account scope
   useEffect(() => {
     try {
-      localStorage.setItem('bolt_pets_wishlist_collections', JSON.stringify(wishlistCollections));
+      customerStorage?.setItem('bolt_pets_wishlist_collections', JSON.stringify(wishlistCollections));
     } catch (e) {
       console.warn('Error saving wishlist collections:', e);
     }
@@ -382,11 +346,13 @@ export default function App() {
     };
   }, []);
 
+  useEffect(()=>{const section=new URLSearchParams(window.location.search).get('cuenta');if(section==='direcciones')setIsAddressBookOpen(true);if(section==='favoritos')setCurrentTab('favoritos' as CustomerNavTab)},[]);
+
   // Restore references only against a successful, current server catalog response.
   useEffect(() => {
     let cancelled = false;
     void refreshCatalog();
-    void Promise.all([api.getStores(), api.getOrders()]).then(([loadedStores, loadedOrders]) => {
+    void Promise.all([api.getStores(), api.getCustomerOrders(!!customerSession.user)]).then(([loadedStores, loadedOrders]) => {
       if (cancelled) return;
       if (loadedStores.length) setStores(loadedStores);
       setOrders(loadedOrders);
@@ -626,6 +592,7 @@ export default function App() {
       <>
       <OrderTracking
         orderId={trackingOrderId}
+        guestOnly
         onBack={() => navigateTo('/')}
       />
       <PushNotificationBanner onNavigateToOrder={(id)=>navigateTo('/pedido/'+id)} />
@@ -671,6 +638,7 @@ export default function App() {
 
       {/* Header */}
       <Header
+        customerIdentity={customerSession.user}
         currentStore={currentStore}
         allStores={stores}
         onSelectStore={openAddressBook}
@@ -695,10 +663,7 @@ export default function App() {
           setOrderHistoryInitialTab('history');
           setIsOrderHistoryOpen(true);
         }}
-        onOpenProfile={() => {
-          setOrderHistoryInitialTab('profile');
-          setIsOrderHistoryOpen(true);
-        }}
+        onOpenProfile={() => window.location.assign('/cuenta')}
         onOpenNotifications={() => setIsNotificationCenterOpen(true)}
         unreadNotificationsCount={unreadNotificationsCount}
         totalOrdersCount={orders.length}
@@ -1298,7 +1263,7 @@ export default function App() {
         }}
       />
 
-      <SavedAddressesModal isOpen={isAddressBookOpen} onClose={()=>setIsAddressBookOpen(false)}
+      <SavedAddressesModal accountSaved={!!customerSession.user} isOpen={isAddressBookOpen} onClose={()=>setIsAddressBookOpen(false)}
         addresses={addressBook.addresses} current={addressBook.current} quote={deliveryQuote}
         warning={addressBook.warning} message={addressBookMessage}
         onAdd={()=>editDeliveryAddress()} onEdit={editDeliveryAddress}

@@ -1,3 +1,4 @@
+import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
 import {mountTrackingRecovery} from './src/lib/trackingRecovery';
@@ -77,7 +78,8 @@ function quoteForPurchase(request: any) {
   })).digest('hex');
   return quote;
 }
-async function startServer() {
+export async function startServer(customerOverride?: Parameters<typeof mountCustomerAccounts>[2]) {
+  if(customerOverride && (!isDispatchSimulation || process.env.NODE_ENV==='production'))throw Error('Customer fixture is restricted to isolated local simulations');
   acquireCatalogWriterLock();
   acquireCatalogWriterLock(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'));
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
@@ -86,6 +88,7 @@ async function startServer() {
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
   if(isDispatchSimulation)app.use((req,res,next)=>{const origin=req.get('Origin');if(!/^127\.0\.0\.1(:\d+)?$/.test(req.get('Host')||'') || origin && origin!==`http://127.0.0.1:${PORT}`)return res.status(403).json({error:'Simulación disponible únicamente en su origen local'});next()});
+  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
   app.use(express.json({ limit: '15mb' }));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
@@ -186,7 +189,7 @@ async function startServer() {
   if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth);
   else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
   app.use('/api/v1/operations',requireAdminAuth);
-  mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token));
+  mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token),customerAccounts.authorizeOrder);
   mountEntrancePhotos(app,ordersRepository,dispatchService,path.join(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'),'private-entrance-photos'));
   // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
   let dispatchTickRunning=false;
@@ -357,7 +360,7 @@ async function startServer() {
   });
 
   // Create Order with transactional stock reservation & delivery policy validation
-  app.post('/api/v1/orders', (req: Request, res: Response) => {
+  app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req: Request, res: Response) => {
     try {
       const creationRequestId=req.get('Idempotency-Key');
       if(!creationRequestId) return res.status(400).json({code:'IDEMPOTENCY_REQUIRED',error:'Falta el identificador estable de confirmación. Actualiza e intenta nuevamente.'});
@@ -365,6 +368,7 @@ async function startServer() {
       if(creationRequestId) {
         if(creationRequestId.length>150) return res.status(400).json({error:'Identificador de solicitud inválido'});
         const previous=ordersRepository.getOrderByCreationRequest(creationRequestId);
+        if(previous && (previous as any).customerAccountId !== (req as any).customerAccountId) return res.status(409).json({error:'La confirmación pertenece a otra sesión.'});
         if(previous) return previous.creationRequestFingerprint===creationRequestFingerprint
           ? res.status(200).json({...presentOrder(previous),guestAccessToken:dispatchService.guestToken(previous)}) : res.status(409).json({error:'La solicitud ya fue utilizada con otros datos.'});
       }
@@ -579,6 +583,7 @@ async function startServer() {
       }
 
       const newOrder: Order = {
+        ...((req as any).customerAccountId?{customerAccountId:(req as any).customerAccountId}:{}),
         creationRequestId, creationRequestFingerprint,
         transportConfirmation: evaluatedQuote.confirmationToken,
         transportLoad: !isSplitOrder ? evaluatedQuote.transportPlan.shipments[0] : undefined,
@@ -1170,11 +1175,11 @@ async function startServer() {
     });
   }
 
-  app.listen(PORT, isDispatchSimulation?'127.0.0.1':'0.0.0.0', () => {
+  return app.listen(PORT, isDispatchSimulation?'127.0.0.1':'0.0.0.0', () => {
     console.log(`Bolt Pets Authoritative Full-Stack Server running on port ${PORT}`);
   });
 }
 
-startServer().catch(err => {
+if(process.argv[1] && path.resolve(process.argv[1])===__filename)startServer().catch(err => {
   console.error('Failed to start server:', err);
 });

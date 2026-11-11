@@ -261,8 +261,9 @@ export function mountOrderAccess(
   app: Express,
   s: DispatchService,
   verifyAdmin: (token?: string) => any,
+  verifyCustomer?: (req:Request,id:string)=>Promise<boolean>,
 ) {
-  app.use("/api/v1/orders/:orderId", (req, res, next) => {
+  app.use("/api/v1/orders/:orderId", async (req, res, next) => {
     res.set("Cache-Control", "no-store");
     const session = verifyAdmin(
       req.get("Authorization")?.replace(/^Bearer /, ""),
@@ -271,6 +272,7 @@ export function mountOrderAccess(
       (req as any).adminSession = session;
       return next();
     }
+    try { if (verifyCustomer && await verifyCustomer(req,req.params.orderId)) { (req as any).authorizedOrderId=req.params.orderId; return next(); } } catch { return res.status(503).json({error:"No se pudo comprobar el acceso de cliente"}); }
     if (s.authorizeGuest(req.params.orderId, req.get("X-Order-Token"))) {
       (req as any).authorizedOrderId = req.params.orderId;
       return next();

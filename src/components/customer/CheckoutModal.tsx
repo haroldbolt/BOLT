@@ -1,3 +1,4 @@
+import {useCustomer} from '../../customer/client';
 import {EntrancePhotoPreview} from './EntrancePhotoPicker';
 import {getEntrancePhoto,queueEntrancePhoto,sendPendingEntrancePhoto} from '../../lib/entrancePhotos';
 import { DeliveryPlanSummary } from './DeliveryPlanSummary';
@@ -52,9 +53,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   selectedScheduledWindow: selectedScheduledWindowProp,
   onSelectScheduledWindow,
 }) => {
-  const [customerName, setCustomerName] = useState('');
-  const [customerPhone, setCustomerPhone] = useState('');
-  const [customerEmail, setCustomerEmail] = useState('');
+  const {user:account}=useCustomer();
+  const [customerName, setCustomerName] = useState(account?.name || '');
+  const [customerPhone, setCustomerPhone] = useState(account?.phone || '');
+  const [customerEmail, setCustomerEmail] = useState(account?.email || '');
   const [address, setAddress] = useState(customerAddress ?? '');
   const [addressDetails, setAddressDetails] = useState(customerAddressDetails ?? '');
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');

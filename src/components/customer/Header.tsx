@@ -5,6 +5,7 @@ import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../.
 import { DeliveryQuote } from '../../lib/deliveryService';
 
 interface HeaderProps {
+  customerIdentity?: {name:string;email:string}|null;
   currentStore: Store | null;
   allStores: Store[];
   onSelectStore: (store: Store) => void;
@@ -51,6 +52,7 @@ const CATEGORIES: MainCategory[] = [
 ];
 
 export const Header: React.FC<HeaderProps> = ({
+  customerIdentity,
   currentStore,
   allStores,
   onSelectStore,
@@ -191,12 +193,10 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="absolute right-0 mt-2 w-60 bg-white text-slate-800 rounded-3xl shadow-2xl border border-slate-100 py-2.5 z-50 text-sm">
                     <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                       <div>
-                        <p className="font-extrabold text-slate-900 leading-tight">Juan David Gómez</p>
-                        <p className="text-[11px] text-slate-500">juan.gomez@ejemplo.com</p>
+                        <p className="font-extrabold text-slate-900 leading-tight">{customerIdentity?.name || (customerIdentity?'Mi cuenta':'Iniciar sesión')}</p>
+                        <p className="text-[11px] text-slate-500">{customerIdentity?.email || 'Explora BOLT como invitado'}</p>
                       </div>
-                      <span className="text-[10px] bg-red-100 text-red-700 px-2 py-0.5 rounded-full font-bold">
-                        Cliente VIP
-                      </span>
+
                     </div>
 
                     <button
@@ -205,7 +205,7 @@ export const Header: React.FC<HeaderProps> = ({
                     >
                       <div className="flex items-center gap-2.5">
                         <Bell className="w-4 h-4 text-red-600" />
-                        <span>Notificaciones Push</span>
+                        <span>Notificaciones</span>
                       </div>
                       {unreadNotificationsCount > 0 && (
                         <span className="text-[10px] bg-yellow-400 text-red-950 px-2 py-0.5 rounded-full font-black">
@@ -232,7 +232,7 @@ export const Header: React.FC<HeaderProps> = ({
                       className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-semibold transition"
                     >
                       <User className="w-4 h-4 text-red-600" />
-                      <span>Mi Perfil & Datos</span>
+                      <span>{customerIdentity?'Mi cuenta':'Iniciar sesión'}</span>
                     </button>
 
                     <button

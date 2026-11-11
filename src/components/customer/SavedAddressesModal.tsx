@@ -8,6 +8,7 @@ import {COVERAGE_NOTICE} from '../../data/coverageConfig';
 import {CurrentLocationAction} from './CurrentLocationAction';
 
 interface Props {
+  accountSaved?:boolean;
   isOpen:boolean;onClose:()=>void;addresses:SavedAddress[];current:AddressSelection|null;
   quote:DeliveryQuote|null;warning:string;message:string;
   onAdd:()=>void;onEdit:(address:SavedAddress)=>void;onUse:(id:string)=>void;
@@ -15,7 +16,7 @@ interface Props {
   onRemove:(id:string)=>void;onDefault:(id:string)=>void;
   onSave:(name:string,isDefault:boolean)=>boolean;onContinue:()=>void;
 }
-export function SavedAddressesModal({isOpen,onClose,addresses,current,quote,warning,message,onAdd,onEdit,onUse,onRemove,onDefault,onSave,onContinue,onUseCurrentLocation}:Props) {
+export function SavedAddressesModal({accountSaved=false,isOpen,onClose,addresses,current,quote,warning,message,onAdd,onEdit,onUse,onRemove,onDefault,onSave,onContinue,onUseCurrentLocation}:Props) {
   const [name,setName]=useState(''),[makeDefault,setMakeDefault]=useState(false);
   const [checks,setChecks]=useState<Record<string,DeliveryQuote|null>>({});
   const [checking,setChecking]=useState(false);
@@ -35,7 +36,7 @@ export function SavedAddressesModal({isOpen,onClose,addresses,current,quote,warn
   return <div className="fixed inset-0 z-50 bg-slate-900/60 backdrop-blur-xs flex items-center justify-center p-3 md:p-4">
     <section role="dialog" aria-modal="true" aria-labelledby="saved-addresses-title" className="bg-white rounded-3xl w-full max-w-xl max-h-[92vh] flex flex-col overflow-hidden shadow-2xl border border-slate-100">
       <div className="p-5 flex items-start justify-between border-b border-slate-100 bg-slate-50">
-        <div><h2 id="saved-addresses-title" className="font-black text-lg text-slate-900 flex items-center gap-2"><MapPin className="text-red-600 w-5 h-5"/>Mis direcciones</h2><p className="text-xs text-slate-500 mt-1">{DEVICE_ADDRESSES_NOTICE}</p></div>
+        <div><h2 id="saved-addresses-title" className="font-black text-lg text-slate-900 flex items-center gap-2"><MapPin className="text-red-600 w-5 h-5"/>Mis direcciones</h2><p className="text-xs text-slate-500 mt-1">{accountSaved?'Direcciones guardadas en tu cuenta':DEVICE_ADDRESSES_NOTICE}</p></div>
         <button type="button" aria-label="Cerrar direcciones guardadas" onClick={onClose} className="p-2 rounded-full hover:bg-slate-200"><X className="w-5 h-5 text-slate-500"/></button>
       </div>
       <div className="p-4 md:p-5 space-y-4 overflow-y-auto">

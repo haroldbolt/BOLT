@@ -34,7 +34,17 @@ export class PushNotificationService {
   private assignmentRevisions: Record<string,number> = {};
   private latestLiveNotification: PushNotification | null = null;
   private storage?: Pick<Storage,'getItem'|'setItem'>;
-  private readonly storageKey='bolt_pets_notifications_v1';
+  private storageKey='bolt_pets_notifications_v1';
+  private guestStorage?: Pick<Storage,'getItem'|'setItem'>;
+  private customerScope:string|null=null;
+  setCustomerScope(userId:string|null) {
+    if(userId===this.customerScope)return;
+    if(this.customerScope===null)this.guestStorage=this.storage;
+    this.customerScope=userId;
+    this.storageKey=userId?`bolt_customer_notification_receipts_v1_${userId}`:'bolt_pets_notifications_v1';
+    this.storage=this.guestStorage;
+    this.notifications=[];this.seenAssignments.clear();this.assignmentRevisions={};this.latestLiveNotification=null;this.restore();
+  }
   constructor(storage?: Pick<Storage,'getItem'|'setItem'>) {
     try {this.storage=storage || (typeof window!=='undefined' ? window.localStorage : undefined)} catch {}
     this.restore();
@@ -42,13 +52,13 @@ export class PushNotificationService {
   private restore() {
     try {
       const data=JSON.parse(this.storage?.getItem(this.storageKey) || 'null');
-      if(data && Array.isArray(data.notifications)) this.notifications=data.notifications;
+      if(!this.customerScope && data && Array.isArray(data.notifications)) this.notifications=data.notifications;
       if(data && Array.isArray(data.seenAssignments)) for(const id of data.seenAssignments) this.seenAssignments.add(id);
       if(data?.assignmentRevisions) for(const [id,revision] of Object.entries(data.assignmentRevisions)) this.assignmentRevisions[id]=Math.max(this.assignmentRevisions[id] || 0,Number(revision) || 0);
     } catch {}
   }
   private persist() {
-    try {this.storage?.setItem(this.storageKey,JSON.stringify({notifications:this.notifications,seenAssignments:[...this.seenAssignments],assignmentRevisions:this.assignmentRevisions}))} catch {}
+    try {this.storage?.setItem(this.storageKey,JSON.stringify({notifications:this.customerScope?[]:this.notifications,seenAssignments:[...this.seenAssignments],assignmentRevisions:this.assignmentRevisions}))} catch {}
   }
   getActiveNotification() {return this.latestLiveNotification && Date.now()-this.latestLiveNotification.timestamp<notificationLifetime(this.latestLiveNotification) ? this.latestLiveNotification : null}
   notifyWarehouseAssignment(order: Order): PushNotification | null {
