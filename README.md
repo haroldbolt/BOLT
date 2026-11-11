@@ -26,3 +26,7 @@ Plataforma full-stack de comercio electrónico y operaciones logísticas para en
   - Horario 3: 18:00–22:00 (Corte el mismo día: 16:00).
 - **Inventario Desacoplado**: Cada sede administra de forma independiente sus cantidades físicas (`onHand`), comprometidas (`committed`), reservadas (`reservedBolt`), stock de seguridad (`safetyStock`) y vendibles (`sellable`). Sin suplantación ni robo entre bodegas.
 - **Integración Shopify**: Agrocentro Pets (`1c76bc-08.myshopify.com` / `cultivacenter.com`) en modo de solo lectura (`read_products`, `read_inventory`, `read_locations`).
+
+## Cuentas de clientes (propuesta en revisión)
+
+Consultar [configuración, pruebas y documentos legales](docs/customer-account/README.md). Sin PostgreSQL, SMTP, OAuth y revisión legal configurados, BOLT mantiene acceso como invitado y no muestra identidades ficticias. Esta documentación no habilita servicios de producción.
