@@ -872,5 +872,167 @@
     "label": "3,5 lb",
     "productId": "gid://shopify/Product/9525208744216",
     "source": "https://www.puppis.com.co/alimento-para-perro-hills-youthful-vitality-small-and-mini-adult-7/p"
+  },
+  "gid://shopify/ProductVariant/49238567944472": {
+    "expectedName": "0",
+    "productId": "gid://shopify/Product/9524768178456",
+    "label": "4 lb",
+    "source": "https://www.gabriconecta.com/comida-para-gato-hills-prescription-diet-multicare-pollo-c-d-pollo-11001055-9/p?skuId=11001055"
+  },
+  "gid://shopify/ProductVariant/52674291073304": {
+    "expectedName": "4,5 lb",
+    "productId": "gid://shopify/Product/10416419668248",
+    "label": "5 lb",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-light-razas-pequenas-pollo-5-lb-11002017"
+  },
+  "gid://shopify/ProductVariant/52682802757912": {
+    "expectedName": "Caja x 20 tabletas masticables",
+    "productId": "gid://shopify/Product/10418276434200",
+    "label": "16 mg × 20 u",
+    "source": "https://www.gabriconecta.com/apoquel-tabletas-masticable-16-mg-13401080/p?skuId=13401080"
+  },
+  "gid://shopify/ProductVariant/52682802987288": {
+    "expectedName": "Caja x 20 tabletas masticables",
+    "productId": "gid://shopify/Product/10418276565272",
+    "label": "5,4 mg × 20 u",
+    "source": "https://www.gabriconecta.com/apoquel-tabletas-masticable-5-4-mg-13401079/p?skuId=13401079"
+  },
+  "gid://shopify/ProductVariant/52682803052824": {
+    "expectedName": "Caja x 20 tabletas masticables",
+    "productId": "gid://shopify/Product/10418276630808",
+    "label": "3,6 mg × 20 u",
+    "source": "https://www.gabriconecta.com/apoquel-tabletas-masticable-3-6-mg-13401078/p?skuId=13401078"
+  },
+  "gid://shopify/ProductVariant/52682800234776": {
+    "expectedName": "Caja x 2 viales",
+    "productId": "gid://shopify/Product/10418276139288",
+    "label": "10 mg × 2 viales de 1 ml",
+    "source": "https://www.gabriconecta.com/cytopint-perros-13402001-9/p?skuId=13402001"
+  },
+  "gid://shopify/ProductVariant/52682799808792": {
+    "expectedName": "Caja x 2 viales",
+    "productId": "gid://shopify/Product/10418276040984",
+    "label": "20 mg × 2 viales de 1 ml",
+    "source": "https://www.gabriconecta.com/cytopint-perros-13402001-9/p?skuId=13402001"
+  },
+  "gid://shopify/ProductVariant/52682799481112": {
+    "expectedName": "Caja x 2 viales",
+    "productId": "gid://shopify/Product/10418275909912",
+    "label": "30 mg × 2 viales de 1 ml",
+    "source": "https://www.gabriconecta.com/cytopint-perros-13402001-9/p?skuId=13402003"
+  },
+  "gid://shopify/ProductVariant/52682798825752": {
+    "expectedName": "Caja x 2 viales",
+    "productId": "gid://shopify/Product/10418275320088",
+    "label": "40 mg × 2 viales de 1 ml",
+    "source": "https://www.gabriconecta.com/cytopint-perros-13402001-9/p?skuId=13402004"
+  },
+  "gid://shopify/ProductVariant/52674139783448": {
+    "expectedName": "CARDIAL B 5mg 20comp",
+    "productId": "gid://shopify/Product/10416391225624",
+    "label": "5 mg × 20 u",
+    "source": "https://www.gabriconecta.com/cardial-b-perros-11201009-9/p?skuId=11201009"
+  },
+  "gid://shopify/ProductVariant/52682803839256": {
+    "expectedName": "Caja x 30 comprimidos",
+    "productId": "gid://shopify/Product/10418276663576",
+    "label": "5 mg × 30 u",
+    "source": "https://www.gabriconecta.com/cardial-perros-11201008-9/p?skuId=11201008"
+  },
+  "gid://shopify/ProductVariant/52673038778648": {
+    "expectedName": "12 Tab",
+    "productId": "gid://shopify/Product/10416239608088",
+    "label": "200 mg × 12 u",
+    "source": "https://www.gabriconecta.com/doxifin-tabs-cart-31003008/p?skuId=31003008"
+  },
+  "gid://shopify/ProductVariant/52673040122136": {
+    "expectedName": "50 mg",
+    "productId": "gid://shopify/Product/10416240230680",
+    "label": "50 mg × 14 u",
+    "source": "https://www.gabriconecta.com/doxifin-tabs-cart-31003009/p?skuId=31003009"
+  },
+  "gid://shopify/ProductVariant/52673040154904": {
+    "expectedName": "100 mg",
+    "productId": "gid://shopify/Product/10416240230680",
+    "label": "100 mg × 14 u",
+    "source": "https://www.gabriconecta.com/doxifin-tabs-cart-31003007/p?skuId=31003007"
+  },
+  "gid://shopify/ProductVariant/52673039565080": {
+    "expectedName": "0,5 mg",
+    "productId": "gid://shopify/Product/10416240034072",
+    "label": "0,5 mg × 10 u",
+    "source": "https://www.gabriconecta.com/meloxifin-cart-31003003/p?skuId=31003003"
+  },
+  "gid://shopify/ProductVariant/52673039892760": {
+    "expectedName": "5 mg",
+    "productId": "gid://shopify/Product/10416240165144",
+    "label": "5 mg × 10 u",
+    "source": "https://www.gabriconecta.com/predicorten-comp-cart-31003005/p?skuId=31003005"
+  },
+  "gid://shopify/ProductVariant/52673096024344": {
+    "expectedName": "150 mg",
+    "productId": "gid://shopify/Product/10416257073432",
+    "label": "150 mg × 12 u",
+    "source": "https://www.gabriconecta.com/celesporin-comp-cart-31003006/p?skuId=31003006"
+  },
+  "gid://shopify/ProductVariant/52674000027928": {
+    "expectedName": "25 mg",
+    "productId": "gid://shopify/Product/10416345153816",
+    "label": "25 mg × 10 u",
+    "source": "https://www.gabriconecta.com/quinotrat-tabs-31003012/p?skuId=31003012"
+  },
+  "gid://shopify/ProductVariant/52674065858840": {
+    "expectedName": "0,2 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,2 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501001"
+  },
+  "gid://shopify/ProductVariant/52674065891608": {
+    "expectedName": "0,3 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,3 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501002"
+  },
+  "gid://shopify/ProductVariant/52674065924376": {
+    "expectedName": "0,4 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,4 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501003"
+  },
+  "gid://shopify/ProductVariant/52674065957144": {
+    "expectedName": "0,5 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,5 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501004"
+  },
+  "gid://shopify/ProductVariant/52674065989912": {
+    "expectedName": "0,6 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,6 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501005"
+  },
+  "gid://shopify/ProductVariant/52674066022680": {
+    "expectedName": "0,7 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,7 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501006"
+  },
+  "gid://shopify/ProductVariant/52674066055448": {
+    "expectedName": "0,8 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "0,8 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501007"
+  },
+  "gid://shopify/ProductVariant/52674066088216": {
+    "expectedName": "1,0 mg",
+    "productId": "gid://shopify/Product/10416366551320",
+    "label": "1 mg × 120 u",
+    "source": "https://www.gabriconecta.com/thyro-tabs-perros-12501001-9/p?skuId=12501008"
+  },
+  "gid://shopify/ProductVariant/52684964036888": {
+    "expectedName": "Caja x 6 comprimidos",
+    "productId": "gid://shopify/Product/10419202294040",
+    "label": "50 mg × 6 u",
+    "source": "https://www.gabriconecta.com/zitrocox-2-cart-31003016/p?skuId=31003016"
   }
 }
