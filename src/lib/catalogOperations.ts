@@ -15,7 +15,7 @@ type Value = { productId: string; variantId: string; price: number; stock: Numbe
 type PricePlan = { status: string; reason?: string; before: number; rawConsulted?: string | null; consulted?: number; applied?: number; source?: string; sourceId?: string; method?: string; revision?: number };
 type StockPlan = { storeId: string; storeName: string; status: string; before?: number; after?: number; reserved?: number; reason?: string; reversed?: boolean };
 type Row = { key: string; productId: string; product: string; variantId: string; variant: string; sku: string; price: PricePlan; stocks: StockPlan[]; done: boolean };
-export type CatalogBatch = { id: string; inventoryDelta?: 0 | 6; createdAt: string; actor: Actor; reason: string; source: { shop: string; currency: string; consultedAt: string; sha256: string }; backupPath: string; rows: Row[]; status: string; audit: Array<{ at: string; actor: Actor; action: string; count: number }> };
+export type CatalogBatch = { id: string; kind?: 'INVENTORY_ONLY'; inventoryDelta?: number; createdAt: string; actor: Actor; reason: string; source: { shop: string; currency: string; consultedAt: string; sha256: string }; backupPath: string; rows: Row[]; status: string; audit: Array<{ at: string; actor: Actor; action: string; count: number }> };
 type State = { version: 1; values: Record<string, Value>; baselineEffects: Record<string, Effect>; batches: Record<string, CatalogBatch>; audit: any[] };
 const copy = <T>(v:T):T => structuredClone(v);
 const hash = (v: unknown) => crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');
@@ -120,6 +120,38 @@ export class CatalogOperations {
   public getBatch(id:string) { const b=this.state?.batches[id]; if(!b) throw new Error('Lote no encontrado'); return copy(b); }
   public listBatches() {return Object.values(this.state?.batches||{}).map(b=>({id:b.id,status:b.status,createdAt:b.createdAt,total:b.rows.length,completed:b.rows.filter(r=>r.done).length}));}
   public getAuditLog() {return [...(this.state?.audit||[]),...Object.values(this.state?.batches||{}).flatMap(b=>b.audit.map((a,i)=>({...a,id:`${b.id}:${i}`,timestamp:a.at,productName:`Lote ${b.id}`,details:{batchId:b.id,count:a.count,reason:b.reason}})))];}
+  public prepareInventory(id:string, delta:number, actor:Actor, reason:string):CatalogBatch {
+    actor={email:actor.email,name:actor.name};
+    if(!/^[a-zA-Z0-9_-]{6,100}$/.test(id))throw new Error('ID de lote inválido');
+    if(!Number.isSafeInteger(delta)||delta<1||delta>1000000)throw new Error('El ajuste debe ser un entero positivo de hasta 1000000 unidades vendibles');
+    if(typeof reason!=='string'||reason.trim().length<10||reason.length>500)throw new Error('Indica el motivo autorizado del ajuste (10 a 500 caracteres)');
+    reason=reason.trim();
+    const digest=hash({kind:'INVENTORY_ONLY',delta,reason});
+    if(this.state?.batches[id]) {
+      const existing=this.state.batches[id];
+      if(existing.kind!=='INVENTORY_ONLY'||existing.source.sha256!==digest)throw new Error('El ID ya pertenece a otra operación; reanuda el lote original');
+      return this.getBatch(id);
+    }
+    const products=this.getProducts(),stores=this.options.stores(),next=copy(this.state||this.fresh());
+    const rows:Row[]=products.flatMap(p=>(p.presentaciones||[]).map(v=>{
+      const value=this.ensureValue(next,p,v.varianteId),associations=new Set(v.bodegaIds||[]);
+      return {key:keyFor(p.id,v.varianteId),productId:p.id,product:p.name,variantId:v.varianteId,variant:v.nombre,sku:v.sku,
+        price:{status:'NOT_REQUESTED',before:value.price,reason:'Solo inventario; precio conservado'},
+        stocks:stores.filter(s=>s.isActive&&(associations.has(s.id)||!!s.shopifyLocationGid&&associations.has(s.shopifyLocationGid))).map(s=>({storeId:s.id,storeName:s.name,status:'PENDING'})),done:false};
+    }));
+    const backupPath=path.join(path.dirname(this.options.file),'backups',id);
+    fs.mkdirSync(backupPath,{recursive:true,mode:0o700});
+    // Refuse to overwrite a conflicting interrupted preparation; no adjustment yet.
+    for(const [name,data] of Object.entries({'catalog-before.json':{products,stores,orderEffects:orderEffects(this.options.orders()),ordersSha256:hash(this.options.orders())},'operations-before.json':this.state||null})) {
+      const target=path.join(backupPath,name),serialized=JSON.stringify(data);
+      if(fs.existsSync(target)){if(fs.readFileSync(target,'utf8')!==serialized)throw new Error('Respaldo existente no coincide: revisa la preparación interrumpida');}
+      else {const fd=fs.openSync(target,'wx',0o600);try{fs.writeFileSync(fd,serialized);fs.fsyncSync(fd);}finally{fs.closeSync(fd);}}
+    }
+    const createdAt=new Date().toISOString();
+    const batch:CatalogBatch={id,kind:'INVENTORY_ONLY',inventoryDelta:delta,createdAt,actor,reason:`Ajuste manual autorizado de +${delta} unidades vendibles por variante y bodega asociada. ${reason}. No es conteo físico ni consulta de stock Shopify.`,
+      source:{shop:'BOLT_ADMIN',currency:'COP',consultedAt:createdAt,sha256:digest},backupPath,rows,status:'PREPARED',audit:[{at:createdAt,actor,action:'PREPARE_MANUAL_INVENTORY',count:rows.length}]};
+    next.batches[id]=batch;this.persist(next);return copy(batch);
+  }
   public prepare(id:string, source:PriceSource, actor:Actor, inventoryDelta:0|6=6): CatalogBatch {
     actor={email:actor.email,name:actor.name};
     if(inventoryDelta!==0&&inventoryDelta!==6)throw new Error('El lote permite +6 o solo precios (0)');
@@ -176,19 +208,20 @@ export class CatalogOperations {
     actor={email:actor.email,name:actor.name};
     const next=copy(this.state!);const batch=next?.batches[id];if(!batch) throw new Error('Lote no encontrado');
     if(batch.status.startsWith('REVERS')) throw new Error('Lote en reversión: no se puede volver a aplicar');
+    const delta=batch.inventoryDelta??6; // Backward compatible with existing +6 batches.
     const base=new Map(this.options.products().map(p=>[p.id,p]));const effects=orderEffects(this.options.orders());const stores=this.options.stores();
     const pending=batch.rows.filter(r=>!r.done).slice(0,Math.max(1,Math.min(500,limit)));
     for(const row of pending) {
-      const p=base.get(row.productId), v=p?.presentaciones?.find(v=>v.varianteId===row.variantId);
+      const p=base.get(row.productId), v=p?.presentaciones?.length?p.presentaciones.find(v=>v.varianteId===row.variantId):p&&row.variantId===p.id?{bodegaIds:p.bodegaIds||Object.keys(p.stockByStore||{})}:undefined;
       if(!p||!v) {row.stocks.forEach(s=>{s.status='SKIPPED';s.reason='Variante eliminada desde la preparación'});row.price.status='SKIPPED';row.price.reason='Variante eliminada';row.done=true;continue;}
       const value=next.values[row.key];const current=this.current(p,row.variantId,next,effects);
       for(const stock of row.stocks) {
         const store=stores.find(s=>s.id===stock.storeId);
-        const associated=store && (v.bodegaIds.includes(store.id)||!!store.shopifyLocationGid&&v.bodegaIds.includes(store.shopifyLocationGid));
+        const associated=store && ((v.bodegaIds||[]).includes(store.id)||!!store.shopifyLocationGid&&(v.bodegaIds||[]).includes(store.shopifyLocationGid));
         if(!store?.isActive || !associated) {stock.status='SKIPPED';stock.reason='Bodega inactiva o asociación retirada';continue;}
         stock.before=current.stockByStore[store.id]||0;stock.reserved=current.reservedStockByStore[store.id]||0;
-        if(!Number.isSafeInteger(stock.before)||stock.before<0||!Number.isSafeInteger(stock.reserved)) {stock.status='SKIPPED';stock.reason='Existencia/reserva inválida';continue;}
-        value.delta[store.id]=(value.delta[store.id]||0)+6;stock.after=stock.before+6;stock.status='APPLIED';
+        if(!Number.isSafeInteger(stock.before)||stock.before<0||!Number.isSafeInteger(stock.reserved)||stock.reserved<0||!Number.isSafeInteger(stock.before+delta)||!Number.isSafeInteger((value.delta[store.id]||0)+delta)) {stock.status='SKIPPED';stock.reason='Existencia/reserva inválida o ajuste fuera del rango seguro';continue;}
+        value.delta[store.id]=(value.delta[store.id]||0)+delta;stock.after=stock.before+delta;stock.status='APPLIED';
       }
       if(row.price.status==='PENDING') {
         if(value.revision!==row.price.revision || value.price!==row.price.before) {row.price.status='SKIPPED';row.price.reason='Precio modificado desde la preparación';}
@@ -196,7 +229,7 @@ export class CatalogOperations {
       }
       row.done=true;
     }
-    if(pending.length) batch.audit.push({at:new Date().toISOString(),actor,action:'APPLY_MANUAL_PLUS_6_AND_SHOPIFY_PRICES',count:pending.length});
+    if(pending.length) batch.audit.push({at:new Date().toISOString(),actor,action:batch.kind==='INVENTORY_ONLY'?`APPLY_MANUAL_PLUS_${delta}_INVENTORY_ONLY`:'APPLY_MANUAL_PLUS_6_AND_SHOPIFY_PRICES',count:pending.length});
     batch.status=batch.rows.every(r=>r.done)?'COMPLETED':'RUNNING';
     this.persist(next);return copy(batch);
   }
@@ -222,13 +255,14 @@ export class CatalogOperations {
   public reverse(id:string,actor:Actor):CatalogBatch {
     actor={email:actor.email,name:actor.name};
     const next=copy(this.state!);const batch=next?.batches[id];if(!batch)throw new Error('Lote no encontrado');
+    const delta=batch.inventoryDelta??6;
     const products=new Map(this.getProducts().map(p=>[p.id,p]));let count=0;
     for(const row of batch.rows.filter(r=>r.done)) {
       const p=products.get(row.productId),value=next.values[row.key];if(!p||!value)continue;
       const current=saleVariant(p,row.variantId);
       for(const s of row.stocks.filter(s=>s.status==='APPLIED'&&!s.reversed)) {
-        if((current.stockByStore[s.storeId]||0)-(current.reservedStockByStore[s.storeId]||0)<6) {s.reason='Reversión pendiente: menos de 6 unidades disponibles';continue;}
-        value.delta[s.storeId]=(value.delta[s.storeId]||0)-6;s.reversed=true;s.reason=undefined;count++;
+        if((current.stockByStore[s.storeId]||0)-(current.reservedStockByStore[s.storeId]||0)<delta) {s.reason=`Reversión pendiente: menos de ${delta} unidades disponibles`;continue;}
+        value.delta[s.storeId]=(value.delta[s.storeId]||0)-delta;s.reversed=true;s.reason=undefined;count++;
       }
       if(['APPLIED','UNCHANGED'].includes(row.price.status)) {
         if(value.revision===row.price.revision && value.price===row.price.applied){value.price=row.price.before;value.revision++;row.price.status='REVERSED';}
