@@ -1,3 +1,4 @@
+import {OrderEntrancePhoto} from './OrderEntrancePhoto';
 import {CustomerDispatches} from '../dispatch/CustomerDispatches';
 import { WarehouseSummary } from './WarehouseSummary';
 import { resolveOrderWarehouse } from '../../lib/warehouseAssignment';
@@ -247,6 +248,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack, g
                 <p className="text-[11px] text-slate-500 mt-1">
                   Entrega en: <strong className="text-slate-800">{order.deliveryAddress.address}</strong>
                 </p>
+                <OrderEntrancePhoto orderId={order.id} audience={guestOnly?"customer":api.getStoredAdminToken()?"admin":"customer"}/>
               </div>
 
               {/* PIN Code Box */}

@@ -1,18 +1,21 @@
+import {EntrancePhotoPreview} from './EntrancePhotoPicker';
 import React, {useEffect, useState} from 'react';
 import {X, MapPin, Plus, Pencil, Trash2, Star, Check, Bookmark} from 'lucide-react';
 import {api} from '../../lib/api';
 import {DEVICE_ADDRESSES_NOTICE, type SavedAddress, type AddressSelection} from '../../lib/guestAddresses';
 import type {DeliveryQuote} from '../../lib/deliveryService';
 import {COVERAGE_NOTICE} from '../../data/coverageConfig';
+import {CurrentLocationAction} from './CurrentLocationAction';
 
 interface Props {
   isOpen:boolean;onClose:()=>void;addresses:SavedAddress[];current:AddressSelection|null;
   quote:DeliveryQuote|null;warning:string;message:string;
   onAdd:()=>void;onEdit:(address:SavedAddress)=>void;onUse:(id:string)=>void;
+  onUseCurrentLocation?:()=>void;
   onRemove:(id:string)=>void;onDefault:(id:string)=>void;
   onSave:(name:string,isDefault:boolean)=>boolean;onContinue:()=>void;
 }
-export function SavedAddressesModal({isOpen,onClose,addresses,current,quote,warning,message,onAdd,onEdit,onUse,onRemove,onDefault,onSave,onContinue}:Props) {
+export function SavedAddressesModal({isOpen,onClose,addresses,current,quote,warning,message,onAdd,onEdit,onUse,onRemove,onDefault,onSave,onContinue,onUseCurrentLocation}:Props) {
   const [name,setName]=useState(''),[makeDefault,setMakeDefault]=useState(false);
   const [checks,setChecks]=useState<Record<string,DeliveryQuote|null>>({});
   const [checking,setChecking]=useState(false);
@@ -36,12 +39,14 @@ export function SavedAddressesModal({isOpen,onClose,addresses,current,quote,warn
         <button type="button" aria-label="Cerrar direcciones guardadas" onClick={onClose} className="p-2 rounded-full hover:bg-slate-200"><X className="w-5 h-5 text-slate-500"/></button>
       </div>
       <div className="p-4 md:p-5 space-y-4 overflow-y-auto">
+        {onUseCurrentLocation && <CurrentLocationAction onClick={onUseCurrentLocation}/>}
         {warning && <p role="status" className="text-sm p-3 rounded-xl bg-amber-50 text-amber-900">{warning}</p>}
         {message && <p role="status" className="text-sm p-3 rounded-xl bg-blue-50 text-blue-900">{message}</p>}
         {current ? <section aria-label="Dirección para esta compra" className="p-4 rounded-2xl border border-red-200 bg-red-50/60 space-y-2">
           <p className="font-bold text-sm text-red-900">Para esta compra{activeName?`: ${activeName}`:''}</p>
           <p className="text-sm text-slate-800">{current.address}</p>{current.details && <p className="text-xs text-slate-600">{current.details}</p>}
           <p role="status" className="text-xs text-slate-700">{!quote?'Comprobando destino con el servidor…':quote.eligibilityStatus==='OUT_OF_COVERAGE'?'No disponible para entrega · '+COVERAGE_NOTICE.title:quote.territoryInfo?.isCovered?`Zona habilitada · ${quote.warehouse?.customerName || quote.assignedStoreName || 'Sede pendiente'}`:quote.message}</p>
+          {current.referencePhotoId && <EntrancePhotoPreview photoId={current.referencePhotoId}/>}
           {!current.savedId && <form onSubmit={e=>{e.preventDefault();if(canSave)onSave(name,makeDefault)}} className="space-y-3 pt-2">
             <label className="text-xs font-bold text-slate-700 block">Nombre de la dirección<input aria-label="Nombre de la dirección" maxLength={60} required value={name} onChange={e=>setName(e.target.value)} placeholder="Casa, Trabajo u otro" className="mt-1 w-full rounded-xl border border-slate-200 bg-white p-3 text-sm font-normal"/></label>
             <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={makeDefault} onChange={e=>setMakeDefault(e.target.checked)} className="w-4 h-4 accent-red-600"/>Usar como predeterminada</label>

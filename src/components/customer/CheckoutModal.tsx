@@ -1,6 +1,8 @@
+import {EntrancePhotoPreview} from './EntrancePhotoPicker';
+import {getEntrancePhoto,queueEntrancePhoto,sendPendingEntrancePhoto} from '../../lib/entrancePhotos';
 import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import { pushService } from '../../lib/notifications';
-import React, { useState, useEffect, useMemo } from 'react';
+import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
   X, MapPin, CreditCard, DollarSign, FileText, CheckCircle2, 
   ShieldCheck, ArrowRight, Upload, Phone, User, Building, Clock, 
@@ -21,6 +23,7 @@ interface CheckoutModalProps {
   onRefreshCatalog?: () => void;
   currentStore: Store | null;
   onOrderSuccess: (orderId: string) => void;
+  referencePhotoId?: string;
   customerAddress?: string;
   customerAddressDetails?: string;
   customerCoordinates?: LatLng;
@@ -39,7 +42,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   cartBlockReason, onRefreshCatalog,
   currentStore,
   onOrderSuccess,
-  customerAddress,
+  customerAddress, referencePhotoId,
   customerAddressDetails,
   customerCoordinates,
   deliveryQuote,
@@ -57,6 +60,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
   const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WOMPI_CARD');
   const [tip, setTip] = useState(2000);
+  const submitPending=useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
 
@@ -140,6 +144,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
+    if(submitPending.current)return;submitPending.current=true;
     setIsSubmitting(true);
     setErrorMessage('');
 
@@ -205,7 +210,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         tip,
       };
 
+      // Capture this address's image before submitting; later address edits cannot change it.
+      const photo=referencePhotoId?await getEntrancePhoto(referencePhotoId):undefined;
       const newOrder = await api.createOrder(payload);
+      if(photo){
+        try{const durable=await queueEntrancePhoto(newOrder.id,photo,newOrder.deliveryAddress);if(!durable)pushService.triggerNotification('Pedido confirmado','Mantén esta página abierta hasta que se envíe la foto; el navegador no pudo guardar su reintento.');void sendPendingEntrancePhoto(newOrder.id).catch(()=>{});}
+        catch{pushService.triggerNotification('Pedido confirmado','La foto no pudo guardarse para envío. Tu pedido está confirmado.');}
+      }else if(referencePhotoId){pushService.triggerNotification('Pedido confirmado','La foto ya no está disponible en este dispositivo. El pedido se creó con tu dirección confirmada.');}
+
 
       pushService.notifyWarehouseAssignment(newOrder);
 
@@ -220,6 +232,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al procesar el pedido. Por favor intente de nuevo.');
     } finally {
+      submitPending.current=false;
       setIsSubmitting(false);
     }
   };
@@ -596,6 +609,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               />
             </div>
           </div>
+
+          {referencePhotoId&&<div className="p-3 border rounded-xl space-y-2"><h4 className="font-bold text-sm">Foto de la entrada</h4><EntrancePhotoPreview photoId={referencePhotoId}/><p className="text-xs text-slate-500">Se enviará con este pedido al confirmarlo.</p></div>}
 
           {/* Payment Method Selector */}
           <div className="space-y-2">

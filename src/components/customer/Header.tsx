@@ -111,10 +111,24 @@ export const Header: React.FC<HeaderProps> = ({
       <header className={`bg-[#DC2626] text-white transition-all duration-200 z-40 sticky top-0 shadow-md pt-safe pl-safe pr-safe ${isCompact ? 'py-2 px-3' : 'pt-3 pb-2.5 px-3 sm:px-4'}`}>
         <div className="max-w-7xl mx-auto space-y-2.5">
           {/* ROW 1: TOP BAR WITH CENTERED BOLT PETS LOGO & ACTIONS */}
-          <div className="relative flex items-center justify-between">
-            {/* Left side: Active Order Shortcut if running, or spacer */}
-            <div className="flex items-center gap-1.5 w-1/4">
-              {activeOrdersCount > 0 ? (
+          <div className="relative grid grid-cols-[minmax(0,1fr)_auto_minmax(0,1fr)] items-center gap-2">
+            {/* Saved addresses stay accessible at the top left, including on mobile. */}
+            <div className="flex min-w-0 flex-col items-start gap-0.5">
+              {onOpenSavedAddresses && (
+                <button
+                  type="button"
+                  onClick={onOpenSavedAddresses}
+                  aria-haspopup="dialog"
+                  aria-label={`${canSaveAddress ? 'Guardar dirección. ' : ''}Mis direcciones (${savedAddressCount})`}
+                  title={canSaveAddress ? 'Guardar dirección' : 'Mis direcciones'}
+                  className="flex min-h-11 max-w-full items-center gap-1.5 rounded-lg px-1 text-left text-[11px] sm:text-xs font-medium text-white/90 transition hover:bg-white/10 hover:text-white focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-white focus-visible:ring-offset-2 focus-visible:ring-offset-red-600"
+                >
+                  <MapPin aria-hidden="true" className="h-3.5 w-3.5 shrink-0" />
+                  <span className="truncate">{canSaveAddress ? 'Guardar dirección' : 'Mis direcciones'}</span>
+                  <ChevronDown aria-hidden="true" className="h-3 w-3 shrink-0 opacity-75" />
+                </button>
+              )}
+              {activeOrdersCount > 0 && (
                 <button
                   onClick={onOpenActiveOrders}
                   className="bg-white text-red-600 hover:bg-red-50 text-[11px] font-bold px-2.5 py-1.5 rounded-full flex items-center gap-1 shadow-sm transition animate-bounce"
@@ -126,8 +140,6 @@ export const Header: React.FC<HeaderProps> = ({
                     {activeOrdersCount}
                   </span>
                 </button>
-              ) : (
-                <div className="w-8 h-8" />
               )}
             </div>
 
@@ -150,7 +162,7 @@ export const Header: React.FC<HeaderProps> = ({
             </div>
 
             {/* Right side: Notifications & Account Menu */}
-            <div className="flex items-center justify-end gap-2 w-1/4">
+            <div className="flex min-w-0 items-center justify-end gap-2">
               {/* Notifications Bell */}
               <button
                 onClick={onOpenNotifications}
@@ -376,7 +388,6 @@ export const Header: React.FC<HeaderProps> = ({
             </button>
           </div>
 
-          {onOpenSavedAddresses && <div className="flex justify-center"><button type="button" onClick={onOpenSavedAddresses} className="min-h-10 px-4 rounded-full text-white text-xs font-bold flex items-center gap-2 hover:bg-red-800/50"><Bookmark className="w-4 h-4"/>{canSaveAddress?'Guardar dirección':`Mis direcciones (${savedAddressCount})`}</button></div>}
           {/* ROW 4: SEARCH BAR */}
           <div className="relative" id="tour-search-bar">
             <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />

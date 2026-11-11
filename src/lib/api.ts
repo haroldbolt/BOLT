@@ -19,6 +19,20 @@ function authorizedFetch(url:RequestInfo|URL,init:RequestInit={},guestOnly=false
 
 export const api = {
   saveOrderAccess,
+  async uploadEntrancePhoto(orderId:string,photoId:string,blob:Blob,destinationKey:string) {
+    const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
+    try {
+      const res=await authorizedFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}/entrance-photo`,{method:'PUT',cache:'no-store',signal:controller.signal,headers:{'Content-Type':'image/jpeg','X-Photo-Id':photoId,'X-Photo-Destination':encodeURIComponent(destinationKey)},body:blob},true);
+      if(!res.ok){const data=await res.json().catch(()=>({}));throw new Error(data.error || 'La foto quedó pendiente. Puedes reintentar desde el seguimiento.');}
+    }catch(error){if(controller.signal.aborted)throw Error('El envío de la foto tardó demasiado. Tu pedido sigue confirmado; puedes reintentar la foto.');throw error;}
+    finally{clearTimeout(timer)}
+  },
+  async getEntrancePhoto(orderId:string,audience:'customer'|'admin'|'driver',dispatchId?:string,driverToken?:string):Promise<Blob|null> {
+    const res=audience==='driver'
+      ?await fetch(`${BASE_URL}/driver/dispatches/${encodeURIComponent(dispatchId||'')}/entrance-photo`,{cache:'no-store',headers:{Authorization:`Bearer ${driverToken||''}`}})
+      :await authorizedFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}/entrance-photo`,{cache:'no-store'},audience==='customer');
+    if(res.status===404)return null;if(!res.ok)throw Error('No pudimos cargar la foto.');return res.blob();
+  },
   async transportAdmin(path:string, method='GET', body?:unknown) {
     const res=await authorizedFetch(`${BASE_URL}/admin/${path}`,{method,headers:{'Content-Type':'application/json',Authorization:`Bearer ${api.getStoredAdminToken() || ''}`},body:body===undefined?undefined:JSON.stringify(body)});
     const data=await res.json();if(!res.ok)throw new Error(data.error || 'No se pudo guardar transporte');return data;
