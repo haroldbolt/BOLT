@@ -118,7 +118,7 @@ export const api = {
       throw new Error(err.error || 'No se pudo crear el pedido');
     }
     const created:Order=await res.json();
-    if(created.guestAccessToken)saveOrderAccess(created.id,created.guestAccessToken);
+    if(created.guestAccessToken && !(created as any).customerAccountId)saveOrderAccess(created.id,created.guestAccessToken);
     pendingCheckoutRequest=undefined;
     try {sessionStorage.removeItem('bolt_checkout_request')} catch {}
     return created;
@@ -128,6 +128,23 @@ export const api = {
     const res = await authorizedFetch(`${BASE_URL}/orders/${orderId}`,{},guestOnly);
     if (!res.ok) throw new Error('Pedido no encontrado');
     return await res.json();
+  },
+
+  async getGuestOrders():Promise<Order[]> {
+    const results=await Promise.allSettled(Object.keys(guestOrderTokens()).map(id=>api.getOrder(id,true)));
+    return results.filter((r):r is PromiseFulfilledResult<Order>=>r.status==='fulfilled').map(r=>r.value);
+  },
+  async getCustomerOrders(authenticated:boolean):Promise<Order[]> {
+    if(!authenticated)return api.getGuestOrders();
+    const response=await fetch('/api/customer/orders',{credentials:'same-origin',cache:'no-store'});
+    if(!response.ok)throw Error('No se pudieron consultar tus pedidos');return response.json();
+  },
+  async linkGuestOrder(id:string) {
+    const token=guestOrderTokens()[id];if(!token)throw Error('Recupera primero el acceso privado a esta compra.');
+    const me=await fetch('/api/customer/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json());
+    if(!me.user?.id)throw Error('Inicia sesión antes de vincular la compra.');
+    const response=await fetch(`/api/customer/orders/${encodeURIComponent(id)}/link`,{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json','X-Order-Token':token,'X-Customer-Id':me.user.id},body:'{}'});
+    const data=await response.json();if(!response.ok)throw Error(data.error||'No se pudo vincular la compra');
   },
 
   async getOrders(params?: { storeId?: string; status?: string }): Promise<Order[]> {

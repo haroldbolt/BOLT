@@ -1,0 +1,11 @@
+{
+  "version": "2026-11-10-draft-1",
+  "status": "draft",
+  "documents": {
+    "terminos": "e9a782d869cad8729907eaf75d69aa2d99a8568b2b88b3f370d6c0e2eb5f1a6e",
+    "privacidad": "0485f9d1f5fd9eb2068b39e1f92717679ef0db30c6c90876fd8065d232ee96d2",
+    "eliminacion": "f42c6897325d428e67b236f8cbdc29aad7de36ec96dfc5f40cababcf781dd7a4"
+  },
+  "source": "src/customer/legal.ts",
+  "note": "SHA-256 sobre JSON.stringify de cada documento; generar nueva versión al modificar textos aprobados."
+}

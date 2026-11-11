@@ -1,3 +1,4 @@
+import {useCustomer} from '../../customer/client';
 import {COVERAGE_MUNICIPALITIES, coverageMunicipality} from '../../data/coverageConfig';
 import type {AddressSearchCandidate} from '../../lib/addressSearch';
 import {EntrancePhotoPicker} from './EntrancePhotoPicker';
@@ -76,6 +77,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   cartItems,
   products = [],
 }) => {
+  const {user:accountCustomer}=useCustomer();
   const [photoId,setPhotoId]=useState<string|undefined>(currentPhotoId);
   const [saveAddress,setSaveAddress]=useState(false);
   const [photoNotice,setPhotoNotice]=useState('');
@@ -434,7 +436,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
           <CurrentLocationAction onClick={handleUseCurrentLocation} busy={isLocating} error={locationError} errorKind={locationErrorKind} onManualAddress={enterAddressManually} accuracyMeters={locationAccuracy} ageSeconds={locationAge}/>
           
-          {!savedAddressOptions && <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={saveAddress} onChange={e=>setSaveAddress(e.target.checked)}/>Guardar esta dirección en este dispositivo</label>}
+          {!savedAddressOptions && <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={saveAddress} onChange={e=>setSaveAddress(e.target.checked)}/>{accountCustomer?'Guardar esta dirección en mi cuenta':'Guardar esta dirección en este dispositivo'}</label>}
           {(savedAddressOptions || saveAddress) && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
             <label className="block text-xs font-bold text-slate-700">Nombre de la dirección<input aria-label="Nombre de la dirección guardada" value={savedName} maxLength={60} onChange={e=>setSavedName(e.target.value)} className="block w-full mt-1 p-3 rounded-xl border border-slate-200 bg-white text-sm"/></label>
             <label className="flex items-center gap-2 text-xs"><input type="checkbox" checked={savedDefault} onChange={e=>setSavedDefault(e.target.checked)}/>Usar como predeterminada</label>

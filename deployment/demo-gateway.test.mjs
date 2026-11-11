@@ -34,7 +34,10 @@ try {
   const setCookie = login.headers.get('set-cookie');
   for (const attribute of ['Secure', 'HttpOnly', 'SameSite=Strict', 'Path=/']) assert.ok(setCookie.includes(attribute));
   const cookie = setCookie.split(';')[0];
-  assert.match(await (await request('/__demo', { headers: { Cookie: cookie } })).text(), /SIMULACIÓN/);
+  const reviewPage=await (await request('/__demo', { headers: { Cookie: cookie } })).text();
+  assert.match(reviewPage, /SIMULACIÓN/);
+  assert.match(reviewPage, /href="\/cuenta"/);
+  assert.match(reviewPage, /Registro real pendiente de configuración/);
   assert.equal((await request('/api/v1/simulation', { headers: { Cookie: cookie } })).status, 200);
   assert.equal((await request('/api/v1/test', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example' }, body: '{}' })).status, 403);
   assert.equal((await request('/api/v1/test', { method: 'POST', headers: { Cookie: cookie, Origin: origin, Authorization: 'Bearer fixture-admin', 'X-Order-Token': 'fixture-guest', 'X-Forwarded-Host': 'evil.example' }, body: '{}' })).status, 200);

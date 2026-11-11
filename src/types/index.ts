@@ -329,6 +329,8 @@ export interface WarehouseAssignmentEvent {
 }
 
 export interface Order {
+  /** Assigned only by the verified customer session on the server. */
+  customerAccountId?: string;
   dispatchStatusMessage?: string;
   purchaseCode?: string;
   dispatchCode?: string;

@@ -5,6 +5,7 @@ import crypto from 'node:crypto';
 import { fileURLToPath } from 'node:url';
 import { spawn, execFileSync } from 'node:child_process';
 import { createDemoGateway } from './demo-gateway.mjs';
+import { demoCustomerEnvironment } from './customer-environment.mjs';
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
 const root = path.resolve(process.env.BOLT_DEMO_VOLUME || '/data');
@@ -39,9 +40,10 @@ for (const name of ['server.js', 'storage-contract.json', 'dist', 'src', 'script
 }
 const signingFile = path.join(runtime, '.bolt-private/demo-session-key');
 if (!fs.existsSync(signingFile)) fs.writeFileSync(signingFile, crypto.randomBytes(48).toString('base64url'), { mode: 0o600, flag: 'wx' });
-const gateway = createDemoGateway({ origin, password, sessionKey: fs.readFileSync(signingFile, 'utf8'), upstreamPort, allowLocalHttp: localTest });
+const customer = demoCustomerEnvironment(process.env, origin);
+const gateway = createDemoGateway({ customerAuth: customer, origin, password, sessionKey: fs.readFileSync(signingFile, 'utf8'), upstreamPort, allowLocalHttp: localTest });
 const childEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(BOLT_|SHOPIFY_|RAILWAY_)/.test(name)));
-Object.assign(childEnv, { NODE_ENV: 'production', PORT: String(upstreamPort), BOLT_DISPATCH_SIMULATION: '1', BOLT_DATA_DIR: data });
+Object.assign(childEnv, customer.env, { NODE_ENV: 'production', PORT: String(upstreamPort), BOLT_DISPATCH_SIMULATION: '1', BOLT_DATA_DIR: data });
 // The compatible storage check above is the same check used by the normal launcher.
 // Own the actual server PID so graceful container restarts can release only its locks.
 const child = spawn(process.execPath, [path.join(runtime, 'server.js')], { cwd: runtime, env: childEnv, stdio: ['ignore', 'inherit', 'inherit'] });

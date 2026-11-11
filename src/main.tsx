@@ -1,5 +1,8 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import {CustomerProvider} from './customer/client';
+import {AccountPage,LegalPage} from './customer/AccountPages';
+import type {LegalKind} from './customer/legal';
 import './index.css';
 
 // Google Maps Platform Quota Defense & Global Listener
@@ -15,4 +18,7 @@ console.error = (...args: unknown[]) => {
   }
 };
 
-createRoot(document.getElementById('root')!).render(<App />);
+const path=window.location.pathname;
+const legalKind=path==='/eliminar-cuenta'?'eliminacion':path.startsWith('/legal/')?path.split('/')[2]:null;
+const validLegal=['terminos','privacidad','eliminacion'].includes(legalKind||'');
+createRoot(document.getElementById('root')!).render(<CustomerProvider>{validLegal?<LegalPage kind={legalKind as LegalKind}/>:path==='/cuenta'?<AccountPage/>:<App/>}</CustomerProvider>);

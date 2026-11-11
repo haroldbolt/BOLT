@@ -19,3 +19,5 @@ src/data/persisted-*.json
 
 # Private customer entrance images (never public catalog assets)
 **/private-entrance-photos/
+
+!.env.customer.example
