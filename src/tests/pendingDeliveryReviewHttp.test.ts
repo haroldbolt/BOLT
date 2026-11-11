@@ -92,7 +92,7 @@ try {
  await start();const info=await call('/simulation','GET',undefined,'');admin=(await call('/auth/login','POST',info.admin,'')).token;
  const catalog=await call('/catalog'),p=catalog.find((p:any)=>p.id===fixture.id);assert.ok(p);
  const request={destination,items:[{productId:p.id,quantity:3}],requestedMode:'PROGRAMADO'};
- const q=await call('/delivery/quote','POST',request,'');assert.equal(q.reasonCode,'TRANSPORT_DATA_PENDING');assert.ok(q.reviewRequestToken);assert.equal(q.confirmationToken,undefined);assert.equal(q.transportPlan.feasible,false);
+ const q=await call('/delivery/quote','POST',request,'');assert.equal(q.reasonCode,'TRANSPORT_DATA_PENDING');assert.ok(q.reviewRequestToken);assert.equal(q.confirmationToken,undefined);assert.equal(q.transportPlan.feasible,false);assert.equal(q.charges.mode,'PROGRAMADO');assert.equal(q.charges.subtotal,30000);
  assert.equal((await call('/orders')).length,0);
  idem='pending-fixture';
  const payload={requestDeliveryReview:true,reviewRequestToken:q.reviewRequestToken,items:[{productId:p.id,price:p.price,quantity:3}],deliveryMode:'PROGRAMADO',deliveryAddress:{...destination,details:'Referencia opcional añadida en checkout',porteriaPolicy:'DEJAR_EN_PORTERIA'},customer:{name:'SIMULACIÓN SOLICITUD',phone:'0000000000',email:'fixture@example.invalid',isGuest:true},paymentMethod:'CASH_ON_DELIVERY',tip:0};

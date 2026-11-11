@@ -7,7 +7,14 @@ export function canRequestDeliveryReview(quote?:DeliveryQuote|null) {
 export function hasConfirmedDeliveryQuote(quote?:DeliveryQuote|null) {
   return !!quote?.confirmationToken && !!quote.basketValidated && !!quote.transportPlan?.feasible && !!quote.charges;
 }
-export const REVIEW_MESSAGE='Puedes enviar tu pedido para que la sede confirme la entrega. No se realizará ningún cobro ni se reservará un horario hasta confirmar contigo el costo y la disponibilidad.';
+/** A server-priced tariff can be shown before capacity confirmation; it never authorizes dispatch. */
+export function visibleDeliveryCharges(quote:DeliveryQuote|null|undefined, subtotal:number) {
+  const charges=quote?.charges;
+  if(!charges || charges.subtotal!==subtotal || !Number.isFinite(charges.shipping) || charges.shipping<0) return undefined;
+  if(hasConfirmedDeliveryQuote(quote) || (canRequestDeliveryReview(quote) && !!charges.mode)) return charges;
+  return undefined;
+}
+export const REVIEW_MESSAGE='Puedes enviar tu pedido para que la sede confirme la entrega. No se realizará ningún cobro ni se reservará un horario. Cualquier cambio en la modalidad o el costo requerirá tu aceptación.';
 export function deliveryStatusMessage(quote:DeliveryQuote) {
   return canRequestDeliveryReview(quote) ? REVIEW_MESSAGE : quote.message;
 }

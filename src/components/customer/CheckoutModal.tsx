@@ -1,4 +1,4 @@
-import {canRequestDeliveryReview,hasConfirmedDeliveryQuote} from '../../lib/checkoutReadiness';
+import {canRequestDeliveryReview,hasConfirmedDeliveryQuote,visibleDeliveryCharges} from '../../lib/checkoutReadiness';
 import {useCustomer} from '../../customer/client';
 import {EntrancePhotoPreview} from './EntrancePhotoPicker';
 import {getEntrancePhoto,queueEntrancePhoto,sendPendingEntrancePhoto} from '../../lib/entrancePhotos';
@@ -142,6 +142,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const totalWeightKg = deliveryConfirmed ? deliveryQuote!.totalWeightKg : 0;
   const totalWeightGrams = Math.round(totalWeightKg * 1000);
   const shipping = deliveryQuote?.charges?.shipping ?? 0;
+  const visibleCharges=visibleDeliveryCharges(deliveryQuote,subtotal);
+  const pricedMode=visibleCharges?.mode || selectedMode;
   const serviceFee = deliveryQuote?.charges?.serviceFee ?? 0;
   const total = subtotal + shipping + serviceFee + tip;
 
@@ -697,8 +699,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Envío ({selectedMode === 'PROGRAMADO' ? 'Programado' : selectedMode === 'TURBO_DIVIDIDO' ? 'Turbo Dividido' : 'Turbo'}):</span>
-              <span className="font-bold text-emerald-600">{!deliveryConfirmed?'Por confirmar':shipping === 0 ? '¡GRATIS!' : formatCOP(shipping)}</span>
+              <span>Envío ({pricedMode === 'PROGRAMADO' ? 'Programado' : pricedMode === 'TURBO_DIVIDIDO' ? 'Turbo Dividido' : 'Turbo'}):</span>
+              <span className="font-bold text-emerald-600">{!visibleCharges?'Por confirmar':visibleCharges.shipping === 0 ? 'Envío gratis' : formatCOP(visibleCharges.shipping)}</span>
             </div>
             <div className="flex justify-between">
               <span>Tarifa de servicio:</span>

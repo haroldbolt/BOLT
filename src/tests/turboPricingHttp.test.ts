@@ -94,7 +94,7 @@ try {
  await start();const info=await call('/simulation','GET',undefined,'');admin=(await call('/auth/login','POST',info.admin,'')).token;
  await call('/admin/simulation/fleet','POST',{count:2});
  const quote=async(price:number)=>call('/delivery/quote','POST',{destination,items:[{productId:'PRICE-'+price,quantity:1}],requestedMode:'TURBO'},'');
- for(const price of [59999,60000,60001]) {const q=await quote(price);assert.equal(q.recommendedMode,'TURBO',JSON.stringify(q));assert.ok(q.confirmationToken);assert.equal(q.charges.shipping,price<60000?10000:0);assert.equal(q.charges.serviceFee,0);}
+ for(const price of [59999,60000,60001]) {const q=await quote(price);assert.equal(q.recommendedMode,'TURBO',JSON.stringify(q));assert.ok(q.confirmationToken);assert.equal(q.charges.shipping,price<60000?10000:0);assert.equal(q.charges.serviceFee,0);assert.equal(q.charges.mode,'TURBO');}
  assert.equal((await call('/orders')).length,0);
  const q=await quote(59999);const payload={items:[{productId:'PRICE-59999',price:59999,quantity:1}],deliveryAddress:destination,deliveryMode:'TURBO',confirmationToken:q.confirmationToken,customer:{name:'SIMULACIÓN TARIFA',phone:'0000000000',email:'tarifa@example.invalid',isGuest:true},paymentMethod:'CASH_ON_DELIVERY',tip:0,shipping:0,serviceFee:1500,total:1};
  idem='pricing-once';const created=await call('/orders','POST',payload,'',201);guest=created.guestAccessToken;

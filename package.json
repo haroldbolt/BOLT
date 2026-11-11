@@ -24,7 +24,7 @@
     "customer:provision-demo": "node --import tsx scripts/customer/provision-demo.ts --apply",
     "test:customer-hosted": "node deployment/demo-gateway.test.mjs && node deployment/demo-customer.test.mjs && tsx src/tests/customerMailHTTP.test.ts && tsx src/tests/customerOAuth.test.ts --gateway",
     "test:inventory-manual": "tsx src/tests/manualInventoryBatch.test.ts && tsx src/tests/manualInventoryHttp.test.ts",
-    "test:pending-delivery": "tsx src/tests/pendingDeliveryReview.test.tsx && tsx src/tests/pendingDeliveryReviewHttp.test.ts",
+    "test:pending-delivery": "tsx src/tests/pendingDeliveryReview.test.tsx && tsx src/tests/pendingShippingPrice.test.tsx && tsx src/tests/pendingDeliveryReviewHttp.test.ts",
     "test:turbo-pricing": "tsx src/tests/turboPricing.test.tsx && tsx src/tests/turboPricingHttp.test.ts"
   },
   "dependencies": {

@@ -1,4 +1,4 @@
-import {canRequestDeliveryReview,hasConfirmedDeliveryQuote} from '../../lib/checkoutReadiness';
+import {canRequestDeliveryReview,hasConfirmedDeliveryQuote,visibleDeliveryCharges} from '../../lib/checkoutReadiness';
 import {ProductImage} from '../common/ProductImage';
 import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import type { DeliveryQuote } from '../../lib/deliveryService';
@@ -41,7 +41,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const totalWeightKg = deliveryQuote?.transportPlan?.feasible ? deliveryQuote.totalWeightKg : null;
   const ready=hasConfirmedDeliveryQuote(deliveryQuote);
   const review=canRequestDeliveryReview(deliveryQuote);
-  const shipping = ready?deliveryQuote?.charges?.shipping:undefined;
+  const shipping = visibleDeliveryCharges(deliveryQuote,subtotal)?.shipping;
   const serviceFee = (ready||review)?deliveryQuote?.charges?.serviceFee:undefined;
   const total = ready?deliveryQuote?.charges?.total:undefined;
 
