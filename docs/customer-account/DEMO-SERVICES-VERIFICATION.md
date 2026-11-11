@@ -19,17 +19,24 @@ Código de aplicación: `93f76a58370ca10b5e5666837b67903933f824c5`, rama `codex/
 
 Google Cloud: proyecto y cliente web exclusivos de la demo; origen/callback exactos; un usuario de prueba autorizado. Credenciales guardadas únicamente en configuración privada. No se ha completado aún el ingreso real Google desde BOLT.
 
-Resend: cuenta accesible y dominio `auth.cultivacenter.com` registrado, pendiente de DNS. Seguimiento de aperturas/clics y recepción desactivados. No se afirma entrega de correos ni se habilita el remitente antes de verificarlo.
+Resend: dominio `auth.cultivacenter.com` **Verified** tras agregar un TXT y dos CNAME autorizados en Shopify. Comprobación DNS pública coincidente. Conservados A, AAAA, CNAME de www/account, DMARC y TXT del proveedor. Seguimiento de aperturas/clics y recepción desactivados.
+
+Clave exclusiva de envío restringida a ese subdominio, guardada en Railway/demo; clave Onboarding revocada con autorización. Las copias temporales locales de secretos se eliminaron después de configurar Railway. Ninguna credencial se incluyó en GitHub ni en capturas.
+
+Un único correo técnico autorizado fue aceptado por la API real de Resend usando `sendCustomerMailHTTP` y apareció como **Delivered** en su panel. Esto confirma entrega al servidor destinatario; no confirma lectura ni ubicación en bandeja frente a spam. No creó cuenta ni aceptó consentimientos. La verificación de cuenta, recuperación de contraseña y Google reales siguen pendientes.
+
+Último despliegue de correo: `1b93c960-f5de-4fe9-8462-0b59c3217536`, SUCCESS. Railway reporta commit `f96d24181c2b6358e449a6698c5c853fcc7de4b6` (únicamente documentación adicional sobre el código `93f76a5`), aunque su configuración source conserva `93f76a5`. Verificar siempre el commit efectivo de cada despliegue, también al actualizar variables; no inferirlo solo del campo source.
+
+HTTP final: configured/email/google=true, apple=false, registrationEnabled=false y legalStatus=draft. Intento directo de registro rechazado con 403 `LEGAL_REVIEW_PENDING`, identidad anónima nula; huellas de los cuatro pedidos y 3.636 registros del catálogo nuevamente intactas.
 
 Apple: pendiente membresía, identificadores, credenciales y pruebas. Sigue deshabilitado.
 
-Documentos: versión `2026-11-10-draft-1`, todavía borrador. No se estableció `BOLT_LEGAL_APPROVED_VERSION`. Aprobar servicios técnicos no sustituye la aprobación empresarial/jurídica de los documentos.
+Documentos: versión `2026-11-10-draft-1`, todavía borrador. La empresa confirmó expresamente que la revisión continúa pendiente. No se estableció `BOLT_LEGAL_APPROVED_VERSION`. Aprobar servicios técnicos no sustituye la aprobación empresarial/jurídica de los documentos.
 
 ## Para continuar
 
-1. Verificar en la administración DNS los registros emitidos por Resend, sin cambiar el destino de la tienda ni su correo.
-2. Guardar en Railway una clave nueva limitada al envío del dominio; reemplazar la clave de onboarding compartida en el chat sin copiarla a informes ni commits.
-3. Completar aprobación de los documentos antes de habilitar registros.
-4. Probar con el titular recepción, verificación, recuperación y Google reales, más Safari/iPhone y Android. Los fixtures no sustituyen esas pruebas.
+1. Completar aprobación de los documentos antes de habilitar registros.
+2. Probar con el titular registro, verificación, recuperación y Google reales, más Safari/iPhone y Android. Los fixtures y el correo técnico no sustituyen esas pruebas.
+3. Para Apple: obtener membresía y configurar el proveedor; permanece deshabilitado.
 
-Evidencias locales: `output/customer-auth/google-oauth-test-user.png`, `resend-domain-pending.png` y `hosted-customer-services-pending.png`. No se publican cookies, credenciales, mensajes privados ni datos personales en GitHub.
+Evidencias locales en `output/customer-auth/`: `google-oauth-test-user.png`, `shopify-dns-before.png`, `shopify-dns-after.png`, `resend-domain-verified.png`, `resend-key-scope.png`, `resend-test-delivered.png`, `hosted-services-legal-pending.png` y `dns-public-check.json`. No se publican cookies, credenciales, mensajes privados ni datos personales en GitHub.

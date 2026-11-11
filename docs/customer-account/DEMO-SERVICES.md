@@ -11,7 +11,7 @@ La demo permanece separada de main y de operación real. Origen actual:
 - Origen Google: `https://bolt-demo-demo.up.railway.app`.
 - Callback Google: `https://bolt-demo-demo.up.railway.app/api/customer-auth/callback/google`.
 - Apple sigue pendiente de membresía Apple Developer, App ID, Services ID, clave y configuración de correo relay. Retorno futuro: `https://bolt-demo-demo.up.railway.app/api/customer-auth/callback/apple`.
-- Dominio comunicado por la empresa: `cultivacenter.com`; `/es` es una ruta. Propuesta de remitente: `Bolt by Agrocentro <cuentas@auth.cultivacenter.com>`, sujeto a verificar ese subdominio en Resend. No se cambian registros de la tienda ni sus MX principales.
+- Dominio comunicado por la empresa: `cultivacenter.com`; `/es` es una ruta. Remitente de demo verificado: `Bolt by Agrocentro <cuentas@auth.cultivacenter.com>`. El subdominio está verificado en Resend tras agregar sus tres registros autorizados en Shopify; la tienda conserva sus registros existentes.
 
 ## PostgreSQL y primer despliegue
 
@@ -44,7 +44,7 @@ El state de Apple lleva SameSite=None/Secure, necesario para su retorno POST; la
 
 ## Activación y verificación final
 
-No establecer `BOLT_LEGAL_APPROVED_VERSION` hasta que la empresa apruebe esa versión exacta y complete la revisión pendiente. La implementación no elimina ese bloqueo para aparentar un registro operativo. Los textos son borradores; configurar servicios no equivale a revisión jurídica.
+No establecer `BOLT_LEGAL_APPROVED_VERSION` hasta que la empresa apruebe esa versión exacta y complete la revisión pendiente. La implementación no elimina ese bloqueo para aparentar un registro operativo. Los textos son borradores; configurar servicios no equivale a revisión jurídica. Antes de aprobarlos se debe actualizar su inventario de proveedores con los servicios de demo que ya están configurados (PostgreSQL/Railway, Google y Resend), precisar los contratos y países aplicables y emitir la versión legal correspondiente; Apple sigue pendiente. La empresa confirmó que la revisión continúa pendiente.
 
 Comprobar en HTTPS con el titular presente:
 
