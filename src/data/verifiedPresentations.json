@@ -656,5 +656,221 @@
     "label": "Caja de 2,5 kg",
     "productId": "gid://shopify/Product/10417601249560",
     "source": "https://es.scribd.com/document/1037496909/CATA-LOGO-OFICIAL-MARZO-II-CALABAZA-PETS"
+  },
+  "gid://shopify/ProductVariant/49236086784280": {
+    "expectedName": "0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9524002128152",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-cachorro-razas-pequenas-y-miniatura-pollo-45-lb-11002001"
+  },
+  "gid://shopify/ProductVariant/49236096057624": {
+    "expectedName": "0 / 0 / 0",
+    "label": "7,7 lb",
+    "productId": "gid://shopify/Product/9524002423064",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-metabolic/p?skuId=1209"
+  },
+  "gid://shopify/ProductVariant/49236126695704": {
+    "expectedName": "0 / 0",
+    "label": "8 lb",
+    "productId": "gid://shopify/Product/9524004094232",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-gastro-biome/p?skuId=3045"
+  },
+  "gid://shopify/ProductVariant/49236130201880": {
+    "expectedName": "0",
+    "label": "15,5 lb",
+    "productId": "gid://shopify/Product/9524004127000",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-adult-sensitive-stomach-and-skin/p"
+  },
+  "gid://shopify/ProductVariant/49236139770136": {
+    "expectedName": "0 / 0",
+    "label": "6,6 lb",
+    "productId": "gid://shopify/Product/9524004323608",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-razas-medianas-pollo-66-lb-11002126"
+  },
+  "gid://shopify/ProductVariant/49236148977944": {
+    "expectedName": "0 / 0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9524004684056",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-cachorro-razas-pequenas-pollo-45-lb-11002046"
+  },
+  "gid://shopify/ProductVariant/49236231880984": {
+    "expectedName": "0 / 0",
+    "label": "8,5 lb",
+    "productId": "gid://shopify/Product/9524011860248",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-urinary-care-cd-dry/p?skuId=1843"
+  },
+  "gid://shopify/ProductVariant/49236295450904": {
+    "expectedName": "0",
+    "label": "24 lb",
+    "productId": "gid://shopify/Product/9524022214936",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-metabolic-y-mobility/p?skuId=1555"
+  },
+  "gid://shopify/ProductVariant/49236298006808": {
+    "expectedName": "0 / 0 / 0",
+    "label": "3,3 lb",
+    "productId": "gid://shopify/Product/9524022444312",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-weight-reduction-rd-dry/p?skuId=729"
+  },
+  "gid://shopify/ProductVariant/49236302430488": {
+    "expectedName": "0 / 0",
+    "label": "8,5 lb",
+    "productId": "gid://shopify/Product/9524023034136",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-wd/p?skuId=1215"
+  },
+  "gid://shopify/ProductVariant/49236306166040": {
+    "expectedName": "0 / 0",
+    "label": "8 lb",
+    "productId": "gid://shopify/Product/9524023492888",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-zd-ultra-allergen/p?skuId=1860"
+  },
+  "gid://shopify/ProductVariant/49236311277848": {
+    "expectedName": "0 / 0",
+    "label": "8,5 lb",
+    "productId": "gid://shopify/Product/9524023820568",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-joint-care-jd-dry/p?skuId=724"
+  },
+  "gid://shopify/ProductVariant/49236318650648": {
+    "expectedName": "0",
+    "label": "8,5 lb",
+    "productId": "gid://shopify/Product/9524025000216",
+    "source": "https://www.hillspet.co/dog-food/prescription-diet-id-low-fat-digestive-care-dry"
+  },
+  "gid://shopify/ProductVariant/49238527148312": {
+    "expectedName": "0 / 0",
+    "label": "8,5 lb",
+    "productId": "gid://shopify/Product/9524760576280",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-kd-dry/p?skuId=725"
+  },
+  "gid://shopify/ProductVariant/49238537961752": {
+    "expectedName": "0",
+    "label": "13 oz",
+    "productId": "gid://shopify/Product/9524762902808",
+    "source": "https://www.puppis.com.co/alimento-humedo-para-perro-hills-kd-dry/p?skuId=746"
+  },
+  "gid://shopify/ProductVariant/49238560899352": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524766867736",
+    "source": "https://www.hillspet.co/cat-food/prescription-diet-gastrointestinal-biome-stress-digestive-care-dry"
+  },
+  "gid://shopify/ProductVariant/49238565749016": {
+    "expectedName": "0",
+    "label": "7 lb",
+    "productId": "gid://shopify/Product/9524767719704",
+    "source": "https://www.hillspet.co/cat-food/prescription-diet-onc-on-care-chicken-restorative-care-dry"
+  },
+  "gid://shopify/ProductVariant/49238571581720": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524768637208",
+    "source": "https://www.hillspet.co/cat-food/prescription-diet-id-digestive-care-dry"
+  },
+  "gid://shopify/ProductVariant/49238573482264": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524768932120",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-gato-hills-prescription-diet-control-de-peso-metabolic-4-lb-11001067"
+  },
+  "gid://shopify/ProductVariant/49238576431384": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524769456408",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-gato-hills-prescription-diet-cuidado-renal-kd-4-lb-11001062"
+  },
+  "gid://shopify/ProductVariant/49238578233624": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524769882392",
+    "source": "https://www.hillspet.co/cat-food/pd-feline-zd-dry"
+  },
+  "gid://shopify/ProductVariant/49238582591768": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524770799896",
+    "source": "https://www.hillspet.co/cat-food/prescription-diet-rd-weight-management-dry"
+  },
+  "gid://shopify/ProductVariant/49238894477592": {
+    "expectedName": "0",
+    "label": "3,5 lb",
+    "productId": "gid://shopify/Product/9524862714136",
+    "source": "https://www.hillspet.co/cat-food/science-plan-adult-indoor-dry"
+  },
+  "gid://shopify/ProductVariant/49238901752088": {
+    "expectedName": "0",
+    "label": "3 lb",
+    "productId": "gid://shopify/Product/9524865630488",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-gato-hills-science-diet-adulto-control-de-peso-perfect-weight-pollo-3-lb-11002081"
+  },
+  "gid://shopify/ProductVariant/49238906765592": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9524868088088",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-gato-hills-science-diet-senior-7-pollo-4-lb-11002074"
+  },
+  "gid://shopify/ProductVariant/49238918889752": {
+    "expectedName": "0",
+    "label": "33 lb",
+    "productId": "gid://shopify/Product/9524873298200",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-adult-large-breed-lamb-rice-1/p"
+  },
+  "gid://shopify/ProductVariant/49238920659224": {
+    "expectedName": "0",
+    "label": "15 lb",
+    "productId": "gid://shopify/Product/9524874412312",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-razas-grandes-pollo-15-lb-11002102"
+  },
+  "gid://shopify/ProductVariant/49238921445656": {
+    "expectedName": "0",
+    "label": "5 lb",
+    "productId": "gid://shopify/Product/9524874805528",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-light-razas-pequenas-pollo-5-lb-11002017"
+  },
+  "gid://shopify/ProductVariant/49238922985752": {
+    "expectedName": "0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9524875526424",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-razas-pequenas-y-miniatura-pollo-45-lb-11002002"
+  },
+  "gid://shopify/ProductVariant/49238941892888": {
+    "expectedName": "0 / 0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9524883390744",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-razas-pequenas-cordero-y-arroz-45-lb-11002026"
+  },
+  "gid://shopify/ProductVariant/49239613440280": {
+    "expectedName": "0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9525182169368",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-adult-perfect-weight/p"
+  },
+  "gid://shopify/ProductVariant/49239614947608": {
+    "expectedName": "0",
+    "label": "3,5 lb",
+    "productId": "gid://shopify/Product/9525182923032",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-adulto-cuidado-digestivo-perfect-digestion-pollo-35-lb-11002118"
+  },
+  "gid://shopify/ProductVariant/49239628316952": {
+    "expectedName": "0 / 0 / 0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9525191016728",
+    "source": "https://gabrica.co/personas/es-CO/producto/comida-seca-para-perro-hills-science-diet-cachorro-razas-medianas-pollo-45-lb-11002043"
+  },
+  "gid://shopify/ProductVariant/49239638606104": {
+    "expectedName": "0 / 0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9525197308184",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-adult-small-toybreed-light/p"
+  },
+  "gid://shopify/ProductVariant/49239650074904": {
+    "expectedName": "0 / 0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9525205664024",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-mature-small-bites-dry/p"
+  },
+  "gid://shopify/ProductVariant/49239656464664": {
+    "expectedName": "0",
+    "label": "3,5 lb",
+    "productId": "gid://shopify/Product/9525208744216",
+    "source": "https://www.puppis.com.co/alimento-para-perro-hills-youthful-vitality-small-and-mini-adult-7/p"
   }
 }
