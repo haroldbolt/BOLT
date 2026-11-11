@@ -12,8 +12,8 @@ export function DeliveryPlanSummary({quote,onRefresh}:{quote?:DeliveryQuote|null
       <p className="font-bold">Entrega {i+1} · {s.weightKg.toLocaleString('es-CO')} kg de productos</p>
       <ul className="mt-1 space-y-1">{s.items.map(item=><li key={item.productId}>{item.quantity} × {item.name}</li>)}</ul>
       <p className="mt-1 text-slate-500">Con embalaje: {(quote.transportPlan!.shipments[i].grossWeightGrams/1000).toLocaleString('es-CO')} kg</p>
-      {quote.transportPlan!.shipments[i].vehicle.externalOffer ? <p className="mt-1">Red externa simulada · {quote.transportPlan!.shipments[i].vehicle.externalOffer!.providerName} · aprox. {s.estimatedArrivalSeconds/60} min · Transporte: {formatCOP(quote.transportPlan!.shipments[i].vehicle.externalOffer!.shippingCOP)}</p> : <p className="mt-1">Flota propia{quote.recommendedMode!=='PROGRAMADO' ? ` · aprox. ${s.estimatedArrivalSeconds/60} min` : ''}</p>}
+      {quote.transportPlan!.shipments[i].vehicle.externalOffer ? <p className="mt-1">Red externa simulada · {quote.transportPlan!.shipments[i].vehicle.externalOffer!.providerName} · aprox. {s.estimatedArrivalSeconds/60} min</p> : <p className="mt-1">Flota propia{quote.recommendedMode!=='PROGRAMADO' ? ` · aprox. ${s.estimatedArrivalSeconds/60} min` : ''}</p>}
     </div>)}
-    {quote.charges && <p className="font-bold">Total de la compra: {formatCOP(quote.charges.total)} (sin propina). Transporte total: {formatCOP(quote.charges.shipping)}. Servicio aplicado una sola vez.</p>}
+    {quote.charges && <p className="font-bold">Total de la compra: {formatCOP(quote.charges.total)} (sin propina). Transporte total: {formatCOP(quote.charges.shipping)}. Servicio: {quote.charges.serviceFee===0?'gratis':formatCOP(quote.charges.serviceFee)}.</p>}
   </section>;
 }

@@ -32,10 +32,13 @@ export function TransportManagerTab({admin,onAuthenticate}:{admin:any;onAuthenti
         <NumberField label="Límite base (g, máximo 50.000)" value={config.baseLimitGrams} onChange={baseLimitGrams=>setConfig({...config,baseLimitGrams})}/>
         <NumberField label="Margen ligero total (g, máximo 3.000)" value={config.lightMarginGrams} onChange={lightMarginGrams=>setConfig({...config,lightMarginGrams})}/>
         <NumberField label="Tope opcional de repartidores (vacío: sin tope; 0: pausa)" value={config.maxDispatches??undefined} onChange={maxDispatches=>setConfig({...config,maxDispatches:Number.isFinite(maxDispatches)?maxDispatches:null})}/>
-        <NumberField label="Transporte por compra (COP)" value={config.pricing.shipping} onChange={shipping=>setConfig({...config,pricing:{...config.pricing,shipping}})}/>
-        <NumberField label="Transporte gratis desde (COP)" value={config.pricing.freeShippingFrom} onChange={freeShippingFrom=>setConfig({...config,pricing:{...config.pricing,freeShippingFrom}})}/>
+        <NumberField label="Transporte Programado por compra (COP)" value={config.pricing.shipping} onChange={shipping=>setConfig({...config,pricing:{...config.pricing,shipping}})}/>
+        <NumberField label="Programado gratis desde (COP)" value={config.pricing.freeShippingFrom} onChange={freeShippingFrom=>setConfig({...config,pricing:{...config.pricing,freeShippingFrom}})}/>
+        <NumberField label="Transporte Turbo por compra (COP)" value={config.pricing.turbo?.shipping ?? config.pricing.shipping} onChange={shipping=>setConfig({...config,pricing:{...config.pricing,turbo:{freeShippingFrom:config.pricing.turbo?.freeShippingFrom ?? config.pricing.freeShippingFrom,shipping}}})}/>
+        <NumberField label="Turbo gratis desde (COP)" value={config.pricing.turbo?.freeShippingFrom ?? config.pricing.freeShippingFrom} onChange={freeShippingFrom=>setConfig({...config,pricing:{...config.pricing,turbo:{shipping:config.pricing.turbo?.shipping ?? config.pricing.shipping,freeShippingFrom}}})}/>
         <NumberField label="Servicio por compra (COP)" value={config.pricing.serviceFee} onChange={serviceFee=>setConfig({...config,pricing:{...config.pricing,serviceFee}})}/>
       </div>
+      <p className="text-xs text-slate-600">La tarifa Turbo se cobra una sola vez por compra, incluidas entregas divididas. Los costos del proveedor se conservan para operación y no se suman a esa tarifa. Servicio en 0 significa gratis.</p>
       <h3 className="font-bold">Vehículos de conductores registrados</h3>
       {config.vehicles.map((v,index)=><fieldset key={index} className="border rounded-2xl p-3 space-y-3"><legend>Vehículo {index+1}</legend>
         <label className="block text-xs">Conductor <select aria-label={`Conductor del vehículo ${index+1}`} className={input} value={v.driverId} onChange={e=>changeVehicle(index,{driverId:e.target.value})}><option value="">Seleccionar</option>{drivers.map(d=><option key={d.id} value={d.id}>{d.name} · {d.vehiclePlate} · {d.isOnline?d.currentStatus:'Desconectado'}</option>)}</select></label>

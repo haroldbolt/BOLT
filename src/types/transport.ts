@@ -65,13 +65,18 @@ export interface TransportConfig {
   maxDispatches: number | null;
   vehicles: TransportVehicle[];
   externalProviders?: ExternalProviderSimulation[];
-  pricing: { shipping: number; freeShippingFrom: number; serviceFee: number };
+  pricing: {
+    /** Legacy/scheduled tariff. Existing installations retain it until an authorized edit. */
+    shipping: number; freeShippingFrom: number; serviceFee: number;
+    /** Customer Turbo price, once per purchase, including split/external deliveries. */
+    turbo?: { shipping: number; freeShippingFrom: number };
+  };
 }
 export const DEFAULT_TRANSPORT_CONFIG: TransportConfig = {
   version: 1, baseLimitGrams: 50000, lightMarginGrams: 3000,
   maxDispatches: null, vehicles: [], externalProviders: [],
   // Existing policy: once per purchase, also for split purchases.
-  pricing: { shipping: 4900, freeShippingFrom: 70000, serviceFee: 1500 },
+  pricing: { shipping: 4900, freeShippingFrom: 70000, serviceFee: 0, turbo: {shipping: 10000, freeShippingFrom: 60000} },
 };
 export interface TransportLoad {
   driverId: string;

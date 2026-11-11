@@ -40,3 +40,17 @@ No hay migración masiva. Los campos de revisión se agregan únicamente a solic
 Mantener esta revisión de código mientras existan solicitudes pendientes: el main anterior reconoce el estado pendiente pero no su recorrido ni el bloqueo de confirmación genérica. Antes de revertir a esa versión, completar o cancelar autorizadamente cada solicitud mediante esta revisión; no restaurar un respaldo antiguo ni perder movimientos posteriores. Una revisión compatible debe conservar el campo y la validación de `deliveryReview` si quedan pendientes.
 
 Rappi/inDrive, sincronización Shopify y servicios reales de pago permanecen sin activar.
+
+## Tarifa autorizada el 11 de noviembre de 2026
+
+Turbo y Turbo Dividido: envío gratis si el subtotal de productos es de COP 60.000 o más; por debajo, COP 10.000 una sola vez por compra. Servicio: COP 0. No se calcula el umbral usando envío, propinas o servicio. Las unidades y los precios vigentes del servidor determinan el subtotal.
+
+La configuración se administra en **Flota y capacidad de transporte → Límites y tarifas por compra**. `pricing.turbo` contiene `shipping: 10000` y `freeShippingFrom: 60000`; `pricing.serviceFee` vale `0`. Se conserva el transporte Programado en `pricing.shipping` y `pricing.freeShippingFrom`. Al cambiar realmente a Programado se vuelve a calcular su tarifa; no se arrastra la tarifa Turbo.
+
+Los costos ofrecidos por proveedores se conservan en el plan de operación. No se suman al precio plano que paga el cliente Turbo, ni se duplican cargos por cada despacho. Esto no activa proveedores ni acredita disponibilidad.
+
+En instalaciones existentes hay que guardar estos campos mediante el administrador autenticado (`PUT /api/v1/admin/transport`) con la revisión vigente. La operación es auditada y rechaza una revisión obsoleta; no se reescribe automáticamente la configuración persistida al iniciar. Respaldar la configuración anterior y conservar vehículos, límites y franjas. Una reversión de tarifas usa una nueva revisión y cambia solo esos campos: no restaura el archivo completo ni recalcula pedidos ya confirmados.
+
+Una solicitud pendiente sigue sin cobro ni horario. El servicio gratuito puede mostrarse desde la cotización del servidor; transporte y total final permanecen pendientes hasta tener modalidad y entrega confirmables. Las cotizaciones confirmadas incluyen los importes en su token y se invalidan cuando cambia la tarifa.
+
+`npm run test:turbo-pricing` comprueba límites 59.999/60.000/60.001, varias entregas, costos externos, cambio a Programado, validación de tarifas y renderizado. Su recorrido HTTP aislado verifica creación con importes autoritativos, reintento, reserva única, rechazo de cotización anterior, permisos, persistencia y conservación del total histórico.

@@ -17,6 +17,7 @@ export function validateTransportAttributes(value: unknown): value is TransportA
 export function validateTransportConfig(c: TransportConfig, drivers: DriverProfile[], storeIds: string[]): void {
   if(!c || c.version!==1 || !integer(c.baseLimitGrams) || c.baseLimitGrams>50000 || !integer(c.lightMarginGrams,true) || c.lightMarginGrams>3000 || c.maxDispatches!==null && !integer(c.maxDispatches,true) || !Array.isArray(c.vehicles)) throw Error('Límites inválidos: máximo 50.000 g base, 3.000 g de margen; máximo de entregas opcional, 0 deshabilita la operación.');
   if(!c.pricing || !['shipping','freeShippingFrom','serviceFee'].every(k=>integer((c.pricing as any)[k],true))) throw Error('Tarifas COP inválidas.');
+  if(c.pricing.turbo!==undefined && (!c.pricing.turbo || !['shipping','freeShippingFrom'].every(k=>integer((c.pricing.turbo as any)[k],true)))) throw Error('Tarifas Turbo COP inválidas.');
   if(c.externalProviders!==undefined && !Array.isArray(c.externalProviders)) throw Error('Configuración de proveedores inválida.');
   const providerIds=new Set();
   for(const p of c.externalProviders || []) {

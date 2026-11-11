@@ -42,7 +42,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const ready=hasConfirmedDeliveryQuote(deliveryQuote);
   const review=canRequestDeliveryReview(deliveryQuote);
   const shipping = ready?deliveryQuote?.charges?.shipping:undefined;
-  const serviceFee = ready?deliveryQuote?.charges?.serviceFee:undefined;
+  const serviceFee = (ready||review)?deliveryQuote?.charges?.serviceFee:undefined;
   const total = ready?deliveryQuote?.charges?.total:undefined;
 
   return (
@@ -166,8 +166,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 )}
               </div>
               <div className="flex justify-between">
-                <span>Tarifa de servicio y embalaje:</span>
-                <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':formatCOP(serviceFee)}</span>
+                <span>Tarifa de servicio:</span>
+                <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)}</span>
               </div>
               <div className="flex justify-between text-[11px] text-slate-400">
                 <span>Peso total estimado:</span>

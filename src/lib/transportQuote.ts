@@ -12,7 +12,9 @@ export function applyTransportQuote(q: DeliveryQuote, req: QuoteRequest, stores:
   }
   const subtotal=req.items.reduce((a,i)=>a+(products.find(p=>p.id===i.productId)?.price || 0)*i.quantity,0);
   const pricing=context.config.pricing;
-  q.charges={subtotal,freeShippingFrom:pricing.freeShippingFrom,shipping:subtotal>=pricing.freeShippingFrom?0:pricing.shipping,serviceFee:pricing.serviceFee,total:subtotal+(subtotal>=pricing.freeShippingFrom?0:pricing.shipping)+pricing.serviceFee};
+  const provisionalPricing=(q.recommendedMode || q.effectiveMode || req.requestedMode)==='PROGRAMADO' ? pricing : pricing.turbo || pricing;
+  const provisionalShipping=subtotal>=provisionalPricing.freeShippingFrom?0:provisionalPricing.shipping;
+  q.charges={subtotal,freeShippingFrom:provisionalPricing.freeShippingFrom,shipping:provisionalShipping,serviceFee:pricing.serviceFee,total:subtotal+provisionalShipping+pricing.serviceFee};
   q.inventoryValidated=q.basketValidated;
   q.providerResponses=externalAvailability(context.config,Date.now(),{storeId:q.assignedStoreId,mode:req.requestedMode==='PROGRAMADO'?'PROGRAMADO':'TURBO'}).responses;
   // Scheduled capacity is checked separately against its territorial store and each explicit slot.
@@ -64,9 +66,15 @@ export function applyTransportQuote(q: DeliveryQuote, req: QuoteRequest, stores:
     q.availableModes.turbo=false; q.availableModes.turboDividido=false; return q;
   }
   q.transportPlan=plan; q.reasonCode=plan.reasonCode; q.message=plan.message;
-  const ownShipping=plan.shipments.some(s=>!s.vehicle.externalOffer) && subtotal<pricing.freeShippingFrom ? pricing.shipping : 0;
-  const externalShipping=plan.shipments.reduce((sum,s)=>sum+(s.vehicle.externalOffer?.shippingCOP || 0),0);
-  q.charges={subtotal,freeShippingFrom:pricing.freeShippingFrom,ownShipping,externalShipping,shipping:ownShipping+externalShipping,serviceFee:pricing.serviceFee,total:subtotal+ownShipping+externalShipping+pricing.serviceFee};
+  const turboPricing=q.recommendedMode!=='PROGRAMADO' ? pricing.turbo : undefined;
+  const effectivePricing=turboPricing || pricing;
+  // Provider operating costs stay in the transport plan. A Turbo customer pays the
+  // configured flat tariff once, regardless of the number or source of vehicles.
+  const ownShipping=turboPricing
+    ? (subtotal>=turboPricing.freeShippingFrom?0:turboPricing.shipping)
+    : (plan.shipments.some(s=>!s.vehicle.externalOffer) && subtotal<pricing.freeShippingFrom ? pricing.shipping : 0);
+  const externalShipping=turboPricing?0:plan.shipments.reduce((sum,s)=>sum+(s.vehicle.externalOffer?.shippingCOP || 0),0);
+  q.charges={subtotal,freeShippingFrom:effectivePricing.freeShippingFrom,ownShipping,externalShipping,shipping:ownShipping+externalShipping,serviceFee:pricing.serviceFee,total:subtotal+ownShipping+externalShipping+pricing.serviceFee};
   if(q.recommendedMode!=='PROGRAMADO') q.estimatedMinutes=Math.max(...plan.shipments.map(s=>s.vehicle.externalOffer?.estimatedMinutes || q.estimatedMinutes || 25));
   q.basketValidated=!!q.inventoryValidated;
   q.totalWeightGrams=plan.shipments.reduce((a,s)=>a+s.productWeightGrams,0); q.totalWeightKg=q.totalWeightGrams/1000;

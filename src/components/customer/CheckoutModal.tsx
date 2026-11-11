@@ -702,7 +702,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             <div className="flex justify-between">
               <span>Tarifa de servicio:</span>
-              <span className="font-bold text-slate-900">{deliveryConfirmed?formatCOP(serviceFee):'Por confirmar'}</span>
+              <span className="font-bold text-slate-900">{(deliveryConfirmed||requestReview)&&deliveryQuote?.charges?(serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)):'Por confirmar'}</span>
             </div>
             {!requestReview && tip > 0 && (
               <div className="flex justify-between">
