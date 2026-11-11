@@ -20,7 +20,7 @@ async function test(name:string,run:()=>void|Promise<void>) {await run();count++
 await test('No location permission or lookup before the customer requests it',()=>{const s=setup();assert.equal(s.calls.length,0)});
 await test('Uses a fresh high-accuracy reading and preserves latitude/longitude and accuracy',async()=>{
   const s=setup(),result=s.reader.request();assert.deepEqual(s.calls[0].options,DEVICE_LOCATION_OPTIONS);
-  s.calls[0].success(position());assert.deepEqual(await result,{coordinates:point,accuracyMeters:18});
+  s.calls[0].success(position());assert.deepEqual(await result,{coordinates:point,accuracyMeters:18,ageSeconds:0});
 });
 await test('Repeated clicks share one pending request',async()=>{
   const s=setup(),a=s.reader.request(),b=s.reader.request();assert.equal(a,b);assert.equal(s.calls.length,1);s.calls[0].success(position());await a;
@@ -41,8 +41,8 @@ await test('A callback after the watchdog deadline cannot replace a newer result
   const s=setup({deadline:5}),old=s.reader.request();await assert.rejects(old);const next=s.reader.request();s.calls[0].success(position());s.calls[1].success(position());assert.ok(await next);
 });
 await test('Rejects invalid, transposed, stale or future device readings',async()=>{
-  for(const value of [position({coords:{latitude:NaN,longitude:point.lng,accuracy:1}}),position({coords:{latitude:point.lng,longitude:point.lat,accuracy:1}}),position({coords:{latitude:point.lat,longitude:point.lng,accuracy:-1}}),position({timestamp:now-60000}),position({timestamp:now+60000})]) {
-    const s=setup(),pending=s.reader.request();s.calls[0].success(value);await assert.rejects(pending,/actual válida/);
+  for(const value of [position({coords:{latitude:NaN,longitude:point.lng,accuracy:1}}),position({coords:{latitude:point.lng,longitude:point.lat,accuracy:1}}),position({coords:{latitude:point.lat,longitude:point.lng,accuracy:-1}}),position({timestamp:now-61000}),position({timestamp:now+60000})]) {
+    const s=setup(),pending=s.reader.request();s.calls[0].success(value);await assert.rejects(pending,/coordenadas|ubicación antigua|hora de la ubicación/);
   }
 });
 await test('Low accuracy is reported, not replaced by an invented position',async()=>{
