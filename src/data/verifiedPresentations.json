@@ -1,0 +1,660 @@
+{
+  "gid://shopify/ProductVariant/49125520671000": {
+    "expectedName": "Default Title",
+    "label": "15 kg",
+    "productId": "gid://shopify/Product/9492606288152",
+    "source": "https://cultivacenter.com/es/products/max-premium-especial-adultos-maximo-desempeno-carne-15-kg"
+  },
+  "gid://shopify/ProductVariant/49128126185752": {
+    "expectedName": "Default Title",
+    "label": "1 kg",
+    "productId": "gid://shopify/Product/9493354610968",
+    "source": "https://cultivacenter.com/products/max-gatitos-pollo-1kg"
+  },
+  "gid://shopify/ProductVariant/49199816147224": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512419459352",
+    "source": "https://www.bonnatpets.com/es/dietas-gatos-gastrointestinal/"
+  },
+  "gid://shopify/ProductVariant/49199819948312": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512420737304",
+    "source": "https://www.bonnatpets.com/es/dietas-gatos-hypoallergenic/"
+  },
+  "gid://shopify/ProductVariant/49199822602520": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512422703384",
+    "source": "https://www.bonnatpets.com/es/dietas-gatos-hepaticsupport/"
+  },
+  "gid://shopify/ProductVariant/49199824011544": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512423555352",
+    "source": "https://www.bonnatpets.com/es/dietas-gatos-renalsupport/"
+  },
+  "gid://shopify/ProductVariant/49199824929048": {
+    "expectedName": "0",
+    "label": "1,5 kg",
+    "productId": "gid://shopify/Product/9512424243480",
+    "source": "https://www.bonnatpets.com/es/gatos-esterilizados/"
+  },
+  "gid://shopify/ProductVariant/49199827386648": {
+    "expectedName": "0",
+    "label": "1,5 kg",
+    "productId": "gid://shopify/Product/9512426242328",
+    "source": "https://www.bonnatpets.com/es/gatos-gatitos/"
+  },
+  "gid://shopify/ProductVariant/49199851405592": {
+    "expectedName": "0",
+    "label": "1,5 kg",
+    "productId": "gid://shopify/Product/9512439185688",
+    "source": "https://www.bonnatpets.com/es/gatos-adultos/"
+  },
+  "gid://shopify/ProductVariant/49199918842136": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512460255512",
+    "source": "https://www.bonnatpets.com/es/perros-cachorros-medianoygrande/"
+  },
+  "gid://shopify/ProductVariant/49200002760984": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512472969496",
+    "source": "https://www.bonnatpets.com/es/dietas-per-renalsupport/"
+  },
+  "gid://shopify/ProductVariant/49200059449624": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512479916312",
+    "source": "https://www.bonnatpets.com/es/dietas-per-hepaticsupport/"
+  },
+  "gid://shopify/ProductVariant/49200064561432": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512481292568",
+    "source": "https://www.bonnatpets.com/es/dietas-perros-hypoallergenic/"
+  },
+  "gid://shopify/ProductVariant/49200070557976": {
+    "expectedName": "0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9512481980696",
+    "source": "https://www.bonnatpets.com/es/dietas-perros-gastrointestinal/"
+  },
+  "gid://shopify/ProductVariant/49200712810776": {
+    "description": {
+      "after": "Revolution 6 % (selamectina) para perros y gatos de hasta 2,5 kg. Incluye 1 pipeta de 0,25 ml con 15 mg de selamectina. Producto de uso veterinario.",
+      "before": "Antiparasitorio y antipulgas Frontline para gatos es ideal para aquellas personas que prefieren antiparasitarios de aplicación externa. Eliminará eficazmente pulgas, garrapatas y piojos. Su efecto empezará a actuar en menos de 24 horas. Es un antiparasitario de aplicación cutánea resistente al baño. Su efecto durará hasta 4 semanas después de su aplicación. Control y tratamiento de parasitosis en caninos producidas por: pulgas (Ctenocephalides canis y C.felis), con efecto adulticida, larvicida y ovicida, dirofilarias (Dirofilaria immitis), nematodes (Toxocara canis y Toxáscaris leonina). sarna sarcóptica (Sarcoptes scabiei), sarna otodéctica (Otodectes cynotis). Control de la garrapata (Rhipicephalus sanguineus y Dermacentor variabilis). Dirofilarias (Dirofilaria immitis). Contenido 1 tubo de 1 ml Selamectina 120 mg"
+    },
+    "expectedName": "Default Title",
+    "label": "1 pipeta de 0,25 ml",
+    "productId": "gid://shopify/Product/9512636219672",
+    "source": "https://www2.zoetis.com.co/content/_assets/PDFs/Portafolios-2022/PORTAFOLIO-CA-2024.pdf"
+  },
+  "gid://shopify/ProductVariant/49200716710168": {
+    "expectedName": "Default Title",
+    "label": "1 pipeta de 0,75 ml",
+    "productId": "gid://shopify/Product/9512639856920",
+    "source": "https://www2.zoetis.com.co/content/_assets/PDFs/Portafolios-2022/PORTAFOLIO-CA-2024.pdf"
+  },
+  "gid://shopify/ProductVariant/49200717562136": {
+    "expectedName": "Default Title",
+    "label": "1 pipeta de 1 ml",
+    "productId": "gid://shopify/Product/9512640774424",
+    "source": "https://www2.zoetis.com.co/content/_assets/PDFs/Portafolios-2022/PORTAFOLIO-CA-2024.pdf"
+  },
+  "gid://shopify/ProductVariant/49200907551000": {
+    "expectedName": "Default Title",
+    "label": "377 g",
+    "productId": "gid://shopify/Product/9512735310104",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/Archivo_020.webp?v=1728256514"
+  },
+  "gid://shopify/ProductVariant/49224401977624": {
+    "expectedName": "Default Title",
+    "label": "156 g",
+    "productId": "gid://shopify/Product/9519372665112",
+    "source": "https://purina.com.co/proplan/veterinary-diets/perros/convalescence"
+  },
+  "gid://shopify/ProductVariant/49228331614488": {
+    "expectedName": "Default Title",
+    "label": "3 kg",
+    "productId": "gid://shopify/Product/9520260808984",
+    "source": "https://www.royalcanin.com/co/dogs/products/retail-products/cocker-puppy-4133"
+  },
+  "gid://shopify/ProductVariant/49232740843800": {
+    "expectedName": "0",
+    "label": "1 tableta",
+    "productId": "gid://shopify/Product/9439680037144",
+    "source": "https://www.msd-salud-animal.com.co/productos/bravecto/"
+  },
+  "gid://shopify/ProductVariant/49232741761304": {
+    "expectedName": "0",
+    "label": "1 tableta",
+    "productId": "gid://shopify/Product/9439687344408",
+    "source": "https://www.msd-salud-animal.com.co/productos/bravecto/"
+  },
+  "gid://shopify/ProductVariant/49232743203096": {
+    "expectedName": "0",
+    "label": "1 tableta",
+    "productId": "gid://shopify/Product/9439677579544",
+    "source": "https://www.msd-salud-animal.com.co/productos/bravecto/"
+  },
+  "gid://shopify/ProductVariant/49232743596312": {
+    "expectedName": "0",
+    "label": "1 tableta",
+    "productId": "gid://shopify/Product/9439684657432",
+    "source": "https://www.msd-salud-animal.com.co/productos/bravecto/"
+  },
+  "gid://shopify/ProductVariant/49232743891224": {
+    "expectedName": "0",
+    "label": "1 tableta",
+    "productId": "gid://shopify/Product/9439683051800",
+    "source": "https://www.msd-salud-animal.com.co/productos/bravecto/"
+  },
+  "gid://shopify/ProductVariant/49232750739736": {
+    "expectedName": "0",
+    "label": "85 g",
+    "productId": "gid://shopify/Product/9523038224664",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/Purina_Cat_Chow_Comida_Esterilizados_Carne.webp?v=1729032805"
+  },
+  "gid://shopify/ProductVariant/49232753361176": {
+    "expectedName": "0",
+    "label": "85 g",
+    "productId": "gid://shopify/Product/9523039895832",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/Purina_Cat_Chow_Comida_Gatos_Adultos_Con_Pescado.webp?v=1729033082"
+  },
+  "gid://shopify/ProductVariant/49234962612504": {
+    "expectedName": "0",
+    "label": "160 g",
+    "productId": "gid://shopify/Product/9523669860632",
+    "source": "https://www.italcolmascotas.com/chunky-delicaprichos-nuggets/"
+  },
+  "gid://shopify/ProductVariant/49234965922072": {
+    "expectedName": "0",
+    "label": "80 g",
+    "productId": "gid://shopify/Product/9523669926168",
+    "source": "https://www.italcolmascotas.com/convencion-2026-nuevos/"
+  },
+  "gid://shopify/ProductVariant/49234984993048": {
+    "expectedName": "0",
+    "label": "159 g",
+    "productId": "gid://shopify/Product/9523674317080",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/Chunky_Delicat_Salmon_Comida_Humeda_Gatos.webp?v=1729098735"
+  },
+  "gid://shopify/ProductVariant/49234986533144": {
+    "expectedName": "0",
+    "label": "150 g",
+    "productId": "gid://shopify/Product/9523674906904",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/Chunky_Delidog_Comida_Humeda_Perro_Dent.webp?v=1729098856"
+  },
+  "gid://shopify/ProductVariant/49234988433688": {
+    "expectedName": "0",
+    "label": "280 g",
+    "productId": "gid://shopify/Product/9523675627800",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/Chunky_Delidog_Comida_Humeda_Perro_Mix.webp?v=1729098994"
+  },
+  "gid://shopify/ProductVariant/49235001114904": {
+    "expectedName": "0",
+    "label": "170 g",
+    "productId": "gid://shopify/Product/9523679363352",
+    "source": "https://www.italcolmascotas.com/chunky-delidog-bone/"
+  },
+  "gid://shopify/ProductVariant/49235003244824": {
+    "expectedName": "0",
+    "label": "150 g",
+    "productId": "gid://shopify/Product/9523680444696",
+    "source": "https://www.italcolmascotas.com/chunky-menu-natural-nutri-bar/"
+  },
+  "gid://shopify/ProductVariant/49235021332760": {
+    "expectedName": "Default Title",
+    "label": "3 tabletas",
+    "productId": "gid://shopify/Product/9523684704536",
+    "source": "https://mimascotayyo.elanco.com/mx/nuestros-productos/credelio"
+  },
+  "gid://shopify/ProductVariant/49235023659288": {
+    "expectedName": "Default Title",
+    "label": "3 tabletas",
+    "productId": "gid://shopify/Product/9523685884184",
+    "source": "https://mimascotayyo.elanco.com/mx/nuestros-productos/credelio"
+  },
+  "gid://shopify/ProductVariant/49235024544024": {
+    "expectedName": "Default Title",
+    "label": "3 tabletas",
+    "productId": "gid://shopify/Product/9523686441240",
+    "source": "https://mimascotayyo.elanco.com/mx/nuestros-productos/credelio"
+  },
+  "gid://shopify/ProductVariant/49235024904472": {
+    "expectedName": "Default Title",
+    "label": "3 tabletas",
+    "productId": "gid://shopify/Product/9523686670616",
+    "source": "https://mimascotayyo.elanco.com/mx/nuestros-productos/credelio"
+  },
+  "gid://shopify/ProductVariant/49235025723672": {
+    "expectedName": "Default Title",
+    "label": "3 tabletas",
+    "productId": "gid://shopify/Product/9523686899992",
+    "source": "https://mimascotayyo.elanco.com/mx/nuestros-productos/credelio"
+  },
+  "gid://shopify/ProductVariant/49235025953048": {
+    "expectedName": "Default Title",
+    "label": "3 tabletas",
+    "productId": "gid://shopify/Product/9523687031064",
+    "source": "https://mimascotayyo.elanco.com/mx/nuestros-productos/credelio"
+  },
+  "gid://shopify/ProductVariant/49235091882264": {
+    "expectedName": "0",
+    "label": "100 g",
+    "productId": "gid://shopify/Product/9523713147160",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0516.webp?v=1729102240"
+  },
+  "gid://shopify/ProductVariant/49235109347608": {
+    "expectedName": "0",
+    "label": "100 g",
+    "productId": "gid://shopify/Product/9523717996824",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0517.webp?v=1729102583"
+  },
+  "gid://shopify/ProductVariant/49235118129432": {
+    "expectedName": "0",
+    "label": "100 g",
+    "productId": "gid://shopify/Product/9523718684952",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0520.webp?v=1729102659"
+  },
+  "gid://shopify/ProductVariant/49235119276312": {
+    "expectedName": "0",
+    "label": "100 g",
+    "productId": "gid://shopify/Product/9523719176472",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0527.webp?v=1729102707"
+  },
+  "gid://shopify/ProductVariant/49235129270552": {
+    "expectedName": "0 / 0 / 0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9523723600152",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0519.webp?v=1729102971"
+  },
+  "gid://shopify/ProductVariant/49235138871576": {
+    "expectedName": "0 / 0",
+    "label": "4 kg",
+    "productId": "gid://shopify/Product/9523728351512",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0524.webp?v=1729103306"
+  },
+  "gid://shopify/ProductVariant/49235139363096": {
+    "expectedName": "0",
+    "label": "17 kg",
+    "productId": "gid://shopify/Product/9523728646424",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0525.webp?v=1729103364"
+  },
+  "gid://shopify/ProductVariant/49235142607128": {
+    "expectedName": "0 / 0",
+    "label": "2 kg",
+    "productId": "gid://shopify/Product/9523729924376",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0855.webp?v=1729103640"
+  },
+  "gid://shopify/ProductVariant/49235225444632": {
+    "expectedName": "Default Title",
+    "label": "1 kg",
+    "productId": "gid://shopify/Product/9523741753624",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/ag-donkat-9523741753624-oficial.webp?v=1789448343"
+  },
+  "gid://shopify/ProductVariant/49235288719640": {
+    "expectedName": "0",
+    "label": "1,5 kg",
+    "productId": "gid://shopify/Product/9523761676568",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0867_7966b5b9-0330-4121-8b1a-f2f1ef1687b7.webp?v=1729107425"
+  },
+  "gid://shopify/ProductVariant/49235393511704": {
+    "expectedName": "0",
+    "label": "2,75 lb",
+    "productId": "gid://shopify/Product/9523790020888",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0886.webp?v=1729111065"
+  },
+  "gid://shopify/ProductVariant/49235393642776": {
+    "expectedName": "0 / 0",
+    "label": "2,75 lb",
+    "productId": "gid://shopify/Product/9523790119192",
+    "source": "https://evolvepetfood.com/dry-cat-food/evolve-classic-salmon-rice-sweet-potato-recipe-cat-food"
+  },
+  "gid://shopify/ProductVariant/49235395936536": {
+    "expectedName": "0",
+    "label": "2,75 lb",
+    "productId": "gid://shopify/Product/9523790741784",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0889.webp?v=1729111219"
+  },
+  "gid://shopify/ProductVariant/49235402064152": {
+    "expectedName": "0",
+    "label": "340 g",
+    "productId": "gid://shopify/Product/9523792150808",
+    "source": "https://evolvepetfood.com/dog-treats/evolve-classic-beef-bison-recipe-jerky-bites"
+  },
+  "gid://shopify/ProductVariant/49235408355608": {
+    "expectedName": "0 / 0",
+    "label": "4 lb",
+    "productId": "gid://shopify/Product/9523793658136",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0895.webp?v=1729111715"
+  },
+  "gid://shopify/ProductVariant/49235410321688": {
+    "expectedName": "0 / 0",
+    "label": "13 lb",
+    "productId": "gid://shopify/Product/9523794411800",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0896.webp?v=1729111850"
+  },
+  "gid://shopify/ProductVariant/49235411829016": {
+    "expectedName": "0",
+    "label": "12 oz",
+    "productId": "gid://shopify/Product/9523795394840",
+    "source": "https://evolvepetfood.com/dog-treats/evolve-grain-free-duck-sweet-potato-blueberry-recipe-jerky-bites"
+  },
+  "gid://shopify/ProductVariant/49235412287768": {
+    "expectedName": "0",
+    "label": "340 g",
+    "productId": "gid://shopify/Product/9523795493144",
+    "source": "https://ceba.com.co/collections/perros/products/snacks-para-perro-evolve-grain-free-jerky-salmon-340-g"
+  },
+  "gid://shopify/ProductVariant/49235412582680": {
+    "expectedName": "0",
+    "label": "12 oz",
+    "productId": "gid://shopify/Product/9523795755288",
+    "source": "https://evolvepetfood.com/dog-treats/evolve-grain-free-turkey-sweet-potato-berry-recipe-jerky-bites"
+  },
+  "gid://shopify/ProductVariant/49235415040280": {
+    "expectedName": "0",
+    "label": "340 g",
+    "productId": "gid://shopify/Product/9523796508952",
+    "source": "https://evolvepetfood.com/archive/grain-free-lamb-chickpea-amp-butternut-squash-recipe-jerky-bites-4tkdx"
+  },
+  "gid://shopify/ProductVariant/49235418415384": {
+    "expectedName": "0",
+    "label": "374 g",
+    "productId": "gid://shopify/Product/9523796738328",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0903.webp?v=1729112211"
+  },
+  "gid://shopify/ProductVariant/49235423658264": {
+    "expectedName": "0",
+    "label": "99 g",
+    "productId": "gid://shopify/Product/9523797131544",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0904.webp?v=1729112319"
+  },
+  "gid://shopify/ProductVariant/49235690881304": {
+    "expectedName": "0",
+    "label": "17 kg",
+    "productId": "gid://shopify/Product/9523931349272",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0792.webp?v=1729118466"
+  },
+  "gid://shopify/ProductVariant/49235691208984": {
+    "expectedName": "0",
+    "label": "17 kg",
+    "productId": "gid://shopify/Product/9523931611416",
+    "source": "https://app.agrocampo.net.co/gatsy/pollo"
+  },
+  "gid://shopify/ProductVariant/49235691897112": {
+    "expectedName": "0",
+    "label": "8 kg",
+    "productId": "gid://shopify/Product/9523931873560",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0794.webp?v=1729118635"
+  },
+  "gid://shopify/ProductVariant/49235692749080": {
+    "expectedName": "0",
+    "label": "17 kg",
+    "productId": "gid://shopify/Product/9523932135704",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0795.webp?v=1729118680"
+  },
+  "gid://shopify/ProductVariant/49236167852312": {
+    "expectedName": "0",
+    "label": "340 g",
+    "productId": "gid://shopify/Product/9524006289688",
+    "source": "https://www.hillspet.com/dog-food/prescription-diet-metabolic-healthy-weight-glucose-management-treats"
+  },
+  "gid://shopify/ProductVariant/49238524920088": {
+    "expectedName": "0",
+    "label": "13 oz",
+    "productId": "gid://shopify/Product/9524759888152",
+    "source": "https://www.hillspet.co/dog-food/prescription-diet-metabolic-weight-management-canned"
+  },
+  "gid://shopify/ProductVariant/49238532391192": {
+    "expectedName": "0",
+    "label": "12,5 oz",
+    "productId": "gid://shopify/Product/9524762116376",
+    "source": "https://cultivacenter.com/products/alimento-humedo-para-perro-hills-i-d-estofado-de-pollo-y-vegetales-12-5-onz"
+  },
+  "gid://shopify/ProductVariant/49238541205784": {
+    "expectedName": "0",
+    "label": "13 oz",
+    "productId": "gid://shopify/Product/9524763590936",
+    "source": "https://www.hillspet.co/dog-food/prescription-diet-id-low-fat-digestive-care-canned"
+  },
+  "gid://shopify/ProductVariant/49238543270168": {
+    "expectedName": "0",
+    "label": "156 g",
+    "productId": "gid://shopify/Product/9524763951384",
+    "source": "https://www.hillspet.co/dog-food/prescription-diet-id-chicken-vegetable-stew-digestive-care-canned"
+  },
+  "gid://shopify/ProductVariant/49238545203480": {
+    "expectedName": "0",
+    "label": "370 g",
+    "productId": "gid://shopify/Product/9524764377368",
+    "source": "https://www.hillspet.co/dog-food/prescription-diet-ld-liver-care-canned"
+  },
+  "gid://shopify/ProductVariant/49238556016920": {
+    "expectedName": "0",
+    "label": "156 g",
+    "productId": "gid://shopify/Product/9524765983000",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0432.webp?v=1729198886"
+  },
+  "gid://shopify/ProductVariant/49238563389720": {
+    "expectedName": "0",
+    "label": "156 g",
+    "productId": "gid://shopify/Product/9524767326488",
+    "source": "https://www.hillspet.co/cat-food/prescription-diet-id-digestive-care-canned"
+  },
+  "gid://shopify/ProductVariant/49238585147672": {
+    "expectedName": "0",
+    "label": "156 g",
+    "productId": "gid://shopify/Product/9524771291416",
+    "source": "https://www.hillspet.co/cat-food/prescription-diet-cd-multicare-chicken-urinary-care-canned"
+  },
+  "gid://shopify/ProductVariant/49238892904728": {
+    "expectedName": "0",
+    "label": "3 lb",
+    "productId": "gid://shopify/Product/9524861894936",
+    "source": "https://cultivacenter.com/products/hills-science-diet-cat-youthful-vitality-adult-7-3lb-concentrado-para-gatos-mayores-9-anos"
+  },
+  "gid://shopify/ProductVariant/49238923706648": {
+    "expectedName": "0",
+    "label": "4,5 lb",
+    "productId": "gid://shopify/Product/9524876214552",
+    "source": "https://cultivacenter.com/products/hills-science-diet-adult-7-small-bites-chicken-meal-dog"
+  },
+  "gid://shopify/ProductVariant/49238945136920": {
+    "expectedName": "0",
+    "label": "12,5 lb",
+    "productId": "gid://shopify/Product/9524885029144",
+    "source": "https://cultivacenter.com/products/alimento-para-perro-hills-adulto-youthful-v-7-12-5-lb"
+  },
+  "gid://shopify/ProductVariant/49239622156568": {
+    "expectedName": "0",
+    "label": "7,1 oz",
+    "productId": "gid://shopify/Product/9525187215640",
+    "source": "https://www.hillspet.com/dog-food/hills-natural-jerky-mini-strips-real-chicken-adult-treats"
+  },
+  "gid://shopify/ProductVariant/49239643521304": {
+    "expectedName": "0",
+    "label": "13 oz",
+    "productId": "gid://shopify/Product/9525200879896",
+    "source": "https://cdn.shopify.com/s/files/1/0881/6997/1992/files/IMG_0424.webp?v=1729224135"
+  },
+  "gid://shopify/ProductVariant/49239660200216": {
+    "expectedName": "0",
+    "label": "3 oz",
+    "productId": "gid://shopify/Product/9525209694488",
+    "source": "https://www.hillspet.ca/en-ca/dog-food/hills-natural-trainings-soft-and-chewy-real-chicken-adult-treats"
+  },
+  "gid://shopify/ProductVariant/52672954761496": {
+    "expectedName": "3 Onzas",
+    "label": "85 g",
+    "productId": "gid://shopify/Product/10416218210584",
+    "source": "https://purina.com.co/fancy-feast/linea-gourmet/mousse-pescado-camaron"
+  },
+  "gid://shopify/ProductVariant/52673072464152": {
+    "expectedName": "30 sob",
+    "label": "30 sobres",
+    "productId": "gid://shopify/Product/10416249372952",
+    "source": "https://basicfarm.com/basic-partners/"
+  },
+  "gid://shopify/ProductVariant/52673072726296": {
+    "expectedName": "Único",
+    "label": "200 ml",
+    "productId": "gid://shopify/Product/10416249471256",
+    "source": "https://www.mercadolibre.com.co/bano-seco-espuma-gato-adulto-dinky-200-ml/up/MCOU3288713941"
+  },
+  "gid://shopify/ProductVariant/52673072791832": {
+    "expectedName": "Único",
+    "label": "200 ml",
+    "productId": "gid://shopify/Product/10416249536792",
+    "source": "https://www.mercadolibre.com.co/bano-espuma-seco-dinky-perros-adultos-x-200-ml/up/MCOU2475242866"
+  },
+  "gid://shopify/ProductVariant/52673073021208": {
+    "expectedName": "Único",
+    "label": "200 ml",
+    "productId": "gid://shopify/Product/10416249602328",
+    "source": "https://www.jumbocolombia.com/bano-seco-dinky-espuma-perro-cachorro-x-200-ml/p"
+  },
+  "gid://shopify/ProductVariant/52673098613016": {
+    "expectedName": "Único",
+    "label": "1 unidad",
+    "productId": "gid://shopify/Product/10416257859864",
+    "source": "https://www.puppis.com.co/cepillo-para-perro-manopla-de-goma-1un-m-pets/p"
+  },
+  "gid://shopify/ProductVariant/52673161855256": {
+    "expectedName": "Único",
+    "label": "1 sobre de 10 g",
+    "productId": "gid://shopify/Product/10416276439320",
+    "source": "https://vetnil.com.br/produto/eletrolitico-r-pet/"
+  },
+  "gid://shopify/ProductVariant/52673163624728": {
+    "expectedName": "Único",
+    "label": "1 ampolla de 5 ml",
+    "productId": "gid://shopify/Product/10416277061912",
+    "source": "https://edukavet-heel.com/uploads/images/products/6005d506786e7740808657.pdf"
+  },
+  "gid://shopify/ProductVariant/52673168343320": {
+    "expectedName": "Único",
+    "label": "2 filtros",
+    "productId": "gid://shopify/Product/10416278962456",
+    "source": "https://www.petlebi.com/kedi-urunleri/m-pets-indus-neva-su-pinari-yedek-karbon-filtre-11x6cm.html"
+  },
+  "gid://shopify/ProductVariant/52673168572696": {
+    "expectedName": "Único",
+    "label": "2 filtros",
+    "productId": "gid://shopify/Product/10416279027992",
+    "source": "https://m-pets.com/products/water-fountain-filter-2pcs-carbon"
+  },
+  "gid://shopify/ProductVariant/52673169326360": {
+    "expectedName": "Único",
+    "label": "1 ampolla de 5 ml",
+    "productId": "gid://shopify/Product/10416279290136",
+    "source": "https://veterinariaespecializada.com/wp-content/uploads/2024/05/Heel.pdf"
+  },
+  "gid://shopify/ProductVariant/52673175093528": {
+    "expectedName": "Único",
+    "label": "15 g",
+    "productId": "gid://shopify/Product/10416281223448",
+    "source": "https://euroetika.com/producto/fitovete-gel-ayuda-a-curar-heridas-en-boca-y-mucosas-de-animales-euroetika/"
+  },
+  "gid://shopify/ProductVariant/52673182204184": {
+    "expectedName": "8 Mini",
+    "label": "8 unidades mini",
+    "productId": "gid://shopify/Product/10416283287832",
+    "source": "https://directus.gabrica.moodlinestudio.com/uploads/3c6fced1-6f6c-4f04-bb4c-f9e112d3498f.pdf"
+  },
+  "gid://shopify/ProductVariant/52673182433560": {
+    "expectedName": "8 Mini",
+    "label": "8 unidades mini",
+    "productId": "gid://shopify/Product/10416283353368",
+    "source": "https://directus.gabrica.moodlinestudio.com/uploads/3c6fced1-6f6c-4f04-bb4c-f9e112d3498f.pdf"
+  },
+  "gid://shopify/ProductVariant/52673182466328": {
+    "expectedName": "16 S",
+    "label": "16 unidades mini",
+    "productId": "gid://shopify/Product/10416283386136",
+    "source": "https://directus.gabrica.moodlinestudio.com/uploads/3c6fced1-6f6c-4f04-bb4c-f9e112d3498f.pdf"
+  },
+  "gid://shopify/ProductVariant/52673182499096": {
+    "expectedName": "8 Mini",
+    "label": "8 unidades mini",
+    "productId": "gid://shopify/Product/10416283386136",
+    "source": "https://directus.gabrica.moodlinestudio.com/uploads/3c6fced1-6f6c-4f04-bb4c-f9e112d3498f.pdf"
+  },
+  "gid://shopify/ProductVariant/52673732411672": {
+    "expectedName": "Único",
+    "label": "1 ampolla de 5 ml",
+    "productId": "gid://shopify/Product/10416326050072",
+    "source": "https://edukavet-heel.com/uploads/images/products/6005d506786e7740808657.pdf"
+  },
+  "gid://shopify/ProductVariant/52673985675544": {
+    "expectedName": "gande",
+    "label": "Grande",
+    "productId": "gid://shopify/Product/10416339616024",
+    "source": "https://www.puppis.com.co/pelota-goma-pets-kingdom/p"
+  },
+  "gid://shopify/ProductVariant/52674006286616": {
+    "expectedName": "Único",
+    "label": "60 hojas",
+    "productId": "gid://shopify/Product/10416347414808",
+    "source": "https://coastalpet.com/media/dosauvwk/2025productcatalog-1.pdf"
+  },
+  "gid://shopify/ProductVariant/52674007564568": {
+    "expectedName": "100 HOJAS",
+    "label": "100 hojas",
+    "productId": "gid://shopify/Product/10416347840792",
+    "source": "https://www.puppis.com.co/rodillo-quitapelos-verde-mpets/p"
+  },
+  "gid://shopify/ProductVariant/52674008318232": {
+    "expectedName": "Único",
+    "label": "240 bolsas (16 rollos de 15)",
+    "productId": "gid://shopify/Product/10416348070168",
+    "source": "https://www.petlebi.com/kopek-urunleri/m-pets-lavanta-kokulu-kopek-diski-poseti-240-adet-16-li.html"
+  },
+  "gid://shopify/ProductVariant/52674008547608": {
+    "expectedName": "Único",
+    "label": "240 bolsas (16 rollos de 15)",
+    "productId": "gid://shopify/Product/10416348135704",
+    "source": "https://www.petlebi.com/kopek-urunleri/m-pets-limon-kokulu-kopek-diski-poseti-240-adet-16-li.html"
+  },
+  "gid://shopify/ProductVariant/52674056880408": {
+    "expectedName": "Xm",
+    "label": "XM",
+    "productId": "gid://shopify/Product/10416363667736",
+    "source": "https://www.rappi.com.co/p/flips-zapatos-para-perros-xm-colore-2284947"
+  },
+  "gid://shopify/ProductVariant/52674073002264": {
+    "expectedName": "1 Sob.",
+    "label": "1 sobre de 1 g",
+    "productId": "gid://shopify/Product/10416368681240",
+    "source": "https://www.puppis.com.co/suplemento-probiotico-para-mascotas-probiopets-vital-vet/p"
+  },
+  "gid://shopify/ProductVariant/52674077163800": {
+    "expectedName": "120 Capsulas",
+    "label": "120 comprimidos",
+    "productId": "gid://shopify/Product/10416369926424",
+    "source": "https://vetnil.com.br/produto/aminomix-r-pet-comprimidos/"
+  },
+  "gid://shopify/ProductVariant/52674089451800": {
+    "expectedName": "Único",
+    "label": "1 ampolla de 2,2 ml",
+    "productId": "gid://shopify/Product/10416374776088",
+    "source": "https://veterinariaespecializada.com/wp-content/uploads/2024/05/Heel.pdf"
+  },
+  "gid://shopify/ProductVariant/52674110095640": {
+    "expectedName": "8 mini",
+    "label": "8 unidades mini",
+    "productId": "gid://shopify/Product/10416381133080",
+    "source": "https://directus.gabrica.moodlinestudio.com/uploads/3c6fced1-6f6c-4f04-bb4c-f9e112d3498f.pdf"
+  },
+  "gid://shopify/ProductVariant/52680778744088": {
+    "expectedName": "Caja",
+    "label": "Caja de 2,5 kg",
+    "productId": "gid://shopify/Product/10417601249560",
+    "source": "https://es.scribd.com/document/1037496909/CATA-LOGO-OFICIAL-MARZO-II-CALABAZA-PETS"
+  }
+}

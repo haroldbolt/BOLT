@@ -1,5 +1,6 @@
 import {ProductImage} from '../common/ProductImage';
 import {PresentationSelector} from './PresentationSelector';
+import {presentationChip, productDescription} from '../../lib/presentationDisplay';
 import {usePresentation} from './PresentationContext';
 import {hasSalePrice} from '../../lib/presentationSelection';
 import {validOffer} from '../../lib/catalogPurchase';
@@ -45,7 +46,10 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
   const presentation = usePresentation(product);
   const {selected: selectedProduct, availability, selectorRef, selectedId, select, focusSelector, quantity: quantityInCart} = presentation;
   const displayImage = selectedProduct ? selectedProduct.image : product.image;
-  const displayPresentation = selectedProduct?.presentation || 'Selecciona una presentación';
+  const selectedChip = selectedProduct ? presentationChip(product, selectedId) : undefined;
+  const displayPresentation = selectedChip
+    ? [selectedChip.label, selectedChip.detail].filter(Boolean).join(' · ')
+    : 'Selecciona una presentación';
   const displaySku = selectedProduct?.sku || 'No disponible';
   const blocked = presentation.busy || (!!selectedProduct && !availability.canAdd);
   const offer=validOffer(selectedProduct);
@@ -210,7 +214,7 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
           {/* Description */}
           <div>
             <h4 className="font-bold text-slate-900 text-xs mb-1">Descripción</h4>
-            <p className="text-xs text-slate-600 leading-relaxed">{product.description}</p>
+            <p className="text-xs text-slate-600 leading-relaxed">{productDescription(product)}</p>
           </div>
 
           <p role="status" aria-atomic="true" className={`text-xs font-semibold ${presentation.feedback?.error ? "text-red-700" : "text-emerald-700"}`}>{presentation.feedback?.text}</p>

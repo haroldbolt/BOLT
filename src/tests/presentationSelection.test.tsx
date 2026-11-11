@@ -6,7 +6,8 @@ import type {DeliveryQuote} from '../lib/deliveryService';
 import {selectedPresentation, presentationLabel, presentationAvailability, prospectiveItems} from '../lib/presentationSelection';
 import {PresentationProvider} from '../components/customer/PresentationContext';
 import {ProductCard} from '../components/customer/ProductCard';
-import {presentationChip} from '../lib/presentationDisplay';
+import {presentationChip, productDescription} from '../lib/presentationDisplay';
+import verifiedPresentations from '../data/verifiedPresentations.json';
 
 // Isolated fixtures. No catalog, inventory, orders or Shopify writes.
 const product={id:'fixture-product',name:'Fixture alimento',price:30000,sku:'P',image:'/parent.jpg',presentation:'3 kg',weightKg:3,stockByStore:{A:8},reservedStockByStore:{A:2},presentaciones:[
@@ -48,5 +49,39 @@ check('Cantidades iguales conservan atributos diferenciadores sin modificar el c
   const flavor={...product,presentaciones:product.presentaciones!.map(v=>v.varianteId==='fixture-v1'?{...v,nombre:'3 kg / Mix'}:v)};
   assert.deepEqual(presentationChip(flavor,'fixture-v1'),{label:'3 kg',detail:'Mix'});
   assert.equal(JSON.stringify(product),snapshot);
+});
+check('Los datos legibles ya registrados se reconocen sin inventar cantidades',()=>{
+  const fixtures = [
+    ['60 Capsulas','60 cápsulas'],['1 unidad','1 u'],['30 sob','30 u'],['50 W','50 W'],
+    ['3 Onzas','3 oz'],['7"','7 in'],['Pelo Largo','Pelo largo'],
+    ['Disfraz para Perro la sirenita A&B talla S','S'],
+    ['0 / 0','Cantidad por confirmar'],['0 kg','Cantidad por confirmar'],['Default Title','Cantidad por confirmar'],
+  ];
+  for(const [raw,expected] of fixtures){
+    assert.equal(presentationChip({...product,presentaciones:[],presentation:raw}).label,expected);
+  }
+  assert.equal(presentationChip({...product,category:'Accesorios',presentaciones:[],presentation:'Único'}).label,'Presentación única');
+  assert.equal(presentationChip({...product,category:'Farmacia',presentaciones:[],presentation:'Único'}).label,'Cantidad por confirmar');
+  const incomplete={...product,presentaciones:product.presentaciones!.map((v,index)=>index===1?{...v,nombre:''}:v)};
+  assert.equal(presentationChip(incomplete,'fixture-v2').label,'Cantidad por confirmar');
+});
+check('Revolution muestra el contenido verificado en la ficha y conserva los datos de venta',()=>{
+  const variantId='gid://shopify/ProductVariant/49200712810776';
+  const correction=verifiedPresentations[variantId];
+  const variant={...product.presentaciones![0],varianteId:variantId,nombre:'Default Title'};
+  const revolution={...product,id:correction.productId,description:correction.description.before,presentaciones:[variant]};
+  const chip=presentationChip(revolution,variantId);
+  const selected=selectedPresentation(revolution,variantId);
+  assert.equal(chip.label,'1 pipeta de 0,25 ml');
+  assert.equal(selected?.presentation,chip.label);
+  assert.equal(selected?.sku,variant.sku);
+  assert.equal(selected?.price,variant.price);
+  assert.equal(selected?.image,variant.foto);
+  assert.deepEqual(selected?.stockByStore,variant.stockByStore);
+  assert.match(productDescription(revolution),/0,25 ml/);
+  assert.equal(productDescription({...revolution,description:'Descripción editada'}),'Descripción editada');
+  const edited={...revolution,presentaciones:[{...variant,nombre:'2 unidades'}]};
+  assert.equal(presentationChip(edited,variantId).label,'2 u');
+  assert.equal(presentationChip({...revolution,id:'another-product'},variantId).label,'Cantidad por confirmar');
 });
 console.log(`${passed} presentation checks passed`);
