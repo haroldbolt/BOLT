@@ -1,0 +1,131 @@
+{
+  "results": [
+    {
+      "file": "src/tests/deliveryQuote.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/foldableResponsive.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/orderStateMachine.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/catalogAdmin.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/coverageRegression.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/warehouseNotifications.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/catalogBatch.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/presentationSelection.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/catalogPurchase.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/guestCart.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/transport.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/municipalCoverage.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/scheduledDestination.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/guestAddresses.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/dispatch.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/dispatchServer.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/dispatchPanels.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/dispatchSimulation.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/storageTransition.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/historicalIntegrationHttp.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/productImages.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/productImagesHttp.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/deviceLocation.test.tsx",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/entrancePhotos.test.ts",
+      "passed": true,
+      "exit": 0
+    },
+    {
+      "file": "src/tests/entrancePhotoHttp.test.ts",
+      "passed": true,
+      "exit": 0
+    }
+  ],
+  "passed": 25,
+  "total": 25
+}

@@ -1,0 +1,19 @@
+{
+  "deploymentStatus": "HTTPS activo; reinicio y persistencia comprobados en Railway.",
+  "commit": "372dd7a4ccc67fdfc76169ee35ad51fcc8a03e07",
+  "origin": "https://bolt-demo-demo.up.railway.app",
+  "deploymentId": "7346bdc0-de1b-4dbe-9b27-8780694079bd",
+  "checkedAt": "2026-11-10",
+  "checks": [
+    "25/25 suites existentes y 2 suites de alojamiento aprobadas; TypeScript y build Linux aprobados.",
+    "HTTPS privado; APIs sin credenciales rechazadas; compra idempotente de 2 entregas y foto privada JPEG comprobadas.",
+    "Reinicio alojado conserva pedido, despachos y foto. Recuperación de histórico mantiene ENTREGADO.",
+    "Navegador: variantes, carrito persistente, Usaquén → Suba; conductor libre acepta E01 y pasa a ocupado. Vista de 490 px sin desbordamiento."
+  ],
+  "limitations": [
+    "Prueba física iOS/Android y cámara/GPS pendiente.",
+    "Viewport integrado no aplicó 390 ni 1280 px; no certifica ambos tamaños.",
+    "Persistencia comercial privada no importada; usar productos SIM para compras reproducibles.",
+    "Créditos y vigencia de Railway pendientes de revisión en facturación; no se activó plan de pago."
+  ]
+}
