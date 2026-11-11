@@ -14,7 +14,7 @@ for(const [subtotal,shipping] of [[59999,10000],[60000,0],[60001,0]]) {
  const config=fixtureConfig();const quote=evaluateDeliveryQuote({destination,items:[{productId:product.id,quantity:1}],requestedMode:'TURBO'},INITIAL_STORES,[product],[],{config,drivers:fixtureDrivers,orders:[]});
  assert.equal(quote.recommendedMode,'TURBO');assert.equal(quote.charges?.shipping,shipping);assert.equal(quote.charges?.serviceFee,0);assert.equal(quote.charges?.total,subtotal+shipping);assert.equal(quote.charges?.freeShippingFrom,60000);
  quote.confirmationToken='fixture';const html=render(<CartDrawer cartItems={[{product,quantity:1}]} currentStore={INITIAL_STORES[0]} isOpen onClose={()=>{}} onUpdateQuantity={()=>{}} onClearCart={()=>{}} onProceedToCheckout={()=>{}} deliveryQuote={quote}/>);
- assert.match(html,/Tarifa de servicio:/);assert.equal(html.split('¡GRATIS!').length-1,shipping===0?2:1);
+ assert.match(html,/Tarifa de servicio:/);assert.equal(html.split('¡GRATIS!').length-1,1);assert.equal(html.includes('Envío gratis'),shipping===0);
  console.log('PASS Turbo subtotal',subtotal,'shipping',shipping,'service 0');
 }
 const product=fixtureProduct('SPLIT-TARIFF',20000);product.price=20000;const config=fixtureConfig();

@@ -158,9 +158,9 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span>Transporte ({deliveryQuote?.assignedStoreName || currentStore?.name || 'Sede pendiente de confirmar'}):</span>
+                <span>Envío:</span>
                 {shipping === 0 ? (
-                  <span className="font-bold text-emerald-600">¡GRATIS!</span>
+                  <span className="font-bold text-emerald-600">Envío gratis</span>
                 ) : (
                   <span className="font-bold text-slate-900">{shipping===undefined?'Por confirmar':formatCOP(shipping)}</span>
                 )}
