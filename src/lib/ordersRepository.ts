@@ -443,6 +443,7 @@ export class OrdersRepository {
     }
 
     const { shipmentId, reason, deliveryCode, catalogProducts, notes } = options || {};
+    if(order.deliveryReview?.status==='PENDING' && newStatus!=='PENDIENTE_CONFIRMACION' && newStatus!=='CANCELADO') return {success:false,code:409,error:'Confirma la entrega desde la revisión de solicitudes: requiere cotización física vigente y aceptación del cliente.'};
     const nowIso = new Date().toISOString();
 
     // -------------------------------------------------------------

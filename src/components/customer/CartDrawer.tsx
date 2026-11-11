@@ -1,3 +1,4 @@
+import {canRequestDeliveryReview,hasConfirmedDeliveryQuote} from '../../lib/checkoutReadiness';
 import {ProductImage} from '../common/ProductImage';
 import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import type { DeliveryQuote } from '../../lib/deliveryService';
@@ -19,7 +20,6 @@ interface CartDrawerProps {
   onRemoveUnavailable?: (ref: CartReference) => void;
   pendingCount?: number;
   blockReason?: string;
-  deliveryMessage?: string;
   deliveryQuote?: DeliveryQuote | null;
   onRefreshCatalog?: () => void;
 }
@@ -32,16 +32,18 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClearCart,
   onProceedToCheckout,
   currentStore,
-  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, deliveryMessage, onRefreshCatalog, deliveryQuote,
+  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, onRefreshCatalog, deliveryQuote,
 }) => {
   if (!isOpen) return null;
 
   const hasPrescriptionItems=cartItems.some(i=>i.product.requiresPrescription);
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
   const totalWeightKg = deliveryQuote?.transportPlan?.feasible ? deliveryQuote.totalWeightKg : null;
-  const shipping = deliveryQuote?.charges?.shipping;
-  const serviceFee = deliveryQuote?.charges?.serviceFee;
-  const total = deliveryQuote?.charges?.total;
+  const ready=hasConfirmedDeliveryQuote(deliveryQuote);
+  const review=canRequestDeliveryReview(deliveryQuote);
+  const shipping = ready?deliveryQuote?.charges?.shipping:undefined;
+  const serviceFee = ready?deliveryQuote?.charges?.serviceFee:undefined;
+  const total = ready?deliveryQuote?.charges?.total:undefined;
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Mi carrito" className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
@@ -65,8 +67,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Item List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {(blockReason || deliveryMessage) && <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-950">
-            <p>{blockReason || deliveryMessage}</p>
+          {blockReason && <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-950">
+            <p>{blockReason}</p>
             <button className="mt-2 font-bold underline" onClick={onRefreshCatalog}>Actualizar precio y disponibilidad</button>
           </div>}
           {unavailableItems.map((item, index) => <div key={cartReferenceKey(item)} className="rounded-2xl border border-amber-200 p-3 text-sm">
@@ -99,7 +101,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               )}
 
-              <DeliveryPlanSummary quote={deliveryQuote} />
+              {!blockReason && <DeliveryPlanSummary quote={deliveryQuote} onRefresh={onRefreshCatalog} />}
 
               {cartItems.map(item => (
                 <div
@@ -179,7 +181,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
             <button
               onClick={onProceedToCheckout}
-              disabled={!!blockReason || !deliveryQuote?.basketValidated || !deliveryQuote?.confirmationToken}
+              disabled={!!blockReason || (!ready && !review)}
               className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 active:scale-98 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition"
             >
               <span>Continuar con el pedido</span>

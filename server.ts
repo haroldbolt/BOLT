@@ -1,3 +1,5 @@
+import {REVIEW_MESSAGE} from './src/lib/checkoutReadiness';
+import {pendingDeliveryOrder} from './src/lib/pendingDeliveryOrder';
 import { acceptsDemoOrigin } from './src/lib/demoOrigin';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
@@ -70,13 +72,14 @@ const isDispatchSimulation=simulationEnabled();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
 const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[]});
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
-function quoteForPurchase(request: any) {
+function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders()) {
   request={...request,destination:enrichDestination(request.destination)};
-  const quote=evaluateDeliveryQuote(request,stores,products,ordersRepository.getAllOrders(),transportContext());
+  const quote=evaluateDeliveryQuote(request,stores,catalog,orderList,{...transportContext(),orders:orderList});
   if(quote.recommendedMode && quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
     destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
     charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,products.find(p=>p.id===i.productId)?.price]).sort(),
   })).digest('hex');
+  if(quote.reasonCode==='TRANSPORT_DATA_PENDING' && quote.inventoryValidated && quote.assignedStoreId && quote.territoryInfo?.isCovered) {quote.message=REVIEW_MESSAGE;quote.reviewRequestToken=crypto.createHash('sha256').update(JSON.stringify({kind:'PENDING_REVIEW_ONLY',destination:request.destination,storeId:quote.assignedStoreId,mode:request.requestedMode,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort()})).digest('hex');}
   return quote;
 }
 export async function startServer(customerOverride?: Parameters<typeof mountCustomerAccounts>[2]) {
@@ -361,12 +364,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Create Order with transactional stock reservation & delivery policy validation
-  app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req: Request, res: Response) => {
+  const createPurchase = (req: Request, res: Response, reviewingOrder?:Order, purchaseCatalog=products) => {
     try {
       const creationRequestId=req.get('Idempotency-Key');
       if(!creationRequestId) return res.status(400).json({code:'IDEMPOTENCY_REQUIRED',error:'Falta el identificador estable de confirmación. Actualiza e intenta nuevamente.'});
       const creationRequestFingerprint=crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
-      if(creationRequestId) {
+      if(creationRequestId && !reviewingOrder) {
         if(creationRequestId.length>150) return res.status(400).json({error:'Identificador de solicitud inválido'});
         const previous=ordersRepository.getOrderByCreationRequest(creationRequestId);
         if(previous && (previous as any).customerAccountId !== (req as any).customerAccountId) return res.status(409).json({error:'La confirmación pertenece a otra sesión.'});
@@ -387,7 +390,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       if(!Array.isArray(submittedItems)||!submittedItems.length) return res.status(400).json({error:'Carrito vacío'});
       const canonicalItems=new Map<string,any>();
       for(const item of submittedItems) {
-        const p=products.find(p=>p.id===item.productId);
+        const p=purchaseCatalog.find(p=>p.id===item.productId);
         if(!p || p.status && p.status!=='ACTIVE' || !Number.isSafeInteger(item.quantity) || item.quantity<1) return res.status(400).json({error:'Variante o cantidad inválida'});
         if(!Number.isFinite(p.price)||p.price<=0 || item.price!==p.price) return res.status(409).json({code:'PRICE_CHANGED',error:'El precio cambió o está pendiente. Actualiza el carrito y confirma nuevamente.'});
         const existing=canonicalItems.get(p.id);
@@ -417,8 +420,19 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
           requestedMode: requestedDeliveryMode,
           scheduledWindow,
-        });
+        },purchaseCatalog,ordersRepository.getAllOrders().filter(o=>o.id!==reviewingOrder?.id));
 
+        if(req.body.requestDeliveryReview===true && !reviewingOrder) {
+          if(!evaluatedQuote.reviewRequestToken || req.body.reviewRequestToken!==evaluatedQuote.reviewRequestToken) return res.status(409).json({code:'REVIEW_CHANGED',error:'Actualiza el carrito antes de enviar la solicitud.'});
+          if(!customer.name?.trim() || !customer.phone?.trim() || !customer.email?.trim()) return res.status(400).json({error:'Completa tus datos de contacto.'});
+          const warehouse=stores.find(s=>s.id===evaluatedQuote.assignedStoreId && s.isActive);
+          if(!warehouse)return res.status(400).json({error:'Sede no disponible.'});
+          if(items.some(i=>{const p=purchaseCatalog.find(p=>p.id===i.productId)!;return p.bodegaIds && !p.bodegaIds.includes(warehouse.id) && !p.bodegaIds.includes(warehouse.shopifyLocationGid||'')}))return res.status(400).json({error:'Variante no asociada a la sede.'});
+          const pending=pendingDeliveryOrder({items,customer,address:deliveryAddress,store:warehouse,requestedMode:requestedDeliveryMode,creationRequestId,creationRequestFingerprint,customerAccountId:(req as any).customerAccountId});
+          const result=dispatchService.createOrder(pending,purchaseCatalog,warehouse);
+          if(!result.success)return res.status(400).json({error:result.error});
+          return res.status(201).json({...presentOrder(result.order!),guestAccessToken:dispatchService.guestToken(result.order!)});
+        }
         // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
         if (requestedDeliveryMode === 'PROGRAMADO') {
           if (!evaluatedQuote.scheduledEligible) {
@@ -482,7 +496,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
       // Check stock availability in assigned warehouse and reserve
       for (const item of items) {
-        const prod = products.find(p => p.id === item.productId || p.productoId === item.productId || p.sku === item.productId);
+        const prod = purchaseCatalog.find(p => p.id === item.productId || p.productoId === item.productId || p.sku === item.productId);
         if (!prod) {
           return res.status(400).json({ error: `Producto no encontrado: ${item.productId}` });
         }
@@ -521,7 +535,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         ? `${scheduledWindow.date}T${scheduledWindow.endTime}:00-05:00`
         : new Date(Date.now() + estimatedMinutes * 60 * 1000).toISOString();
 
-      const newOrderId = `ORD-${crypto.randomUUID()}`;
+      const newOrderId = reviewingOrder?.id || `ORD-${crypto.randomUUID()}`;
 
       // Generar envíos hijos si es Turbo Dividido
       let childShipments: any[] | undefined = undefined;
@@ -648,7 +662,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         },
       };
 
-      const createResult = dispatchService.createOrder(newOrder, products, assignedStore);
+      if(reviewingOrder && newOrder.storeId!==reviewingOrder.storeId)return res.status(409).json({error:'La revisión debe conservar la sede asignada.'});
+      const createResult = reviewingOrder
+        ? dispatchService.confirmPendingOrder(reviewingOrder.id,newOrder,(req as any).adminSession.userId,req.body.customerAgreementReference)
+        : dispatchService.createOrder(newOrder, purchaseCatalog, assignedStore);
       if (!createResult.success) {
         return res.status(400).json({ error: createResult.error });
       }
@@ -657,7 +674,31 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       console.error('Error creating order:', e);
       return res.status(500).json({ error: e.message || 'Error interno del servidor' });
     }
+  };
+  app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req,res)=>createPurchase(req,res));
+  const reviewCatalog=(order:Order)=>products.map(p=>({...p,reservedStockByStore:{...p.reservedStockByStore,[order.storeId]:Math.max(0,(p.reservedStockByStore[order.storeId]||0)-order.items.filter(i=>i.productId===p.id).reduce((n,i)=>n+i.quantity,0))}}));
+  app.post('/api/v1/admin/orders/:orderId/delivery-review/quote',requireAdminAuth,(req,res)=>{
+    const order=ordersRepository.getOrderById(req.params.orderId);
+    if(!order || order.deliveryReview?.status!=='PENDING' || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION')return res.status(409).json({error:'La solicitud ya no está pendiente.'});
+    const quote=quoteForPurchase({destination:order.deliveryAddress,items:order.items,requestedMode:req.body.deliveryMode||order.deliveryReview.requestedMode||'PROGRAMADO',scheduledWindow:req.body.scheduledWindow},reviewCatalog(order),ordersRepository.getAllOrders().filter(o=>o.id!==order.id));
+    if(quote.assignedStoreId!==order.storeId)return res.status(409).json({error:'La revisión no puede cambiar la sede asignada.'});
+    res.json(quote);
   });
+  app.post('/api/v1/admin/orders/:orderId/delivery-review/confirm',requireAdminAuth,(req,res)=>{
+    const order=ordersRepository.getOrderById(req.params.orderId);
+    if(!order)return res.status(404).json({error:'Solicitud no encontrada.'});
+    if(order.deliveryReview?.status==='CONFIRMED' && order.deliveryReview.confirmationToken===req.body.confirmationToken)return res.json(presentOrder(order));
+    if(order.deliveryReview?.status!=='PENDING' || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION')return res.status(409).json({error:'La solicitud ya no está pendiente.'});
+    const reference=typeof req.body.customerAgreementReference==='string'?req.body.customerAgreementReference.trim():'';
+    if(req.body.customerAccepted!==true || reference.length<8 || reference.length>500)return res.status(400).json({error:'Registra la referencia de la aceptación del cliente al costo, modalidad y horario propuestos; no incluyas secretos.'});
+    if(!['TURBO','TURBO_DIVIDIDO','PROGRAMADO'].includes(req.body.deliveryMode))return res.status(400).json({error:'Selecciona la modalidad cotizada.'});
+    const input=req.body;
+    req.headers['idempotency-key']=order.creationRequestId;
+    req.body={items:order.items,customer:order.customer,deliveryAddress:order.deliveryAddress,paymentMethod:'CASH_ON_DELIVERY',tip:0,deliveryMode:input.deliveryMode,scheduledWindow:input.scheduledWindow,confirmationToken:input.confirmationToken,customerAgreementReference:reference};
+    (req as any).customerAccountId=order.customerAccountId;
+    return createPurchase(req,res,order,reviewCatalog(order));
+  });
+
 
   // Get orders
   app.get('/api/v1/orders', requireAdminAuth, (req: Request, res: Response) => {

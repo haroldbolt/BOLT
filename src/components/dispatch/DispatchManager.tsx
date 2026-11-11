@@ -1,3 +1,4 @@
+import {PendingDeliveryReviews} from './PendingDeliveryReviews';
 import {OrderEntrancePhoto} from '../customer/OrderEntrancePhoto';
 import {HistoricalOperations} from './HistoricalOperations';
 import { DriverAccounts, SettleDriver } from "./DriverAccounts";
@@ -67,6 +68,7 @@ export function DispatchManager({
       {q.loading && <p role="status">Consultando operación…</p>}
       {data && (
         <>
+          <PendingDeliveryReviews orders={(data.pendingDeliveryReviews||[]).filter(o=>!storeFilter||storeFilter.includes(o.storeId))} onChanged={q.refresh}/>
           <HistoricalOperations orders={data.historicalOrders.filter(o=>!storeFilter||storeFilter.includes(o.storeId))} onChanged={q.refresh}/>
           <div className="grid sm:grid-cols-4 gap-3">
             {[

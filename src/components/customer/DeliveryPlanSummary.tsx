@@ -1,9 +1,10 @@
+import {deliveryStatusMessage} from '../../lib/checkoutReadiness';
 import React from 'react';
 import type { DeliveryQuote } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
-export function DeliveryPlanSummary({quote}:{quote?:DeliveryQuote|null}) {
+export function DeliveryPlanSummary({quote,onRefresh}:{quote?:DeliveryQuote|null;onRefresh?:()=>void}) {
   if(!quote) return <p role="status" className="text-xs text-slate-600">Calculando transporte…</p>;
-  if(!quote.transportPlan?.feasible) return <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-950">{quote.message}</p>;
+  if(!quote.transportPlan?.feasible) return <div role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-950"><p>{deliveryStatusMessage(quote)}</p>{onRefresh && <button type="button" onClick={onRefresh} className="min-h-11 font-bold underline">Actualizar disponibilidad</button>}</div>;
   return <section aria-label="Organización de tu compra" className="rounded-2xl border border-amber-200 bg-amber-50 p-3 text-xs text-slate-800 space-y-2">
     <p className="font-bold">{quote.transportPlan.message}</p>
     <p>{quote.recommendedMode==='PROGRAMADO'?`Programado · ${quote.transportWindow?.dateLabel || 'Selecciona una franja'} · ${quote.transportWindow?.displayWindowFull || ''}`:'Turbo · aprox. '+quote.estimatedMinutes+' min'} · {quote.warehouse?.customerName || quote.assignedStoreName}</p>

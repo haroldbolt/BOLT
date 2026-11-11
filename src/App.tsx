@@ -1224,7 +1224,6 @@ export default function App() {
         pendingCount={catalogLoading || catalogError ? cartCount : undefined}
         blockReason={cartBlockReason}
         deliveryQuote={deliveryQuote}
-        deliveryMessage={cartItems.length > 0 && deliveryQuote && !deliveryQuote.basketValidated ? deliveryQuote.message : undefined}
         onRefreshCatalog={() => void refreshCatalog()}
         onProceedToCheckout={async () => {
           if (cartBlockReason || !cartItems.length) return;

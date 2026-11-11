@@ -193,6 +193,8 @@ export interface TurboDivididoDetails {
 }
 
 export interface DeliveryQuote {
+  /** Allows only a PENDIENTE_CONFIRMACION request, never transport/payment authorization. */
+  reviewRequestToken?: string;
   transportPlan?: TransportPlan;
   inventoryValidated?: boolean;
   confirmationToken?: string;

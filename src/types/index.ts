@@ -329,6 +329,16 @@ export interface WarehouseAssignmentEvent {
 }
 
 export interface Order {
+  deliveryReview?: {
+    status: 'PENDING' | 'CONFIRMED';
+    requestedAt: string;
+    reasonCode: string;
+    requestedMode?: DeliveryMode;
+    confirmedAt?: string;
+    confirmedBy?: string;
+    customerAgreementReference?: string;
+    confirmationToken?: string;
+  };
   /** Assigned only by the verified customer session on the server. */
   customerAccountId?: string;
   dispatchStatusMessage?: string;
@@ -380,7 +390,7 @@ export interface Order {
     serviceFee: number;
     tip: number;
     total: number;
-    totalWeightKg: number;
+    totalWeightKg: number | null;
   };
   payment: {
     method: PaymentMethod;

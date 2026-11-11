@@ -1540,7 +1540,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             </div>
                             <p className="text-[11px] text-slate-600 font-medium truncate">{ord.customer.name} • {ord.deliveryAddress.address}</p>
                             <div className="flex justify-between items-center pt-1 text-[11px] text-slate-500 border-t border-slate-200/50">
-                              <span>Peso: {ord.totals.totalWeightKg} kg</span>
+                              <span>Peso: {ord.totals.totalWeightKg===null?'Pendiente de verificar':`${ord.totals.totalWeightKg} kg`}</span>
                               <span className="font-bold text-slate-900">{formatCOP(ord.totals.total)}</span>
                             </div>
                           </div>
