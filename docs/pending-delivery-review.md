@@ -56,3 +56,7 @@ Una solicitud pendiente sigue sin cobro ni horario. El envío y el servicio calc
 `npm run test:turbo-pricing` comprueba límites 59.999/60.000/60.001, varias entregas, costos externos, cambio a Programado, validación de tarifas y renderizado. Su recorrido HTTP aislado verifica creación con importes autoritativos, reintento, reserva única, rechazo de cotización anterior, permisos, persistencia y conservación del total histórico.
 
 La regresión `pendingShippingPrice.test.tsx` reproduce el checkout de COP 490.000 con capacidad pendiente: carrito y checkout muestran el envío gratuito, mantienen la solicitud sin cobro y no confunden una tarifa Programada con Turbo. También comprueba 59.999/60.000, cotización ausente y subtotal obsoleto.
+
+### Total visible sin autorizar un cobro
+
+Carrito y checkout muestran **Total estimado** con `charges.total` calculado por el servidor, incluso si la capacidad sigue pendiente. COP 490.000 de productos + envío COP 0 + servicio COP 0 muestra COP 490.000. Por debajo del umbral Turbo, COP 59.999 + envío COP 10.000 muestra COP 69.999. Una solicitud de revisión no incluye propina ni inicia pago. No se muestra un total antiguo, ausente, no finito, negativo o inconsistente con el desglose. Las filas de envío y servicio utilizan la misma validación. La fila de peso se omite cuando no hay peso de transporte comprobado; las validaciones del servidor siguen vigentes. La confirmación de la sede y la aceptación del cliente siguen siendo necesarias antes de despachar o modificar el importe.

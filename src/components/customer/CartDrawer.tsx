@@ -41,9 +41,10 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   const totalWeightKg = deliveryQuote?.transportPlan?.feasible ? deliveryQuote.totalWeightKg : null;
   const ready=hasConfirmedDeliveryQuote(deliveryQuote);
   const review=canRequestDeliveryReview(deliveryQuote);
-  const shipping = visibleDeliveryCharges(deliveryQuote,subtotal)?.shipping;
-  const serviceFee = (ready||review)?deliveryQuote?.charges?.serviceFee:undefined;
-  const total = ready?deliveryQuote?.charges?.total:undefined;
+  const visibleCharges = visibleDeliveryCharges(deliveryQuote,subtotal);
+  const shipping = visibleCharges?.shipping;
+  const serviceFee = visibleCharges?.serviceFee;
+  const total = visibleCharges?.total;
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Mi carrito" className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
@@ -169,12 +170,12 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span>Tarifa de servicio:</span>
                 <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)}</span>
               </div>
-              <div className="flex justify-between text-[11px] text-slate-400">
+              {totalWeightKg !== null && <div className="flex justify-between text-[11px] text-slate-400">
                 <span>Peso total estimado:</span>
-                <span>{totalWeightKg===null?'Por confirmar':totalWeightKg.toLocaleString('es-CO')+' kg'}</span>
-              </div>
+                <span>{totalWeightKg.toLocaleString('es-CO')} kg</span>
+              </div>}
               <div className="border-t border-slate-200 pt-1.5 flex justify-between text-sm font-black text-slate-900">
-                <span>Total a pagar:</span>
+                <span>{review?'Total estimado:':'Total a pagar:'}</span>
                 <span className="text-red-600 text-base">{total===undefined?'Por confirmar':formatCOP(total)}</span>
               </div>
             </div>

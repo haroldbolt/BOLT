@@ -141,11 +141,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const deliveryConfirmed=hasConfirmedDeliveryQuote(deliveryQuote);
   const totalWeightKg = deliveryConfirmed ? deliveryQuote!.totalWeightKg : 0;
   const totalWeightGrams = Math.round(totalWeightKg * 1000);
-  const shipping = deliveryQuote?.charges?.shipping ?? 0;
   const visibleCharges=visibleDeliveryCharges(deliveryQuote,subtotal);
   const pricedMode=visibleCharges?.mode || selectedMode;
-  const serviceFee = deliveryQuote?.charges?.serviceFee ?? 0;
-  const total = subtotal + shipping + serviceFee + tip;
+  const serviceFee = visibleCharges?.serviceFee;
+  const total = (visibleCharges?.total ?? subtotal) + (requestReview?0:tip);
 
   const selectedSlot = availableSlots.find(s => s.slotId === selectedSlotId);
 
@@ -704,7 +703,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             </div>
             <div className="flex justify-between">
               <span>Tarifa de servicio:</span>
-              <span className="font-bold text-slate-900">{(deliveryConfirmed||requestReview)&&deliveryQuote?.charges?(serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)):'Por confirmar'}</span>
+              <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)}</span>
             </div>
             {!requestReview && tip > 0 && (
               <div className="flex justify-between">
@@ -713,8 +712,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
             <div className="border-t border-slate-200 pt-2 flex justify-between text-base font-black text-slate-900">
-              <span>{requestReview?'Total de entrega':'Total final:'}</span>
-              <span className="text-red-600">{deliveryConfirmed?formatCOP(total):'Por confirmar'}</span>
+              <span>{requestReview?'Total estimado:':'Total final:'}</span>
+              <span className="text-red-600">{visibleCharges?formatCOP(total):'Por confirmar'}</span>
             </div>
           </div>
 

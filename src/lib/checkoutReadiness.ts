@@ -10,7 +10,9 @@ export function hasConfirmedDeliveryQuote(quote?:DeliveryQuote|null) {
 /** A server-priced tariff can be shown before capacity confirmation; it never authorizes dispatch. */
 export function visibleDeliveryCharges(quote:DeliveryQuote|null|undefined, subtotal:number) {
   const charges=quote?.charges;
-  if(!charges || charges.subtotal!==subtotal || !Number.isFinite(charges.shipping) || charges.shipping<0) return undefined;
+  if(!charges || charges.subtotal!==subtotal ||
+    ![charges.subtotal,charges.shipping,charges.serviceFee,charges.total].every(value=>Number.isFinite(value)&&value>=0) ||
+    Math.abs(charges.total-(charges.subtotal+charges.shipping+charges.serviceFee))>0.001) return undefined;
   if(hasConfirmedDeliveryQuote(quote) || (canRequestDeliveryReview(quote) && !!charges.mode)) return charges;
   return undefined;
 }
