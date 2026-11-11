@@ -1120,6 +1120,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   app.post('/api/v1/admin/catalog/batches',requireAdminAuth,(req,res)=>{
     try{res.json(catalogOperations.prepare(req.body.id,req.body.source,(req as any).adminSession,req.body.inventoryDelta??6));}catch(e:any){res.status(400).json({error:e.message});}
   });
+  app.post('/api/v1/admin/catalog/inventory-batches',requireAdminAuth,(req,res)=>{
+    try{res.json(catalogOperations.prepareInventory(req.body.id,req.body.delta,(req as any).adminSession,req.body.reason));}catch(e:any){res.status(400).json({error:e.message});}
+  });
   app.post('/api/v1/admin/catalog/batches/:id/apply',requireAdminAuth,(req,res)=>{
     try{res.json(catalogOperations.apply(req.params.id,(req as any).adminSession,req.body.limit));}catch(e:any){res.status(409).json({error:e.message});}
   });
