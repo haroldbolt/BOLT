@@ -62,6 +62,14 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
   const send = (res, code, body, type = 'text/html; charset=utf-8') => {
     res.writeHead(code, { 'Content-Type': type }); res.end(body);
   };
+  const sendGatePage = (res, code, body) => {
+    // Native form POST + no-referrer produces Origin:null in browsers. Keep the
+    // canonical Origin for login/logout, without exposing any URL path or token
+    // (the gate may be displaying an email verification/reset continuation).
+    // All other responses retain the existing no-referrer policy.
+    res.setHeader('Referrer-Policy', 'strict-origin');
+    return send(res, code, body);
+  };
   const form = (message = '') => `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Demo privada</title><style>body{font:18px system-ui;background:#f7f8fa;color:#122039;margin:0;padding:28px}main{max-width:480px;margin:8vh auto;background:white;padding:28px;border-radius:24px;border:1px solid #dce2ea}h1{margin-top:0}label{display:block;margin:24px 0 8px}input,button{box-sizing:border-box;width:100%;padding:15px;border-radius:12px;font:inherit}input{border:1px solid #64748b}button{margin-top:18px;border:0;background:#ed0018;color:white;font-weight:700}small{display:block;margin-top:24px;line-height:1.6}.error{color:#b00020}</style><main><h1>BOLT <span style="color:#ed0018">DEMO</span></h1><p>Pruebas privadas con datos ficticios. Sin cobros ni entregas reales.</p><p role="alert" class="error">${message}</p><form method="post" action="/__demo/login"><label for="password">Clave de la reunión</label><input id="password" name="password" type="password" autocomplete="current-password" required minlength="16"><button>Entrar a la demo</button></form><small>Comparte esta clave únicamente con quienes participen en la revisión. Utiliza datos ficticios; las direcciones y el carrito se guardan por dispositivo.</small></main></html>`;
   return http.createServer(async (req, res) => {
     res.setHeader('Cache-Control', 'no-store');
@@ -94,13 +102,13 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
     }
     if (pathname === '/__demo/login' && req.method === 'POST') {
       failures = failures.filter(t => t > Date.now() - 60000);
-      if (failures.length >= 10) return send(res, 429, form('Demasiados intentos. Espera un minuto.'));
+      if (failures.length >= 10) return sendGatePage(res, 429, form('Demasiados intentos. Espera un minuto.'));
       let body = '';
       try {
         for await (const chunk of req) { body += chunk; if (Buffer.byteLength(body) > 4096) { send(res, 413, 'Solicitud demasiado grande.'); return; } }
       } catch { return res.destroy(); }
       if (!equal(new URLSearchParams(body).get('password') || '', password)) {
-        failures.push(Date.now()); return send(res, 401, form('Clave incorrecta.'));
+        failures.push(Date.now()); return sendGatePage(res, 401, form('Clave incorrecta.'));
       }
       res.setHeader('Set-Cookie', [`${cookieName}=${session()}; Path=/; HttpOnly; SameSite=${gateSameSite}; Max-Age=${SESSION_MS / 1000}${local ? '' : '; Secure'}`, ...(customerEnabled ? [returnHeader('', 0)] : [])]);
       res.writeHead(303, { Location: customerEnabled && readReturn(req) || '/__demo' }); return res.end();
@@ -109,12 +117,12 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
       const continuation = customerEnabled && req.method === 'GET' && safeReturn(req.url);
       if (continuation) {
         res.setHeader('Set-Cookie', returnHeader(sealReturn(continuation), 600));
-        return send(res, 200, form());
+        return sendGatePage(res, 200, form());
       }
       if (pathname.startsWith('/api/')) return send(res, 401, '{"error":"Acceso privado de demo requerido"}', 'application/json');
-      return send(res, 200, form());
+      return sendGatePage(res, 200, form());
     }
-    if (pathname === '/__demo') return send(res, 200, `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Revisión</title><style>body{font:18px system-ui;color:#122039;max-width:760px;padding:24px;margin:auto}a,button{display:inline-block;margin:8px;padding:16px;border-radius:12px;border:1px solid #ed0018;color:#b90016;background:white;font:inherit}li{margin:12px 0}strong{color:#ed0018}</style><h1>BOLT · Demo de revisión</h1><p><strong>SIMULACIÓN</strong> · No se cobran pagos ni se solicitan entregas reales.</p><p>Revisión del PR #16: registro y Mi cuenta, junto con las mejoras de ubicación de la demo. Cambios pendientes de integrar a main.</p><p>${customerEnabled ? '<strong>Pruebas privadas de cuentas.</strong> Mi cuenta indica los métodos habilitados. Usa únicamente tu propio correo y datos mínimos para las pruebas autorizadas; los pedidos y repartos siguen siendo simulados.' : '<strong>Registro real pendiente de configuración.</strong> Puedes revisar la bienvenida, formularios y documentos legales. Google, Apple y correo están deshabilitados hasta configurar sus servicios.'} La clave de esta demo no es una cuenta de cliente.</p><nav><a href="/cuenta">Registro y Mi cuenta</a><a href="/">Cliente</a><a href="/simulacion">Preparar simulación</a><a href="/operacion?tab=DESPACHOS">Administración</a><a href="/conductor">BOLT Conductor</a></nav><ol><li>En Preparar simulación, inicia sesión y habilita dos conductores ficticios.</li><li>Consulta el catálogo y las presentaciones. Para crear pedidos usa el alimento de prueba SIM-FOOD-20KG; tiene medidas ficticias explícitas.</li><li>Prueba Cedritos, Chía y Cajicá con entrega programada desde Suba. Cota debe bloquear la entrega.</li><li>Crea una compra dividida, prepara cada entrega y acepta la oferta en Conductor.</li><li>En administración revisa HIST-READY, HIST-WAY y HIST-CLOSED. La recuperación de HIST-CLOSED no debe reabrirlo.</li></ol><p>Las cuentas del simulador permiten intervenir todos los datos de esta demo. No uses datos personales reales. La ubicación vence: actualiza los conductores libres desde el simulador si no aparecen disponibles.</p><p>La cámara y el GPS requieren permisos del navegador. No equivalen a seguimiento en segundo plano.</p><form method="post" action="/__demo/logout"><button>Salir de la demo</button></form></html>`);
+    if (pathname === '/__demo') return sendGatePage(res, 200, `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Revisión</title><style>body{font:18px system-ui;color:#122039;max-width:760px;padding:24px;margin:auto}a,button{display:inline-block;margin:8px;padding:16px;border-radius:12px;border:1px solid #ed0018;color:#b90016;background:white;font:inherit}li{margin:12px 0}strong{color:#ed0018}</style><h1>BOLT · Demo de revisión</h1><p><strong>SIMULACIÓN</strong> · No se cobran pagos ni se solicitan entregas reales.</p><p>Revisión del PR #16: registro y Mi cuenta, junto con las mejoras de ubicación de la demo. Cambios pendientes de integrar a main.</p><p>${customerEnabled ? '<strong>Pruebas privadas de cuentas.</strong> Mi cuenta indica los métodos habilitados. Usa únicamente tu propio correo y datos mínimos para las pruebas autorizadas; los pedidos y repartos siguen siendo simulados.' : '<strong>Registro real pendiente de configuración.</strong> Puedes revisar la bienvenida, formularios y documentos legales. Google, Apple y correo están deshabilitados hasta configurar sus servicios.'} La clave de esta demo no es una cuenta de cliente.</p><nav><a href="/cuenta">Registro y Mi cuenta</a><a href="/">Cliente</a><a href="/simulacion">Preparar simulación</a><a href="/operacion?tab=DESPACHOS">Administración</a><a href="/conductor">BOLT Conductor</a></nav><ol><li>En Preparar simulación, inicia sesión y habilita dos conductores ficticios.</li><li>Consulta el catálogo y las presentaciones. Para crear pedidos usa el alimento de prueba SIM-FOOD-20KG; tiene medidas ficticias explícitas.</li><li>Prueba Cedritos, Chía y Cajicá con entrega programada desde Suba. Cota debe bloquear la entrega.</li><li>Crea una compra dividida, prepara cada entrega y acepta la oferta en Conductor.</li><li>En administración revisa HIST-READY, HIST-WAY y HIST-CLOSED. La recuperación de HIST-CLOSED no debe reabrirlo.</li></ol><p>Las cuentas del simulador permiten intervenir todos los datos de esta demo. No uses datos personales reales. La ubicación vence: actualiza los conductores libres desde el simulador si no aparecen disponibles.</p><p>La cámara y el GPS requieren permisos del navegador. No equivalen a seguimiento en segundo plano.</p><form method="post" action="/__demo/logout"><button>Salir de la demo</button></form></html>`);
     const headers = { ...req.headers, host: `127.0.0.1:${upstreamPort}` };
     if (headers.origin && !customerEnabled) headers.origin = `http://127.0.0.1:${upstreamPort}`;
     delete headers.cookie;
