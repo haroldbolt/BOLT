@@ -28,10 +28,10 @@ export const CampaignBanner: React.FC<CampaignBannerProps> = ({ onSelectCategory
               Ver Farmacia
             </button>
             <button
-              onClick={() => onSelectCategory('Alimentos')}
+              onClick={() => onSelectCategory('Marcas')}
               className="bg-red-800/60 hover:bg-red-800 text-white font-bold text-xs px-3.5 py-1.5 rounded-full transition"
             >
-              Ver Alimentos
+              Ver Marcas
             </button>
           </div>
         </div>
