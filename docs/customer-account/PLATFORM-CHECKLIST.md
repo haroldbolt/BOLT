@@ -13,7 +13,7 @@ No representa aprobación de las tiendas ni una aplicación nativa terminada.
 ## Pendiente antes de habilitar usuarios reales
 - Proyecto PostgreSQL empresarial, SMTP y OAuth Google/Apple reales; prueba de entrega, spam, relay de Apple, revocación y rotación de secretos.
 - Aprobación jurídica, DV del NIT, municipio del domicilio, responsable jurídico y matriz de conservación/proveedores/países.
-- URL HTTPS empresarial estable y páginas legales accesibles **sin la contraseña de la demo**. El gateway actual de la demo está protegido y no se modificó ni desplegó esta rama.
+- URL HTTPS empresarial estable y páginas legales accesibles **sin la contraseña de la demo**. La demo de revisión sigue protegida por su clave privada; no sustituye las páginas públicas requeridas para publicación en tiendas.
 - Definir monitoreo, alertas de correo, recuperación de respaldos, accesos de soporte y respuesta a incidentes.
 - Confirmar medios de pago, facturación y controles veterinarios reales. La base contiene comportamientos simulados de pagos/recetas; esta funcionalidad no los convierte en integraciones verificadas.
 

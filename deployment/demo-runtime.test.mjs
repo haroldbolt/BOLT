@@ -32,6 +32,10 @@ try {
   assert.equal((await fetch(origin + '/api/v1/simulation')).status, 401);
   const login = await fetch(origin + '/__demo/login', { method: 'POST', redirect: 'manual', headers: { Origin: origin }, body: new URLSearchParams({ password }) });
   assert.equal(login.status, 303); cookie = login.headers.get('set-cookie').split(';')[0];
+  const accounts=await fetch(origin+'/api/customer/config',{headers:{Cookie:cookie}}).then(r=>r.json());
+  assert.equal(accounts.configured,false);assert.equal(accounts.email,false);assert.equal(accounts.google,false);assert.equal(accounts.apple,false);
+  assert.equal((await fetch(origin+'/api/customer/me',{headers:{Cookie:cookie}}).then(r=>r.json())).user,null);
+  assert.equal((await fetch(origin+'/cuenta',{headers:{Cookie:cookie}})).status,200);
   const info = await call('/simulation', 'GET', undefined, '');
   await call('/admin/dispatch', 'GET', undefined, '', 401);
   admin = (await call('/auth/login', 'POST', info.admin, '')).token;

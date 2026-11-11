@@ -1180,6 +1180,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 }
 
-if(process.argv[1] && path.resolve(process.argv[1])===__filename)startServer().catch(err => {
+// Node resolves module paths through symlinks; argv can retain /var vs /private/var.
+if(process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1])===fs.realpathSync(__filename))startServer().catch(err => {
   console.error('Failed to start server:', err);
+  process.exitCode=1;
 });

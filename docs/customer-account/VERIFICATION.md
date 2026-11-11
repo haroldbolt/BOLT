@@ -1,5 +1,7 @@
 # Evidencia de cuentas de clientes — 11 de noviembre de 2026
 
+Este informe corresponde a la implementación inicial. Posteriormente el usuario autorizó actualizar la demo HTTPS: ver [alcance y pruebas del despliegue](DEMO-HTTPS.md).
+
 ## Versiones y alcance
 
 - `main`: `38ea7bf1966d6cef13cddb6d52e07d7620c003c4` (comprobado otra vez antes de publicar).

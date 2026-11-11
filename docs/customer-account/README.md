@@ -1,5 +1,6 @@
 # Cuentas de Bolt by Agrocentro
 
+- [Revisión en la demo HTTPS](DEMO-HTTPS.md).
 - [Plan, base y dependencias](INTEGRATION.md).
 - [Configuración de PostgreSQL, Google, Apple, correo y reversión](SETUP.md).
 - [Pruebas, evidencia y límites](VERIFICATION.md).
