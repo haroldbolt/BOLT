@@ -28,6 +28,7 @@ import { ProductDetailModal } from './components/customer/ProductDetailModal';
 import { FloatingNav, CustomerNavTab } from './components/customer/FloatingNav';
 import { CartDrawer } from './components/customer/CartDrawer';
 import { CheckoutModal } from './components/customer/CheckoutModal';
+import { OrderConfirmationPage } from './components/customer/OrderConfirmationPage';
 import { OrderTracking } from './components/customer/OrderTracking';
 import { OperationsDashboard } from './components/operations/OperationsDashboard';
 import { OrderHistoryModal } from './components/customer/OrderHistoryModal';
@@ -64,6 +65,7 @@ export default function App() {
   const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>([]);
+  const [recentOrder, setRecentOrder] = useState<Order | null>(null);
 
   // Customer UI state
   const [selectedCategory, setSelectedCategory] = useState<CatalogSection>('Todo');
@@ -587,6 +589,20 @@ export default function App() {
   if(currentPath==='/conductor')return <DriverPanel/>;
   if(currentPath==='/simulacion')return <DispatchSimulation/>;
   if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
+
+  const confirmationMatch = currentPath.match(/^\/confirmacion\/([a-zA-Z0-9_-]+)\/?$/);
+  if (confirmationMatch) {
+    const orderId = confirmationMatch[1];
+    const leaveConfirmation = (path: string) => {
+      setRecentOrder(null);
+      navigateTo(path);
+    };
+    return <OrderConfirmationPage key={orderId} orderId={orderId}
+      initialOrder={recentOrder?.id === orderId ? recentOrder : null}
+      onTrack={() => leaveConfirmation(`/pedido/${orderId}`)}
+      onContinue={() => leaveConfirmation('/')}
+    />;
+  }
 
   if (currentPath.startsWith('/pedido') && trackingOrderId) {
     return (
@@ -1252,11 +1268,11 @@ export default function App() {
           setIsCheckoutOpen(false);
           openAddressBook();
         }}
-        onOrderSuccess={(orderId) => {
+        onOrderSuccess={(order) => {
           setIsCheckoutOpen(false);
           guestCart.clear();
-
-          navigateTo(`/pedido/${orderId}`);
+          setRecentOrder(order);
+          navigateTo(`/confirmacion/${order.id}`);
         }}
       />
 

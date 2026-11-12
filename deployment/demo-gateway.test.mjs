@@ -37,8 +37,23 @@ try {
   const reviewPage=await (await request('/__demo', { headers: { Cookie: cookie } })).text();
   assert.match(reviewPage, /SIMULACIÓN/);
   assert.match(reviewPage, /href="\/cuenta"/);
+  assert.match(reviewPage, /href="\/demo\/checkout"/);
   assert.match(reviewPage, /Registro real pendiente de configuración/);
   assert.equal((await request('/api/v1/simulation', { headers: { Cookie: cookie } })).status, 200);
+  assert.equal((await request('/api/v1/simulation/checkout-preview?estado=pendiente')).status, 401);
+  for (const estado of ['confirmado', 'pendiente']) {
+    const previewPath = `/demo/checkout?estado=${estado}`;
+    const entry = await request(previewPath);
+    assert.match(await entry.text(), /Clave de la reunión/);
+    const continuation = entry.headers.get('set-cookie').split(';')[0];
+    const resumed = await request('/__demo/login', {
+      method: 'POST',
+      headers: { Origin: origin, Cookie: continuation },
+      body: new URLSearchParams({ password }),
+    });
+    assert.equal(resumed.headers.get('location'), previewPath);
+    assert.match(resumed.headers.get('set-cookie'), /__Host-bolt_demo_return=;.*Max-Age=0/);
+  }
   assert.equal((await request('/api/v1/test', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example' }, body: '{}' })).status, 403);
   assert.equal((await request('/api/v1/test', { method: 'POST', headers: { Cookie: cookie, Origin: origin, Authorization: 'Bearer fixture-admin', 'X-Order-Token': 'fixture-guest', 'X-Forwarded-Host': 'evil.example' }, body: '{}' })).status, 200);
   assert.equal(forwarded.host, `127.0.0.1:${upstreamPort}`);

@@ -10,8 +10,7 @@ import {
   ShieldCheck, ArrowRight, Upload, Phone, User, Building, Clock, 
   Edit3, Calendar, Sparkles, AlertTriangle, Truck
 } from 'lucide-react';
-import confetti from 'canvas-confetti';
-import { CartItem, Store, PaymentMethod, PorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
+import { CartItem, Store, PaymentMethod, PorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow, Order } from '../../types';
 import { DeliveryQuote, LatLng, ScheduledSlot } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
 import { api } from '../../lib/api';
@@ -24,7 +23,7 @@ interface CheckoutModalProps {
   cartBlockReason?: string;
   onRefreshCatalog?: () => void;
   currentStore: Store | null;
-  onOrderSuccess: (orderId: string) => void;
+  onOrderSuccess: (order: Order) => void;
   referencePhotoId?: string;
   customerAddress?: string;
   customerAddressDetails?: string;
@@ -221,23 +220,17 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       // Capture this address's image before submitting; later address edits cannot change it.
       const photo=referencePhotoId?await getEntrancePhoto(referencePhotoId):undefined;
       const newOrder = await api.createOrder(payload);
+      const pending = newOrder.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || newOrder.deliveryReview?.status === 'PENDING';
+      const notificationTitle = pending ? 'Solicitud recibida' : 'Pedido confirmado';
       if(photo){
-        try{const durable=await queueEntrancePhoto(newOrder.id,photo,newOrder.deliveryAddress);if(!durable)pushService.triggerNotification('Pedido confirmado','Mantén esta página abierta hasta que se envíe la foto; el navegador no pudo guardar su reintento.');void sendPendingEntrancePhoto(newOrder.id).catch(()=>{});}
-        catch{pushService.triggerNotification('Pedido confirmado','La foto no pudo guardarse para envío. Tu pedido está confirmado.');}
-      }else if(referencePhotoId){pushService.triggerNotification('Pedido confirmado','La foto ya no está disponible en este dispositivo. El pedido se creó con tu dirección confirmada.');}
+        try{const durable=await queueEntrancePhoto(newOrder.id,photo,newOrder.deliveryAddress);if(!durable)pushService.triggerNotification(notificationTitle,'Mantén esta página abierta hasta que se envíe la foto; el navegador no pudo guardar su reintento.');void sendPendingEntrancePhoto(newOrder.id).catch(()=>{});}
+        catch{pushService.triggerNotification(notificationTitle,'La foto no pudo guardarse para envío. Recibimos tu pedido.');}
+      }else if(referencePhotoId){pushService.triggerNotification(notificationTitle,'La foto ya no está disponible en este dispositivo. Recibimos tu pedido con la dirección ingresada.');}
 
-
-      if(newOrder.deliveryReview?.status==='PENDING') pushService.triggerNotification('Solicitud recibida','La sede confirmará contigo la entrega. No se ha realizado ningún cobro.');
+      if(pending) pushService.triggerNotification(notificationTitle,'La sede confirmará contigo la entrega. No se ha realizado ningún cobro.');
       else pushService.notifyWarehouseAssignment(newOrder);
 
-      // Celebrate
-      confetti({
-        particleCount: 80,
-        spread: 70,
-        origin: { y: 0.6 },
-      });
-
-      onOrderSuccess(newOrder.id);
+      onOrderSuccess(newOrder);
     } catch (err: any) {
       setErrorMessage(err.message || 'Error al procesar el pedido. Por favor intente de nuevo.');
     } finally {

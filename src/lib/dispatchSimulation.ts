@@ -14,6 +14,7 @@ import { DispatchService, DispatchError } from "./dispatchService";
 import type { OrdersRepository } from "./ordersRepository";
 import type { TransportRepository } from "./transportRepository";
 import { planTransport } from "./transportPlanner";
+import { getCheckoutPreviewOrder } from "./checkoutPreview";
 const marker = path.join(
   process.cwd(),
   ".bolt-private",
@@ -206,6 +207,14 @@ export function mountDispatchSimulation(
           .status(e instanceof DispatchError ? e.status : 400)
           .json({ error: e.message }),
       );
+  app.get("/api/v1/simulation/checkout-preview", (q, r) => {
+    const state = q.query.estado;
+    r.set("Cache-Control", "no-store");
+    if (state !== "confirmado" && state !== "pendiente") {
+      return r.status(400).json({ error: "Selecciona un pedido de prueba." });
+    }
+    return r.json(getCheckoutPreviewOrder(state));
+  });
   app.get("/api/v1/simulation", (_q, r) =>
     r
       .set("Cache-Control", "no-store")

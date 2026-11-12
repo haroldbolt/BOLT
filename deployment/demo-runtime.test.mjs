@@ -43,6 +43,17 @@ try {
   admin = (await call('/auth/login', 'POST', info.admin, '')).token;
   const historical = await call('/orders');
   assert.equal(historical.length, 3); assert.equal(historical.find(o => o.id === 'HIST-CLOSED').fulfillmentStatus, 'ENTREGADO');
+  const confirmedPreview = await call('/simulation/checkout-preview?estado=confirmado', 'GET', undefined, '');
+  const pendingPreview = await call('/simulation/checkout-preview?estado=pendiente', 'GET', undefined, '');
+  assert.equal(confirmedPreview.fulfillmentStatus, 'CONFIRMADO');
+  assert.ok(confirmedPreview.scheduledWindow);
+  assert.equal(confirmedPreview.payment.status, 'PENDIENTE');
+  assert.equal(pendingPreview.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+  assert.equal(pendingPreview.deliveryReview.status, 'PENDING');
+  assert.equal(pendingPreview.scheduledWindow, undefined);
+  assert.equal(pendingPreview.payment.cashToCollect, 0);
+  await call('/simulation/checkout-preview?estado=otro', 'GET', undefined, '', 400);
+  assert.deepEqual((await call('/orders')).map(order => order.id), historical.map(order => order.id));
   await call('/admin/simulation/fleet', 'POST', { count: 2 });
   const requestId = crypto.randomUUID();
   const purchase = await call('/admin/simulation/purchases', 'POST', { requestId });

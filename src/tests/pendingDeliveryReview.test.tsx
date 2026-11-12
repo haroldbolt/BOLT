@@ -6,6 +6,8 @@ import {renderToStaticMarkup as render} from 'react-dom/server';
 import {CartDrawer} from '../components/customer/CartDrawer';
 import {CheckoutModal} from '../components/customer/CheckoutModal';
 import {PendingDeliveryReceipt} from '../components/customer/PendingDeliveryReceipt';
+import {OrderConfirmation} from '../components/customer/OrderConfirmation';
+import {getCheckoutPreviewOrder} from '../lib/checkoutPreview';
 import {fixtureProduct,fixtureConfig,fixtureDrivers} from './transportFixtures';
 import {INITIAL_STORES} from '../data/seedData';
 import {evaluateDeliveryQuote} from '../lib/deliveryService';
@@ -24,5 +26,22 @@ const receipt=pendingDeliveryOrder({items:[{productId:product.id,quantity:2,pric
 assert.equal(receipt.fulfillmentStatus,'PENDIENTE_CONFIRMACION');assert.equal(receipt.payment.status,'PENDIENTE');assert.equal(receipt.payment.cashToCollect,0);assert.equal(receipt.deliveryMode,undefined);assert.equal(receipt.transportLoad,undefined);assert.equal(receipt.childShipments,undefined);
 const html=render(<PendingDeliveryReceipt order={receipt} onBack={()=>{}} onRefresh={()=>{}} onCancel={()=>{}} cancelling={false} error={null}/>);assert.ok(!html.includes(receipt.secretDeliveryCode));assert.match(html,/Solicitud recibida/);assert.ok(!html.includes('0 kg'));
 console.log('PASS pending review UI: one notice, continue enabled, request without payment/ETA, private receipt without PIN or invented capacity.');
+
+const actions={onTrack:()=>{},onContinue:()=>{}};
+const pendingSummary=render(<OrderConfirmation order={receipt} {...actions}/>);
+assert.match(pendingSummary,/Recibimos tu pedido/);
+assert.match(pendingSummary,/Subtotal de productos/);
+assert.match(pendingSummary,/Total final.*Por confirmar/);
+assert.match(pendingSummary,/Sin cobro por ahora/);
+assert.match(pendingSummary,/Ver mi pedido/);
+assert.doesNotMatch(pendingSummary,/Pedido confirmado|Entrega programada|Tiempo estimado|Gratis/);
+
+const confirmedSummary=render(<OrderConfirmation order={getCheckoutPreviewOrder('confirmado')} {...actions}/>);
+assert.match(confirmedSummary,/Pedido confirmado/);
+assert.match(confirmedSummary,/Total del pedido/);
+assert.match(confirmedSummary,/Entrega programada/);
+assert.match(confirmedSummary,/Pendiente · Pago contra entrega/);
+assert.doesNotMatch(confirmedSummary,/Costo y horario por confirmar/);
+console.log('PASS post-checkout receipt distinguishes confirmed delivery with cash on delivery from an uncharged request.');
 
 const notifications=new PushNotificationService({getItem:()=>null,setItem:()=>{}});receipt.warehouseAssignment=makeWarehouseAssignment(receipt.id,INITIAL_STORES[0]);assert.equal(notifications.notifyWarehouseAssignment(receipt),null);receipt.deliveryReview!.status='CONFIRMED';assert.ok(notifications.notifyWarehouseAssignment(receipt));
