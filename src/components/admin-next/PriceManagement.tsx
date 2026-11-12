@@ -55,9 +55,8 @@ function changePesoAmount(event: ChangeEvent<HTMLInputElement>, previous: string
     caret += 1;
   }
   if (inputType === 'deleteContentForward' && formatted[caret] === '.') caret += 1;
-  requestAnimationFrame(() => {
-    if (input === document.activeElement && input.value === formatted) input.setSelectionRange(caret, caret);
-  });
+  input.value = formatted;
+  input.setSelectionRange(caret, caret);
 }
 
 function parseDiscountBasisPoints(input: string) {
