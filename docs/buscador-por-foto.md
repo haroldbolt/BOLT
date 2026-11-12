@@ -12,7 +12,7 @@ La búsqueda identifica el producto del catálogo. El cliente elige el peso, sab
 
 ## Activación en una instancia de pruebas
 
-1. Configura `BOLT_PHOTO_SEARCH_OPENAI_API_KEY` como secreto del servicio Express. Usa una credencial dedicada a BOLT con acceso a la API de Responses.
+1. La imagen Docker de la demo incluye Tesseract para leer empaques en español e inglés. Para habilitar también OpenAI, configura `BOLT_PHOTO_SEARCH_OPENAI_API_KEY` como secreto del servicio Express con acceso a la API de Responses.
 2. Define `BOLT_PHOTO_SEARCH_ENABLED=true` y reinicia la instancia. El modelo predeterminado es `gpt-5.4-nano`. Se puede cambiar con `BOLT_PHOTO_SEARCH_MODEL` por un modelo compatible con imágenes y salida estructurada.
 3. Comprueba que `GET /api/v1/catalog/photo-search/status` devuelve `{"enabled":true}`. Abre la tienda, toca la cámara y prueba una foto legible de un alimento que esté publicado.
 4. Prueba una foto con el peso tapado, dos empaques similares y una foto de un producto ajeno al catálogo. Repite desde la cámara y la galería de Safari en iPhone y Chrome en Android.
@@ -22,7 +22,9 @@ Las pruebas de la API y del cliente se ejecutan con `npm run test:photo-search`.
 
 ## Datos y consumo
 
-El navegador prepara la imagen antes de enviarla. Express valida y normaliza el JPEG, y pide al proveedor los datos visibles del empaque. BOLT resuelve las coincidencias contra los productos activos y devuelve identificadores del catálogo. El precio, la disponibilidad y la compra se resuelven en la ficha y el checkout existentes. El piloto excluye farmacia.
+El navegador prepara la imagen antes de enviarla. Express valida y normaliza el JPEG. Cuando Tesseract está disponible, BOLT lee el texto del empaque en el servidor y busca coincidencias en el catálogo activo. Si necesita más evidencia, puede consultar OpenAI. Ante un fallo del proveedor, conserva los resultados de la lectura local. El precio, la disponibilidad y la compra se resuelven en la ficha y el checkout existentes. El piloto excluye farmacia.
+
+Las fotos de catálogo de Agility Gold con fondo claro también se pueden comparar con sus referencias visuales. Cuando la similitud es parcial, el cliente confirma el producto en la lista de resultados.
 
 BOLT procesa la foto temporalmente. OpenAI recibe la imagen con `store: false`. Su retención estándar para monitoreo de abuso puede alcanzar 30 días. Revisa las condiciones del proveedor antes de habilitar la función para clientes. [Controles de datos de OpenAI](https://developers.openai.com/api/docs/guides/your-data)
 

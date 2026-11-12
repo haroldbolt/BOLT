@@ -2,6 +2,9 @@ import express, { type Express, type Request } from 'express';
 import sharp from 'sharp';
 import type { Product } from '../types';
 import { openAIProductPhotoRecognizer, rankProductPhoto, type ProductPhotoRecognizer } from './productPhotoSearch';
+import { productPhotoOcrAvailable, readProductPhotoText } from './productPhotoOcr';
+import { rankProductPhotoText } from './productPhotoOcrRank';
+import { matchProductPhotoVisual } from './productPhotoVisual';
 
 const SEARCH_PATH = '/api/v1/catalog/photo-search';
 const MAX_BYTES = 1024 * 1024;
@@ -41,11 +44,15 @@ export function mountProductPhotoSearch(app: Express, options: {
   catalog: () => readonly Product[];
   env?: NodeJS.ProcessEnv;
   recognizer?: ProductPhotoRecognizer;
+  readPhotoText?: typeof readProductPhotoText;
 }) {
   const env = options.env || process.env;
   const key = env.BOLT_PHOTO_SEARCH_OPENAI_API_KEY?.trim();
   const recognizer = options.recognizer || (env.BOLT_PHOTO_SEARCH_ENABLED === 'true' && key
     ? openAIProductPhotoRecognizer(key, env.BOLT_PHOTO_SEARCH_MODEL?.trim() || undefined)
+    : undefined);
+  const readText = options.readPhotoText || (env.BOLT_PHOTO_SEARCH_ENABLED === 'true' && productPhotoOcrAvailable()
+    ? readProductPhotoText
     : undefined);
   const requestsPerMinute = limit(env.BOLT_PHOTO_SEARCH_REQUESTS_PER_MINUTE, 5, 60);
   const dailyLimit = limit(env.BOLT_PHOTO_SEARCH_DAILY_LIMIT, 100, 10_000);
@@ -57,12 +64,12 @@ export function mountProductPhotoSearch(app: Express, options: {
   const receiveImage = express.raw({ type: 'image/jpeg', limit: MAX_BYTES, inflate: false });
 
   app.get(`${SEARCH_PATH}/status`, (_req, res) => {
-    res.set('Cache-Control', 'no-store').json({ enabled: !!recognizer });
+    res.set('Cache-Control', 'no-store').json({ enabled: !!(recognizer || readText) });
   });
 
   app.post(SEARCH_PATH, (req, res) => {
     res.set('Cache-Control', 'no-store');
-    if (!recognizer) return res.status(503).json({ error: 'La búsqueda por foto no está habilitada.' });
+    if (!recognizer && !readText) return res.status(503).json({ error: 'La búsqueda por foto no está habilitada.' });
     if (!sameSiteRequest(req, env.BOLT_CUSTOMER_ORIGIN)) {
       return res.status(403).json({ error: 'Origen de la solicitud no autorizado.' });
     }
@@ -109,19 +116,50 @@ export function mountProductPhotoSearch(app: Express, options: {
         if (cancelled.signal.aborted) return;
         if (jpeg.length > MAX_BYTES) return res.status(413).json({ error: 'La foto supera 1 MB.' });
 
+        const catalog = options.catalog();
+        const visual = await matchProductPhotoVisual(jpeg, catalog).catch(() => undefined);
+        if (cancelled.signal.aborted) return;
+        if (visual?.confident) return res.json(visual);
+
+        const ocrSignal = AbortSignal.any([cancelled.signal, AbortSignal.timeout(3_500)]);
+        let fallback: ReturnType<typeof rankProductPhotoText> | undefined;
+        if (readText) {
+          fallback = await readText(jpeg, ocrSignal)
+            .then(result => rankProductPhotoText(result, catalog)).catch(() => undefined);
+          if (fallback && !fallback.matches.length && !ocrSignal.aborted && !options.readPhotoText) {
+            fallback = await readText(jpeg, ocrSignal, true)
+              .then(result => rankProductPhotoText(result, catalog)).catch(() => fallback);
+          }
+        }
+        if (cancelled.signal.aborted) return;
+        if (visual && !fallback?.confident) {
+          const textMatches = fallback?.matches.filter(match =>
+            !visual.matches.some(reference => reference.productId === match.productId)) ?? [];
+          const matches = [...visual.matches, ...textMatches];
+          fallback = { matches: matches.slice(0, 3), confident: false };
+        }
+        if (fallback?.confident || (!recognizer && fallback)) return res.json(fallback);
+        if (!recognizer) throw new Error('Photo text recognition unavailable');
+
         const day = Math.floor(Date.now() / DAY);
         if (day !== dayWindow) {
           dayWindow = day;
           providerCalls = 0;
         }
         if (providerCalls >= dailyLimit) {
+          if (fallback) return res.json(fallback);
           return res.status(429).json({ error: 'Llegamos al límite diario de búsquedas por foto. Puedes buscar por texto.' });
         }
         providerCalls++;
 
         const signal = AbortSignal.any([cancelled.signal, AbortSignal.timeout(DEADLINE_MS)]);
-        const evidence = await recognizer(jpeg, signal);
-        if (!cancelled.signal.aborted) res.json(rankProductPhoto(evidence, options.catalog()));
+        const result = await recognizer(jpeg, signal)
+          .then(evidence => rankProductPhoto(evidence, catalog))
+          .catch(error => {
+            if (!fallback) throw error;
+            return fallback;
+          });
+        if (!cancelled.signal.aborted) res.json(!result.matches.length && fallback ? fallback : result);
       } catch {
         if (!cancelled.signal.aborted) {
           res.status(503).json({ error: 'La búsqueda por foto no está disponible ahora. Intenta otra vez o busca por texto.' });
