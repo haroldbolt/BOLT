@@ -189,7 +189,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const orderFiltersForView = orderFilters[orderView ?? 'orders'] ?? defaultOrderFilters;
   const scopedOrders = orderView && orders ? (orderView === 'orders' ? orders : orders.filter(order => orderTab(order) === orderView)) : null;
   const detail = scopedOrders?.find(order => order.id === selectedOrder);
-  const reviewingDelivery = !!detail && isPending(detail) && actor.canConfirm;
+  const reviewingDelivery = !!detail && !detail.demoReadOnly && isPending(detail) && actor.canConfirm;
   const demoTrackingPath = isDemo && detail && api.hasOrderAccess(detail.id)
     ? `/simulacion/cliente/${encodeURIComponent(detail.id)}` : undefined;
   const canCreateDemoOrder = isDemo && storeId === 'HUB_SUBA' && actor.canConfirm;
@@ -245,8 +245,8 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   }
 
   function openInventoryAdjustments(item?: InventoryItem) {
-    const demoItem = actor.canAdjustInventory && isDemo && inventory?.total === 1 ? inventory.items[0] : undefined;
-    setInventoryEditor({ mode: 'stock', item: item ?? (demoItem?.assignedToStore ? demoItem : null) });
+    const demoItem = actor.canAdjustInventory && isDemo ? inventory?.items.find(row => row.assignedToStore && !row.demoReadOnly) : undefined;
+    setInventoryEditor({ mode: 'stock', item: item ?? demoItem ?? null });
   }
 
   function closeInventoryEditor() {
@@ -471,13 +471,14 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                   <th scope="col">Producto / SKU</th><th scope="col">Precio vigente</th><th scope="col">Existencias</th><th scope="col">Reservadas</th><th scope="col">Disponibles</th>
                 </tr></thead><tbody>
                   {inventory.items.map(item => {
-                    const editableStock = actor.canAdjustInventory && item.assignedToStore && (isDemo || !item.status || item.status === 'ACTIVE');
+                    const editableStock = actor.canAdjustInventory && !item.demoReadOnly && item.assignedToStore && (isDemo || !item.status || item.status === 'ACTIVE');
                     return <tr key={`${item.productId}:${item.variantId}`} data-selected={inventoryEditor?.item && sameVariant(inventoryEditor.item, item) ? 'true' : undefined}>
                       <th scope="row"><strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
                         {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
+                        {item.demoReadOnly && <small>Solo consulta en la demo</small>}
                         {!isDemo && item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
                       </th>
-                      <InventoryPriceCell item={item} editable={actor.canAdjustPrices} saving={priceSaving}
+                      <InventoryPriceCell item={item} editable={actor.canAdjustPrices && !item.demoReadOnly} saving={priceSaving}
                         edit={() => { setNotice(''); setInventoryEditor({ mode: 'price', item }); }} />
                       <td>{editableStock ? <button className="ba-stock-editable" type="button" disabled={priceSaving} onClick={() => openInventoryAdjustments(item)}
                         aria-label={`Ajustar existencias de ${item.name}, ${item.presentation}, ${number.format(item.stock)} unidades`}>
@@ -608,10 +609,11 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, changed
       <section className="ba-order-items"><h3>Productos</h3><ul>{order.items.map(item => <li key={item.productId}><span>{item.name}<small>{item.presentation}</small></span><strong>×{number.format(item.quantity)}</strong></li>)}</ul>
         <div><span>{isPending(order) ? 'Subtotal de productos' : 'Total del pedido'}</span><strong>{formatCOP(isPending(order) ? order.totals.subtotal : order.totals.total)}</strong></div>
       </section>
-      {isPending(order) && (actor.canConfirm ? <DeliveryReviewPanel order={order} token={token} isDemo={isDemo}
+      {order.demoReadOnly && <p className="ba-info">Pedido recibido desde BOLT Cliente. Disponible para consulta en la demo.</p>}
+      {!order.demoReadOnly && isPending(order) && (actor.canConfirm ? <DeliveryReviewPanel order={order} token={token} isDemo={isDemo}
         onConfirmed={result => changed(result, 'Entrega confirmada. Puedes consultar el nuevo estado del pedido.')} />
         : <p className="ba-info"><ShieldCheck size={16} /> Tu perfil no puede confirmar entregas.</p>)}
-      {actor.canConfirm && order.fulfillmentStatus === 'CONFIRMADO' && order.isSplitOrder !== true && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
+      {!order.demoReadOnly && actor.canConfirm && order.fulfillmentStatus === 'CONFIRMADO' && order.isSplitOrder !== true && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
         {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} Iniciar alistamiento
       </button>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}

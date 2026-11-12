@@ -25,6 +25,7 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   customer?: Pick<Order['customer'], 'name' | 'phone' | 'email'>;
   deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
   payment?: Pick<Order['payment'], 'status' | 'method'>;
+  demoReadOnly?: boolean;
 };
 
 export type DemoOrderMode = Extract<Order['deliveryMode'], 'TURBO' | 'PROGRAMADO'>;
@@ -38,6 +39,7 @@ export interface InventoryItem extends PriceItem {
   reserved: number;
   available: number;
   countedAt: string | null;
+  demoReadOnly?: boolean;
 }
 
 export interface InventoryAdjustment {

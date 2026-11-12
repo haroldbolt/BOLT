@@ -75,6 +75,128 @@ async function api(endpoint, { method = 'GET', token, guestToken, idempotency, b
 const admin = (endpoint, options) => api(adminPath + endpoint, options);
 const demoLogin = profileId => admin('/demo/session', { method: 'POST', body: { profileId }, expected: [200, 201] });
 
+async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
+  const storeId = 'HUB_SUBA';
+  const sku = 'BOLT-TEST-CHECKOUT-SUBA-2KG';
+  const stock = 13;
+  const price = 25_900;
+  const quantity = 2;
+  // Add a published variant without verified transport attributes only to this temporary demo.
+  const simulation = await api('/api/v1/simulation');
+  const { token: legacyAdmin } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
+  const { product } = await api('/api/v1/admin/catalog/products', {
+    method: 'POST', token: legacyAdmin, expected: 201,
+    body: {
+      sku: 'BOLT-TEST-CHECKOUT-SUBA', name: 'Alimento ficticio de checkout Suba', price: 12_900,
+      presentation: '1 kg', bodegaIds: [storeId],
+      presentaciones: [
+        { varianteId: 'BOLT-TEST-CHECKOUT-SUBA-1KG', nombre: '1 kg', bodegaIds: [storeId], price: 12_900, stockByStore: { [storeId]: 4 } },
+        { varianteId: sku, nombre: '2 kg', sku, bodegaIds: [storeId], price, stockByStore: { [storeId]: stock } },
+      ],
+    },
+  });
+  const catalog = async () => (await api('/api/v1/catalog?storeId=' + storeId + '&q=' + encodeURIComponent(product.name)))
+    .find(item => item.id === product.id);
+  const selectedVariant = (await catalog())?.presentaciones.find(variant => variant.varianteId === sku);
+  assert.ok(selectedVariant, 'El checkout debe usar una presentación publicada y disponible en Suba');
+  assert.equal(selectedVariant.price, price);
+  assert.equal(selectedVariant.stockByStore[storeId], stock);
+  assert.equal(selectedVariant.reservedStockByStore[storeId] ?? 0, 0);
+  const inventory = token => admin('/inventory?storeId=' + storeId + '&query=' + encodeURIComponent(sku), { token });
+  assert.deepEqual((await inventory(suba)).items, [], 'La demo aún no expone esta presentación en BOLT Admin');
+
+  const destination = {
+    address: 'Calle 150 #16-56, Cedritos, Bogotá', coordinates: { lat: 4.731531, lng: -74.041785 },
+    municipality: 'Bogotá', locality: 'Usaquén', neighborhood: 'Cedritos',
+  };
+  const deliveryMode = 'PROGRAMADO';
+  const items = [{ productId: selectedVariant.varianteId, quantity }];
+  const quote = await api('/api/v1/delivery/quote', {
+    method: 'POST', body: { destination, items, requestedMode: deliveryMode },
+  });
+  assert.equal(quote.assignedStoreId, storeId);
+  assert.equal(quote.reasonCode, 'TRANSPORT_DATA_PENDING');
+  assert.equal(quote.inventoryValidated, true);
+  assert.ok(quote.reviewRequestToken);
+  assert.equal(quote.confirmationToken, undefined);
+  const checkout = {
+    method: 'POST', idempotency: crypto.randomUUID(),
+    body: {
+      requestDeliveryReview: true, reviewRequestToken: quote.reviewRequestToken, deliveryMode,
+      items: items.map(item => ({ ...item, price: selectedVariant.price })),
+      deliveryAddress: { ...destination, details: 'Referencia privada ficticia', porteriaPolicy: 'DEJAR_EN_PORTERIA' },
+      customer: { name: 'Cliente ficticio checkout Suba', email: 'checkout-suba@example.invalid', phone: '0000000000', isGuest: true },
+      paymentMethod: 'CASH_ON_DELIVERY', tip: 0,
+    },
+  };
+  const order = await api('/api/v1/orders', { ...checkout, expected: 201 });
+  const orderUrl = '/orders/' + encodeURIComponent(order.id);
+  assert.equal(order.storeId, storeId);
+  assert.equal(order.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+  assert.equal(order.deliveryReview.requestedMode, deliveryMode);
+  assert.equal(order.scheduledWindow, undefined);
+  assert.equal(order.payment.status, 'PENDIENTE');
+  assert.equal(order.payment.cashToCollect, 0);
+  assert.equal(order.payment.transactionId, undefined);
+  assert.equal(order.totals.subtotal, price * quantity);
+  assert.deepEqual(order.dispatches, []);
+  assert.ok(order.guestAccessToken);
+  assert.equal((await api('/api/v1/orders', checkout)).id, order.id);
+  await api('/api/v1' + orderUrl, { expected: 403 });
+  const guest = await api('/api/v1' + orderUrl, { guestToken: order.guestAccessToken });
+  assert.equal(guest.customer.email, checkout.body.customer.email);
+  assert.equal(guest.fulfillmentStatus, order.fulfillmentStatus);
+
+  const expectSanitizedOrder = row => {
+    assert.equal(row.id, order.id);
+    assert.equal(row.storeId, storeId);
+    assert.equal(row.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+    assert.equal(row.deliveryReview.requestedMode, deliveryMode);
+    assert.equal(row.demoReadOnly, true);
+    assert.equal(row.customer, undefined);
+    assert.equal(row.deliveryAddress, undefined);
+    assert.equal(row.guestAccessToken, undefined);
+    assert.ok((row.statusHistory ?? []).every(event => event.actor === undefined));
+    assert.deepEqual(row.items.map(item => [item.productId, item.presentation, item.price, item.quantity]), [[sku, '2 kg', price, quantity]]);
+  };
+  const scheduledOrders = (await admin('/orders?storeId=' + storeId, { token: suba })).orders
+    .filter(row => row.id === order.id && (row.deliveryMode ?? row.deliveryReview?.requestedMode) === deliveryMode);
+  assert.equal(scheduledOrders.length, 1, 'Programados de Suba muestra una sola fila de la compra del cliente');
+  expectSanitizedOrder(scheduledOrders[0]);
+  expectSanitizedOrder((await admin(orderUrl, { token: coordination })).order);
+  await admin(orderUrl, { token: kennedy, expected: 403 });
+  assert.ok(!(await admin('/orders?storeId=HUB_KENNEDY', { token: kennedy })).orders.some(row => row.id === order.id));
+  for (const action of ['quote', 'confirm', 'start-preparation']) {
+    await admin(orderUrl + '/' + action, { method: 'POST', token: suba, body: { deliveryMode }, expected: 403 });
+  }
+
+  const { items: inventoryRows } = await inventory(suba);
+  assert.equal(inventoryRows.length, 1);
+  const [reserved] = inventoryRows;
+  assert.equal(reserved.variantId, sku);
+  assert.equal(reserved.productId, product.id);
+  assert.equal(reserved.demoReadOnly, true);
+  assert.deepEqual([reserved.stock, reserved.reserved, reserved.available], [stock, quantity, stock - quantity]);
+  assert.deepEqual((await inventory(coordination)).items, inventoryRows);
+  await admin('/inventory?storeId=' + storeId, { token: kennedy, expected: 403 });
+  assert.deepEqual((await admin('/prices?query=' + encodeURIComponent(sku), { token: coordination })).items, []);
+  const edit = {
+    productId: product.id, variantId: selectedVariant.varianteId,
+    expectedRevision: reserved.revision ?? selectedVariant.commerceRevision, reason: 'Ajuste prohibido de la variante de checkout',
+  };
+  await admin('/inventory', {
+    method: 'PUT', token: coordination, body: { ...edit, storeId, stock: stock + 1 }, expected: 404,
+  });
+  await admin('/prices', {
+    method: 'PUT', token: coordination, body: { ...edit, regularPriceCOP: price + 1, promoPriceCOP: null }, expected: 404,
+  });
+  assert.deepEqual((await inventory(suba)).items, inventoryRows);
+  const after = (await catalog()).presentaciones.find(variant => variant.varianteId === sku);
+  assert.equal(after.price, price);
+  assert.equal(after.stockByStore[storeId], stock);
+  assert.equal(after.reservedStockByStore[storeId], quantity);
+}
+
 try {
   await startDemo();
   assert.equal((await fetch(origin + adminPath + '/session')).status, 401);
@@ -263,6 +385,8 @@ try {
   assert.equal(restored.price, 25_000);
   assert.ok(restored.originalPrice == null);
   console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
+  await verifyCustomerCheckout({ suba, kennedy, coordination });
+  console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
 } finally {
   if (child && child.exitCode === null) {
     child.kill('SIGTERM');

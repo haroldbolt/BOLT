@@ -54,7 +54,7 @@ function sessionActor({ email: _email, ...actor }: Actor) {
   return actor;
 }
 
-export function boltAdminOrder(order: Order) {
+export function boltAdminOrder(order: Order, demoReadOnly = false) {
   const review = order.deliveryReview;
   return {
     id: order.id,
@@ -74,18 +74,22 @@ export function boltAdminOrder(order: Order) {
       confirmedAt: review.confirmedAt,
       reasonCode: review.reasonCode,
     },
-    customer: order.customer,
-    deliveryAddress: {
-      address: order.deliveryAddress.address,
-      details: order.deliveryAddress.details,
-      locality: order.deliveryAddress.locality,
-    },
-    items: order.items,
+    ...(demoReadOnly ? { demoReadOnly: true } : {
+      customer: order.customer,
+      deliveryAddress: {
+        address: order.deliveryAddress.address,
+        details: order.deliveryAddress.details,
+        locality: order.deliveryAddress.locality,
+      },
+    }),
+    items: demoReadOnly ? order.items.map(({ productId, sku, name, brand, presentation, price, quantity, image, weightKg, requiresPrescription }) => ({
+      productId, sku, name, brand, presentation, price, quantity, image, weightKg, requiresPrescription,
+    })) : order.items,
     totals: order.totals,
     payment: { method: order.payment.method, status: order.payment.status },
     timestamps: order.timestamps,
     statusHistory: order.statusHistory?.map(({ previousStatus, newStatus, timestamp, actor }) => ({
-      previousStatus, newStatus, timestamp, actor,
+      previousStatus, newStatus, timestamp, ...(!demoReadOnly && { actor }),
     })),
   };
 }
@@ -96,12 +100,13 @@ function belongsToStore(product: Product, store: Store) {
     : Object.hasOwn(product.stockByStore, store.id);
 }
 
-function inventoryItem(product: Product, store?: Store) {
+function inventoryItem(product: Product, store?: Store, demoReadOnly = false) {
   const assignedToStore = !!store && belongsToStore(product, store);
   const stock = store && assignedToStore ? (product.stockByStore[store.id] ?? 0) : 0;
   const reserved = store && assignedToStore ? (product.reservedStockByStore[store.id] ?? 0) : 0;
   return {
     ...priceItem(product),
+    ...(demoReadOnly && { demoReadOnly: true }),
     storeId: store?.id ?? null,
     assignedToStore,
     stock,
@@ -143,7 +148,12 @@ function pageParam(value: unknown, fallback: number, max: number) {
 export function mountBoltAdmin(app: Express, options: Options) {
   const demoSessions = new Map<string, { actor: Actor; expiresAt: number }>();
   const activeStores = () => options.getStores().filter(store => store.isActive);
-  const isVisibleOrder = (order: Order) => !options.demo || options.demo.isOrder(order);
+  const isOperationalOrder = (order: Order) => !options.demo || options.demo.isOrder(order);
+  // The checkout server generates the SHA-256 fingerprint. Seeded and standalone simulation orders use other formats.
+  const isDemoCheckoutOrder = (order: Order) => !!options.demo && !!order.creationRequestId &&
+    /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
+  const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
+  const presentOrder = (order: Order) => boltAdminOrder(order, isDemoCheckoutOrder(order));
   const isVisibleProduct = (product: Product) => options.demo
     ? (product.parentProductId ?? product.id) === options.demo.productId
     : !product.status || product.status === 'ACTIVE';
@@ -192,7 +202,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     return store;
   }
 
-  function selectOrder(req: Request, res: Response, actor: Actor) {
+  function selectOrder(req: Request, res: Response, actor: Actor, forOperation = false) {
     const order = options.getOrder(req.params.orderId);
     if (!order || !isVisibleOrder(order)) {
       res.status(404).json({ error: 'Pedido no encontrado.' });
@@ -200,6 +210,10 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     if (!actor.storeIds.includes(order.storeId)) {
       res.status(403).json({ error: 'Tu cuenta no tiene acceso al pedido de otra sede.' });
+      return undefined;
+    }
+    if (forOperation && !isOperationalOrder(order)) {
+      res.status(403).json({ error: 'Los pedidos de BOLT Cliente están disponibles para consulta en esta demo.' });
       return undefined;
     }
     return order;
@@ -284,7 +298,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const orders = options.getOrders()
       .filter(order => order.storeId === store.id && isVisibleOrder(order))
       .sort((a, b) => b.createdAt.localeCompare(a.createdAt))
-      .map(boltAdminOrder);
+      .map(presentOrder);
     res.json({ orders });
   });
 
@@ -304,7 +318,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
       stores = [store];
     }
     const demo = !!options.demo;
-    const orders = options.getOrders().filter(order => demo ? isVisibleOrder(order) :
+    const orders = options.getOrders().filter(order => demo ? isOperationalOrder(order) :
       !seedOrderIds.has(order.id) && order.creationRequestFingerprint !== 'SIMULATION' && !isBoltAdminDemoOrder(order));
     res.json(buildBoltAdminSalesReport({
       period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,
@@ -315,13 +329,13 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const actor = authorize(req, res);
     if (!actor) return;
     const order = selectOrder(req, res, actor);
-    if (order) res.json({ order: boltAdminOrder(order) });
+    if (order) res.json({ order: presentOrder(order) });
   });
 
   app.post(base + '/orders/:orderId/quote', (req, res) => {
     const actor = authorize(req, res);
     if (!actor) return;
-    const order = selectOrder(req, res, actor);
+    const order = selectOrder(req, res, actor, true);
     if (order) options.quote(req, res, order, actor);
   });
 
@@ -329,7 +343,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const actor = authorize(req, res);
     if (!actor) return;
     if (!actor.canConfirm) return res.status(403).json({ error: 'Tu cuenta no puede confirmar entregas.' });
-    const order = selectOrder(req, res, actor);
+    const order = selectOrder(req, res, actor, true);
     if (order) options.confirm(req, res, order, actor);
   });
 
@@ -337,7 +351,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const actor = authorize(req, res);
     if (!actor) return;
     if (!actor.canConfirm) return res.status(403).json({ error: 'Tu cuenta no puede iniciar el alistamiento.' });
-    const order = selectOrder(req, res, actor);
+    const order = selectOrder(req, res, actor, true);
     if (order) options.startPreparation(req, res, order, actor);
   });
 
@@ -357,11 +371,16 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const query = typeof req.query.query === 'string' ? normalizeQuery(req.query.query.slice(0, 120)) : '';
     const limit = Math.max(1, pageParam(req.query.limit, 80, 200));
     const offset = pageParam(req.query.offset, 0, 100000);
+    const checkoutProductIds = new Set(options.demo && store && scope === 'store' ? options.getOrders()
+      .filter(order => order.storeId === store.id && isDemoCheckoutOrder(order))
+      .flatMap(order => order.items.map(item => item.productId)) : []);
     const products = options.getProducts().filter(product => {
-      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) : !!store && isVisibleProduct(product) && belongsToStore(product, store);
+      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) : !!store && belongsToStore(product, store) &&
+        (isVisibleProduct(product) || checkoutProductIds.has(product.id));
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
-    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store)), total: products.length, offset, limit });
+    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, !!options.demo && !isVisibleProduct(product))),
+      total: products.length, offset, limit });
   });
 
   app.get(base + '/inventory/adjustments', (req, res) => {
