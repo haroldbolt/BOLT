@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import { ChevronRight, Package } from 'lucide-react';
 import { MainCategory, Product } from '../../types';
 import {categoryImageCandidates} from '../../lib/productImages';
+import {matchesCatalogCategory} from '../../lib/catalogCategories';
 
 interface CategoryCollageCardProps {
   title: string;
@@ -22,7 +23,7 @@ export const CategoryCollageCard: React.FC<CategoryCollageCardProps> = ({
 }) => {
   const [failed, setFailed] = useState<Set<string>>(() => new Set());
   const collageImages = categoryImageCandidates(products, category).filter(img => !failed.has(img.src)).slice(0, 4);
-  const activeCount = products.filter(p => (!p.status || p.status === 'ACTIVE') && (p.category === category || category === 'Farmacia' && p.category === 'Antipulgas')).length;
+  const activeCount = products.filter(p => (!p.status || p.status === 'ACTIVE') && matchesCatalogCategory(p, category)).length;
 
   return (
     <button

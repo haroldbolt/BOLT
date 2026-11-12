@@ -1,4 +1,5 @@
 import type { Product } from '../types';
+import { matchesCatalogCategory } from './catalogCategories';
 
 export interface ProductPhotoEvidence {
   readable: boolean;
@@ -38,9 +39,8 @@ export function searchableProduct(product: Product) {
   const name = normalized(product.name);
   const prescriptionFood = ['Alimentos', 'Perros', 'Gatos'].includes(product.category) &&
     (name.includes('prescription diet') || product.tags.some(tag => normalized(tag) === 'alimento de prescripcion'));
-  return (!product.status || product.status === 'ACTIVE') && !product.pharmacySubcategory &&
-    !['Farmacia', 'Antipulgas'].includes(product.category) &&
-    !/\b(?:medicamento|antipulgas)\b/.test(name) && (!product.requiresPrescription || prescriptionFood);
+  return (!product.status || product.status === 'ACTIVE') && !matchesCatalogCategory(product, 'Farmacia') &&
+    !/\bmedicamento\b/.test(name) && (!product.requiresPrescription || prescriptionFood);
 }
 
 export function rankProductPhoto(evidence: ProductPhotoEvidence, catalog: readonly Product[]) {

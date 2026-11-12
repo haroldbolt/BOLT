@@ -1,5 +1,6 @@
 import source from '../data/brandDirectory.json';
 import type {MainCategory, Product, Store} from '../types';
+import {withoutRedundantCatalogCards} from './catalogDuplicates';
 
 // Navigation only: Marcas is not a product category or a change to inventory.
 export type CatalogSection = MainCategory | 'Marcas';
@@ -12,8 +13,11 @@ export function matchesBrand(product:Product, entry:Pick<BrandEntry,'match'>) {
   const tags=new Set((product.tags||[]).map(normalizeBrand));
   return !!entry.match.tags?.length && entry.match.tags.every(tag=>tags.has(normalizeBrand(tag)));
 }
-export function customerCatalog(products:Product[], store?:Store|null) {
+export function activeCatalog(products:Product[], store?:Store|null) {
   return products.filter(p=>(!p.status||p.status==='ACTIVE') && (!store || !p.bodegaIds || p.bodegaIds.includes(store.id) || !!store.shopifyLocationGid && p.bodegaIds.includes(store.shopifyLocationGid)));
+}
+export function customerCatalog(products:Product[], store?:Store|null) {
+  return withoutRedundantCatalogCards(activeCatalog(products,store),store?.id);
 }
 export function catalogBrands(products:Product[], store?:Store|null):BrandEntry[] {
   const visible=customerCatalog(products,store);

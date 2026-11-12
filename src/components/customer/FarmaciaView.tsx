@@ -2,6 +2,7 @@ import React, { useState } from 'react';
 import { ShieldCheck, FileText, AlertCircle, Info, Filter, ArrowLeft, Upload, CheckCircle2 } from 'lucide-react';
 import { Product, PharmacySubcategory } from '../../types';
 import { ProductCard } from './ProductCard';
+import { matchesCatalogCategory } from '../../lib/catalogCategories';
 
 interface FarmaciaViewProps {
   products: Product[];
@@ -51,9 +52,8 @@ export const FarmaciaView: React.FC<FarmaciaViewProps> = ({
 
   // Filter pharmacy items
   const pharmacyProducts = products.filter(p => {
-    const isPharm = p.category === 'Farmacia' || p.category === 'Antipulgas' || !!p.pharmacySubcategory;
-    if (!isPharm) return false;
-    if (activeSubcat !== 'TODAS' && p.pharmacySubcategory !== activeSubcat) return false;
+    if (!matchesCatalogCategory(p, 'Farmacia')) return false;
+    if (activeSubcat !== 'TODAS' && !matchesCatalogCategory(p, activeSubcat)) return false;
     if (filterPrescriptionOnly && !p.requiresPrescription) return false;
     return true;
   });

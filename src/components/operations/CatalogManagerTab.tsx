@@ -10,6 +10,7 @@ import {
 import { Product, Store, MainCategory, Species, StorageCondition } from '../../types';
 import { api } from '../../lib/api';
 import { formatCOP } from '../../lib/formatters';
+import { matchesCatalogCategory } from '../../lib/catalogCategories';
 
 interface CatalogManagerTabProps {
   currentAdminUser: any;
@@ -275,11 +276,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
         if (pStatus !== selectedStatus) return false;
       }
       // Category
-      if (selectedCategory !== 'Todo') {
-        if (p.category !== selectedCategory && p.pharmacySubcategory !== selectedCategory) {
-          return false;
-        }
-      }
+      if (!matchesCatalogCategory(p, selectedCategory)) return false;
       // Warehouse stock filter
       if (selectedStoreStock !== 'ALL') {
         const stock = p.stockByStore?.[selectedStoreStock] || 0;

@@ -1,4 +1,5 @@
 import type { MainCategory, Product } from '../types';
+import { matchesCatalogCategory } from './catalogCategories';
 
 // A loadable URL is not evidence of the contents of a photograph.
 export function usableProductImage(src?: string): boolean {
@@ -13,7 +14,7 @@ export function usableProductImage(src?: string): boolean {
 export function categoryImageCandidates(products: Product[], category: MainCategory) {
   const seen = new Set<string>();
   return products.filter(p => (!p.status || p.status === 'ACTIVE') &&
-    (p.category === category || category === 'Farmacia' && p.category === 'Antipulgas'))
+    matchesCatalogCategory(p, category))
     .flatMap(p => [p.image, ...(p.gallery || [])].filter(usableProductImage).map(src => ({src, alt:p.name, productId:p.id})))
     .filter(({src}) => {
       const canonical = src.split('?')[0];

@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import { Product, Store, MainCategory, Species, PharmacySubcategory, ProductPresentation } from '../types';
 import { INITIAL_STORES, INITIAL_PRODUCTS } from '../data/seedData';
+import { isFleaTreatment, matchesCatalogCategory } from './catalogCategories';
 
 export interface LocalCatalogSummary {
   totalProductosAgrupados: number;
@@ -205,11 +206,12 @@ class LocalCatalogService {
 
       const isPharmacy =
         typeLower.includes('farmacia') ||
+        isFleaTreatment({ category: p.productType }) ||
         tagsLower.some(t => t.includes('farmacia') || t.includes('medicamento') || t.includes('antipulgas') || t.includes('salud'));
 
       if (isPharmacy) {
         category = 'Farmacia';
-        if (tagsLower.some(t => t.includes('antipulgas') || t.includes('garrapata'))) {
+        if (isFleaTreatment({ productoId: p.productoId, name: p.nombre, category: p.productType, tags })) {
           pharmacySubcategory = 'Antipulgas y garrapatas';
         } else if (tagsLower.some(t => t.includes('desparasit'))) {
           pharmacySubcategory = 'Desparasitación';
@@ -391,7 +393,7 @@ class LocalCatalogService {
 
     // Filtros de categoría y especie
     if (category && category !== 'Todo') {
-      list = list.filter(p => p.category === category || p.pharmacySubcategory === category);
+      list = list.filter(p => matchesCatalogCategory(p, category));
     }
     if (species && species !== 'Todos') {
       list = list.filter(p => p.species === species || p.species === 'Ambos');

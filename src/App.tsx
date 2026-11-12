@@ -1,5 +1,6 @@
 import {BrandsView,BrandsShortcut} from './components/customer/BrandsView';
-import {catalogBrands,customerCatalog,matchesBrand,type CatalogSection,type BrandEntry} from './lib/brandDirectory';
+import {activeCatalog,catalogBrands,customerCatalog,matchesBrand,type CatalogSection,type BrandEntry} from './lib/brandDirectory';
+import {matchesCatalogCategory} from './lib/catalogCategories';
 import {useCustomer} from './customer/client';
 import {FAVORITES_KEY} from './customer/data';
 import {beginDeviceLocation, type DeviceLocationAttempt} from './lib/deviceLocation';
@@ -228,7 +229,7 @@ export default function App() {
     try {
       const loaded = await api.getCatalog(undefined, { requireServer: true });
       if (requestId !== catalogRequest.current) return false;
-      setProducts(customerCatalog(loaded)); setCartCatalog(loaded);
+      setProducts(loaded); setCartCatalog(loaded);
       return true;
     } catch {
       if (requestId === catalogRequest.current) setCatalogError('No se pudo actualizar el catálogo. Tus selecciones siguen guardadas; reintenta para validar precio y disponibilidad.');
@@ -505,27 +506,15 @@ export default function App() {
     return orders.filter(o => o.fulfillmentStatus !== 'ENTREGADO' && o.fulfillmentStatus !== 'CANCELADO');
   }, [orders]);
 
-  const brandEntries=useMemo(()=>catalogBrands(products,currentStore),[products,currentStore]);
+  const browsingProducts=useMemo(()=>customerCatalog(products,currentStore),[products,currentStore]);
+  const brandEntries=useMemo(()=>catalogBrands(browsingProducts),[browsingProducts]);
   const selectedBrand=brandEntries.find(entry=>entry.id===selectedBrandId);
   const openBrands=()=>{setSelectedCategory('Marcas');setSelectedBrandId(null);setCurrentTab('turbo');setSearchQuery('');setProductFilters(INITIAL_FILTER_STATE);window.scrollTo({top:0,behavior:'smooth'});};
   const selectBrand=(entry:BrandEntry)=>{setSelectedCategory('Marcas');setSelectedBrandId(entry.id);setCurrentTab('turbo');setSearchQuery('');setProductFilters(INITIAL_FILTER_STATE);window.scrollTo({top:0,behavior:'smooth'});};
 
   // Base products matching search query or selected tab/category
   const baseCategoryOrSearchProducts = useMemo(() => {
-    let list = [...products];
-
-    // 4. Para clientes muestra productos ACTIVE
-    list = list.filter(p => !p.status || p.status === 'ACTIVE');
-
-    // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
-    if (currentStore) {
-      const targetGid = currentStore.shopifyLocationGid;
-      list = list.filter(p => {
-        if (!p.bodegaIds) return true;
-        if (p.bodegaIds.length === 0) return false; // Una lista vacía no significa disponibilidad en todas las bodegas
-        return (targetGid && p.bodegaIds.includes(targetGid)) || p.bodegaIds.includes(currentStore.id);
-      });
-    }
+    let list = browsingProducts;
 
     if (searchQuery.trim()) {
       const q = searchQuery.toLowerCase();
@@ -537,16 +526,16 @@ export default function App() {
         (p.tags && p.tags.some(t => t.toLowerCase().includes(q)))
       );
     } else if (currentTab === 'favoritos') {
-      list = list.filter(p => !!favorites[p.id]);
+      list = activeCatalog(products,currentStore).filter(p => !!favorites[p.id]);
     } else if (currentTab === 'ofertas') {
       list = list.filter(p => (p.discountPercent || 0) > 0);
     } else if (selectedCategory === 'Marcas') {
       list = selectedBrand ? list.filter(p=>matchesBrand(p,selectedBrand)) : [];
     } else if (selectedCategory !== 'Todo') {
-      list = list.filter(p => p.category === selectedCategory || (p.pharmacySubcategory as any) === selectedCategory);
+      list = list.filter(p => matchesCatalogCategory(p, selectedCategory));
     }
     return list;
-  }, [products, currentStore, searchQuery, currentTab, selectedCategory, selectedBrand, favorites]);
+  }, [products, browsingProducts, currentStore, searchQuery, currentTab, selectedCategory, selectedBrand, favorites]);
 
   // Apply advanced filters: price range, brands, weight range
   const filteredProducts = useMemo(() => {
@@ -582,10 +571,10 @@ export default function App() {
   useEffect(()=>setVisibleProductCount(48),[searchQuery,selectedCategory,selectedBrandId,currentTab,productFilters,currentStore?.id]);
 
   // Rails data
-  const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [products]);
+  const lightningDeals = useMemo(() => browsingProducts.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [browsingProducts]);
   const favoriteProducts = useMemo(() => products.filter(p => !!favorites[p.id]), [products, favorites]);
-  const recommendedProducts = useMemo(() => products.filter(p => p.rating >= 4.8), [products]);
-  const newProducts = useMemo(() => products.filter(p => p.isNew || p.category === 'Accesorios'), [products]);
+  const recommendedProducts = useMemo(() => browsingProducts.filter(p => p.rating >= 4.8), [browsingProducts]);
+  const newProducts = useMemo(() => browsingProducts.filter(p => p.isNew || p.category === 'Accesorios'), [browsingProducts]);
   const reorderProducts = useMemo(() => {
     const previousProductIds = new Set(orders.flatMap(o => o.items.map(i => i.productId)));
     return products.filter(p => previousProductIds.has(p.id));
@@ -729,7 +718,7 @@ export default function App() {
           />
         ) : selectedCategory === 'Farmacia' ? (
           <FarmaciaView
-            products={products}
+            products={browsingProducts}
             selectedStoreId={currentStore?.id || ''}
             cartQuantities={cartQuantities}
             onAddToCart={handleAddToCart}
@@ -830,8 +819,8 @@ export default function App() {
               <CategoryCollageCard
                 title="Farmacia Veterinaria"
                 category="Farmacia"
-                count={products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas').length}
-                products={products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas')}
+                count={browsingProducts.filter(p => matchesCatalogCategory(p, 'Farmacia')).length}
+                products={browsingProducts.filter(p => matchesCatalogCategory(p, 'Farmacia'))}
                 onSelectCategory={(cat) => setSelectedCategory(cat)}
                 isSpecial={true}
               />
@@ -886,7 +875,7 @@ export default function App() {
                 </div>
                 <div className="space-y-1">
                   {[
-                    { cat: 'Farmacia', label: 'Farmacia Veterinaria', icon: '💊', count: products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas').length },
+                    { cat: 'Farmacia', label: 'Farmacia Veterinaria', icon: '💊', count: browsingProducts.filter(p => matchesCatalogCategory(p, 'Farmacia')).length },
                     { cat: 'Marcas', label: 'Marcas', icon: '🏷️', count: new Set(brandEntries.map(entry=>entry.name)).size },
                     { cat: 'Arenas', label: 'Arenas Sanitarias', icon: '📦', count: products.filter(p => p.category === 'Arenas').length },
                     { cat: 'Snacks', label: 'Snacks & Churu', icon: '🦴', count: products.filter(p => p.category === 'Snacks').length },
@@ -945,8 +934,8 @@ export default function App() {
                 <CategoryCollageCard
                   title="Farmacia Veterinaria"
                   category="Farmacia"
-                  count={products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas').length}
-                  products={products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas')}
+                  count={browsingProducts.filter(p => matchesCatalogCategory(p, 'Farmacia')).length}
+                  products={browsingProducts.filter(p => matchesCatalogCategory(p, 'Farmacia'))}
                   onSelectCategory={(cat) => setSelectedCategory(cat)}
                   isSpecial={true}
                 />

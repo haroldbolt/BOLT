@@ -14,6 +14,8 @@ import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/cover
 import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
+import { matchesCatalogCategory } from './src/lib/catalogCategories';
+import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
 import { describeWarehouse } from './src/lib/warehouseAssignment';
 import { enrichDestination } from './src/lib/serverGeography';
@@ -97,7 +99,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
-  mountProductPhotoSearch(app, {catalog:()=>catalogRepository.getAllProducts(false), recognizer:photoRecognizer});
+  mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   app.use(express.json({ limit: '15mb' }));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
   app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
@@ -274,8 +276,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       });
     }
 
-    if (category && category !== 'Todo') {
-      filtered = filtered.filter(p => p.category === category || p.pharmacySubcategory === category);
+    // Leave the unfiltered feed intact so previously saved cart IDs still resolve.
+    if (all !== 'true' && (category || species || storeId || q)) {
+      const scope=stores.find(s=>s.id===storeId || s.shopifyLocationGid===storeId)?.id;
+      filtered=withoutRedundantCatalogCards(filtered,scope);
+    }
+
+    if (typeof category === 'string' && category && category !== 'Todo') {
+      filtered = filtered.filter(p => matchesCatalogCategory(p, category));
     }
     if (species && species !== 'Todos') {
       filtered = filtered.filter(p => p.species === species || p.species === 'Ambos');
