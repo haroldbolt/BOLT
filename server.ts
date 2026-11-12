@@ -15,7 +15,7 @@ import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
 import { boltAdminOrder, boltAdminPhotoPath, mountBoltAdmin } from './src/lib/boltAdminRoutes';
-import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltAdminDemoProduct, boltAdminDemoReviewContext, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
+import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltAdminDemoProduct, boltAdminDemoReviewContext, boltGalleryDemoProduct, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
 import { matchesCatalogCategory } from './src/lib/catalogCategories';
 import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
@@ -74,6 +74,11 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 const isDispatchSimulation=simulationEnabled();
 if (isDispatchSimulation) catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
+const pawiseSample = isDispatchSimulation
+  ? localCatalogService.getAllGroupedProducts().find(product => product.id === 'gid://shopify/Product/10416260317464')
+  : undefined;
+const demoGalleryProduct = pawiseSample ? boltGalleryDemoProduct(pawiseSample) : undefined;
+if (demoGalleryProduct) catalogRepository.registerBaselineProduct(demoGalleryProduct);
 const catalogOperations = new CatalogOperations({
   file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),
   products:()=>catalogRepository.getAllProducts(true),
@@ -424,6 +429,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       for(const item of submittedItems) {
         const p=purchaseCatalog.find(p=>p.id===item.productId);
         if(!p || p.status && p.status!=='ACTIVE' || !Number.isSafeInteger(item.quantity) || item.quantity<1) return res.status(400).json({error:'Variante o cantidad inválida'});
+        if (demoGalleryProduct && (p.parentProductId ?? p.id) === demoGalleryProduct.id) {
+          return res.status(400).json({ error: 'El producto de prueba de galería está disponible para consulta.' });
+        }
         if(!Number.isFinite(p.price)||p.price<=0 || item.price!==p.price) return res.status(409).json({code:'PRICE_CHANGED',error:'El precio cambió o está pendiente. Actualiza el carrito y confirma nuevamente.'});
         const existing=canonicalItems.get(p.id);
         canonicalItems.set(p.id,{...item,productId:p.id,sku:p.sku,name:p.name,brand:p.brand,presentation:p.presentation,image:p.image,price:p.price,weightKg:p.weightKg,requiresPrescription:p.requiresPrescription,quantity:(existing?.quantity||0)+item.quantity});
@@ -794,6 +802,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     },
     demo:isDispatchSimulation ? {
       productId:BOLT_ADMIN_DEMO_PRODUCT_ID,
+      galleryProductId:demoGalleryProduct?.id,
       isOrder:isBoltAdminDemoOrder,
       createOrder:(requestId,requestedMode)=>createBoltAdminDemoOrder({requestId,requestedMode,catalog:products,store:stores.find(store=>store.id===BOLT_ADMIN_DEMO_STORE_ID),dispatch:dispatchService}),
       guestToken:order=>dispatchService.guestToken(order),

@@ -66,6 +66,7 @@ type Options = {
   startPreparation: PendingDeliveryAction;
   demo?: {
     productId: string;
+    galleryProductId?: string;
     isOrder: (order: Order) => boolean;
     createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
     guestToken: (order: Order) => string;
@@ -122,7 +123,7 @@ function belongsToStore(product: Product, store: Store) {
     : Object.hasOwn(product.stockByStore, store.id);
 }
 
-function inventoryItem(product: Product, store?: Store, demoReadOnly = false) {
+function inventoryItem(product: Product, store?: Store, demoReadOnly = false, demoGalleryEdit = false) {
   const assignedToStore = !!store && belongsToStore(product, store);
   const stock = store && assignedToStore ? (product.stockByStore[store.id] ?? 0) : 0;
   const reserved = store && assignedToStore ? (product.reservedStockByStore[store.id] ?? 0) : 0;
@@ -130,6 +131,7 @@ function inventoryItem(product: Product, store?: Store, demoReadOnly = false) {
     ...priceItem(product),
     image: product.image,
     ...(demoReadOnly && { demoReadOnly: true }),
+    ...(demoGalleryEdit && { demoGalleryEdit: true }),
     storeId: store?.id ?? null,
     assignedToStore,
     stock,
@@ -181,6 +183,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     ? (product.parentProductId ?? product.id) === options.demo.productId
     : !product.status || product.status === 'ACTIVE';
   const isVisiblePriceProduct = (product: Product) => !options.demo || isVisibleProduct(product);
+  const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
 
   function bearer(req: Request) {
     const auth = req.get('Authorization');
@@ -255,7 +258,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const product = options.photos.getProductById(productId);
     const variant = product?.presentaciones?.find(item => item.varianteId === variantId);
-    if (!product || product.id !== productId || (options.demo && product.id !== options.demo.productId) ||
+    if (!product || product.id !== productId || (options.demo && product.id !== options.demo.productId && !isDemoGalleryProduct(product)) ||
         (!variant && (product.presentaciones?.length || variantId !== product.id))) {
       res.status(404).json({ error: 'La presentación no está disponible para editar fotos.' });
       return;
@@ -419,11 +422,11 @@ export function mountBoltAdmin(app: Express, options: Options) {
       .filter(order => order.storeId === store.id && isDemoCheckoutOrder(order))
       .flatMap(order => order.items.map(item => item.productId)) : []);
     const products = options.getProducts().filter(product => {
-      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) : !!store && belongsToStore(product, store) &&
-        (isVisibleProduct(product) || checkoutProductIds.has(product.id));
+      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) || isDemoGalleryProduct(product) : !!store && belongsToStore(product, store) &&
+        (isVisibleProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id));
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
-    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, !!options.demo && !isVisibleProduct(product))),
+    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, !!options.demo && !isVisibleProduct(product), isDemoGalleryProduct(product))),
       total: products.length, offset, limit });
   });
 

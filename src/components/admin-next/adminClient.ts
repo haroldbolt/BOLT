@@ -41,6 +41,7 @@ export interface InventoryItem extends PriceItem {
   available: number;
   countedAt: string | null;
   demoReadOnly?: boolean;
+  demoGalleryEdit?: boolean;
 }
 
 export interface InventoryAdjustment {

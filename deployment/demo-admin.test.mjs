@@ -23,6 +23,8 @@ const upstream = await freePort();
 const origin = 'http://127.0.0.1:' + port;
 const password = crypto.randomBytes(24).toString('hex');
 const adminPath = '/api/v1/bolt-admin';
+const orderFixtureId = 'SIM-BOLT-ADMIN-SUBA';
+const galleryFixtureId = 'SIM-BOLT-GALERIA-PAWISE';
 const photoPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
 const photoDataUrl = 'data:image/png;base64,' + photoPng;
 let child;
@@ -76,6 +78,65 @@ async function api(endpoint, { method = 'GET', token, guestToken, idempotency, b
 
 const admin = (endpoint, options) => api(adminPath + endpoint, options);
 const demoLogin = profileId => admin('/demo/session', { method: 'POST', body: { profileId }, expected: [200, 201] });
+
+async function verifyDemoGallery({ suba, coordination }) {
+  const storeId = 'HUB_SUBA';
+  const publicProduct = async () => {
+    const catalog = await api('/api/v1/catalog?all=true&q=' + galleryFixtureId);
+    const product = catalog.find(item => item.id === galleryFixtureId);
+    assert.ok(product, 'La muestra de galería debe existir también en el catálogo del cliente');
+    return product;
+  };
+  const before = await publicProduct();
+  assert.equal(before.sku, galleryFixtureId);
+  assert.deepEqual(before.presentaciones.map(variant => variant.nombre), ['XS', 'S', 'M', 'L', 'XL', 'XXL']);
+  assert.ok(before.presentaciones.every(variant => (variant.stockByStore[storeId] ?? 0) === 0));
+  const variant = before.presentaciones[1];
+  const productId = before.id;
+  const variantId = variant.varianteId;
+  const inventory = async token => (await admin('/inventory?storeId=' + storeId, { token })).items
+    .find(item => item.productId === productId && item.variantId === variantId);
+  const row = await inventory(coordination);
+  assert.ok(row, 'Coordinación debe poder seleccionar la variante de prueba');
+  assert.equal(row.demoGalleryEdit, true);
+  assert.equal(row.demoReadOnly, true);
+  assert.deepEqual([row.stock, row.reserved, row.available], [0, 0, 0]);
+  assert.equal((await inventory(suba))?.demoReadOnly, true);
+
+  const photoRoute = '/inventory/photo';
+  const photoQuery = photoRoute + '?' + new URLSearchParams({ productId, variantId });
+  const initial = await admin(photoQuery, { token: coordination });
+  assert.equal(initial.gallery.length, 6);
+  assert.equal(new Set(initial.gallery).size, 6);
+  assert.equal(initial.gallery[0], initial.productImage);
+  assert.equal(initial.productImage, before.image);
+  const upload = { productId, variantId, target: 'variant', expectedImage: initial.variantImage, dataUrl: photoDataUrl, filename: 'pawise-prueba.png' };
+  await admin(photoQuery, { token: suba, expected: 403 });
+  await admin(photoRoute, { method: 'PUT', token: suba, body: upload, expected: 403 });
+  const { image } = await admin(photoRoute, { method: 'PUT', token: coordination, body: upload });
+  assert.match(image, /^\/uploads\/catalog\/[^/]+\.png$/);
+  assert.deepEqual(await admin(photoQuery, { token: coordination }), { ...initial, variantImage: image });
+  assert.equal((await inventory(suba))?.image, image);
+  const asset = await fetch(origin + image, { headers: { Cookie: gatewayCookie } });
+  assert.equal(asset.status, 200);
+  assert.deepEqual(Buffer.from(await asset.arrayBuffer()), Buffer.from(photoPng, 'base64'));
+
+  const gallery = [...initial.gallery.slice(1), initial.gallery[0]];
+  const updated = await admin(photoRoute, { method: 'PUT', token: coordination, body: {
+    productId, variantId, target: 'product', expectedImage: initial.productImage, expectedGallery: initial.gallery,
+    photos: gallery.map(url => ({ url })),
+  } });
+  assert.equal(updated.image, gallery[0]);
+  assert.deepEqual(await admin(photoQuery, { token: coordination }), { productImage: gallery[0], variantImage: image, gallery });
+
+  const edit = { productId, variantId, expectedRevision: row.revision, reason: 'Ajuste prohibido en producto de galería' };
+  await admin('/inventory', { method: 'PUT', token: coordination, body: { ...edit, storeId, stock: 1 }, expected: 404 });
+  await admin('/prices', { method: 'PUT', token: coordination, body: { ...edit, regularPriceCOP: Math.max(row.price, 1) + 1, promoPriceCOP: null }, expected: 404 });
+  const after = await publicProduct();
+  assert.equal(after.image, gallery[0]);
+  assert.deepEqual([...new Set([after.image, ...(after.gallery ?? [])])], gallery);
+  assert.deepEqual(after.presentaciones, before.presentaciones.map(item => item.varianteId === variantId ? { ...item, foto: image } : item));
+}
 
 async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
   const storeId = 'HUB_SUBA';
@@ -240,8 +301,9 @@ try {
   await admin('/inventory?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
   await admin('/inventory?storeId=HUB_SUBA&scope=catalog', { token: suba, expected: 403 });
   const unassignedInventory = await admin('/inventory?storeId=HUB_KENNEDY&scope=catalog', { token: coordination });
-  assert.equal(unassignedInventory.items.length, 1, 'El catálogo de la demo solo incluye la presentación ficticia');
-  assert.equal(unassignedInventory.items[0].assignedToStore, false);
+  assert.ok(unassignedInventory.items.every(item => item.productId === orderFixtureId || item.productId === galleryFixtureId),
+    'El catálogo administrativo de la demo mantiene el alcance de sus productos de prueba');
+  assert.equal(unassignedInventory.items.find(item => item.productId === orderFixtureId)?.assignedToStore, false);
   await api('/api/v1/orders', { token: suba, expected: [401, 403] });
   const beforeOrders = await admin('/orders?storeId=HUB_SUBA', { token: suba });
   assert.equal(beforeOrders.orders.length, 0);
@@ -393,7 +455,7 @@ try {
 
   const photoRoute = '/inventory/photo';
   const photoIds = { productId: reservedStock.productId, variantId: reservedStock.variantId };
-  assert.equal(photoIds.productId, 'SIM-BOLT-ADMIN-SUBA');
+  assert.equal(photoIds.productId, orderFixtureId);
   const photoQuery = photoRoute + '?' + new URLSearchParams(photoIds);
   const beforePhoto = await admin(photoQuery, { token: coordination });
   assert.deepEqual(beforePhoto, { productImage: '', variantImage: '', gallery: [] });
@@ -410,6 +472,8 @@ try {
   assert.deepEqual(await api('/api/v1/catalog?all=true&q=SIM-BOLT-ADMIN-SUBA'), []);
   console.log('PASS demo: Coordinación guarda una foto de variante, Suba solo consulta y el producto simulado sigue oculto en tienda.');
   console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
+  await verifyDemoGallery({ suba, coordination });
+  console.log('PASS demo: seis fotos de Pawise, principal y variante visibles en catálogo público, operación de galería acotada a Coordinación.');
   await verifyCustomerCheckout({ suba, kennedy, coordination });
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
 } finally {

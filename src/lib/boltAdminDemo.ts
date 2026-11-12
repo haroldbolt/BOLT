@@ -3,16 +3,67 @@ import type { TransportAttributes, TransportVehicle } from '../types/transport';
 import { generateScheduledSlots } from './deliveryService';
 import { DispatchError, type DispatchService } from './dispatchService';
 import { pendingDeliveryOrder } from './pendingDeliveryOrder';
+import { catalogPhotoGallery, MAX_PRODUCT_GALLERY_PHOTOS, usableProductImage } from './productImages';
 import type { TransportContext } from './transportPlanner';
 
 export const BOLT_ADMIN_DEMO_PRODUCT_ID = 'SIM-BOLT-ADMIN-SUBA';
 export const BOLT_ADMIN_DEMO_STORE_ID = 'HUB_SUBA';
+export const BOLT_GALLERY_DEMO_PRODUCT_ID = 'SIM-BOLT-GALERIA-PAWISE';
 const fingerprints = {
   PROGRAMADO: 'BOLT_ADMIN_SUBA_SIMULATION_V1',
   TURBO: 'BOLT_ADMIN_SUBA_SIMULATION_V1_TURBO',
 } as const;
 export type BoltAdminDemoMode = keyof typeof fingerprints;
 const keyPrefix = 'bolt-admin-suba-';
+
+export function boltGalleryDemoProduct(source: Product): Product {
+  const bodegaIds = [BOLT_ADMIN_DEMO_STORE_ID, 'HUB_KENNEDY', 'HUB_ALAMOS'];
+  const emptyStock = { HUB_SUBA: 0, HUB_KENNEDY: 0, HUB_ALAMOS: 0 };
+  const previewPrice = 1000;
+  const sourceVariants = (source.presentaciones ?? []).slice(0, MAX_PRODUCT_GALLERY_PHOTOS);
+  const gallery = catalogPhotoGallery({
+    image: source.image,
+    gallery: [...(source.gallery ?? []), ...sourceVariants.map(variant => variant.foto)],
+  }).slice(0, MAX_PRODUCT_GALLERY_PHOTOS);
+  const presentaciones = sourceVariants.map((variant, index) => {
+    const sku = `${BOLT_GALLERY_DEMO_PRODUCT_ID}-${String(index + 1).padStart(2, '0')}`;
+    return {
+      varianteId: sku,
+      nombre: variant.nombre,
+      sku,
+      foto: usableProductImage(variant.foto) ? variant.foto : '',
+      price: previewPrice,
+      stockByStore: { ...emptyStock },
+      reservedStockByStore: { ...emptyStock },
+      bodegaIds: [...bodegaIds],
+    };
+  });
+  return {
+    id: BOLT_GALLERY_DEMO_PRODUCT_ID,
+    sku: BOLT_GALLERY_DEMO_PRODUCT_ID,
+    name: 'Prueba de galería BOLT · Collar Pawise',
+    brand: 'BOLT · Simulación',
+    species: source.species,
+    category: source.category,
+    requiresPrescription: false,
+    storageCondition: source.storageCondition,
+    temperatureColdChain: false,
+    price: previewPrice,
+    presentation: presentaciones[0]?.nombre ?? 'Referencia de prueba',
+    weightKg: 0,
+    image: gallery[0] ?? '',
+    gallery,
+    description: 'Referencia de prueba para revisar fotos y tallas en la demo. No está disponible para comprar.',
+    stockByStore: { ...emptyStock },
+    reservedStockByStore: { ...emptyStock },
+    rating: 0,
+    reviewsCount: 0,
+    tags: [],
+    status: 'ACTIVE',
+    bodegaIds,
+    presentaciones,
+  };
+}
 
 export function boltAdminDemoProduct(): Product {
   const transport: TransportAttributes = {
