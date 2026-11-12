@@ -43,6 +43,14 @@ if (!fs.existsSync(signingFile)) fs.writeFileSync(signingFile, crypto.randomByte
 const customer = demoCustomerEnvironment(process.env, origin);
 const gateway = createDemoGateway({ customerAuth: customer, origin, password, sessionKey: fs.readFileSync(signingFile, 'utf8'), upstreamPort, allowLocalHttp: localTest });
 const childEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(BOLT_|SHOPIFY_|RAILWAY_)/.test(name)));
+// Forward only the photo search settings to the private server process.
+const photoSearchNames = [
+  'BOLT_PHOTO_SEARCH_ENABLED', 'BOLT_PHOTO_SEARCH_OPENAI_API_KEY', 'BOLT_PHOTO_SEARCH_MODEL',
+  'BOLT_PHOTO_SEARCH_REQUESTS_PER_MINUTE', 'BOLT_PHOTO_SEARCH_DAILY_LIMIT',
+];
+for (const name of photoSearchNames) {
+  if (process.env[name] !== undefined) childEnv[name] = process.env[name];
+}
 Object.assign(childEnv, customer.env, { NODE_ENV: 'production', PORT: String(upstreamPort), BOLT_DISPATCH_SIMULATION: '1', BOLT_DATA_DIR: data });
 // The compatible storage check above is the same check used by the normal launcher.
 // Own the actual server PID so graceful container restarts can release only its locks.
