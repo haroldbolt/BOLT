@@ -4,8 +4,9 @@ import {presentationChip, productDescription} from '../../lib/presentationDispla
 import {usePresentation} from './PresentationContext';
 import {hasSalePrice} from '../../lib/presentationSelection';
 import {validOffer} from '../../lib/catalogPurchase';
-import React from 'react';
-import { X, Heart, Plus, Minus, ShieldCheck, Thermometer, FileText, CheckCircle2, Scale, Bookmark } from 'lucide-react';
+import {catalogPhotoGallery, MAX_PRODUCT_GALLERY_PHOTOS} from '../../lib/productImages';
+import React, {useState} from 'react';
+import { X, Heart, Plus, Minus, ShieldCheck, Scale, Bookmark } from 'lucide-react';
 import { Product } from '../../types';
 import { formatCOP } from '../../lib/formatters';
 
@@ -23,6 +24,49 @@ interface ProductDetailModalProps {
   onToggleCompare?: (p: Product) => void;
   isInWishlist?: boolean;
   onOpenSaveToWishlist?: (p: Product) => void;
+}
+
+function ProductDetailGallery({ product, primaryImage, discount }: {
+  product: Pick<Product, 'name' | 'image' | 'gallery'>;
+  primaryImage: string;
+  discount?: number;
+}) {
+  const [chosenPhoto, setChosenPhoto] = useState<string>();
+  const primary = primaryImage?.trim() ?? '';
+  const gallery = catalogPhotoGallery(product).slice(0, MAX_PRODUCT_GALLERY_PHOTOS);
+  const photos = catalogPhotoGallery({ image: primary, gallery });
+  const currentPhoto = chosenPhoto && photos.includes(chosenPhoto) ? chosenPhoto : primary;
+  // An explicitly missing variant photo remains a placeholder until the customer chooses another view.
+  const showThumbnails = photos.length > 1 || (photos.length === 1 && photos[0] !== primary);
+
+  return (
+    <div className="min-w-0">
+      <div className="relative flex aspect-4/3 w-full items-center justify-center overflow-hidden bg-slate-50 min-[669px]:aspect-square">
+        <ProductImage src={currentPhoto} alt={product.name} className="h-full w-full object-contain" />
+        {discount !== undefined && (
+          <span className="absolute bottom-3 left-4 rounded-md bg-yellow-400 px-2.5 py-1 text-xs font-black text-red-950 shadow-xs">
+            -{discount}% DESCUENTO
+          </span>
+        )}
+      </div>
+      {showThumbnails && (
+        <div role="group" aria-label="Fotos del producto" className="flex flex-wrap justify-center gap-1.5 px-2 py-2.5">
+          {photos.map((src, index) => (
+            <button
+              key={src}
+              type="button"
+              aria-label={`Ver foto ${index + 1} de ${photos.length}`}
+              aria-pressed={src === currentPhoto}
+              onClick={() => setChosenPhoto(src)}
+              className="size-11 shrink-0 overflow-hidden rounded-lg border-2 border-slate-200 bg-slate-50 p-0.5 hover:border-red-400 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 aria-pressed:border-red-600"
+            >
+              <ProductImage src={src} alt="" className="h-full w-full object-contain" loading="lazy" />
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
 }
 
 export const ProductDetailModal: React.FC<ProductDetailModalProps> = props => props.product ? <ProductDetailContent {...props} product={props.product} /> : null;
@@ -120,19 +164,12 @@ const ProductDetailContent: React.FC<ProductDetailModalProps & {product:Product}
 
         {/* Contenedor responsivo: imagen y detalles lado a lado en modo desplegado */}
         <div className="min-[669px]:grid min-[669px]:grid-cols-2">
-          {/* Product Image */}
-          <div className="w-full aspect-4/3 min-[669px]:aspect-square bg-slate-50 flex items-center justify-center relative overflow-hidden">
-            <ProductImage
-              src={displayImage}
-              alt={product.name}
-              className="w-full h-full object-cover transition-all duration-300"
-            />
-            {offer?.percent && (
-              <span className="absolute bottom-3 left-4 bg-yellow-400 text-red-950 font-black text-xs px-2.5 py-1 rounded-md shadow-xs">
-                -{offer.percent}% DESCUENTO
-              </span>
-            )}
-          </div>
+          <ProductDetailGallery
+            key={JSON.stringify([product.id, selectedId, displayImage])}
+            product={product}
+            primaryImage={displayImage}
+            discount={offer?.percent}
+          />
 
           {/* Content details */}
           <div className="p-5 space-y-4 flex flex-col justify-between">

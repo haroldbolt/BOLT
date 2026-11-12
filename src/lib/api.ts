@@ -20,6 +20,7 @@ function authorizedFetch(url:RequestInfo|URL,init:RequestInit={},guestOnly=false
 
 export const api = {
   saveOrderAccess,
+  hasOrderAccess: (orderId: string) => !!guestOrderTokens()[orderId],
   async uploadEntrancePhoto(orderId:string,photoId:string,blob:Blob,destinationKey:string) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
     try {

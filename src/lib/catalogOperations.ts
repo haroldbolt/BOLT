@@ -2,17 +2,17 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import type { Product, Store, Order } from '../types';
-import { saleVariant, salesCatalog } from './variantCommerce';
+import { saleVariant, salesCatalog, validOriginalPrice } from './variantCommerce';
 
-type Actor = { email: string; name: string };
+type Actor = { email: string; name: string; id?: string };
 type Numbers = Record<string, number>;
 type Effect = { sold: number; reserved: number };
 export type PriceSource = {
   shop: string; currency: string; complete: boolean; completedAt: string;
   variants: Array<{ id: string; sku?: string | null; title: string; price: string | null; compareAtPrice?: string | null; product: { id: string; title: string; handle: string } }>;
 };
-type Value = { productId: string; variantId: string; price: number; stock: Numbers; reserved: Numbers; delta: Numbers; revision: number };
-type PricePlan = { status: string; reason?: string; before: number; rawConsulted?: string | null; consulted?: number; applied?: number; source?: string; sourceId?: string; method?: string; revision?: number };
+type Value = { productId: string; variantId: string; price: number; originalPrice?: number | null; stock: Numbers; reserved: Numbers; delta: Numbers; revision: number };
+type PricePlan = { status: string; reason?: string; before: number; rawConsulted?: string | null; consulted?: number; applied?: number; source?: string; sourceId?: string; method?: string; revision?: number; previousPromotion?: { originalPrice?: number | null } };
 type StockPlan = { storeId: string; storeName: string; status: string; before?: number; after?: number; reserved?: number; reason?: string; reversed?: boolean };
 type Row = { key: string; productId: string; product: string; variantId: string; variant: string; sku: string; price: PricePlan; stocks: StockPlan[]; done: boolean };
 export type CatalogBatch = { id: string; kind?: 'INVENTORY_ONLY'; inventoryDelta?: number; createdAt: string; actor: Actor; reason: string; source: { shop: string; currency: string; consultedAt: string; sha256: string }; backupPath: string; rows: Row[]; status: string; audit: Array<{ at: string; actor: Actor; action: string; count: number }> };
@@ -68,7 +68,10 @@ export class CatalogOperations {
   }
   private current(p:Product, variantId:string, state:State|undefined, effects:Record<string,Effect>) {
     const sale=saleVariant(p,variantId), value=state?.values[keyFor(p.id,variantId)];
-    if(!value || !state) return {...sale,commerceRevision:hash({price:sale.price,stock:sale.stockByStore,reserved:sale.reservedStockByStore})};
+    const price = value?.price ?? sale.price;
+    const originalPrice = validOriginalPrice(price, value?.originalPrice === undefined ? sale.originalPrice : value.originalPrice);
+    const discountPercent = originalPrice ? Math.round((1 - price / originalPrice) * 100) : undefined;
+    if(!value || !state) return {...sale,originalPrice,discountPercent,commerceRevision:hash({price,originalPrice,stock:sale.stockByStore,reserved:sale.reservedStockByStore})};
     const stock:Numbers={}, reserved:Numbers={};
     const storeIds=new Set([...Object.keys(value.stock),...Object.keys(value.delta),...Object.keys(value.reserved),...this.options.stores().map(s=>s.id)]);
     for(const id of storeIds) {
@@ -77,7 +80,7 @@ export class CatalogOperations {
       stock[id]=(value.stock[id]||0)+(value.delta[id]||0)-(e.sold-b.sold);
       reserved[id]=Math.max(0,(value.reserved[id]||0)+e.reserved-b.reserved);
     }
-    return {...sale,price:value.price,stockByStore:stock,reservedStockByStore:reserved,commerceRevision:hash({revision:value.revision,stock,reserved,price:value.price})};
+    return {...sale,price,originalPrice,discountPercent,stockByStore:stock,reservedStockByStore:reserved,commerceRevision:hash({revision:value.revision,stock,reserved,price,originalPrice})};
   }
   public initializeOrderTracking() {
     if(this.state) return;
@@ -108,12 +111,13 @@ export class CatalogOperations {
     }
     return baseProducts.map(p=>{
       const variants=p.presentaciones?.length ? p.presentaciones : [{varianteId:p.id,nombre:p.presentation,sku:p.sku,foto:p.image,bodegaIds:p.bodegaIds||Object.keys(p.stockByStore),transport:p.transport}];
-      const presentaciones=variants.map(v=>{
-        const current=this.current(p,v.varianteId,this.state,effects);
-        return {...v,price:current.price,stockByStore:current.stockByStore,reservedStockByStore:current.reservedStockByStore,commerceRevision:current.commerceRevision};
-      });
-      const first=presentaciones[0];
-      return {...p,price:first.price,stockByStore:first.stockByStore,reservedStockByStore:first.reservedStockByStore,commerceRevision:first.commerceRevision,presentaciones};
+      const projections = variants.map(v => ({ variant: v, current: this.current(p, v.varianteId, this.state, effects) }));
+      const presentaciones = projections.map(({variant, current}) => ({
+        ...variant, price:current.price, originalPrice:current.originalPrice, discountPercent:current.discountPercent,
+        stockByStore:current.stockByStore, reservedStockByStore:current.reservedStockByStore, commerceRevision:current.commerceRevision,
+      }));
+      const first = projections[0].current;
+      return {...p,price:first.price,originalPrice:first.originalPrice,discountPercent:first.discountPercent,stockByStore:first.stockByStore,reservedStockByStore:first.reservedStockByStore,commerceRevision:first.commerceRevision,presentaciones};
     });
   }
   public getSalesProducts() {return salesCatalog(this.getProducts());}
@@ -225,7 +229,18 @@ export class CatalogOperations {
       }
       if(row.price.status==='PENDING') {
         if(value.revision!==row.price.revision || value.price!==row.price.before) {row.price.status='SKIPPED';row.price.reason='Precio modificado desde la preparación';}
-        else {value.price=row.price.consulted!;value.revision++;row.price.applied=value.price;row.price.revision=value.revision;row.price.status=value.price===row.price.before?'UNCHANGED':'APPLIED';}
+        else {
+          const changed = row.price.consulted !== value.price;
+          if (changed) {
+            row.price.previousPromotion = { originalPrice: value.originalPrice };
+            value.originalPrice = null;
+          }
+          value.price = row.price.consulted!;
+          value.revision++;
+          row.price.applied = value.price;
+          row.price.revision = value.revision;
+          row.price.status = changed ? 'APPLIED' : 'UNCHANGED';
+        }
       }
       row.done=true;
     }
@@ -233,8 +248,8 @@ export class CatalogOperations {
     batch.status=batch.rows.every(r=>r.done)?'COMPLETED':'RUNNING';
     this.persist(next);return copy(batch);
   }
-  public edit(productId:string, params:{variantId?:string;priceCOP?:number;stockByStore?:Numbers;expectedRevision?:string},actor:Actor):Product {
-    actor={email:actor.email,name:actor.name};
+  public edit(productId:string, params:{variantId?:string;priceCOP?:number;originalPriceCOP?:number|null;stockByStore?:Numbers;expectedRevision?:string;reason?:string},actor:Actor):Product {
+    actor={email:actor.email,name:actor.name,...(actor.id?{id:actor.id}:{})};
     const p=this.getProducts().find(p=>p.id===productId);if(!p) throw new Error('Producto no encontrado');
     const variantId=params.variantId||p.presentaciones?.[0]?.varianteId||p.id;
     const v=p.presentaciones?.find(v=>v.varianteId===variantId);if(!v)throw new Error('Variante no encontrada');
@@ -242,14 +257,31 @@ export class CatalogOperations {
     if(params.priceCOP!==undefined && (!Number.isFinite(params.priceCOP)||params.priceCOP<=0))throw new Error('Precio COP inválido');
     const next=copy(this.state||this.fresh());const value=this.ensureValue(next,p,variantId);
     const current=saleVariant(p,variantId);
+    const price = params.priceCOP ?? current.price;
+    const originalPrice = params.originalPriceCOP !== undefined ? params.originalPriceCOP : price === current.price ? value.originalPrice : null;
+    if (params.originalPriceCOP != null && validOriginalPrice(price, params.originalPriceCOP) === undefined) {
+      throw new Error('El precio regular debe ser mayor que el precio promocional.');
+    }
+    const stockChanges: Array<{storeId:string;before:number;after:number;reserved:number}> = [];
     for(const [storeId,qty] of Object.entries(params.stockByStore||{})) {
       const s=this.options.stores().find(s=>s.id===storeId);
       if(!s?.isActive || !(v.bodegaIds.includes(storeId)||!!s.shopifyLocationGid&&v.bodegaIds.includes(s.shopifyLocationGid)))throw new Error('Bodega no asociada o inactiva');
-      if(!Number.isSafeInteger(qty)||qty<(current.reservedStockByStore[storeId]||0))throw new Error('Existencia inválida o menor que reservas');
-      value.delta[storeId]=(value.delta[storeId]||0)+qty-(current.stockByStore[storeId]||0);
+      const before=current.stockByStore[storeId]||0;
+      const reserved=current.reservedStockByStore[storeId]||0;
+      if(!Number.isSafeInteger(qty)||qty<reserved)throw new Error('Existencia inválida o menor que reservas');
+      value.delta[storeId]=(value.delta[storeId]||0)+qty-before;
+      stockChanges.push({storeId,before,after:qty,reserved});
     }
-    if(params.priceCOP!==undefined && params.priceCOP!==value.price){value.price=params.priceCOP;value.revision++;}
-    next.audit.push({at:new Date().toISOString(),actor,action:'MANUAL_VARIANT_EDIT',productId,variantId,params});
+    const priceChange = price !== value.price || originalPrice !== value.originalPrice ? {
+      before: current.price, after: price, originalBefore: current.originalPrice ?? null,
+      originalAfter: validOriginalPrice(price, originalPrice === undefined ? current.originalPrice : originalPrice) ?? null,
+    } : undefined;
+    if (priceChange) {
+      value.price = price;
+      value.originalPrice = originalPrice;
+      value.revision++;
+    }
+    next.audit.push({at:new Date().toISOString(),actor,action:'MANUAL_VARIANT_EDIT',productId,variantId,params,...(stockChanges.length?{stockChanges}:{}),...(priceChange?{priceChange}:{})});
     this.persist(next);return this.getProducts().find(p=>p.id===productId)!;
   }
   public reverse(id:string,actor:Actor):CatalogBatch {
@@ -265,7 +297,12 @@ export class CatalogOperations {
         value.delta[s.storeId]=(value.delta[s.storeId]||0)-delta;s.reversed=true;s.reason=undefined;count++;
       }
       if(['APPLIED','UNCHANGED'].includes(row.price.status)) {
-        if(value.revision===row.price.revision && value.price===row.price.applied){value.price=row.price.before;value.revision++;row.price.status='REVERSED';}
+        if(value.revision===row.price.revision && value.price===row.price.applied){
+          value.price=row.price.before;
+          if (row.price.previousPromotion) value.originalPrice = row.price.previousPromotion.originalPrice;
+          value.revision++;
+          row.price.status='REVERSED';
+        }
         else row.price.reason='Reversión pendiente: precio modificado posteriormente';
       }
     }

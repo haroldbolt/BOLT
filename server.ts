@@ -14,6 +14,10 @@ import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/cover
 import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
+import { boltAdminOrder, boltAdminPhotoPath, mountBoltAdmin } from './src/lib/boltAdminRoutes';
+import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltAdminDemoProduct, boltAdminDemoReviewContext, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
+import { matchesCatalogCategory } from './src/lib/catalogCategories';
+import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
 import { describeWarehouse } from './src/lib/warehouseAssignment';
 import { enrichDestination } from './src/lib/serverGeography';
@@ -68,18 +72,28 @@ console.log(`[Inventario Privado] ${privateInventoryStatus.message} Se utiliza e
 let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
-const catalogOperations = new CatalogOperations({file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),products:()=>catalogRepository.getAllProducts(true),stores:()=>stores,orders:()=>ordersRepository.getAllOrders()});
-const transportRepository = new TransportRepository();
 const isDispatchSimulation=simulationEnabled();
+if (isDispatchSimulation) catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
+const catalogOperations = new CatalogOperations({
+  file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),
+  products:()=>catalogRepository.getAllProducts(true),
+  stores:()=>stores,
+  orders:()=>ordersRepository.getAllOrders(),
+});
+const transportRepository = new TransportRepository();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
-const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[]});
+const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[],holdDispatch:isDispatchSimulation?isBoltAdminDemoOrder:undefined});
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
-function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders()) {
+function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order) {
   request={...request,destination:enrichDestination(request.destination)};
-  const quote=evaluateDeliveryQuote(request,stores,catalog,orderList,{...transportContext(),orders:orderList});
+  const fixtureQuote=isBoltAdminDemoOrder(reviewingOrder);
+  const capacityOrders=isDispatchSimulation ? orderList.filter(order=>isBoltAdminDemoOrder(order)===fixtureQuote) : orderList;
+  const context={...transportContext(),orders:capacityOrders};
+  const scopedContext=isDispatchSimulation?boltAdminDemoReviewContext(reviewingOrder,context):context;
+  const quote=evaluateDeliveryQuote(request,stores,catalog,capacityOrders,scopedContext);
   if(quote.recommendedMode && quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
     destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
-    charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,products.find(p=>p.id===i.productId)?.price]).sort(),
+    charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort(),
   })).digest('hex');
   if(quote.reasonCode==='TRANSPORT_DATA_PENDING' && quote.inventoryValidated && quote.assignedStoreId && quote.territoryInfo?.isCovered) {quote.message=REVIEW_MESSAGE;quote.reviewRequestToken=crypto.createHash('sha256').update(JSON.stringify({kind:'PENDING_REVIEW_ONLY',destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},storeId:quote.assignedStoreId,mode:request.requestedMode,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort()})).digest('hex');}
   return quote;
@@ -97,10 +111,15 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
-  mountProductPhotoSearch(app, {catalog:()=>catalogRepository.getAllProducts(false), recognizer:photoRecognizer});
-  app.use(express.json({ limit: '15mb' }));
+  mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
+  const parseJson = express.json({ limit: '15mb' });
+  app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
+    ? next()
+    : parseJson(req, res, next));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
-  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+  const uploadsRoot = path.join(process.cwd(), 'public', 'uploads');
+  const catalogUploadDir = path.join(uploadsRoot, 'catalog');
+  app.use('/uploads', express.static(uploadsRoot));
 
   // Función para validar encabezados binarios y guardar imagen en public/uploads/catalog
   function saveBase64Image(dataUrl: string, originalFilename?: string): { url: string; filename: string; size: number } {
@@ -148,16 +167,15 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       throw new Error(`Tipo de imagen no admitido (${mimeType}). Formatos soportados: JPEG, PNG, WEBP, GIF.`);
     }
 
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'catalog');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    if (!fs.existsSync(catalogUploadDir)) {
+      fs.mkdirSync(catalogUploadDir, { recursive: true });
     }
 
     const cleanBaseName = originalFilename
       ? path.basename(originalFilename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 25)
       : 'foto';
     const uniqueFilename = `img-${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${cleanBaseName}.${ext}`;
-    const filePath = path.join(uploadDir, uniqueFilename);
+    const filePath = path.join(catalogUploadDir, uniqueFilename);
 
     fs.writeFileSync(filePath, buffer);
 
@@ -254,7 +272,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
     const { category, species, storeId, q, all } = req.query;
-    let filtered = catalogOperations.getProducts();
+    let filtered = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
 
     // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
     if (all !== 'true') {
@@ -274,8 +292,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       });
     }
 
-    if (category && category !== 'Todo') {
-      filtered = filtered.filter(p => p.category === category || p.pharmacySubcategory === category);
+    // Leave the unfiltered feed intact so previously saved cart IDs still resolve.
+    if (all !== 'true' && (category || species || storeId || q)) {
+      const scope=stores.find(s=>s.id===storeId || s.shopifyLocationGid===storeId)?.id;
+      filtered=withoutRedundantCatalogCards(filtered,scope);
+    }
+
+    if (typeof category === 'string' && category && category !== 'Todo') {
+      filtered = filtered.filter(p => matchesCatalogCategory(p, category));
     }
     if (species && species !== 'Todos') {
       filtered = filtered.filter(p => p.species === species || p.species === 'Ambos');
@@ -368,7 +392,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Create Order with transactional stock reservation & delivery policy validation
-  const createPurchase = (req: Request, res: Response, reviewingOrder?:Order, purchaseCatalog=products) => {
+  type ReviewActor = {id:string; role:'ADMINISTRADOR'|'BODEGA'; name?:string};
+  type PurchaseReview = {order:Order; actor:ReviewActor; catalog:Product[]; mapOrder?:(order:Order)=>unknown};
+  const createPurchase = (req: Request, res: Response, review?:PurchaseReview) => {
+    const reviewingOrder=review?.order;
+    const purchaseCatalog=review?.catalog ?? products;
     try {
       const creationRequestId=req.get('Idempotency-Key');
       if(!creationRequestId) return res.status(400).json({code:'IDEMPOTENCY_REQUIRED',error:'Falta el identificador estable de confirmación. Actualiza e intenta nuevamente.'});
@@ -424,7 +452,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
           requestedMode: requestedDeliveryMode,
           scheduledWindow,
-        },purchaseCatalog,ordersRepository.getAllOrders().filter(o=>o.id!==reviewingOrder?.id));
+        },purchaseCatalog,ordersRepository.getAllOrders().filter(o=>o.id!==reviewingOrder?.id),reviewingOrder);
 
         if(req.body.requestDeliveryReview===true && !reviewingOrder) {
           if(!evaluatedQuote.reviewRequestToken || req.body.reviewRequestToken!==evaluatedQuote.reviewRequestToken) return res.status(409).json({code:'REVIEW_CHANGED',error:'Actualiza el carrito antes de enviar la solicitud.'});
@@ -526,6 +554,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const totalWeightKg = evaluatedQuote.totalWeightKg;
       const {shipping,serviceFee}=evaluatedQuote.charges;
       const total = subtotal + shipping + serviceFee + tip;
+      const isAdminDemoOrder = isDispatchSimulation && isBoltAdminDemoOrder(reviewingOrder);
+      const cashToCollect = paymentMethod === 'CASH_ON_DELIVERY' && !isAdminDemoOrder ? total : 0;
       const random4DigitCode = crypto.randomInt(1000,10000).toString();
       const usedDeliveryCodes=new Set([random4DigitCode]);
       const nextDeliveryCode=()=>{let code:string;do{code=crypto.randomInt(1000,10000).toString();}while(usedDeliveryCodes.has(code));usedDeliveryCodes.add(code);return code;};
@@ -550,12 +580,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           
           // Asignación proporcional de efectivo contra entrega
           let shipmentCash = 0;
-          if (paymentMethod === 'CASH_ON_DELIVERY') {
+          if (cashToCollect > 0) {
             if (isLast) {
-              shipmentCash = Math.max(0, total - accumulatedCash);
+              shipmentCash = Math.max(0, cashToCollect - accumulatedCash);
             } else {
               const proportion = subtotal > 0 ? plan.subtotal / subtotal : 1 / evaluatedQuote.turboDividido.shipments.length;
-              shipmentCash = Math.round(total * proportion);
+              shipmentCash = Math.round(cashToCollect * proportion);
               accumulatedCash += shipmentCash;
             }
           }
@@ -636,7 +666,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         payment: {
           method: paymentMethod,
           status: paymentMethod === 'CASH_ON_DELIVERY' ? 'PENDIENTE' : 'APROBADO',
-          cashToCollect: paymentMethod === 'CASH_ON_DELIVERY' ? total : 0,
+          cashToCollect,
           cashSettled: false,
           transactionId: paymentMethod !== 'CASH_ON_DELIVERY' ? `TXN-WMP-${Date.now().toString().slice(-7)}` : undefined,
         },
@@ -667,40 +697,107 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       };
 
       if(reviewingOrder && newOrder.storeId!==reviewingOrder.storeId)return res.status(409).json({error:'La revisión debe conservar la sede asignada.'});
-      const createResult = reviewingOrder
-        ? dispatchService.confirmPendingOrder(reviewingOrder.id,newOrder,(req as any).adminSession.userId,req.body.customerAgreementReference)
+      const createResult = review
+        ? dispatchService.confirmPendingOrder(review.order.id,newOrder,review.actor.id,req.body.customerAgreementReference,review.actor)
         : dispatchService.createOrder(newOrder, purchaseCatalog, assignedStore);
       if (!createResult.success) {
         return res.status(400).json({ error: createResult.error });
       }
-      return res.status(201).json({...presentOrder(createResult.order!),guestAccessToken:dispatchService.guestToken(createResult.order!)});
+      const order=createResult.order!;
+      return res.status(201).json(review?.mapOrder ? review.mapOrder(order) : {...presentOrder(order),guestAccessToken:dispatchService.guestToken(order)});
     } catch (e: any) {
       console.error('Error creating order:', e);
       return res.status(500).json({ error: e.message || 'Error interno del servidor' });
     }
   };
   app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req,res)=>createPurchase(req,res));
-  const reviewCatalog=(order:Order)=>products.map(p=>({...p,reservedStockByStore:{...p.reservedStockByStore,[order.storeId]:Math.max(0,(p.reservedStockByStore[order.storeId]||0)-order.items.filter(i=>i.productId===p.id).reduce((n,i)=>n+i.quantity,0))}}));
-  app.post('/api/v1/admin/orders/:orderId/delivery-review/quote',requireAdminAuth,(req,res)=>{
-    const order=ordersRepository.getOrderById(req.params.orderId);
+  function reviewCatalog(order: Order) {
+    // The authorized pending request already reserved these lines at their original prices.
+    const reservedItems = new Map<string, { quantity: number; price: number }>();
+    for (const item of order.items) {
+      const previous = reservedItems.get(item.productId);
+      reservedItems.set(item.productId, { quantity: (previous?.quantity ?? 0) + item.quantity, price: previous?.price ?? item.price });
+    }
+    return products.map(product => {
+      const item = reservedItems.get(product.id);
+      if (!item) return product;
+      const sale = isDispatchSimulation ? activateBoltAdminDemoProduct(order, product) : product;
+      return {
+        ...sale,
+        price: item.price,
+        reservedStockByStore: {
+          ...product.reservedStockByStore,
+          [order.storeId]: Math.max(0, (product.reservedStockByStore[order.storeId] ?? 0) - item.quantity),
+        },
+      };
+    });
+  }
+  function quotePendingDelivery(req:Request,res:Response,order:Order|undefined) {
     if(!order || order.deliveryReview?.status!=='PENDING' || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION')return res.status(409).json({error:'La solicitud ya no está pendiente.'});
-    const quote=quoteForPurchase({destination:order.deliveryAddress,items:order.items,requestedMode:req.body.deliveryMode||order.deliveryReview.requestedMode||'PROGRAMADO',scheduledWindow:req.body.scheduledWindow},reviewCatalog(order),ordersRepository.getAllOrders().filter(o=>o.id!==order.id));
+    const requestedMode=req.body?.deliveryMode ?? order.deliveryReview.requestedMode ?? 'PROGRAMADO';
+    if(!['TURBO','TURBO_DIVIDIDO','PROGRAMADO'].includes(requestedMode))return res.status(400).json({error:'Selecciona una modalidad válida.'});
+    const quote=quoteForPurchase({destination:order.deliveryAddress,items:order.items,requestedMode,scheduledWindow:req.body?.scheduledWindow},reviewCatalog(order),ordersRepository.getAllOrders().filter(o=>o.id!==order.id),order);
     if(quote.assignedStoreId!==order.storeId)return res.status(409).json({error:'La revisión no puede cambiar la sede asignada.'});
     res.json(quote);
-  });
-  app.post('/api/v1/admin/orders/:orderId/delivery-review/confirm',requireAdminAuth,(req,res)=>{
-    const order=ordersRepository.getOrderById(req.params.orderId);
+  }
+  function confirmPendingDelivery(req:Request,res:Response,order:Order|undefined,actor:ReviewActor,mapOrder?:(order:Order)=>unknown) {
     if(!order)return res.status(404).json({error:'Solicitud no encontrada.'});
-    if(order.deliveryReview?.status==='CONFIRMED' && order.deliveryReview.confirmationToken===req.body.confirmationToken)return res.json(presentOrder(order));
+    const input=req.body || {};
+    if(order.deliveryReview?.status==='CONFIRMED' && typeof input.confirmationToken==='string' && order.deliveryReview.confirmationToken===input.confirmationToken)return res.json(mapOrder?mapOrder(order):presentOrder(order));
     if(order.deliveryReview?.status!=='PENDING' || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION')return res.status(409).json({error:'La solicitud ya no está pendiente.'});
-    const reference=typeof req.body.customerAgreementReference==='string'?req.body.customerAgreementReference.trim():'';
-    if(req.body.customerAccepted!==true || reference.length<8 || reference.length>500)return res.status(400).json({error:'Registra la referencia de la aceptación del cliente al costo, modalidad y horario propuestos; no incluyas secretos.'});
-    if(!['TURBO','TURBO_DIVIDIDO','PROGRAMADO'].includes(req.body.deliveryMode))return res.status(400).json({error:'Selecciona la modalidad cotizada.'});
-    const input=req.body;
+    const reference=typeof input.customerAgreementReference==='string'?input.customerAgreementReference.trim():'';
+    if(input.customerAccepted!==true || reference.length<8 || reference.length>500)return res.status(400).json({error:'Registra la referencia de la aceptación del cliente al costo, modalidad y horario propuestos; no incluyas secretos.'});
+    if(!['TURBO','TURBO_DIVIDIDO','PROGRAMADO'].includes(input.deliveryMode))return res.status(400).json({error:'Selecciona la modalidad cotizada.'});
     req.headers['idempotency-key']=order.creationRequestId;
     req.body={items:order.items,customer:order.customer,deliveryAddress:order.deliveryAddress,paymentMethod:'CASH_ON_DELIVERY',tip:0,deliveryMode:input.deliveryMode,scheduledWindow:input.scheduledWindow,confirmationToken:input.confirmationToken,customerAgreementReference:reference};
     (req as any).customerAccountId=order.customerAccountId;
-    return createPurchase(req,res,order,reviewCatalog(order));
+    return createPurchase(req,res,{order,actor,catalog:reviewCatalog(order),mapOrder});
+  }
+  app.post('/api/v1/admin/orders/:orderId/delivery-review/quote',requireAdminAuth,(req,res)=>{
+    quotePendingDelivery(req,res,ordersRepository.getOrderById(req.params.orderId));
+  });
+  app.post('/api/v1/admin/orders/:orderId/delivery-review/confirm',requireAdminAuth,(req,res)=>{
+    const {userId,name}=(req as any).adminSession;
+    confirmPendingDelivery(req,res,ordersRepository.getOrderById(req.params.orderId),{id:userId,name,role:'ADMINISTRADOR'});
+  });
+  mountBoltAdmin(app,{
+    adminAuth:adminAuthService,
+    catalog:catalogOperations,
+    photos:catalogRepository,
+    uploadPhoto:(dataUrl, filename)=>{
+      const upload=saveBase64Image(dataUrl, filename);
+      return {url:upload.url, discard:()=>{
+        try { fs.rmSync(path.join(catalogUploadDir, upload.filename), { force: true }); }
+        catch (error) { console.error('No se pudo eliminar una foto de catálogo sin asignar.', error); }
+      }};
+    },
+    getProducts:()=>products,
+    getStores:()=>stores,
+    getOrders:()=>ordersRepository.getAllOrders(),
+    getDispatchRuns:()=>Object.values(ordersRepository.dispatchState.runs),
+    getOrder:id=>ordersRepository.getOrderById(id),
+    quote:quotePendingDelivery,
+    confirm:(req,res,order,actor)=>confirmPendingDelivery(req,res,order,{
+      id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
+    },boltAdminOrder),
+    startPreparation:(_req,res,order,actor)=>{
+      if(order.isSplitOrder && order.childShipments?.length) {
+        return res.status(409).json({error:'Gestiona el alistamiento por entrega desde el panel actual.'});
+      }
+      if(order.fulfillmentStatus==='EN_ALISTAMIENTO')return res.json(boltAdminOrder(order));
+      if(order.fulfillmentStatus!=='CONFIRMADO')return res.status(409).json({error:'Solo se puede iniciar el alistamiento de un pedido confirmado.'});
+      const result=ordersRepository.transaction(()=>ordersRepository.transitionStatus(order.id,'EN_ALISTAMIENTO',{
+        id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
+      },{reason:'Alistamiento iniciado desde BOLT Admin'}));
+      if(!result.success || !result.order)return res.status(result.code || 409).json({error:result.error || 'No se pudo iniciar el alistamiento.'});
+      res.json(boltAdminOrder(result.order));
+    },
+    demo:isDispatchSimulation ? {
+      productId:BOLT_ADMIN_DEMO_PRODUCT_ID,
+      isOrder:isBoltAdminDemoOrder,
+      createOrder:(requestId,requestedMode)=>createBoltAdminDemoOrder({requestId,requestedMode,catalog:products,store:stores.find(store=>store.id===BOLT_ADMIN_DEMO_STORE_ID),dispatch:dispatchService}),
+      guestToken:order=>dispatchService.guestToken(order),
+    } : undefined,
   });
 
 
@@ -1079,7 +1176,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
     const { q, category, status } = req.query;
-    let all = catalogOperations.getProducts();
+    let all = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
 
     if (status && status !== 'TODOS') {
       all = all.filter(p => (p.status || 'ACTIVE') === status);
@@ -1208,6 +1305,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // FRONTEND MOUNTING (VITE IN DEV / STATIC IN PROD)
   // ==========================================
 
+  app.get('/admin/nuevo', (req, res, next) => {
+    if (req.path !== '/admin/nuevo') return next();
+    res.redirect(308, '/admin/nuevo/' + req.originalUrl.slice(req.path.length));
+  });
+
   if (process.env.NODE_ENV !== 'production') {
     const vite = await createViteServer({
       server: {
@@ -1218,6 +1320,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     });
     app.use(vite.middlewares);
   } else {
+    // The new HTML entry creates a dist/admin directory. Keep the existing admin route on the storefront shell.
+    app.get('/admin', (req, res) => {
+      if (req.path === '/admin/') return res.redirect(308, '/admin' + req.originalUrl.slice(req.path.length));
+      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+    });
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));

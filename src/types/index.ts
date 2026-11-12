@@ -35,6 +35,8 @@ export interface ProductLot {
 export interface ProductPresentation {
   transport?: TransportAttributes;
   price?: number;
+  originalPrice?: number | null;
+  discountPercent?: number;
   stockByStore?: Record<string, number>;
   reservedStockByStore?: Record<string, number>;
   commerceRevision?: string;

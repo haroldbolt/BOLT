@@ -1,4 +1,7 @@
 import type { MainCategory, Product } from '../types';
+import { matchesCatalogCategory } from './catalogCategories';
+
+export const MAX_PRODUCT_GALLERY_PHOTOS = 6;
 
 // A loadable URL is not evidence of the contents of a photograph.
 export function usableProductImage(src?: string): boolean {
@@ -10,10 +13,21 @@ export function usableProductImage(src?: string): boolean {
   } catch { return false; }
 }
 
+export function catalogPhotoGallery(product: Pick<Product, 'image' | 'gallery'>): string[] {
+  const seen = new Set<string>();
+  return [product.image, ...(product.gallery || [])].filter(url => {
+    if (!usableProductImage(url)) return false;
+    const key = url.split(/[?#]/, 1)[0];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
+}
+
 export function categoryImageCandidates(products: Product[], category: MainCategory) {
   const seen = new Set<string>();
   return products.filter(p => (!p.status || p.status === 'ACTIVE') &&
-    (p.category === category || category === 'Farmacia' && p.category === 'Antipulgas'))
+    matchesCatalogCategory(p, category))
     .flatMap(p => [p.image, ...(p.gallery || [])].filter(usableProductImage).map(src => ({src, alt:p.name, productId:p.id})))
     .filter(({src}) => {
       const canonical = src.split('?')[0];

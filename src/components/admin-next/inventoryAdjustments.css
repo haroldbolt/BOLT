@@ -1,0 +1,30 @@
+.ba-adjustments .ba-panel-head { border-bottom: 1px solid var(--ba-border); }
+.ba-adjustments .ba-panel-head h2 { scroll-margin-top: 80px; }
+.ba-adjustment-empty { display: flex; align-items: flex-start; gap: 9px; padding: 14px 16px; color: var(--ba-dim); }
+.ba-adjustment-empty svg { flex: none; color: #6a4176; }
+.ba-adjustment-form { display: grid; gap: 13px; padding: 14px 16px 16px; }
+.ba-adjustment-product { overflow-wrap: anywhere; }
+.ba-adjustment-product p { margin-top: 3px; color: var(--ba-dim); font-size: 12px; }
+.ba-adjustment-balances { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 7px; }
+.ba-adjustment-balances > div { min-width: 0; padding: 7px 9px; border: 1px solid var(--ba-border); border-radius: 8px; background: #f8f7fa; }
+.ba-adjustment-balances dt { color: var(--ba-dim); font-size: 12px; overflow-wrap: anywhere; }
+.ba-adjustment-balances dd { font-weight: 720; font-size: 18px; font-variant-numeric: tabular-nums; overflow-wrap: anywhere; }
+.ba-adjustment-method { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; min-width: 0; padding: 0; margin: 0; border: 0; }
+.ba-adjustment-method legend { padding: 0; margin-bottom: 5px; font-size: 13px; font-weight: 620; }
+.ba-adjustment-choice { display: flex; align-items: center; gap: 7px; min-height: 41px; padding: 6px 9px; border: 1px solid var(--ba-border); border-radius: 8px; font-size: 13px; font-weight: 620; cursor: pointer; }
+.ba-adjustment-choice input { flex: none; margin: 0; accent-color: var(--ba-red); }
+.ba-adjustment-choice:has(input:checked) { border-color: #b85a77; background: #fff6f8; }
+.ba-adjustment-choice:has(input:disabled) { opacity: .62; cursor: default; }
+.ba-adjustment-quantity { display: grid; gap: 7px; }
+.ba-adjustment-quantity-delta { grid-template-columns: minmax(0, 1.35fr) minmax(0, 1fr); }
+.ba-adjustment-preview { display: grid; gap: 7px; }
+.ba-adjustment-preview .ba-adjustment-balances > div { background: #edf7f0; border-color: #dcefe2; }
+.ba-adjustment-actions { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: 7px; }
+
+@media (max-width: 420px) {
+  .ba-adjustment-empty, .ba-adjustment-form { padding-inline: 10px; }
+  .ba-adjustment-balances > div { padding-inline: 6px; }
+}
+@media (pointer: coarse) {
+  .ba-adjustment-choice { min-height: 44px; }
+}

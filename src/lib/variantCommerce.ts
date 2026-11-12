@@ -1,6 +1,11 @@
 import type { Product } from '../types';
 import {verifiedPresentationLabel} from './presentationDisplay';
 
+export function validOriginalPrice(price: number, originalPrice?: number | null): number | undefined {
+  return Number.isFinite(price) && price > 0 && typeof originalPrice === 'number' &&
+    Number.isFinite(originalPrice) && originalPrice > price ? originalPrice : undefined;
+}
+
 export function presentationLabel(product: Product, id: string): string {
   const variants = product.presentaciones || [];
   const variant = variants.find(v => v.varianteId === id);
@@ -22,6 +27,9 @@ export function saleVariant(product: Product, variantId?: string): Product {
   const isFirst = variant === variants[0];
   const exactWeight = variant.nombre.trim().match(/^(\d+(?:[.,]\d+)?)\s*(kg|g)$/i);
   const weightKg = exactWeight ? Number(exactWeight[1].replace(',','.')) / (exactWeight[2].toLowerCase()==='g'?1000:1) : product.weightKg;
+  const price = variant.price ?? (isFirst ? product.price : 0);
+  const reference = variant.originalPrice === undefined && isFirst ? product.originalPrice : variant.originalPrice;
+  const originalPrice = validOriginalPrice(price, reference);
   return {
     ...product,
     id: isFirst ? product.id : variant.varianteId,
@@ -32,9 +40,9 @@ export function saleVariant(product: Product, variantId?: string): Product {
     weightKg: variant.transport ? variant.transport.weightGrams / 1000 : weightKg,
     transport: variant.transport,
     image: Object.hasOwn(product.variantImages || {},variant.varianteId) ? product.variantImages![variant.varianteId] : (variant.foto || product.image),
-    price: variant.price ?? (isFirst ? product.price : 0),
-    originalPrice: isFirst ? product.originalPrice : undefined,
-    discountPercent: isFirst && product.originalPrice && product.originalPrice>(variant.price ?? product.price) ? Math.round((1-(variant.price ?? product.price)/product.originalPrice)*100) : undefined,
+    price,
+    originalPrice,
+    discountPercent: originalPrice ? Math.round((1 - price / originalPrice) * 100) : undefined,
     unitPriceText: isFirst && variant.price===undefined ? product.unitPriceText : undefined,
     stockByStore: variant.stockByStore ?? (isFirst ? product.stockByStore : {}),
     reservedStockByStore: variant.reservedStockByStore ?? (isFirst ? product.reservedStockByStore : {}),
