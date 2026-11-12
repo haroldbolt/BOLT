@@ -106,7 +106,7 @@ export function DeliveryReviewPanel({ order, token, isDemo, onConfirmed }: {
         <span><MapPin size={16} aria-hidden="true" />{deliveryModeLabel(quote.recommendedMode)}{slot && ` · ${slot.dateLabel} · ${slot.displayWindow}`}</span>
         <strong>{formatCOP(quote.charges.total)}</strong>
       </div>
-      <p className="ba-dim">Total de la propuesta · Pago contra entrega</p>
+      <p className="ba-dim">{isDemo ? 'Total simulado · Sin cobro' : 'Total de la propuesta · Pago contra entrega'}</p>
       {isDemo && <p className="ba-info">Prueba: registra una aceptación ficticia, por ejemplo «Cliente de prueba aceptó la franja».</p>}
       <label className="ba-field">Referencia de aceptación
         <input value={reference} onChange={event => setReference(event.target.value)} maxLength={500}

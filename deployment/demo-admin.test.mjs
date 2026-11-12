@@ -161,6 +161,10 @@ try {
   assert.equal(customer.fulfillmentStatus, 'CONFIRMADO');
   assert.equal(customer.payment.status, 'PENDIENTE');
   assert.equal(customer.payment.transactionId, undefined);
+  assert.equal(customer.payment.cashToCollect, 0);
+  assert.ok(customer.totals.total > 0, 'El total simulado sigue visible');
+  const tracking = await api('/api/v1' + orderUrl + '/tracking', { guestToken: fixture.guestAccessToken });
+  assert.deepEqual(tracking.dispatches.map(dispatch => dispatch.cashToCollect), [0]);
   const start = token => admin(orderUrl + '/start-preparation', { method: 'POST', token, body: {} });
   await admin(orderUrl + '/start-preparation', { method: 'POST', token: kennedy, body: {}, expected: 403 });
   const started = await start(suba);

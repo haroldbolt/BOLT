@@ -552,6 +552,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const totalWeightKg = evaluatedQuote.totalWeightKg;
       const {shipping,serviceFee}=evaluatedQuote.charges;
       const total = subtotal + shipping + serviceFee + tip;
+      const isAdminDemoOrder = isDispatchSimulation && isBoltAdminDemoOrder(reviewingOrder);
+      const cashToCollect = paymentMethod === 'CASH_ON_DELIVERY' && !isAdminDemoOrder ? total : 0;
       const random4DigitCode = crypto.randomInt(1000,10000).toString();
       const usedDeliveryCodes=new Set([random4DigitCode]);
       const nextDeliveryCode=()=>{let code:string;do{code=crypto.randomInt(1000,10000).toString();}while(usedDeliveryCodes.has(code));usedDeliveryCodes.add(code);return code;};
@@ -576,12 +578,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           
           // Asignación proporcional de efectivo contra entrega
           let shipmentCash = 0;
-          if (paymentMethod === 'CASH_ON_DELIVERY') {
+          if (cashToCollect > 0) {
             if (isLast) {
-              shipmentCash = Math.max(0, total - accumulatedCash);
+              shipmentCash = Math.max(0, cashToCollect - accumulatedCash);
             } else {
               const proportion = subtotal > 0 ? plan.subtotal / subtotal : 1 / evaluatedQuote.turboDividido.shipments.length;
-              shipmentCash = Math.round(total * proportion);
+              shipmentCash = Math.round(cashToCollect * proportion);
               accumulatedCash += shipmentCash;
             }
           }
@@ -662,7 +664,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         payment: {
           method: paymentMethod,
           status: paymentMethod === 'CASH_ON_DELIVERY' ? 'PENDIENTE' : 'APROBADO',
-          cashToCollect: paymentMethod === 'CASH_ON_DELIVERY' ? total : 0,
+          cashToCollect,
           cashSettled: false,
           transactionId: paymentMethod !== 'CASH_ON_DELIVERY' ? `TXN-WMP-${Date.now().toString().slice(-7)}` : undefined,
         },
