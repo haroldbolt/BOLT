@@ -7,7 +7,7 @@ import { formatCOP } from '../../lib/formatters';
 import { boltAdmin, type AdminOrder } from './adminClient';
 
 export function deliveryModeLabel(mode: DeliveryMode | null | undefined) {
-  if (mode === 'PROGRAMADO') return 'Programada';
+  if (mode === 'PROGRAMADO') return 'Programado';
   if (mode === 'TURBO') return 'Turbo';
   if (mode === 'TURBO_DIVIDIDO') return 'Turbo dividido';
   return 'Por definir';
@@ -82,7 +82,7 @@ export function DeliveryReviewPanel({ order, token, isDemo, onConfirmed }: {
           setMode(event.target.value as DeliveryMode);
           setQuote(null); setSlots([]); setSlot(undefined); setAccepted(false); setError('');
         }}>
-          <option value="PROGRAMADO">Programada</option><option value="TURBO">Turbo</option>
+          <option value="PROGRAMADO">Programado</option><option value="TURBO">Turbo</option>
         </select>
       </label>
       <button type="button" className="ba-btn ba-btn-secondary" disabled={!!busy} onClick={() => void consult()}>

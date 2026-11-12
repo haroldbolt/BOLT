@@ -25,6 +25,8 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   payment?: Pick<Order['payment'], 'status' | 'method'>;
 };
 
+export type DemoOrderMode = Extract<Order['deliveryMode'], 'TURBO' | 'PROGRAMADO'>;
+
 export interface InventoryItem {
   storeId: string;
   productId: string;
@@ -94,8 +96,8 @@ export const boltAdmin = {
   adjustInventory: (token: string | null, item: InventoryItem, stock: number, reason: string) => request<{ item: InventoryItem }>(
     `${base}/inventory`, token, { method: 'PUT', body: { storeId: item.storeId, productId: item.productId, variantId: item.variantId, stock, expectedRevision: item.revision, reason } },
   ),
-  createDemoOrder: (token: string | null, idempotencyKey: string) => request<{ orderId: string; guestAccessToken: string; trackingPath: string }>(
-    `${base}/demo/orders`, token, { body: {}, idempotencyKey },
+  createDemoOrder: (token: string | null, idempotencyKey: string, deliveryMode: DemoOrderMode) => request<{ orderId: string; guestAccessToken: string; trackingPath: string }>(
+    `${base}/demo/orders`, token, { body: { deliveryMode }, idempotencyKey },
   ),
   quote: (token: string | null, orderId: string, body: unknown) => request<DeliveryQuote>(`${orderPath(orderId)}/quote`, token, { body }),
   confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),

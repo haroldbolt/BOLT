@@ -126,6 +126,8 @@ try {
   const pending = (await admin(orderUrl, { token: suba })).order;
   assert.equal(pending.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
   assert.equal(pending.storeId, 'HUB_SUBA');
+  assert.equal(pending.deliveryReview.requestedMode, 'PROGRAMADO');
+  assert.equal(pending.scheduledWindow, undefined);
   await admin(orderUrl, { token: kennedy, expected: 403 });
   await admin(orderUrl + '/quote', { method: 'POST', token: kennedy, body: { deliveryMode: 'PROGRAMADO' }, expected: 403 });
   await admin(orderUrl + '/confirm', { method: 'POST', token: kennedy, body: {}, expected: 403 });
@@ -183,7 +185,30 @@ try {
   assert.equal(updated.reserved, reservedStock.reserved);
   assert.equal(updated.available, adjustment.stock - updated.reserved);
   await admin('/inventory', { method: 'PUT', token: coordination, body: adjustment, expected: 409 });
-  console.log('PASS BOLT Admin: acceso privado, alcance por sede, panel anterior, pedido idempotente, cotización y confirmación sin duplicar la reserva, seguimiento privado, pago pendiente y ajuste autorizado.');
+
+  const turboKey = crypto.randomUUID();
+  const createTurbo = overrides => admin('/demo/orders', {
+    method: 'POST', token: suba, idempotency: turboKey, body: { deliveryMode: 'TURBO' }, expected: [200, 201], ...overrides,
+  });
+  await createTurbo({ body: { deliveryMode: 'INVALID' }, expected: 400 });
+  await createTurbo({ idempotency, expected: 409 });
+  const turbo = await createTurbo();
+  assert.equal((await createTurbo()).orderId, turbo.orderId);
+  const listing = (await admin('/orders?storeId=HUB_SUBA', { token: suba })).orders;
+  assert.equal(listing.length, 2);
+  const turboRow = listing.find(order => order.id === turbo.orderId);
+  assert.equal(turboRow.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+  assert.equal(turboRow.deliveryReview.requestedMode, 'TURBO');
+  assert.equal(turboRow.scheduledWindow, undefined);
+  const turboTracking = await api('/api/v1/orders/' + encodeURIComponent(turbo.orderId) + '/tracking', { guestToken: turbo.guestAccessToken });
+  assert.deepEqual(turboTracking.dispatches, []);
+  const scheduledRow = listing.find(order => order.id === fixture.orderId);
+  assert.equal(scheduledRow.deliveryMode, 'PROGRAMADO');
+  const { date, startTime, endTime } = scheduledRow.scheduledWindow;
+  assert.deepEqual({ date, startTime, endTime }, {
+    date: scheduledWindow.date, startTime: scheduledWindow.startTime, endTime: scheduledWindow.endTime,
+  });
+  console.log('PASS BOLT Admin: acceso por sede, panel anterior, Turbo pendiente y Programado con su franja, pedidos idempotentes, seguimiento privado, recaudo cero y ajuste autorizado.');
 } finally {
   if (child && child.exitCode === null) {
     child.kill('SIGTERM');

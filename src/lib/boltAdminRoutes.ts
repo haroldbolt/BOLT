@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type { Express, Request, Response } from 'express';
 import type { Order, Product, Store } from '../types';
 import type { AdminAuthService } from './adminAuthService';
+import type { BoltAdminDemoMode } from './boltAdminDemo';
 import type { CatalogOperations } from './catalogOperations';
 import { saleVariant } from './variantCommerce';
 
@@ -38,7 +39,7 @@ type Options = {
   demo?: {
     productId: string;
     isOrder: (order: Order) => boolean;
-    createOrder: (requestId: string | undefined) => Order;
+    createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
     guestToken: (order: Order) => string;
   };
 };
@@ -226,8 +227,12 @@ export function mountBoltAdmin(app: Express, options: Options) {
       if (!actor.canConfirm || !actor.storeIds.includes(subaId)) {
         return res.status(403).json({ error: 'El escenario de prueba pertenece a Suba.' });
       }
+      const { deliveryMode = 'PROGRAMADO' } = req.body ?? {};
+      if (deliveryMode !== 'TURBO' && deliveryMode !== 'PROGRAMADO') {
+        return res.status(400).json({ error: 'Selecciona Turbo o Programado para el pedido de prueba.' });
+      }
       try {
-        const order = demo.createOrder(req.get('Idempotency-Key'));
+        const order = demo.createOrder(req.get('Idempotency-Key'), deliveryMode);
         res.status(201).json({
           orderId: order.id,
           guestAccessToken: demo.guestToken(order),

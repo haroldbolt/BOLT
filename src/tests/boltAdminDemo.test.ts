@@ -48,6 +48,7 @@ try {
   assert.equal(submit().id, order.id);
   assert.equal(orders.getAllOrders().length, 1);
   assert.equal(order.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+  assert.equal(order.deliveryReview?.requestedMode, 'PROGRAMADO');
   assert.equal(order.payment.cashToCollect, 0);
   assert.ok(dispatch.authorizeGuest(order.id, dispatch.guestToken(order)));
   assert.deepEqual(orders.dispatchState.runs, {});
@@ -92,7 +93,21 @@ try {
   await dispatch.search(order.assignmentId!);
   assert.equal(orders.dispatchState.runs[order.assignmentId!].status, 'PENDING');
   assert.deepEqual(orders.dispatchState.offers, {});
-  console.log('PASS: pedido demo exclusivo de Suba, idempotencia, seguimiento privado, reserva única y despacho simulado retenido.');
+
+  const submitTurbo = (key: string) => createBoltAdminDemoOrder({
+    requestId: key, requestedMode: 'TURBO', catalog: catalog.getSalesProducts(), store, dispatch,
+  });
+  assert.throws(() => submitTurbo(requestId), /solicitud ya fue utilizada con otros datos/);
+  const turboKey = 'fixture-turbo-idempotency-key';
+  const turbo = submitTurbo(turboKey);
+  assert.equal(submitTurbo(turboKey).id, turbo.id);
+  assert.equal(orders.getAllOrders().length, 2);
+  assert.equal(turbo.deliveryReview?.requestedMode, 'TURBO');
+  assert.equal(turbo.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+  assert.equal(turbo.scheduledWindow, undefined);
+  assert.equal(turbo.payment.cashToCollect, 0);
+  assert.deepEqual(Object.keys(orders.dispatchState.runs), [order.assignmentId]);
+  console.log('PASS: pedidos de prueba Turbo y Programado en Suba, idempotencia, seguimiento privado, reservas y despacho simulado retenido.');
 } finally {
   fs.rmSync(directory, { recursive: true, force: true });
 }

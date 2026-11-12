@@ -7,7 +7,11 @@ import type { TransportContext } from './transportPlanner';
 
 export const BOLT_ADMIN_DEMO_PRODUCT_ID = 'SIM-BOLT-ADMIN-SUBA';
 export const BOLT_ADMIN_DEMO_STORE_ID = 'HUB_SUBA';
-const fingerprint = 'BOLT_ADMIN_SUBA_SIMULATION_V1';
+const fingerprints = {
+  PROGRAMADO: 'BOLT_ADMIN_SUBA_SIMULATION_V1',
+  TURBO: 'BOLT_ADMIN_SUBA_SIMULATION_V1_TURBO',
+} as const;
+export type BoltAdminDemoMode = keyof typeof fingerprints;
 const keyPrefix = 'bolt-admin-suba-';
 
 export function boltAdminDemoProduct(): Product {
@@ -53,9 +57,9 @@ export function boltAdminDemoProduct(): Product {
   };
 }
 
-export function isBoltAdminDemoOrder(order: Order | undefined): order is Order & { creationRequestFingerprint: typeof fingerprint } {
+export function isBoltAdminDemoOrder(order: Order | undefined): order is Order & { creationRequestFingerprint: typeof fingerprints[BoltAdminDemoMode] } {
   return !!order &&
-    order.creationRequestFingerprint === fingerprint &&
+    (order.creationRequestFingerprint === fingerprints.PROGRAMADO || order.creationRequestFingerprint === fingerprints.TURBO) &&
     !!order.creationRequestId?.startsWith(keyPrefix) &&
     order.storeId === BOLT_ADMIN_DEMO_STORE_ID &&
     order.items.length === 1 &&
@@ -70,11 +74,12 @@ export function activateBoltAdminDemoProduct(order: Order, product: Product): Pr
 
 export function createBoltAdminDemoOrder(input: {
   requestId: string | undefined;
+  requestedMode?: BoltAdminDemoMode;
   catalog: Product[];
   store: Store | undefined;
   dispatch: Pick<DispatchService, 'createOrder'>;
 }): Order {
-  const { requestId, catalog, store, dispatch } = input;
+  const { requestId, requestedMode = 'PROGRAMADO', catalog, store, dispatch } = input;
   if (!requestId || !/^[A-Za-z0-9_-]{10,100}$/.test(requestId)) {
     throw new DispatchError(400, 'IDEMPOTENCY_REQUIRED', 'Vuelve a intentar crear el pedido con un identificador válido.');
   }
@@ -112,9 +117,9 @@ export function createBoltAdminDemoOrder(input: {
       porteriaPolicy: 'SUBIR_A_PUERTA',
     },
     store,
-    requestedMode: 'PROGRAMADO',
+    requestedMode,
     creationRequestId: keyPrefix + requestId,
-    creationRequestFingerprint: fingerprint,
+    creationRequestFingerprint: fingerprints[requestedMode],
   });
   const result = dispatch.createOrder(order, catalog.map(p => activateBoltAdminDemoProduct(order, p)), store);
   if (!result.success || !result.order || !isBoltAdminDemoOrder(result.order)) {

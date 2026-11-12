@@ -7,7 +7,7 @@ import {
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
-import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type InventoryItem } from './adminClient';
+import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
 import './boltAdmin.css';
 
@@ -28,12 +28,21 @@ const statusLabels: Record<FulfillmentStatus, string> = {
 const isPending = (order: AdminOrder) => order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION';
 const isClosed = (order: AdminOrder) => order.fulfillmentStatus === 'ENTREGADO' || order.fulfillmentStatus === 'CANCELADO';
 const orderLabel = (order: AdminOrder) => order.purchaseCode || order.orderNumber || order.id;
+const orderMode = (order: AdminOrder) => order.deliveryMode ?? order.deliveryReview?.requestedMode;
 const roleLabel = (actor: AdminActor) => actor.role === 'COORDINACION' ? 'Coordinación' : 'Operación de sede';
 const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLocaleLowerCase('es');
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'No pudimos completar la operación.';
 const timeLabel = (date?: string) => date && Number.isFinite(Date.parse(date))
   ? `${formatDateBogota(date)} · ${formatTimeBogota(date)}` : 'Fecha no registrada';
 const number = new Intl.NumberFormat('es-CO');
+
+function scheduledDeliveryLabel(window: AdminOrder['scheduledWindow']) {
+  if (!window) return 'Franja por confirmar';
+  const date = `${window.date}T12:00:00-05:00`;
+  const hours = window.startTime && window.endTime ? `${window.startTime}–${window.endTime}` : window.displayWindow;
+  if (!Number.isFinite(Date.parse(date)) || !hours) return 'Franja por confirmar';
+  return `${formatDateBogota(date)} · ${hours}`;
+}
 
 function Brand() {
   return <div className="ba-brand"><span className="ba-brand-icon"><Zap size={23} fill="currentColor" aria-hidden="true" /></span><span>BOLT<small>ADMIN</small></span></div>;
@@ -137,8 +146,9 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   const [ordersError, setOrdersError] = useState('');
   const [inventoryError, setInventoryError] = useState('');
   const [actionError, setActionError] = useState('');
+  const [demoOrderMode, setDemoOrderMode] = useState<DemoOrderMode>('PROGRAMADO');
   const [fixtureBusy, setFixtureBusy] = useState(false);
-  const fixtureKey = useRef<string | null>(null);
+  const fixtureKeys = useRef<Partial<Record<DemoOrderMode, string>>>({});
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
 
   const store = session.stores.find(item => item.id === storeChoice)
@@ -200,19 +210,19 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
     setSelectedOrder(id); setTab('orders');
   }
 
-  async function createDemoOrder() {
+  async function createDemoOrder(mode: DemoOrderMode = 'PROGRAMADO') {
     if (!canCreateDemoOrder || fixtureBusy) return;
     setFixtureBusy(true); setActionError(''); setNotice('');
     try {
-      fixtureKey.current ??= crypto.randomUUID();
-      const result = await boltAdmin.createDemoOrder(token, fixtureKey.current);
-      fixtureKey.current = null;
+      const key = fixtureKeys.current[mode] ??= crypto.randomUUID();
+      const result = await boltAdmin.createDemoOrder(token, key, mode);
+      delete fixtureKeys.current[mode];
       if (result.trackingPath === `/simulacion/cliente/${encodeURIComponent(result.orderId)}`) {
         api.saveOrderAccess(result.orderId, result.guestAccessToken);
       }
       if (activeStore.current !== 'HUB_SUBA') return;
       setOrderStatus('all'); setOrderSearch(''); viewOrder(result.orderId); refresh();
-      setNotice('Pedido de prueba listo. Consulta una franja para continuar.');
+      setNotice('Pedido de prueba listo. Consulta la disponibilidad para continuar.');
     } catch (failure) { setActionError(errorText(failure)); }
     finally { setFixtureBusy(false); }
   }
@@ -285,8 +295,15 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
         {tab === 'orders' && <>
           <PageHeading title="Pedidos" text={store?.name || 'Sin sede asignada'}>
             <button type="button" className="ba-btn ba-btn-secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</button>
-            {canCreateDemoOrder && <button type="button" className="ba-btn ba-btn-primary" disabled={fixtureBusy} onClick={() => void createDemoOrder()}>
-              {fixtureBusy ? <LoaderCircle size={17} className="ba-spin" /> : <Plus size={17} />} Crear pedido de prueba</button>}
+            {canCreateDemoOrder && <div className="ba-demo-order-actions">
+              <label className="ba-field ba-demo-order-mode">Modalidad de prueba
+                <select value={demoOrderMode} disabled={fixtureBusy} onChange={event => setDemoOrderMode(event.target.value === 'TURBO' ? 'TURBO' : 'PROGRAMADO')}>
+                  <option value="PROGRAMADO">Programado</option><option value="TURBO">Turbo</option>
+                </select>
+              </label>
+              <button type="button" className="ba-btn ba-btn-primary" disabled={fixtureBusy} onClick={() => void createDemoOrder(demoOrderMode)}>
+                {fixtureBusy ? <LoaderCircle size={17} className="ba-spin" /> : <Plus size={17} />} Crear pedido de prueba</button>
+            </div>}
           </PageHeading>
           <div className={`ba-order-layout${detail ? ' ba-order-layout-detail' : ''}`}>
             <section className="ba-panel">
@@ -384,11 +401,21 @@ function FetchError({ message, refresh }: { message: string; refresh: () => void
 
 function OrderRows({ orders, selected, onSelect }: { orders: AdminOrder[]; selected: string; onSelect: (id: string) => void }) {
   return <div className="ba-table-scroll"><table className="ba-table"><thead><tr><th scope="col">Pedido</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col"><span className="ba-sr">Detalle</span></th></tr></thead><tbody>
-    {orders.map(order => <tr key={order.id} data-selected={selected === order.id ? 'true' : undefined}>
-      <th scope="row"><strong>{orderLabel(order)}</strong><small>{timeLabel(order.createdAt)}</small></th>
-      <td><Status status={order.fulfillmentStatus} /></td><td>{number.format(order.items.reduce((sum, item) => sum + item.quantity, 0))} ud.</td>
-      <td><button type="button" className="ba-icon-btn" aria-label={`Ver pedido ${orderLabel(order)}`} onClick={() => onSelect(order.id)}><ChevronRight size={19} /></button></td>
-    </tr>)}
+    {orders.map(order => {
+      const mode = orderMode(order);
+      const scheduled = mode === 'PROGRAMADO';
+      return <tr key={order.id} data-selected={selected === order.id ? 'true' : undefined}>
+        <th scope="row">
+          <div className="ba-order-identity"><strong>{orderLabel(order)}</strong>
+            {mode && <span className={`ba-status ${scheduled ? 'ba-mode-scheduled' : 'ba-mode-turbo'}`}>{deliveryModeLabel(mode)}</span>}
+          </div>
+          {scheduled && <p className="ba-order-schedule">{order.scheduledWindow ? 'Entrega · ' : ''}{scheduledDeliveryLabel(order.scheduledWindow)}</p>}
+          <small>Recibido · {timeLabel(order.createdAt)}</small>
+        </th>
+        <td><Status status={order.fulfillmentStatus} /></td><td>{number.format(order.items.reduce((sum, item) => sum + item.quantity, 0))} ud.</td>
+        <td><button type="button" className="ba-icon-btn" aria-label={`Ver pedido ${orderLabel(order)}`} onClick={() => onSelect(order.id)}><ChevronRight size={19} /></button></td>
+      </tr>;
+    })}
   </tbody></table></div>;
 }
 
@@ -417,8 +444,8 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, changed
     <div className="ba-order-body">
       <Status status={order.fulfillmentStatus} />
       <dl className="ba-order-meta"><div><dt>Sede</dt><dd>{order.storeName}</dd></div><div><dt>Recibido</dt><dd>{timeLabel(order.createdAt)}</dd></div>
-        <div><dt>Modalidad</dt><dd>{deliveryModeLabel(order.deliveryMode || order.deliveryReview?.requestedMode)}</dd></div>
-        {order.scheduledWindow && <div><dt>Franja</dt><dd>{order.scheduledWindow.dateLabel} · {order.scheduledWindow.displayWindow}</dd></div>}
+        <div><dt>Modalidad</dt><dd>{deliveryModeLabel(orderMode(order))}</dd></div>
+        {orderMode(order) === 'PROGRAMADO' && <div><dt>Franja</dt><dd>{scheduledDeliveryLabel(order.scheduledWindow)}</dd></div>}
         {order.customer?.name && <div><dt>Cliente</dt><dd>{order.customer.name}{order.customer.phone && <> · {order.customer.phone}</>}</dd></div>}
         {order.deliveryAddress?.address && <div><dt>Destino</dt><dd>{order.deliveryAddress.address}</dd></div>}
       </dl>
