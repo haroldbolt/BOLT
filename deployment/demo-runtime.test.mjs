@@ -13,7 +13,7 @@ const port = await freePort(), upstream = await freePort(), origin = `http://127
 const password = crypto.randomBytes(24).toString('hex');
 let child, cookie = '', admin = '', output = '';
 async function start() {
-  child = spawn(process.execPath, ['deployment/start-demo.mjs', '--local-test'], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'test', PORT: String(port), BOLT_DEMO_INTERNAL_PORT: String(upstream), BOLT_DEMO_PUBLIC_ORIGIN: origin, BOLT_DEMO_PASSWORD: password, BOLT_DEMO_VOLUME: volume }, stdio: ['ignore', 'pipe', 'pipe'] });
+  child = spawn(process.execPath, ['deployment/start-demo.mjs', '--local-test'], { cwd: process.cwd(), env: { ...process.env, NODE_ENV: 'test', PORT: String(port), BOLT_DEMO_INTERNAL_PORT: String(upstream), BOLT_DEMO_PUBLIC_ORIGIN: origin, BOLT_DEMO_PASSWORD: password, BOLT_DEMO_VOLUME: volume, BOLT_PHOTO_SEARCH_ENABLED: 'true', BOLT_PHOTO_SEARCH_OPENAI_API_KEY: 'local-test-placeholder' }, stdio: ['ignore', 'pipe', 'pipe'] });
   child.stdout.on('data', b => output += b); child.stderr.on('data', b => output += b);
   for (let i = 0; i < 200; i++) {
     if (child.exitCode !== null) throw Error('Demo exited: ' + output);
@@ -30,8 +30,10 @@ async function call(p, method = 'GET', body, token = admin, expected = 200) {
 try {
   await start();
   assert.equal((await fetch(origin + '/api/v1/simulation')).status, 401);
+  assert.equal((await fetch(origin + '/api/v1/catalog/photo-search/status')).status, 401);
   const login = await fetch(origin + '/__demo/login', { method: 'POST', redirect: 'manual', headers: { Origin: origin }, body: new URLSearchParams({ password }) });
   assert.equal(login.status, 303); cookie = login.headers.get('set-cookie').split(';')[0];
+  assert.deepEqual(await call('/catalog/photo-search/status', 'GET', undefined, ''), { enabled: true });
   const accounts=await fetch(origin+'/api/customer/config',{headers:{Cookie:cookie}}).then(r=>r.json());
   assert.equal(accounts.configured,false);assert.equal(accounts.email,false);assert.equal(accounts.google,false);assert.equal(accounts.apple,false);
   assert.equal((await fetch(origin+'/api/customer/me',{headers:{Cookie:cookie}}).then(r=>r.json())).user,null);
