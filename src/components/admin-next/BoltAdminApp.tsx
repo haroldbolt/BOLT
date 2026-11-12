@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
 import {
-  ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CheckCircle2, ChevronLeft,
+  ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, CheckCircle2, ChevronLeft,
   ChevronRight, CircleAlert, ClipboardList, Clock3, FlaskConical, LayoutDashboard, LoaderCircle,
   LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, Store, X, Zap,
 } from 'lucide-react';
@@ -13,12 +13,18 @@ import './boltAdmin.css';
 
 const tabs = [
   { id: 'home', title: 'Inicio', icon: LayoutDashboard },
-  { id: 'orders', title: 'Pedidos', icon: ClipboardList },
+  { id: 'turbo', title: 'Turbo', icon: Zap },
+  { id: 'scheduled', title: 'Programados', icon: CalendarDays },
   { id: 'inventory', title: 'Inventario', icon: Box },
   { id: 'permissions', title: 'Permisos', icon: ShieldCheck },
 ] as const;
-type Tab = typeof tabs[number]['id'];
+type Tab = typeof tabs[number]['id'] | 'orders';
+type OrderTab = 'orders' | 'turbo' | 'scheduled';
+type OrderFilters = { search: string; status: string };
 type InventoryPage = Awaited<ReturnType<typeof boltAdmin.inventory>>;
+
+const orderTitles: Record<OrderTab, string> = { orders: 'Todos los pedidos', turbo: 'Pedidos Turbo', scheduled: 'Envíos programados' };
+const defaultOrderFilters: OrderFilters = { search: '', status: 'all' };
 
 const statusLabels: Record<FulfillmentStatus, string> = {
   PENDIENTE_CONFIRMACION: 'Pendiente de confirmar', CONFIRMADO: 'Confirmado', EN_ALISTAMIENTO: 'En alistamiento',
@@ -29,6 +35,14 @@ const isPending = (order: AdminOrder) => order.fulfillmentStatus === 'PENDIENTE_
 const isClosed = (order: AdminOrder) => order.fulfillmentStatus === 'ENTREGADO' || order.fulfillmentStatus === 'CANCELADO';
 const orderLabel = (order: AdminOrder) => order.purchaseCode || order.orderNumber || order.id;
 const orderMode = (order: AdminOrder) => order.deliveryMode ?? order.deliveryReview?.requestedMode;
+
+function orderTab(order: AdminOrder): OrderTab {
+  const mode = orderMode(order);
+  if (mode === 'PROGRAMADO') return 'scheduled';
+  if (mode === 'TURBO' || mode === 'TURBO_DIVIDIDO') return 'turbo';
+  return 'orders';
+}
+
 const roleLabel = (actor: AdminActor) => actor.role === 'COORDINACION' ? 'Coordinación' : 'Operación de sede';
 const normalize = (value: string) => value.normalize('NFD').replace(/\p{Diacritic}/gu, '').trim().toLocaleLowerCase('es');
 const errorText = (error: unknown) => error instanceof Error ? error.message : 'No pudimos completar la operación.';
@@ -135,8 +149,7 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
   const [inventory, setInventory] = useState<InventoryPage | null>(null);
   const [selectedOrder, setSelectedOrder] = useState('');
-  const [orderSearch, setOrderSearch] = useState('');
-  const [orderStatus, setOrderStatus] = useState('all');
+  const [orderFilters, setOrderFilters] = useState<Partial<Record<OrderTab, OrderFilters>>>({});
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryQuery, setInventoryQuery] = useState('');
   const [offset, setOffset] = useState(0);
@@ -160,7 +173,10 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   const refresh = () => setRevision(value => value + 1);
   const pending = orders?.filter(isPending) ?? [];
   const active = orders?.filter(order => !isPending(order) && !isClosed(order)) ?? [];
-  const detail = orders?.find(order => order.id === selectedOrder);
+  const orderView = tab === 'orders' || tab === 'turbo' || tab === 'scheduled' ? tab : null;
+  const orderFiltersForView = orderFilters[orderView ?? 'orders'] ?? defaultOrderFilters;
+  const scopedOrders = orderView && orders ? (orderView === 'orders' ? orders : orders.filter(order => orderTab(order) === orderView)) : null;
+  const detail = scopedOrders?.find(order => order.id === selectedOrder);
   const reviewingDelivery = !!detail && isPending(detail) && actor.canConfirm;
   const demoTrackingPath = isDemo && detail && api.hasOrderAccess(detail.id)
     ? `/simulacion/cliente/${encodeURIComponent(detail.id)}` : undefined;
@@ -178,12 +194,12 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   }, [storeId, token, revision, inboxRevision]);
 
   useEffect(() => {
-    if ((tab !== 'home' && tab !== 'orders') || reviewingDelivery || !storeId) return;
+    if ((tab !== 'home' && !orderView) || reviewingDelivery || !storeId) return;
     const refreshInbox = () => { if (document.visibilityState === 'visible') setInboxRevision(n => n + 1); };
     const timer = window.setInterval(refreshInbox, 18_000);
     document.addEventListener('visibilitychange', refreshInbox);
     return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshInbox); };
-  }, [tab, reviewingDelivery, storeId]);
+  }, [tab, orderView, reviewingDelivery, storeId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setInventoryQuery(inventorySearch.trim()); setOffset(0); }, 200);
@@ -206,8 +222,26 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
     setSelectedOrder(''); setNotice(''); setActionError('');
   }
 
-  function viewOrder(id: string) {
-    setSelectedOrder(id); setTab('orders');
+  function navigate(next: Tab) {
+    if (next !== tab) setSelectedOrder('');
+    setTab(next);
+    if (next !== 'inventory') setEditItem(null);
+  }
+
+  function updateOrderFilters(view: OrderTab, changes: Partial<OrderFilters>) {
+    setOrderFilters(current => ({ ...current, [view]: { ...(current[view] ?? defaultOrderFilters), ...changes } }));
+  }
+
+  function openAllOrders(status = 'all') {
+    updateOrderFilters('orders', { search: '', status });
+    navigate('orders');
+  }
+
+  function viewOrder(order: AdminOrder) {
+    const destination = orderView ?? orderTab(order);
+    if (!orderView) updateOrderFilters(destination, defaultOrderFilters);
+    navigate(destination);
+    setSelectedOrder(order.id);
   }
 
   async function createDemoOrder(mode: DemoOrderMode = 'PROGRAMADO') {
@@ -221,36 +255,42 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
         api.saveOrderAccess(result.orderId, result.guestAccessToken);
       }
       if (activeStore.current !== 'HUB_SUBA') return;
-      setOrderStatus('all'); setOrderSearch(''); viewOrder(result.orderId); refresh();
+      const destination = mode === 'TURBO' ? 'turbo' : 'scheduled';
+      updateOrderFilters(destination, defaultOrderFilters);
+      navigate(destination);
+      setSelectedOrder(result.orderId);
+      refresh();
       setNotice('Pedido de prueba listo. Consulta la disponibilidad para continuar.');
     } catch (failure) { setActionError(errorText(failure)); }
     finally { setFixtureBusy(false); }
   }
 
-  const visibleOrders = orders?.filter(order => {
-    const matchesStatus = orderStatus === 'all' || (orderStatus === 'active'
-      ? !isPending(order) && !isClosed(order) : order.fulfillmentStatus === orderStatus);
-    const query = normalize(orderSearch);
+  const query = normalize(orderFiltersForView.search);
+  const visibleOrders = scopedOrders?.filter(order => {
+    const { status } = orderFiltersForView;
+    const matchesStatus = status === 'all' || (status === 'active'
+      ? !isPending(order) && !isClosed(order) : order.fulfillmentStatus === status);
     return matchesStatus && (!query || normalize(`${orderLabel(order)} ${order.items.map(item => item.name).join(' ')}`).includes(query));
   });
-
-  const navigate = (next: Tab) => { setTab(next); if (next !== 'inventory') setEditItem(null); };
 
   return <div className="bolt-admin ba-shell">
     <aside className="ba-sidebar">
       <Brand />
       <nav aria-label="BOLT Admin">
-        {tabs.map(({ id, title, icon: Icon }) => <button type="button" key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => navigate(id)}>
-          <Icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{title}</span>
-          {id === 'orders' && pending.length > 0 && <small>{number.format(pending.length)}</small>}
-        </button>)}
+        {tabs.map(({ id, title, icon: Icon }) => {
+          const count = id === 'turbo' || id === 'scheduled' ? pending.filter(order => orderTab(order) === id).length : 0;
+          return <button type="button" key={id} aria-current={tab === id ? 'page' : undefined} onClick={() => navigate(id)}>
+            <Icon size={18} strokeWidth={1.8} aria-hidden="true" /><span>{title}</span>
+            {count > 0 && <small aria-label={`${number.format(count)} pendientes de confirmar`}>{number.format(count)}</small>}
+          </button>;
+        })}
       </nav>
       <div className="ba-sidebar-foot"><a href="/operacion"><ArrowLeft size={16} /> Panel anterior</a></div>
     </aside>
 
     <div className="ba-main">
       <header className="ba-topbar">
-        <div className="ba-context"><span>Operación</span><ChevronRight size={14} aria-hidden="true" /><strong>{tabs.find(item => item.id === tab)?.title}</strong>
+        <div className="ba-context"><span>Operación</span><ChevronRight size={14} aria-hidden="true" /><strong>{orderView ? orderTitles[orderView] : tabs.find(item => item.id === tab)?.title}</strong>
           {isDemo && <span className="ba-demo"><FlaskConical size={13} aria-hidden="true" /> Demo</span>}
         </div>
         <div className="ba-top-actions">
@@ -276,41 +316,43 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
               <h1>Operación de la sede</h1><p>Consulta los pedidos por atender y el inventario disponible.</p></div>
             {canCreateDemoOrder ? <button type="button" className="ba-btn ba-btn-primary" disabled={fixtureBusy} onClick={() => void createDemoOrder()}>
               {fixtureBusy ? <LoaderCircle size={18} className="ba-spin" /> : <Plus size={18} />} Crear pedido de prueba
-            </button> : store && <button type="button" className="ba-btn ba-btn-hero" onClick={() => navigate('orders')}>Ver pedidos <ArrowUpRight size={16} /></button>}
+            </button> : store && <button type="button" className="ba-btn ba-btn-hero" onClick={() => openAllOrders()}>Ver pedidos <ArrowUpRight size={16} /></button>}
           </section>
           {isDemo && <p className="ba-demo-note"><FlaskConical size={16} /> Esta demo usa pedidos e inventario de prueba. No genera cobros.</p>}
           <div className="ba-metrics">
-            <Metric label="Pendientes de confirmar" value={orders && !ordersError ? pending.length : null} icon={<Clock3 size={18} />} tone="amber" onClick={() => { setOrderStatus('PENDIENTE_CONFIRMACION'); navigate('orders'); }} />
-            <Metric label="Pedidos en operación" value={orders && !ordersError ? active.length : null} icon={<ClipboardList size={18} />} onClick={() => { setOrderStatus('active'); navigate('orders'); }} />
+            <Metric label="Pendientes de confirmar" value={orders && !ordersError ? pending.length : null} icon={<Clock3 size={18} />} tone="amber" onClick={() => openAllOrders('PENDIENTE_CONFIRMACION')} />
+            <Metric label="Pedidos en operación" value={orders && !ordersError ? active.length : null} icon={<ClipboardList size={18} />} onClick={() => openAllOrders('active')} />
             <Metric label="Presentaciones registradas" value={inventory && !inventoryError && !inventoryQuery ? inventory.total : null} icon={<Box size={18} />} onClick={() => navigate('inventory')} />
           </div>
           <section className="ba-panel">
-            <div className="ba-panel-head"><div><h2>Pendientes de confirmar</h2><p>Solicitudes que necesitan una propuesta de entrega.</p></div><button type="button" className="ba-btn ba-btn-secondary" onClick={() => { setOrderStatus('PENDIENTE_CONFIRMACION'); navigate('orders'); }}>Ver pedidos <ArrowRight size={15} /></button></div>
+            <div className="ba-panel-head"><div><h2>Pendientes de confirmar</h2><p>Solicitudes que necesitan una propuesta de entrega.</p></div><button type="button" className="ba-btn ba-btn-secondary" onClick={() => openAllOrders('PENDIENTE_CONFIRMACION')}>Ver pedidos <ArrowRight size={15} /></button></div>
             {ordersError ? <FetchError message={ordersError} refresh={refresh} /> : pending.length > 0 ? <OrderRows orders={pending.slice(0, 5)} selected="" onSelect={viewOrder} />
               : orders ? <Empty icon={<ClipboardList size={23} />} title="Sin solicitudes pendientes" text={canCreateDemoOrder ? 'Crea un pedido de prueba para recorrer la confirmación.' : 'Cuando lleguen solicitudes a esta sede, aparecerán aquí.'} />
               : <Loading text="Consultando pedidos…" />}
           </section>
         </>}
 
-        {tab === 'orders' && <>
-          <PageHeading title="Pedidos" text={store?.name || 'Sin sede asignada'}>
+        {orderView && <>
+          <PageHeading title={orderTitles[orderView]} text={store?.name || 'Sin sede asignada'}>
+            {orderView !== 'orders' && <button type="button" className="ba-btn ba-btn-secondary" onClick={() => openAllOrders()}>Todos los pedidos</button>}
             <button type="button" className="ba-btn ba-btn-secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</button>
             {canCreateDemoOrder && <div className="ba-demo-order-actions">
-              <label className="ba-field ba-demo-order-mode">Modalidad de prueba
+              {orderView === 'orders' && <label className="ba-field ba-demo-order-mode">Modalidad de prueba
                 <select value={demoOrderMode} disabled={fixtureBusy} onChange={event => setDemoOrderMode(event.target.value === 'TURBO' ? 'TURBO' : 'PROGRAMADO')}>
                   <option value="PROGRAMADO">Programado</option><option value="TURBO">Turbo</option>
                 </select>
-              </label>
-              <button type="button" className="ba-btn ba-btn-primary" disabled={fixtureBusy} onClick={() => void createDemoOrder(demoOrderMode)}>
+              </label>}
+              <button type="button" className="ba-btn ba-btn-primary" disabled={fixtureBusy}
+                onClick={() => void createDemoOrder(orderView === 'orders' ? demoOrderMode : orderView === 'turbo' ? 'TURBO' : 'PROGRAMADO')}>
                 {fixtureBusy ? <LoaderCircle size={17} className="ba-spin" /> : <Plus size={17} />} Crear pedido de prueba</button>
             </div>}
           </PageHeading>
           <div className={`ba-order-layout${detail ? ' ba-order-layout-detail' : ''}`}>
             <section className="ba-panel">
               <div className="ba-filters">
-                <SearchBox label="Buscar por pedido o producto" value={orderSearch} change={setOrderSearch} />
+                <SearchBox label="Buscar por pedido o producto" value={orderFiltersForView.search} change={search => updateOrderFilters(orderView, { search })} />
                 <label className="ba-field ba-filter-select"><span className="ba-sr">Estado del pedido</span>
-                  <select value={orderStatus} onChange={event => setOrderStatus(event.target.value)}><option value="all">Todos los estados</option><option value="active">En operación</option>
+                  <select value={orderFiltersForView.status} onChange={event => updateOrderFilters(orderView, { status: event.target.value })}><option value="all">Todos los estados</option><option value="active">En operación</option>
                     {Object.entries(statusLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
               </div>
               {ordersError ? <FetchError message={ordersError} refresh={refresh} /> : !visibleOrders ? <Loading text="Consultando pedidos…" />
@@ -321,7 +363,12 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
               close={() => setSelectedOrder('')} changed={(result, message) => {
                 if (result.storeId !== activeStore.current) return;
                 setOrders(prev => prev?.map(item => item.id === result.id ? result : item) ?? [result]);
-                setOrderStatus('all'); setNotice(message); refresh();
+                const destination = orderTab(result);
+                const moved = orderView !== 'orders' && orderView !== destination;
+                if (moved) setSelectedOrder(current => current === result.id ? '' : current);
+                updateOrderFilters(orderView, { status: 'all' });
+                setNotice(moved ? `${message} Encuentra el pedido en ${orderTitles[destination]}.` : message);
+                refresh();
               }} />}
           </div>
         </>}
@@ -399,7 +446,7 @@ function FetchError({ message, refresh }: { message: string; refresh: () => void
   return <div className="ba-fetch-error"><p className="ba-error" role="alert"><CircleAlert size={16} />{message}</p><button className="ba-btn ba-btn-secondary" onClick={refresh} type="button">Reintentar</button></div>;
 }
 
-function OrderRows({ orders, selected, onSelect }: { orders: AdminOrder[]; selected: string; onSelect: (id: string) => void }) {
+function OrderRows({ orders, selected, onSelect }: { orders: AdminOrder[]; selected: string; onSelect: (order: AdminOrder) => void }) {
   return <div className="ba-table-scroll"><table className="ba-table"><thead><tr><th scope="col">Pedido</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col"><span className="ba-sr">Detalle</span></th></tr></thead><tbody>
     {orders.map(order => {
       const mode = orderMode(order);
@@ -413,7 +460,7 @@ function OrderRows({ orders, selected, onSelect }: { orders: AdminOrder[]; selec
           <small>Recibido · {timeLabel(order.createdAt)}</small>
         </th>
         <td><Status status={order.fulfillmentStatus} /></td><td>{number.format(order.items.reduce((sum, item) => sum + item.quantity, 0))} ud.</td>
-        <td><button type="button" className="ba-icon-btn" aria-label={`Ver pedido ${orderLabel(order)}`} onClick={() => onSelect(order.id)}><ChevronRight size={19} /></button></td>
+        <td><button type="button" className="ba-icon-btn" aria-label={`Ver pedido ${orderLabel(order)}`} onClick={() => onSelect(order)}><ChevronRight size={19} /></button></td>
       </tr>;
     })}
   </tbody></table></div>;

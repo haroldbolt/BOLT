@@ -194,8 +194,8 @@
 @media (max-width: 720px) {
   .ba-shell { grid-template-columns: minmax(0, 1fr); }
   .ba-sidebar { position: static; min-height: auto; padding: 9px 11px 7px; gap: 7px; }
-  .ba-sidebar nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
-  .ba-sidebar nav button { padding: 5px; gap: 3px; justify-content: center; flex-wrap: wrap; text-align: center; font-size: 11px; min-height: 42px; }
+  .ba-sidebar nav { grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 2px; }
+  .ba-sidebar nav button { padding: 5px; gap: 3px; justify-content: center; flex-direction: column; text-align: center; font-size: 11px; min-height: 42px; }
   .ba-sidebar nav button svg { width: 15px; height: 15px; }
   .ba-sidebar nav button small { display: none; }
   .ba-sidebar-foot { padding: 0; margin: 0; border: 0; }
@@ -221,6 +221,9 @@
   .ba-order-body { padding: 10px; }
 }
 @media (max-width: 420px) {
+  .ba-sidebar nav { grid-template-columns: repeat(6, minmax(0, 1fr)); }
+  .ba-sidebar nav button { grid-column: span 2; }
+  .ba-sidebar nav button:nth-last-child(-n+2) { grid-column: span 3; }
   .ba-account strong { display: none; }
   .ba-store-picker { max-width: 162px; }
   .ba-store-picker select { max-width: 135px; }
