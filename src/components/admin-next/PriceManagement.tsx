@@ -1,14 +1,8 @@
 import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
-import { CheckCircle2, ChevronLeft, ChevronRight, CircleAlert, LoaderCircle, Pencil, Search, Tag, X } from 'lucide-react';
+import { CircleAlert, Tag, X } from 'lucide-react';
 import { formatCOP } from '../../lib/formatters';
-import { AdminRequestError, type PriceAdjustment, type PriceItem, type PricePage } from './adminClient';
+import { AdminRequestError, type PriceAdjustment, type PriceItem } from './adminClient';
 import './priceManagement.css';
-
-type PriceManagementProps = {
-  token: string | null;
-  loadPrices: (token: string | null, query: string, offset: number, signal?: AbortSignal) => Promise<PricePage>;
-  savePrice: (token: string | null, adjustment: PriceAdjustment) => Promise<{ item: PriceItem }>;
-};
 
 const maxPriceCOP = Math.floor(Number.MAX_SAFE_INTEGER / 100);
 
@@ -20,142 +14,14 @@ function activePromotion(item: PriceItem) {
   return item.originalPrice !== null && item.originalPrice > item.price && item.price > 0;
 }
 
-function sameVariant(first: PriceItem, second: PriceItem) {
-  return first.productId === second.productId && first.variantId === second.variantId;
-}
-
 function positiveWholePesos(input: string) {
   const value = Number(input);
   return Number.isSafeInteger(value) && value > 0 && value <= maxPriceCOP ? value : null;
 }
 
-export function PriceManagement({ token, loadPrices, savePrice }: PriceManagementProps) {
-  const [query, setQuery] = useState('');
-  const [offset, setOffset] = useState(0);
-  const [reload, setReload] = useState(0);
-  const [page, setPage] = useState<PricePage | null>(null);
-  const [selected, setSelected] = useState<PriceItem | null>(null);
-  const [error, setError] = useState('');
-  const [notice, setNotice] = useState('');
-  const [saving, setSaving] = useState(false);
-
-  useEffect(() => {
-    const controller = new AbortController();
-    const timer = window.setTimeout(async () => {
-      try {
-        const result = await loadPrices(token, query.trim(), offset, controller.signal);
-        if (!controller.signal.aborted) setPage(result);
-      } catch (failure) {
-        if (!controller.signal.aborted) {
-          setError(failure instanceof Error ? failure.message : 'No pudimos consultar los precios.');
-        }
-      }
-    }, query.trim() ? 250 : 0);
-    return () => {
-      window.clearTimeout(timer);
-      controller.abort();
-    };
-  }, [loadPrices, token, query, offset, reload]);
-
-  function resetList() {
-    setSelected(null);
-    setPage(null);
-    setError('');
-    setNotice('');
-  }
-
-  function refreshPrices() {
-    resetList();
-    setReload(current => current + 1);
-  }
-
-  function changePage(next: number) {
-    resetList();
-    setOffset(next);
-  }
-
-  async function applyPrice(adjustment: PriceAdjustment) {
-    setSaving(true);
-    try {
-      const { item } = await savePrice(token, adjustment);
-      setPage(current => current && { ...current, items: current.items.map(row => sameVariant(row, item) ? item : row) });
-      setSelected(null);
-      setNotice(`Guardaste el precio de ${item.name}${item.presentation ? ` · ${item.presentation}` : ''}.`);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return <section className="ba-price-management" aria-label="Precios y promociones">
-    <div className="ba-page-heading">
-      <div>
-        <h1>Precios y promociones</h1>
-        <p>El precio se aplica en todas las sedes donde se vende cada presentación.</p>
-      </div>
-    </div>
-    {notice && <p className="ba-info" role="status"><CheckCircle2 size={16} aria-hidden="true" /> {notice}</p>}
-    <div className={`ba-price-workspace${selected ? ' ba-price-with-editor' : ''}`}>
-      {selected && <PriceEditor
-        key={`${selected.productId}:${selected.variantId}:${selected.revision}`}
-        item={selected} saving={saving} save={applyPrice} close={() => setSelected(null)} refreshPrices={refreshPrices}
-      />}
-      <div className="ba-panel ba-price-list">
-        <div className="ba-filters">
-          <label className="ba-search">
-            <Search size={17} aria-hidden="true" />
-            <span className="ba-sr">Buscar por producto, SKU o presentación</span>
-            <input type="search" value={query} disabled={saving} placeholder="Buscar por producto, SKU o presentación" onChange={event => {
-              resetList();
-              setOffset(0);
-              setQuery(event.target.value);
-            }} />
-          </label>
-        </div>
-        {error ? <div className="ba-price-list-state">
-          <p className="ba-error" role="alert"><CircleAlert size={16} aria-hidden="true" /> {error}</p>
-          <button className="ba-btn ba-btn-secondary" type="button" onClick={refreshPrices}>Volver a consultar</button>
-        </div> : !page ? <p className="ba-price-list-state" role="status"><LoaderCircle size={16} className="ba-spin" aria-hidden="true" /> Consultando precios…</p>
-          : page.items.length ? <>
-            <div className="ba-table-scroll">
-              <table className="ba-table ba-price-table">
-                <thead><tr><th scope="col">Producto y presentación</th><th scope="col">Precio vigente</th><th scope="col"><span className="ba-sr">Acciones</span></th></tr></thead>
-                <tbody>{page.items.map(item => {
-                  const originalPrice = activePromotion(item) ? item.originalPrice : null;
-                  const discount = originalPrice ? roundedDiscount(originalPrice, item.price) : 0;
-                  return <tr key={`${item.productId}:${item.variantId}`} data-selected={selected && sameVariant(selected, item) ? 'true' : undefined}>
-                    <th scope="row">
-                      <strong>{item.name}</strong>
-                      <small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
-                      {item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
-                    </th>
-                    <td>
-                      <strong className="ba-price-value">{item.price > 0 ? formatCOP(item.price) : 'Sin precio'}</strong>
-                      {originalPrice && <small className="ba-price-original"><span className="ba-sr">Precio regular </span><del>{formatCOP(originalPrice)}</del></small>}
-                      {discount > 0 && <small className="ba-price-list-discount">{discount}% de descuento</small>}
-                    </td>
-                    <td><button type="button" className="ba-btn ba-btn-secondary ba-price-edit" disabled={saving}
-                      aria-label={`Editar precio de ${item.name}${item.presentation ? `, ${item.presentation}` : ''}`}
-                      onClick={() => { setNotice(''); setSelected(item); }}><Pencil size={14} aria-hidden="true" /> Editar</button></td>
-                  </tr>;
-                })}</tbody>
-              </table>
-            </div>
-            <div className="ba-pagination">
-              <span>{page.offset + 1}–{page.offset + page.items.length} de {page.total} presentaciones</span>
-              <div>
-                <button type="button" className="ba-icon-btn" aria-label="Página anterior" disabled={saving || page.offset === 0} onClick={() => changePage(Math.max(0, page.offset - page.limit))}><ChevronLeft size={17} aria-hidden="true" /></button>
-                <button type="button" className="ba-icon-btn" aria-label="Página siguiente" disabled={saving || page.offset + page.items.length >= page.total} onClick={() => changePage(page.offset + page.limit)}><ChevronRight size={17} aria-hidden="true" /></button>
-              </div>
-            </div>
-          </> : <p className="ba-price-list-state">{query.trim() ? 'No encontramos presentaciones que coincidan.' : 'No hay presentaciones disponibles.'}</p>}
-      </div>
-    </div>
-  </section>;
-}
-
-function PriceEditor({ item, saving, save, close, refreshPrices }: {
+export function PriceEditor({ item, saving = false, save, close, refreshPrices }: {
   item: PriceItem;
-  saving: boolean;
+  saving?: boolean;
   save: (adjustment: PriceAdjustment) => Promise<void>;
   close: () => void;
   refreshPrices: () => void;
@@ -220,6 +86,7 @@ function PriceEditor({ item, saving, save, close, refreshPrices }: {
       <button type="button" className="ba-icon-btn" aria-label="Cerrar editor de precio" disabled={saving} onClick={close}><X size={18} aria-hidden="true" /></button>
     </div>
     <form className="ba-price-form" onSubmit={event => void submit(event)}>
+      <p className="ba-price-scope">El precio se aplica en todas las sedes donde se vende esta presentación.</p>
       <fieldset className="ba-price-inputs" disabled={saving || stale}>
         <legend className="ba-sr">Precio y descuento</legend>
         <label className="ba-field">Precio regular (COP)

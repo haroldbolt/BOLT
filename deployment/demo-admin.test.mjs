@@ -110,6 +110,10 @@ try {
   assert.equal(coordinator.canAdjustInventory, true);
   await admin('/orders?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
   await admin('/inventory?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
+  await admin('/inventory?storeId=HUB_SUBA&scope=catalog', { token: suba, expected: 403 });
+  const unassignedInventory = await admin('/inventory?storeId=HUB_KENNEDY&scope=catalog', { token: coordination });
+  assert.equal(unassignedInventory.items.length, 1, 'El catálogo de la demo solo incluye la presentación ficticia');
+  assert.equal(unassignedInventory.items[0].assignedToStore, false);
   await api('/api/v1/orders', { token: suba, expected: [401, 403] });
   const beforeOrders = await admin('/orders?storeId=HUB_SUBA', { token: suba });
   assert.equal(beforeOrders.orders.length, 0);
@@ -159,6 +163,10 @@ try {
   const initialStock = findStock(baseline);
   const reservedStock = findStock(before);
   assert.ok(reservedStock);
+  assert.equal(reservedStock.assignedToStore, true);
+  assert.equal(reservedStock.price, promotion.price);
+  assert.equal(reservedStock.originalPrice, promotion.originalPrice);
+  assert.equal(reservedStock.revision, promotion.revision);
   assert.equal(reservedStock.reserved, (initialStock?.reserved || 0) + pendingItem.quantity);
   assert.equal(reservedStock.available, reservedStock.stock - reservedStock.reserved);
   assert.ok(!(await api('/api/v1/catalog?all=true')).some(item => item.id === reservedStock.productId));
@@ -206,6 +214,8 @@ try {
   assert.equal(updated.stock, adjustment.stock);
   assert.equal(updated.reserved, reservedStock.reserved);
   assert.equal(updated.available, adjustment.stock - updated.reserved);
+  assert.equal(updated.price, promotion.price);
+  assert.equal(updated.originalPrice, promotion.originalPrice);
   await admin('/inventory', { method: 'PUT', token: coordination, body: adjustment, expected: 409 });
   await admin('/inventory/adjustments?storeId=HUB_SUBA', { token: suba, expected: 403 });
   const history = await admin('/inventory/adjustments?storeId=HUB_SUBA', { token: coordination });

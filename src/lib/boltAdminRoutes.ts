@@ -96,22 +96,18 @@ function belongsToStore(product: Product, store: Store) {
     : Object.hasOwn(product.stockByStore, store.id);
 }
 
-function inventoryItem(product: Product, store: Store) {
-  const stock = product.stockByStore[store.id] ?? 0;
-  const reserved = product.reservedStockByStore[store.id] ?? 0;
+function inventoryItem(product: Product, store?: Store) {
+  const assignedToStore = !!store && belongsToStore(product, store);
+  const stock = store && assignedToStore ? (product.stockByStore[store.id] ?? 0) : 0;
+  const reserved = store && assignedToStore ? (product.reservedStockByStore[store.id] ?? 0) : 0;
   return {
-    productId: product.parentProductId ?? product.id,
-    variantId: product.variantId ?? product.id,
-    name: product.name,
-    brand: product.brand,
-    sku: product.sku,
-    presentation: product.presentation,
-    storeId: store.id,
+    ...priceItem(product),
+    storeId: store?.id ?? null,
+    assignedToStore,
     stock,
     reserved,
     available: Math.max(0, stock - reserved),
     countedAt: null,
-    revision: product.commerceRevision,
   };
 }
 
@@ -348,14 +344,23 @@ export function mountBoltAdmin(app: Express, options: Options) {
   app.get(base + '/inventory', (req, res) => {
     const actor = authorize(req, res);
     if (!actor) return;
-    const store = selectStore(req, res, actor);
-    if (!store) return;
+    const scope = req.query.scope ?? 'store';
+    if (scope !== 'store' && scope !== 'catalog') {
+      return res.status(400).json({ error: 'Selecciona inventario de la sede o todas las presentaciones.' });
+    }
+    if (scope === 'catalog' && !actor.canAdjustPrices) {
+      return res.status(403).json({ error: 'Tu perfil solo puede consultar las presentaciones de su sede.' });
+    }
+    const catalogWithoutStore = scope === 'catalog' && req.query.storeId === undefined && actor.storeIds.length === 0;
+    const store = catalogWithoutStore ? undefined : selectStore(req, res, actor);
+    if (!store && !catalogWithoutStore) return;
     const query = typeof req.query.query === 'string' ? normalizeQuery(req.query.query.slice(0, 120)) : '';
     const limit = Math.max(1, pageParam(req.query.limit, 80, 200));
     const offset = pageParam(req.query.offset, 0, 100000);
-    const products = options.getProducts().filter(product =>
-      isVisibleProduct(product) && belongsToStore(product, store) &&
-      (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query)));
+    const products = options.getProducts().filter(product => {
+      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) : !!store && isVisibleProduct(product) && belongsToStore(product, store);
+      return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
+    });
     res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store)), total: products.length, offset, limit });
   });
 

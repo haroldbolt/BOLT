@@ -25,7 +25,7 @@ export function InventoryAdjustments({ item, ...props }: InventoryAdjustmentsPro
       <div><h2 id={headingId}>Ajustes de inventario</h2><p>{props.storeName}</p></div>
       <button className="ba-icon-btn" type="button" onClick={props.close} aria-label="Cerrar ajustes de inventario"><X size={19} aria-hidden="true" /></button>
     </div>
-    <p className="ba-adjustment-empty"><PackagePlus size={18} aria-hidden="true" /> Busca una presentación en el inventario y pulsa Ajustar.</p>
+    <p className="ba-adjustment-empty"><PackagePlus size={18} aria-hidden="true" /> Busca una presentación y pulsa su cantidad en Existencias.</p>
   </section>;
 }
 

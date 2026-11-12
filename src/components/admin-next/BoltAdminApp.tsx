@@ -2,15 +2,15 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
   ChevronRight, CircleAlert, ClipboardList, Clock3, FlaskConical, LayoutDashboard, LoaderCircle,
-  LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Store, Tags, X, Zap,
+  LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Store, X, Zap,
 } from 'lucide-react';
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
-import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem } from './adminClient';
+import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem, type InventoryScope, type PriceAdjustment, type PriceItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
 import { InventoryAdjustments } from './InventoryAdjustments';
-import { PriceManagement } from './PriceManagement';
+import { PriceEditor } from './PriceManagement';
 import { SalesDashboard } from './SalesDashboard';
 import './boltAdmin.css';
 
@@ -19,7 +19,6 @@ const tabs = [
   { id: 'turbo', title: 'Turbo', icon: Zap },
   { id: 'scheduled', title: 'Programados', icon: CalendarDays },
   { id: 'inventory', title: 'Inventario', icon: Box },
-  { id: 'pricing', title: 'Precios', icon: Tags },
   { id: 'sales', title: 'Ventas', icon: ChartNoAxesCombined },
   { id: 'permissions', title: 'Permisos', icon: ShieldCheck },
 ] as const;
@@ -28,6 +27,7 @@ type AdminLanding = { tab: Tab; storeId?: string };
 type OrderTab = 'orders' | 'turbo' | 'scheduled';
 type OrderFilters = { search: string; status: string };
 type InventoryPage = Awaited<ReturnType<typeof boltAdmin.inventory>>;
+type InventoryEditor = { mode: 'stock'; item: InventoryItem | null } | { mode: 'price'; item: InventoryItem };
 
 const orderTitles: Record<OrderTab, string> = { orders: 'Todos los pedidos', turbo: 'Pedidos Turbo', scheduled: 'Envíos programados' };
 const defaultOrderFilters: OrderFilters = { search: '', status: 'all' };
@@ -55,6 +55,8 @@ const errorText = (error: unknown) => error instanceof Error ? error.message : '
 const timeLabel = (date?: string) => date && Number.isFinite(Date.parse(date))
   ? `${formatDateBogota(date)} · ${formatTimeBogota(date)}` : 'Fecha no registrada';
 const number = new Intl.NumberFormat('es-CO');
+const sameVariant = (item: PriceItem, other: Pick<PriceItem, 'productId' | 'variantId'>) =>
+  item.productId === other.productId && item.variantId === other.variantId;
 
 function DeliverySchedule({ window, showLabel = false }: { window: AdminOrder['scheduledWindow']; showLabel?: boolean }) {
   if (!window) return <>Franja por confirmar</>;
@@ -155,11 +157,12 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const [tab, setTab] = useState<Tab>(landing.tab);
   const [storeChoice, setStoreChoice] = useState(landing.storeId ?? '');
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
-  const [inventory, setInventory] = useState<InventoryPage | null>(null);
+  const [inventoryResult, setInventory] = useState<(InventoryPage & { scope: InventoryScope }) | null>(null);
   const [selectedOrder, setSelectedOrder] = useState('');
   const [orderFilters, setOrderFilters] = useState<Partial<Record<OrderTab, OrderFilters>>>({});
   const [inventorySearch, setInventorySearch] = useState('');
   const [inventoryQuery, setInventoryQuery] = useState('');
+  const [inventoryScope, setInventoryScope] = useState<InventoryScope>(actor.canAdjustPrices && session.stores.length === 0 ? 'catalog' : 'store');
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
   const [inboxRevision, setInboxRevision] = useState(0);
@@ -170,8 +173,8 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const [demoOrderMode, setDemoOrderMode] = useState<DemoOrderMode>('PROGRAMADO');
   const [fixtureBusy, setFixtureBusy] = useState(false);
   const fixtureKeys = useRef<Partial<Record<DemoOrderMode, string>>>({});
-  const [editItem, setEditItem] = useState<InventoryItem | null>(null);
-  const [showInventoryAdjustments, setShowInventoryAdjustments] = useState(landing.tab === 'inventory');
+  const [inventoryEditor, setInventoryEditor] = useState<InventoryEditor | null>(landing.tab === 'inventory' ? { mode: 'stock', item: null } : null);
+  const [priceSaving, setPriceSaving] = useState(false);
 
   const store = session.stores.find(item => item.id === storeChoice)
     || session.stores.find(item => item.id === 'HUB_SUBA') || session.stores[0];
@@ -190,6 +193,9 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const demoTrackingPath = isDemo && detail && api.hasOrderAccess(detail.id)
     ? `/simulacion/cliente/${encodeURIComponent(detail.id)}` : undefined;
   const canCreateDemoOrder = isDemo && storeId === 'HUB_SUBA' && actor.canConfirm;
+  const inventoryScopeForView = tab === 'inventory' ? inventoryScope : 'store';
+  const inventory = inventoryResult?.scope === inventoryScopeForView ? inventoryResult : null;
+  const showInventoryAdjustments = inventoryEditor?.mode === 'stock';
   const inventoryPageStart = inventory && inventory.total > 0 ? inventory.offset + 1 : 0;
 
   useEffect(() => {
@@ -216,48 +222,69 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   }, [inventorySearch]);
 
   useEffect(() => {
-    if (!storeId) return;
+    if (!storeId && inventoryScopeForView !== 'catalog') return;
     const controller = new AbortController();
     setInventoryError('');
-    void boltAdmin.inventory(token, storeId, inventoryQuery, offset, controller.signal).then(result => {
-      if (!controller.signal.aborted) setInventory(result);
+    void boltAdmin.inventory(token, storeId, inventoryQuery, offset, inventoryScopeForView, controller.signal).then(result => {
+      if (!controller.signal.aborted) setInventory({ ...result, scope: inventoryScopeForView });
     }).catch(failure => { if (!controller.signal.aborted) setInventoryError(errorText(failure)); });
     return () => controller.abort();
-  }, [storeId, token, revision, inventoryQuery, offset]);
+  }, [storeId, token, revision, inventoryQuery, offset, inventoryScopeForView]);
 
   function changeStore(id: string) {
     activeStore.current = id;
-    setStoreChoice(id); setOrders(null); setInventory(null); setOffset(0); setEditItem(null);
+    setStoreChoice(id); setOrders(null); setInventory(null); setOffset(0);
+    setInventoryEditor(current => current?.mode === 'stock' ? { mode: 'stock', item: null } : null);
     setSelectedOrder(''); setNotice(''); setActionError('');
   }
 
   function navigate(next: Tab) {
     if (next !== tab) setSelectedOrder('');
     setTab(next);
-    if (next !== 'inventory') {
-      setEditItem(null);
-      setShowInventoryAdjustments(false);
-    }
+    if (next !== 'inventory') setInventoryEditor(null);
   }
 
   function openInventoryAdjustments(item?: InventoryItem) {
-    setShowInventoryAdjustments(true);
-    if (item) setEditItem(item);
-    else if (actor.canAdjustInventory && isDemo && inventory?.total === 1) setEditItem(inventory.items[0] ?? null);
+    const demoItem = actor.canAdjustInventory && isDemo && inventory?.total === 1 ? inventory.items[0] : undefined;
+    setInventoryEditor({ mode: 'stock', item: item ?? (demoItem?.assignedToStore ? demoItem : null) });
   }
 
-  function closeInventoryAdjustments() {
-    setShowInventoryAdjustments(false);
-    setEditItem(null);
+  function closeInventoryEditor() {
+    setInventoryEditor(null);
+  }
+
+  function changeInventoryScope(scope: InventoryScope) {
+    setInventoryScope(scope);
+    setOffset(0);
+    setInventory(null);
+    closeInventoryEditor();
+  }
+
+  function changeInventoryPage(next: number) {
+    setOffset(next);
+    setInventoryEditor(current => current?.mode === 'stock' ? { mode: 'stock', item: null } : null);
   }
 
   function inventoryAdjusted(updated: InventoryItem) {
     if (updated.storeId !== activeStore.current) return;
-    const isAdjustedItem = (item: InventoryItem) => item.productId === updated.productId && item.variantId === updated.variantId;
-    setInventory(page => page && { ...page, items: page.items.map(item => isAdjustedItem(item) ? updated : item) });
-    setEditItem(item => item && isAdjustedItem(item) ? updated : item);
+    setInventory(page => page && { ...page, items: page.items.map(item => sameVariant(item, updated) ? updated : item) });
+    setInventoryEditor(current => current?.mode === 'stock' && current.item && sameVariant(current.item, updated)
+      ? { mode: 'stock', item: updated } : current);
     setNotice('Ajuste registrado con su motivo y responsable.');
     refresh();
+  }
+
+  async function saveInventoryPrice(adjustment: PriceAdjustment) {
+    setPriceSaving(true);
+    try {
+      const { item } = await boltAdmin.adjustPrice(token, adjustment);
+      setInventory(page => page && { ...page, items: page.items.map(row => sameVariant(row, item) ? { ...row, ...item } : row) });
+      setInventoryEditor(current => current?.mode === 'price' && sameVariant(current.item, item) ? null : current);
+      setNotice(`Precio guardado para ${item.name} · ${item.presentation}.`);
+      refresh();
+    } finally {
+      setPriceSaving(false);
+    }
   }
 
   function updateOrderFilters(view: OrderTab, changes: Partial<OrderFilters>) {
@@ -406,47 +433,64 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
         </>}
 
         {tab === 'inventory' && <>
-          <PageHeading title="Inventario" text={`${store?.name || 'Sin sede asignada'} · Existencias, reservas y disponibilidad por presentación`}>
+          <PageHeading title="Inventario" text={`${store?.name || 'Sin sede asignada'} · Precios de catálogo y existencias por sede`}>
             <button type="button" className="ba-btn ba-btn-secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</button>
             {storeId && <button type="button" className="ba-btn ba-btn-primary" aria-expanded={showInventoryAdjustments}
-              onClick={() => showInventoryAdjustments ? closeInventoryAdjustments() : openInventoryAdjustments()}>
+              onClick={() => showInventoryAdjustments ? closeInventoryEditor() : openInventoryAdjustments()}>
               <SlidersHorizontal size={17} aria-hidden="true" /> Ajustes de inventario
             </button>}
           </PageHeading>
-          <div className={`ba-stock-workspace${showInventoryAdjustments ? ' ba-stock-with-adjustments' : ''}`}>
-          {showInventoryAdjustments && <aside className="ba-stock-adjustments">
-            {actor.canAdjustInventory ? <InventoryAdjustments
-              item={editItem} storeName={store?.name || ''} token={token} close={closeInventoryAdjustments} saved={inventoryAdjusted}
-              refreshRequested={() => { setEditItem(null); refresh(); }} /> : <section className="ba-panel ba-inventory-access" aria-label="Permisos para ajustar inventario">
-              <div className="ba-panel-head"><div><h2>Ajustes de inventario</h2><p>El perfil de sede puede consultar existencias. Coordinación puede ajustarlas.</p></div>
-                <button type="button" className="ba-icon-btn" aria-label="Cerrar ajustes de inventario" onClick={closeInventoryAdjustments}><X size={18} /></button></div>
+          <div className={`ba-stock-workspace${inventoryEditor ? ' ba-stock-with-adjustments' : ''}`}>
+          {inventoryEditor && <aside className="ba-stock-adjustments">
+            {inventoryEditor.mode === 'price' ? <PriceEditor
+              key={`${inventoryEditor.item.productId}:${inventoryEditor.item.variantId}:${inventoryEditor.item.revision}`}
+              item={inventoryEditor.item} saving={priceSaving} save={saveInventoryPrice} close={closeInventoryEditor}
+              refreshPrices={() => { closeInventoryEditor(); refresh(); }} />
+            : actor.canAdjustInventory ? <InventoryAdjustments
+              item={inventoryEditor.item} storeName={store?.name || ''} token={token} close={closeInventoryEditor} saved={inventoryAdjusted}
+              refreshRequested={() => { setInventoryEditor({ mode: 'stock', item: null }); refresh(); }} /> : <section className="ba-panel ba-inventory-access" aria-label="Permisos para ajustar inventario">
+              <div className="ba-panel-head"><div><h2>Ajustes de inventario</h2><p>Coordinación administra los precios, las promociones y las existencias.</p></div>
+                <button type="button" className="ba-icon-btn" aria-label="Cerrar ajustes de inventario" onClick={closeInventoryEditor}><X size={18} /></button></div>
               {isDemo && <button type="button" className="ba-btn ba-btn-secondary" disabled={busy} onClick={() => switchProfile('coordinacion', { tab: 'inventory', storeId })}>
                 <ShieldCheck size={16} aria-hidden="true" /> Entrar como Coordinación
               </button>}
             </section>}
           </aside>}
           <section className="ba-panel ba-inventory-list">
-            <div className="ba-filters"><SearchBox label="Buscar por SKU, producto o presentación" value={inventorySearch} change={setInventorySearch} /></div>
+            <div className="ba-filters">
+              <SearchBox label="Buscar por SKU, producto o presentación" value={inventorySearch} change={setInventorySearch} />
+              {actor.canAdjustPrices && <label className="ba-field ba-inventory-scope"><span className="ba-sr">Presentaciones visibles</span>
+                <select value={inventoryScope} onChange={event => changeInventoryScope(event.target.value === 'catalog' ? 'catalog' : 'store')}>
+                  <option value="store" disabled={!storeId}>Presentaciones de la sede</option><option value="catalog">Todo el catálogo</option>
+                </select></label>}
+            </div>
             {inventoryError ? <FetchError message={inventoryError} refresh={refresh} /> : !inventory ? <Loading text="Consultando inventario…" />
               : inventory.items.length === 0 ? <Empty icon={<PackageSearch size={24} />} title="Sin resultados de inventario" text="Revisa la búsqueda o la sede seleccionada." />
               : <>
                 <div className="ba-table-scroll"><table className="ba-table ba-stock"><thead><tr>
-                  <th scope="col">Producto / SKU</th><th scope="col">Existencias</th><th scope="col">Reservadas</th><th scope="col">Disponibles</th><th scope="col">Último conteo</th>{actor.canAdjustInventory && <th scope="col"><span className="ba-sr">Acción</span></th>}
+                  <th scope="col">Producto / SKU</th><th scope="col">Precio vigente</th><th scope="col">Existencias</th><th scope="col">Reservadas</th><th scope="col">Disponibles</th>
                 </tr></thead><tbody>
-                  {inventory.items.map(item => <tr key={`${item.productId}:${item.variantId}`}>
-                    <th scope="row"><strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small></th>
-                    <td>{actor.canAdjustInventory ? <button className="ba-stock-editable" type="button" onClick={() => openInventoryAdjustments(item)}
-                      aria-label={`Ajustar existencias de ${item.name}, ${item.presentation}, ${number.format(item.stock)} unidades`}>
-                      {number.format(item.stock)}
-                    </button> : number.format(item.stock)}</td><td>{number.format(item.reserved)}</td>
-                    <td><span className={`ba-stock-value ${item.available === 0 ? 'ba-stock-none' : ''}`}>{number.format(item.available)}</span></td>
-                    <td className="ba-dim">{item.countedAt ? timeLabel(item.countedAt) : 'Sin registro'}</td>
-                    {actor.canAdjustInventory && <td><button type="button" className="ba-btn ba-btn-secondary ba-compact" aria-label={`Ajustar inventario de ${item.name}, ${item.presentation}`} onClick={() => openInventoryAdjustments(item)}>Ajustar</button></td>}
-                  </tr>)}
+                  {inventory.items.map(item => {
+                    const editableStock = actor.canAdjustInventory && item.assignedToStore && (isDemo || !item.status || item.status === 'ACTIVE');
+                    return <tr key={`${item.productId}:${item.variantId}`} data-selected={inventoryEditor?.item && sameVariant(inventoryEditor.item, item) ? 'true' : undefined}>
+                      <th scope="row"><strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
+                        {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
+                        {!isDemo && item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
+                      </th>
+                      <InventoryPriceCell item={item} editable={actor.canAdjustPrices} saving={priceSaving}
+                        edit={() => { setNotice(''); setInventoryEditor({ mode: 'price', item }); }} />
+                      <td>{editableStock ? <button className="ba-stock-editable" type="button" disabled={priceSaving} onClick={() => openInventoryAdjustments(item)}
+                        aria-label={`Ajustar existencias de ${item.name}, ${item.presentation}, ${number.format(item.stock)} unidades`}>
+                        {number.format(item.stock)}
+                      </button> : item.assignedToStore ? number.format(item.stock) : '—'}</td>
+                      <td>{item.assignedToStore ? number.format(item.reserved) : '—'}</td>
+                      <td>{item.assignedToStore ? <span className={`ba-stock-value ${item.available === 0 ? 'ba-stock-none' : ''}`}>{number.format(item.available)}</span> : '—'}</td>
+                    </tr>;
+                  })}
                 </tbody></table></div>
                 <div className="ba-pagination"><span>{number.format(inventoryPageStart)}–{number.format(inventory.offset + inventory.items.length)} de {number.format(inventory.total)}</span><div>
-                  <button className="ba-icon-btn" type="button" aria-label="Página anterior" disabled={offset === 0} onClick={() => { setEditItem(null); setOffset(Math.max(0, offset - inventory.limit)); }}><ChevronLeft size={18} /></button>
-                  <button className="ba-icon-btn" type="button" aria-label="Página siguiente" disabled={inventory.offset + inventory.items.length >= inventory.total} onClick={() => { setEditItem(null); setOffset(offset + inventory.limit); }}><ChevronRight size={18} /></button>
+                  <button className="ba-icon-btn" type="button" aria-label="Página anterior" disabled={offset === 0} onClick={() => changeInventoryPage(Math.max(0, offset - inventory.limit))}><ChevronLeft size={18} /></button>
+                  <button className="ba-icon-btn" type="button" aria-label="Página siguiente" disabled={inventory.offset + inventory.items.length >= inventory.total} onClick={() => changeInventoryPage(offset + inventory.limit)}><ChevronRight size={18} /></button>
                 </div></div>
               </>}
           </section>
@@ -455,18 +499,6 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
         </>}
 
         {tab === 'sales' && <SalesDashboard token={token} storeId={storeId} stores={session.stores} fetchReport={boltAdmin.sales} />}
-
-        {tab === 'pricing' && (actor.canAdjustPrices
-          ? <PriceManagement token={token} loadPrices={boltAdmin.prices} savePrice={boltAdmin.adjustPrice} />
-          : <>
-            <PageHeading title="Precios y promociones" text="Los precios de catálogo se aplican a todas las sedes que venden cada presentación." />
-            <section className="ba-panel ba-inventory-access" aria-label="Permisos de precios">
-              <div className="ba-panel-head"><div><h2>Acceso de Coordinación</h2><p>Coordinación administra los precios y las promociones.</p></div></div>
-              {isDemo && <button type="button" className="ba-btn ba-btn-secondary" disabled={busy} onClick={() => switchProfile('coordinacion', { tab: 'pricing', storeId })}>
-                <ShieldCheck size={16} aria-hidden="true" /> Entrar como Coordinación
-              </button>}
-            </section>
-          </>)}
 
         {tab === 'permissions' && <>
           <PageHeading title="Permisos" text="Consulta el acceso de tu perfil." />
@@ -502,6 +534,17 @@ function PageHeading({ title, text, children }: { title: string; text: string; c
 
 function SearchBox({ label, value, change }: { label: string; value: string; change: (value: string) => void }) {
   return <label className="ba-search"><Search size={17} aria-hidden="true" /><span className="ba-sr">{label}</span><input type="search" placeholder={label} value={value} onChange={event => change(event.target.value)} /></label>;
+}
+
+function InventoryPriceCell({ item, editable, saving, edit }: { item: InventoryItem; editable: boolean; saving: boolean; edit: () => void }) {
+  const price = item.price > 0 ? formatCOP(item.price) : 'Sin precio';
+  const discount = item.originalPrice ? Math.round(100 * (1 - item.price / item.originalPrice)) : 0;
+  return <td className="ba-stock-price">
+    {editable ? <button className="ba-stock-editable" type="button" disabled={saving} onClick={edit}
+      aria-label={`Editar precio de ${item.name}, ${item.presentation}, ${price}`}>{price}</button> : <strong>{price}</strong>}
+    {item.originalPrice !== null && <small><span className="ba-sr">Precio regular </span><del>{formatCOP(item.originalPrice)}</del></small>}
+    {discount > 0 && <small className="ba-stock-discount">{discount}% de descuento</small>}
+  </td>;
 }
 
 function Loading({ text }: { text: string }) {

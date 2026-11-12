@@ -29,19 +29,15 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
 
 export type DemoOrderMode = Extract<Order['deliveryMode'], 'TURBO' | 'PROGRAMADO'>;
 
-export interface InventoryItem {
-  storeId: string;
-  productId: string;
-  variantId: string;
-  name: string;
-  brand: string;
-  sku: string;
-  presentation: string;
+export type InventoryScope = 'store' | 'catalog';
+
+export interface InventoryItem extends PriceItem {
+  storeId: string | null;
+  assignedToStore: boolean;
   stock: number;
   reserved: number;
   available: number;
   countedAt: string | null;
-  revision: string;
 }
 
 export interface InventoryAdjustment {
@@ -67,13 +63,6 @@ export interface PriceItem {
   price: number;
   originalPrice: number | null;
   revision: string;
-}
-
-export interface PricePage {
-  items: PriceItem[];
-  total: number;
-  offset: number;
-  limit: number;
 }
 
 export interface PriceAdjustment {
@@ -133,17 +122,14 @@ export const boltAdmin = {
   orders: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ orders: AdminOrder[] }>(
     `${base}/orders?${new URLSearchParams({ storeId })}`, token, { signal },
   ),
-  inventory: (token: string | null, storeId: string, query: string, offset: number, signal?: AbortSignal) => request<{ items: InventoryItem[]; total: number; offset: number; limit: number }>(
-    `${base}/inventory?${new URLSearchParams({ storeId, query, offset: String(offset), limit: '40' })}`, token, { signal },
+  inventory: (token: string | null, storeId: string | undefined, query: string, offset: number, scope: InventoryScope, signal?: AbortSignal) => request<{ items: InventoryItem[]; total: number; offset: number; limit: number }>(
+    `${base}/inventory?${new URLSearchParams({ ...(storeId ? { storeId } : {}), query, scope, offset: String(offset), limit: '40' })}`, token, { signal },
   ),
   inventoryAdjustments: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ adjustments: InventoryAdjustment[] }>(
     `${base}/inventory/adjustments?${new URLSearchParams({ storeId })}`, token, { signal },
   ),
   sales: (token: string | null, storeId: string, period: SalesPeriod, signal?: AbortSignal) => request<BoltAdminSalesReport>(
     `${base}/sales?${new URLSearchParams({ storeId, period })}`, token, { signal },
-  ),
-  prices: (token: string | null, query: string, offset: number, signal?: AbortSignal) => request<PricePage>(
-    `${base}/prices?${new URLSearchParams({ query, offset: String(offset), limit: '40' })}`, token, { signal },
   ),
   adjustPrice: (token: string | null, adjustment: PriceAdjustment) => request<{ item: PriceItem }>(
     `${base}/prices`, token, { method: 'PUT', body: adjustment },
