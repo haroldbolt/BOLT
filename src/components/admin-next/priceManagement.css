@@ -10,6 +10,7 @@
 .ba-price-toggle:has(input:checked) { background: #fff6f8; border-color: #e7b2c0; }
 .ba-price-toggle input { accent-color: var(--ba-red); }
 .ba-price-promotion-fields { padding: 9px; background: #fbf7fa; border: 1px solid #efe5ee; border-radius: 8px; }
+.ba-price-promotion-values { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); align-items: end; gap: 8px; }
 .ba-price-validation { margin: 0; color: #922637; font-size: 12px; }
 .ba-price-preview { padding: 9px 11px; background: #f5faf6; border: 1px solid #deede2; border-radius: 8px; }
 .ba-price-preview > span { color: var(--ba-dim); font-size: 12px; }

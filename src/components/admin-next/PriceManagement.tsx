@@ -5,6 +5,9 @@ import { AdminRequestError, type PriceAdjustment, type PriceItem } from './admin
 import './priceManagement.css';
 
 const maxPriceCOP = Math.floor(Number.MAX_SAFE_INTEGER / 100);
+const percentageFormat = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2, useGrouping: false });
+
+type PromotionInput = { field: 'price' | 'percent'; value: string };
 
 function roundedDiscount(regularPrice: number, effectivePrice: number) {
   return Math.round((1 - effectivePrice / regularPrice) * 100);
@@ -17,6 +20,25 @@ function activePromotion(item: PriceItem) {
 function positiveWholePesos(input: string) {
   const value = Number(input);
   return Number.isSafeInteger(value) && value > 0 && value <= maxPriceCOP ? value : null;
+}
+
+function parseDiscountBasisPoints(input: string) {
+  const normalized = input.trim().replace(/\s*%$/, '').replace(',', '.');
+  if (!/^\d+(?:\.\d{1,2})?$/.test(normalized)) return null;
+  const points = Math.round(Number(normalized) * 100);
+  return points > 0 && points < 10_000 ? points : null;
+}
+
+function priceAfterDiscount(regularPrice: number, basisPoints: number) {
+  // Round once to the nearest whole peso, including exact half-peso values.
+  return Number((BigInt(regularPrice) * BigInt(10_000 - basisPoints) + 5_000n) / 10_000n);
+}
+
+function calculatedDiscount(regularPrice: number, promoPrice: number) {
+  const percent = (regularPrice - promoPrice) * 100 / regularPrice;
+  if (percent < 0.01) return '<0,01';
+  if (percent > 99.99) return '>99,99';
+  return percentageFormat.format(percent);
 }
 
 export function PriceEditor({ item, saving = false, save, close, refreshPrices }: {
@@ -34,9 +56,7 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
   const initialRegular = hadPromotion ? item.originalPrice : item.price;
   const [regular, setRegular] = useState(initialRegular && initialRegular > 0 ? String(initialRegular) : '');
   const [hasPromotion, setHasPromotion] = useState(hadPromotion);
-  const [method, setMethod] = useState<'price' | 'percent'>('price');
-  const [amount, setAmount] = useState(hadPromotion ? String(item.price) : '');
-  const [percentage, setPercentage] = useState('');
+  const [promotion, setPromotion] = useState<PromotionInput>({ field: 'price', value: hadPromotion ? String(item.price) : '' });
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [stale, setStale] = useState(false);
@@ -47,12 +67,14 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
   }, []);
 
   const regularPrice = positiveWholePesos(regular);
-  const discountPercent = Number(percentage);
-  const validPercent = /^\d+(?:\.\d{1,2})?$/.test(percentage) && discountPercent > 0 && discountPercent < 100;
-  const promotionInput = method === 'price' ? amount : percentage;
-  const promoPrice = method === 'price' ? positiveWholePesos(amount) : regularPrice !== null && validPercent
-    ? Math.round(regularPrice * (1 - discountPercent / 100)) : null;
+  const byPercentage = promotion.field === 'percent';
+  const basisPoints = byPercentage ? parseDiscountBasisPoints(promotion.value) : null;
+  const promoPrice = byPercentage
+    ? regularPrice !== null && basisPoints !== null ? priceAfterDiscount(regularPrice, basisPoints) : null
+    : positiveWholePesos(promotion.value);
   const validPromo = promoPrice !== null && promoPrice > 0 && regularPrice !== null && promoPrice < regularPrice;
+  const amountInput = byPercentage ? (validPromo ? String(promoPrice) : '') : promotion.value;
+  const percentInput = byPercentage ? promotion.value : (validPromo ? calculatedDiscount(regularPrice, promoPrice) : '');
   const valid = regularPrice !== null && (!hasPromotion || validPromo);
   const effectivePrice = hasPromotion ? promoPrice : regularPrice;
   const previewDiscount = hasPromotion && valid && regularPrice && effectivePrice ? roundedDiscount(regularPrice, effectivePrice) : 0;
@@ -60,7 +82,7 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
   const adjustmentReason = reason.trim();
   const canSave = valid && hasChanges && adjustmentReason.length >= 5 && adjustmentReason.length <= 240 && !saving && !stale;
   const regularError = regular !== '' && regularPrice === null;
-  const promotionError = hasPromotion && promotionInput !== '' && regularPrice !== null && !validPromo;
+  const promotionError = hasPromotion && promotion.value.trim() !== '' && regularPrice !== null && !validPromo;
 
   async function submit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -96,20 +118,21 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
         {regularError && <p id={regularErrorId} className="ba-price-validation">Ingresa un valor válido en pesos enteros.</p>}
         <label className="ba-price-toggle"><input type="checkbox" checked={hasPromotion} onChange={event => setHasPromotion(event.target.checked)} /> Activar promoción</label>
         {hasPromotion && <div className="ba-price-promotion-fields">
-          <label className="ba-field">Forma del descuento
-            <select value={method} onChange={event => setMethod(event.target.value === 'percent' ? 'percent' : 'price')}>
-              <option value="price">Precio promocional</option><option value="percent">Porcentaje de descuento</option>
-            </select>
-          </label>
-          {method === 'price' ? <label className="ba-field">Precio promocional (COP)
-            <input type="number" inputMode="numeric" min={1} max={maxPriceCOP} step={1} value={amount} required onChange={event => setAmount(event.target.value)}
-              aria-invalid={promotionError || undefined} aria-describedby={promotionError ? promotionErrorId : undefined} />
-          </label> : <label className="ba-field">Descuento (%)
-            <input type="number" inputMode="decimal" min={0.01} max={99.99} step={0.01} value={percentage} required onChange={event => setPercentage(event.target.value)}
-              aria-invalid={promotionError || undefined} aria-describedby={promotionError ? promotionErrorId : undefined} />
-          </label>}
+          <p className="ba-price-scope">Edita el precio promocional o el descuento. El otro valor se calcula al instante.</p>
+          <div className="ba-price-promotion-values">
+            <label className="ba-field">Precio promocional (COP)
+              <input type="number" inputMode="numeric" min={1} max={maxPriceCOP} step={1} value={amountInput}
+                onChange={event => setPromotion({ field: 'price', value: event.target.value })}
+                aria-invalid={promotionError && !byPercentage || undefined} aria-describedby={promotionError && !byPercentage ? promotionErrorId : undefined} />
+            </label>
+            <label className="ba-field">Descuento (%)
+              <input type="text" inputMode="decimal" maxLength={12} value={percentInput}
+                onChange={event => setPromotion({ field: 'percent', value: event.target.value })}
+                aria-invalid={promotionError && byPercentage || undefined} aria-describedby={promotionError && byPercentage ? promotionErrorId : undefined} />
+            </label>
+          </div>
           {promotionError && <p id={promotionErrorId} className="ba-price-validation">
-            {method === 'percent' && !validPercent ? 'Ingresa un porcentaje entre 0,01 y 99,99.' : 'El precio con descuento debe ser positivo y menor que el regular.'}
+            {byPercentage && basisPoints === null ? 'Ingresa un porcentaje entre 0,01 y 99,99.' : 'El precio con descuento debe ser positivo y menor que el regular.'}
           </p>}
         </div>}
         <label className="ba-field">Motivo del ajuste
