@@ -11,6 +11,8 @@ RUN npm run lint && npm run build
 
 FROM node:22.22.0-bookworm-slim AS demo
 WORKDIR /opt/bolt
+RUN apt-get update && apt-get install -y --no-install-recommends tesseract-ocr tesseract-ocr-eng tesseract-ocr-spa \
+    && rm -rf /var/lib/apt/lists/*
 COPY --from=build /opt/bolt /opt/bolt
 ENV NODE_ENV=production PORT=8080 BOLT_DEMO_VOLUME=/data
 EXPOSE 8080

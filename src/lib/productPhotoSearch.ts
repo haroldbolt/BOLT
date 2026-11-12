@@ -34,7 +34,7 @@ function nameWords(value: string, brand: string) {
     .map(word => Object.hasOwn(wordAliases, word) ? wordAliases[word] : word));
 }
 
-function searchableProduct(product: Product) {
+export function searchableProduct(product: Product) {
   const name = normalized(product.name);
   const prescriptionFood = ['Alimentos', 'Perros', 'Gatos'].includes(product.category) &&
     (name.includes('prescription diet') || product.tags.some(tag => normalized(tag) === 'alimento de prescripcion'));

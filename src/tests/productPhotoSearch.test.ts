@@ -110,8 +110,8 @@ async function serve(options: Parameters<typeof mountProductPhotoSearch>[1]) {
   return { url, close: () => server.close() };
 }
 
-test('HTTP opt-in stays off when the feature flag or server key is missing', async () => {
-  for (const env of [{ BOLT_PHOTO_SEARCH_ENABLED: 'true' }, { BOLT_PHOTO_SEARCH_OPENAI_API_KEY: 'fixture' }]) {
+test('HTTP opt-in stays off without the feature flag', async () => {
+  for (const env of [{}, { BOLT_PHOTO_SEARCH_OPENAI_API_KEY: 'fixture' }]) {
     const service = await serve({ catalog: () => [exact], env });
     try {
       assert.deepEqual(await (await fetch(`${service.url}/status`)).json(), { enabled: false });
@@ -121,6 +121,27 @@ test('HTTP opt-in stays off when the feature flag or server key is missing', asy
     } finally {
       service.close();
     }
+  }
+});
+
+test('HTTP still searches the live catalog when the vision provider fails', async () => {
+  const image = await sharp({ create: { width: 60, height: 60, channels: 3, background: 'white' } }).jpeg().toBuffer();
+  const cat: Product = { ...exact, id: 'gato', name: 'Agility Gold Gato', species: 'Gato' };
+  let calls = 0;
+  const service = await serve({
+    catalog: () => [cat, exact],
+    readPhotoText: async () => 'AGILITY GOLD\nCAT FOOD\nGATOS',
+    recognizer: async () => { calls++; throw new Error('private provider detail'); },
+  });
+  try {
+    const result = await fetch(service.url, {
+      method: 'POST', headers: { 'Content-Type': 'image/jpeg' }, body: Uint8Array.from(image),
+    });
+    assert.equal(result.status, 200);
+    assert.deepEqual((await result.json()).matches, [{ productId: cat.id }]);
+    assert.equal(calls, 1);
+  } finally {
+    service.close();
   }
 });
 
