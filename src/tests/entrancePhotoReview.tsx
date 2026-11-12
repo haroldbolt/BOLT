@@ -248,9 +248,9 @@ function Review() {
         selectedScheduledWindow={window}
         onSelectScheduledWindow={setWindow}
         onRefreshCatalog={() => void api.getCatalog().then(setProducts)}
-        onOrderSuccess={(id) => {
-          sessionStorage.setItem("bolt_photo_review_order", id);
-          setOrderId(id);
+        onOrderSuccess={(order) => {
+          sessionStorage.setItem("bolt_photo_review_order", order.id);
+          setOrderId(order.id);
         }}
       />
     </main>
