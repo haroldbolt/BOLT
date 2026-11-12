@@ -36,12 +36,12 @@ const timeLabel = (date?: string) => date && Number.isFinite(Date.parse(date))
   ? `${formatDateBogota(date)} · ${formatTimeBogota(date)}` : 'Fecha no registrada';
 const number = new Intl.NumberFormat('es-CO');
 
-function scheduledDeliveryLabel(window: AdminOrder['scheduledWindow']) {
-  if (!window) return 'Franja por confirmar';
+function DeliverySchedule({ window, showLabel = false }: { window: AdminOrder['scheduledWindow']; showLabel?: boolean }) {
+  if (!window) return <>Franja por confirmar</>;
   const date = `${window.date}T12:00:00-05:00`;
   const hours = window.startTime && window.endTime ? `${window.startTime}–${window.endTime}` : window.displayWindow;
-  if (!Number.isFinite(Date.parse(date)) || !hours) return 'Franja por confirmar';
-  return `${formatDateBogota(date)} · ${hours}`;
+  if (!Number.isFinite(Date.parse(date)) || !hours) return <>Franja por confirmar</>;
+  return <>{showLabel && 'Entrega · '}{formatDateBogota(date)} · <span className="ba-schedule-hours">{hours}</span></>;
 }
 
 function Brand() {
@@ -409,7 +409,7 @@ function OrderRows({ orders, selected, onSelect }: { orders: AdminOrder[]; selec
           <div className="ba-order-identity"><strong>{orderLabel(order)}</strong>
             {mode && <span className={`ba-status ${scheduled ? 'ba-mode-scheduled' : 'ba-mode-turbo'}`}>{deliveryModeLabel(mode)}</span>}
           </div>
-          {scheduled && <p className="ba-order-schedule">{order.scheduledWindow ? 'Entrega · ' : ''}{scheduledDeliveryLabel(order.scheduledWindow)}</p>}
+          {scheduled && <p className="ba-order-schedule"><DeliverySchedule window={order.scheduledWindow} showLabel /></p>}
           <small>Recibido · {timeLabel(order.createdAt)}</small>
         </th>
         <td><Status status={order.fulfillmentStatus} /></td><td>{number.format(order.items.reduce((sum, item) => sum + item.quantity, 0))} ud.</td>
@@ -445,7 +445,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, changed
       <Status status={order.fulfillmentStatus} />
       <dl className="ba-order-meta"><div><dt>Sede</dt><dd>{order.storeName}</dd></div><div><dt>Recibido</dt><dd>{timeLabel(order.createdAt)}</dd></div>
         <div><dt>Modalidad</dt><dd>{deliveryModeLabel(orderMode(order))}</dd></div>
-        {orderMode(order) === 'PROGRAMADO' && <div><dt>Franja</dt><dd>{scheduledDeliveryLabel(order.scheduledWindow)}</dd></div>}
+        {orderMode(order) === 'PROGRAMADO' && <div><dt>Franja</dt><dd><DeliverySchedule window={order.scheduledWindow} /></dd></div>}
         {order.customer?.name && <div><dt>Cliente</dt><dd>{order.customer.name}{order.customer.phone && <> · {order.customer.phone}</>}</dd></div>}
         {order.deliveryAddress?.address && <div><dt>Destino</dt><dd>{order.deliveryAddress.address}</dd></div>}
       </dl>
