@@ -218,7 +218,8 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   }
 
   const visibleOrders = orders?.filter(order => {
-    const matchesStatus = orderStatus === 'all' || order.fulfillmentStatus === orderStatus;
+    const matchesStatus = orderStatus === 'all' || (orderStatus === 'active'
+      ? !isPending(order) && !isClosed(order) : order.fulfillmentStatus === orderStatus);
     const query = normalize(orderSearch);
     return matchesStatus && (!query || normalize(`${orderLabel(order)} ${order.items.map(item => item.name).join(' ')}`).includes(query));
   });
@@ -270,7 +271,7 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
           {isDemo && <p className="ba-demo-note"><FlaskConical size={16} /> Esta demo usa pedidos e inventario de prueba. No genera cobros.</p>}
           <div className="ba-metrics">
             <Metric label="Pendientes de confirmar" value={orders && !ordersError ? pending.length : null} icon={<Clock3 size={18} />} tone="amber" onClick={() => { setOrderStatus('PENDIENTE_CONFIRMACION'); navigate('orders'); }} />
-            <Metric label="Pedidos en operación" value={orders && !ordersError ? active.length : null} icon={<ClipboardList size={18} />} onClick={() => { setOrderStatus('all'); navigate('orders'); }} />
+            <Metric label="Pedidos en operación" value={orders && !ordersError ? active.length : null} icon={<ClipboardList size={18} />} onClick={() => { setOrderStatus('active'); navigate('orders'); }} />
             <Metric label="Presentaciones registradas" value={inventory && !inventoryError && !inventoryQuery ? inventory.total : null} icon={<Box size={18} />} onClick={() => navigate('inventory')} />
           </div>
           <section className="ba-panel">
@@ -292,7 +293,7 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
               <div className="ba-filters">
                 <SearchBox label="Buscar por pedido o producto" value={orderSearch} change={setOrderSearch} />
                 <label className="ba-field ba-filter-select"><span className="ba-sr">Estado del pedido</span>
-                  <select value={orderStatus} onChange={event => setOrderStatus(event.target.value)}><option value="all">Todos los estados</option>
+                  <select value={orderStatus} onChange={event => setOrderStatus(event.target.value)}><option value="all">Todos los estados</option><option value="active">En operación</option>
                     {Object.entries(statusLabels).map(([id, label]) => <option key={id} value={id}>{label}</option>)}</select></label>
               </div>
               {ordersError ? <FetchError message={ordersError} refresh={refresh} /> : !visibleOrders ? <Loading text="Consultando pedidos…" />
@@ -448,7 +449,7 @@ function InventoryEditor({ item, token, close, saved }: { item: InventoryItem; t
   const heading = useRef<HTMLHeadingElement>(null);
   useEffect(() => { heading.current?.focus({ preventScroll: true }); heading.current?.scrollIntoView({ block: 'center' }); }, []);
   const quantity = Number(stock);
-  const valid = stock.trim() !== '' && Number.isSafeInteger(quantity) && quantity >= item.reserved && quantity !== item.stock && reason.trim().length >= 8;
+  const valid = stock.trim() !== '' && Number.isSafeInteger(quantity) && quantity >= item.reserved && quantity !== item.stock && reason.trim().length >= 5;
   async function submit(event: FormEvent) {
     event.preventDefault();
     if (!valid || busy) return;
@@ -462,7 +463,7 @@ function InventoryEditor({ item, token, close, saved }: { item: InventoryItem; t
     <form onSubmit={event => void submit(event)}>
       <p className="ba-info">Existencias registradas: {number.format(item.stock)} · Reservadas: {number.format(item.reserved)}</p>
       <label className="ba-field">Nueva existencia<input type="number" value={stock} min={item.reserved} step="1" required onChange={event => setStock(event.target.value)} /></label>
-      <label className="ba-field">Motivo del ajuste<input value={reason} onChange={event => setReason(event.target.value)} required minLength={8} maxLength={240} placeholder="Describe qué originó el ajuste" /></label>
+      <label className="ba-field">Motivo del ajuste<input value={reason} onChange={event => setReason(event.target.value)} required minLength={5} maxLength={240} placeholder="Describe qué originó el ajuste" /></label>
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
       <button type="submit" disabled={!valid || busy} className="ba-btn ba-btn-primary">{busy ? 'Guardando…' : 'Guardar ajuste'}</button>
     </form>
