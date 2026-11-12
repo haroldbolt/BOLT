@@ -80,18 +80,23 @@ export interface PriceAdjustment {
 export interface InventoryPhotoSources {
   productImage: string;
   variantImage: string | null;
+  gallery: string[];
 }
 
 export type InventoryPhotoTarget = 'product' | 'variant';
 
-export interface InventoryPhotoUpdate {
+export type NewInventoryPhoto = { dataUrl: string; filename: string };
+export type InventoryGalleryPhoto = { url: string } | NewInventoryPhoto;
+
+export type InventoryPhotoUpdate = {
   productId: string;
   variantId: string;
-  target: InventoryPhotoTarget;
   expectedImage: string;
-  dataUrl: string;
-  filename?: string;
-}
+} & ({ target: 'variant' } & NewInventoryPhoto | {
+  target: 'product';
+  expectedGallery: string[];
+  photos: InventoryGalleryPhoto[];
+});
 
 export class AdminRequestError extends Error {
   constructor(message: string, readonly status: number) {

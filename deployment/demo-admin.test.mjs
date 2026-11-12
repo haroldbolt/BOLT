@@ -396,12 +396,12 @@ try {
   assert.equal(photoIds.productId, 'SIM-BOLT-ADMIN-SUBA');
   const photoQuery = photoRoute + '?' + new URLSearchParams(photoIds);
   const beforePhoto = await admin(photoQuery, { token: coordination });
-  assert.deepEqual(beforePhoto, { productImage: '', variantImage: '' });
+  assert.deepEqual(beforePhoto, { productImage: '', variantImage: '', gallery: [] });
   const upload = { ...photoIds, target: 'variant', expectedImage: beforePhoto.variantImage, dataUrl: photoDataUrl, filename: 'simulacion.png' };
   await admin(photoRoute, { method: 'PUT', token: suba, body: upload, expected: 403 });
   const { image } = await admin(photoRoute, { method: 'PUT', token: coordination, body: upload });
   assert.match(image, /^\/uploads\/catalog\/[^/]+\.png$/);
-  assert.deepEqual(await admin(photoQuery, { token: coordination }), { productImage: '', variantImage: image });
+  assert.deepEqual(await admin(photoQuery, { token: coordination }), { productImage: '', variantImage: image, gallery: [] });
   assert.equal(findStock(await inventory()).image, image);
   const asset = await fetch(origin + image, { headers: { Cookie: gatewayCookie } });
   assert.equal(asset.status, 200);

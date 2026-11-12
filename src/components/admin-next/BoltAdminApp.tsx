@@ -294,7 +294,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   async function saveInventoryPhoto(update: InventoryPhotoUpdate) {
     await boltAdmin.updateInventoryPhoto(token, update);
     setInventoryEditor(current => current?.mode === 'photo' && sameVariant(current.item, update) ? null : current);
-    setNotice(update.target === 'product' ? 'Foto principal guardada.' : 'Foto de la presentación guardada.');
+    setNotice(update.target === 'product' ? 'Galería del producto guardada.' : 'Foto de la presentación guardada.');
     refresh();
   }
 

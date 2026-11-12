@@ -1,5 +1,5 @@
 import crypto from 'node:crypto';
-import type { Express, Request, Response } from 'express';
+import express, { type Express, type Request, type Response } from 'express';
 import { INITIAL_ORDERS } from '../data/seedData';
 import type { Order, Product, Store } from '../types';
 import type { DispatchRun } from '../types/dispatch';
@@ -9,9 +9,11 @@ import { buildBoltAdminSalesReport } from './boltAdminSales';
 import type { CatalogOperations } from './catalogOperations';
 import type { CatalogImagePatch } from './catalogImagePatch';
 import type { CatalogRepository } from './catalogRepository';
+import { catalogPhotoGallery, MAX_PRODUCT_GALLERY_PHOTOS } from './productImages';
 import { saleVariant, validOriginalPrice } from './variantCommerce';
 
 const base = '/api/v1/bolt-admin';
+export const boltAdminPhotoPath = base + '/inventory/photo';
 const subaId = 'HUB_SUBA';
 const seedOrderIds = new Set(INITIAL_ORDERS.map(order => order.id));
 const demoProfiles = [
@@ -32,6 +34,22 @@ type Actor = {
 };
 
 type PendingDeliveryAction = (req: Request, res: Response, order: Order, actor: Actor) => void;
+
+type PhotoEntry = { url: string } | { dataUrl: string; filename?: string };
+
+function validPhotoEntries(value: unknown, gallery: string[]): value is PhotoEntry[] {
+  if (!Array.isArray(value) || value.length > MAX_PRODUCT_GALLERY_PHOTOS) return false;
+  const seen = new Set<string>();
+  return value.every(entry => {
+    if (!entry || typeof entry !== 'object') return false;
+    if ('url' in entry && ('dataUrl' in entry || typeof entry.url !== 'string' || !gallery.includes(entry.url))) return false;
+    const source = 'url' in entry ? entry.url : entry.dataUrl;
+    if (typeof source !== 'string' || !source || seen.has(source) ||
+        (entry.filename !== undefined && typeof entry.filename !== 'string')) return false;
+    seen.add(source);
+    return true;
+  });
+}
 
 type Options = {
   adminAuth: Pick<AdminAuthService, 'verifySession' | 'logout'>;
@@ -434,39 +452,74 @@ export function mountBoltAdmin(app: Express, options: Options) {
     res.json({ adjustments });
   });
 
-  app.get(base + '/inventory/photo', (req, res) => {
+  app.get(boltAdminPhotoPath, (req, res) => {
     const selected = selectPhoto(req, res, req.query.productId, req.query.variantId);
     if (!selected) return;
     const { product, variant } = selected;
-    res.json({ productImage: product.image, variantImage: variant ? variant.foto || '' : null });
+    res.json({ productImage: product.image, variantImage: variant ? variant.foto || '' : null, gallery: catalogPhotoGallery(product) });
   });
 
-  app.put(base + '/inventory/photo', (req, res) => {
-    const { productId, variantId, target, expectedImage, dataUrl, filename } = req.body || {};
+  // Six 5 MiB files expand to just over 40 MiB in JSON. Authenticate before reading this body.
+  app.put(boltAdminPhotoPath, (req, res, next) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    if (!actor.canAdjustPrices) return res.status(403).json({ error: 'Tu perfil solo puede consultar las fotos del catálogo.' });
+    next();
+  }, express.json({ limit: '42mb' }), (req, res) => {
+    const { productId, variantId, target, expectedImage, expectedGallery, photos, dataUrl, filename } = req.body || {};
     const selected = selectPhoto(req, res, productId, variantId);
     if (!selected) return;
     const { actor, product, variant } = selected;
     if ((target !== 'product' && target !== 'variant') || (target === 'variant' && !variant) ||
-        typeof expectedImage !== 'string' || typeof dataUrl !== 'string' || (filename !== undefined && typeof filename !== 'string')) {
+        typeof expectedImage !== 'string') {
       return res.status(400).json({ error: 'Selecciona el destino y un archivo de imagen válido.' });
     }
     const before = target === 'variant' ? variant?.foto || '' : product.image;
     if (before !== expectedImage) return res.status(409).json({ error: 'La foto cambió. Carga la versión vigente antes de guardar.' });
 
-    let upload: ReturnType<Options['uploadPhoto']>;
-    try { upload = options.uploadPhoto(dataUrl, filename); }
-    catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'No se pudo subir la foto.' }); }
+    const editingGallery = target === 'product' && photos !== undefined;
+    const gallery = target === 'product' ? catalogPhotoGallery(product) : [];
+    let entries: PhotoEntry[];
+    if (editingGallery) {
+      if (!Array.isArray(expectedGallery) || expectedGallery.length !== gallery.length || gallery.some((url, index) => url !== expectedGallery[index])) {
+        return res.status(409).json({ error: 'La galería cambió. Carga la versión vigente antes de guardar.' });
+      }
+      if (!validPhotoEntries(photos, gallery)) return res.status(400).json({ error: 'La galería admite hasta 6 fotos distintas del producto.' });
+      entries = photos;
+    } else {
+      if (photos !== undefined || typeof dataUrl !== 'string' || (filename !== undefined && typeof filename !== 'string')) {
+        return res.status(400).json({ error: 'Selecciona un archivo de imagen válido.' });
+      }
+      entries = [{ dataUrl, filename }, ...gallery.filter(url => url !== before).map(url => ({ url }))];
+      if (entries.length > MAX_PRODUCT_GALLERY_PHOTOS) return res.status(400).json({ error: 'Edita la galería para elegir hasta 6 fotos.' });
+    }
 
-    const change = { before, after: upload.url };
+    const uploads: ReturnType<Options['uploadPhoto']>[] = [];
+    let savedGallery: string[];
+    try {
+      savedGallery = entries.map(entry => {
+        if ('url' in entry) return entry.url;
+        const upload = options.uploadPhoto(entry.dataUrl, entry.filename);
+        uploads.push(upload);
+        return upload.url;
+      });
+    } catch (error) {
+      uploads.forEach(upload => upload.discard());
+      return res.status(400).json({ error: error instanceof Error ? error.message : 'No se pudo subir la foto.' });
+    }
+
+    const image = savedGallery[0] || '';
+    const change = { before, after: image };
     const patch: CatalogImagePatch = {
-      productId: product.id, source: upload.url, checkedAt: new Date().toISOString(), reason: 'Foto actualizada desde BOLT Admin.',
-      ...(target === 'variant' && variant ? { variants: [{ variantId: variant.varianteId, ...change }] } : { image: change }),
+      productId: product.id, source: image || 'BOLT Admin', checkedAt: new Date().toISOString(), reason: 'Fotos actualizadas desde BOLT Admin.',
+      ...(target === 'variant' && variant ? { variants: [{ variantId: variant.varianteId, ...change }] }
+        : { image: change, gallery: { before: product.gallery || [], after: savedGallery } }),
     };
     try {
       options.photos.applyImagePatches([patch], { name: actor.name, email: actor.email });
-      res.json({ image: upload.url });
+      res.json({ image });
     } catch {
-      upload.discard();
+      uploads.forEach(upload => upload.discard());
       res.status(500).json({ error: 'No se pudo guardar la foto. Vuelve a intentarlo.' });
     }
   });

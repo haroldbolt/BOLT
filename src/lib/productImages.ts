@@ -1,6 +1,8 @@
 import type { MainCategory, Product } from '../types';
 import { matchesCatalogCategory } from './catalogCategories';
 
+export const MAX_PRODUCT_GALLERY_PHOTOS = 6;
+
 // A loadable URL is not evidence of the contents of a photograph.
 export function usableProductImage(src?: string): boolean {
   if (!src?.trim()) return false;
@@ -9,6 +11,17 @@ export function usableProductImage(src?: string): boolean {
     const url = new URL(src);
     return url.protocol === 'https:' && !/(^|\.)(unsplash\.com|picsum\.photos|placehold\.co|via\.placeholder\.com)$/.test(url.hostname);
   } catch { return false; }
+}
+
+export function catalogPhotoGallery(product: Pick<Product, 'image' | 'gallery'>): string[] {
+  const seen = new Set<string>();
+  return [product.image, ...(product.gallery || [])].filter(url => {
+    if (!usableProductImage(url)) return false;
+    const key = url.split(/[?#]/, 1)[0];
+    if (seen.has(key)) return false;
+    seen.add(key);
+    return true;
+  });
 }
 
 export function categoryImageCandidates(products: Product[], category: MainCategory) {

@@ -126,6 +126,11 @@
 .ba-photo-preview { min-width: 0; margin: 0; color: var(--ba-dim); font-size: 12px; }
 .ba-photo-preview figcaption { margin-top: 4px; }
 .ba-photo-image { width: 100%; aspect-ratio: 1; object-fit: contain; border: 1px solid var(--ba-border); border-radius: 8px; background: var(--ba-white); }
+.ba-photo-invalid { display: grid; place-items: center; padding: 7px; text-align: center; }
+.ba-photo-card { padding: 6px; border: 1px solid var(--ba-border); border-radius: 8px; }
+.ba-photo-card figcaption { color: var(--ba-text); font-weight: 650; }
+.ba-photo-card-actions { display: flex; flex-wrap: wrap; gap: 4px; margin-top: 5px; }
+.ba-photo-card-button { min-height: 30px; padding: 4px 6px; font-size: 11px; white-space: normal; }
 .ba-stock-adjustments input[type="file"]::file-selector-button { margin-inline-end: 8px; cursor: pointer; }
 .ba-table tbody tr[data-selected="true"] { background: #fff6f8; }
 .ba-table tbody tr:hover { background: #fcfafc; }

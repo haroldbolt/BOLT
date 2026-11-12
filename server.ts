@@ -14,7 +14,7 @@ import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/cover
 import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
-import { boltAdminOrder, mountBoltAdmin } from './src/lib/boltAdminRoutes';
+import { boltAdminOrder, boltAdminPhotoPath, mountBoltAdmin } from './src/lib/boltAdminRoutes';
 import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltAdminDemoProduct, boltAdminDemoReviewContext, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
 import { matchesCatalogCategory } from './src/lib/catalogCategories';
 import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
@@ -112,7 +112,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
-  app.use(express.json({ limit: '15mb' }));
+  const parseJson = express.json({ limit: '15mb' });
+  app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
+    ? next()
+    : parseJson(req, res, next));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
   const uploadsRoot = path.join(process.cwd(), 'public', 'uploads');
   const catalogUploadDir = path.join(uploadsRoot, 'catalog');
