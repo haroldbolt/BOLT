@@ -1,10 +1,10 @@
-import { useEffect, useId, useRef, useState, type FormEvent } from 'react';
+import { useEffect, useId, useRef, useState, type ChangeEvent, type FormEvent } from 'react';
 import { CircleAlert, Tag, X } from 'lucide-react';
-import { formatCOP } from '../../lib/formatters';
 import { AdminRequestError, type PriceAdjustment, type PriceItem } from './adminClient';
 import './priceManagement.css';
 
 const maxPriceCOP = Math.floor(Number.MAX_SAFE_INTEGER / 100);
+const pesoFormat = new Intl.NumberFormat('es-CO', { useGrouping: true, maximumFractionDigits: 0 });
 const percentageFormat = new Intl.NumberFormat('es-CO', { maximumFractionDigits: 2, useGrouping: false });
 
 type PromotionInput = { field: 'price' | 'percent'; value: string };
@@ -18,8 +18,46 @@ function activePromotion(item: PriceItem) {
 }
 
 function positiveWholePesos(input: string) {
-  const value = Number(input);
+  const amount = input.trim().replace(/^\$\s*/, '').replace(/\s+COP$/i, '');
+  if (!/^(?:\d+|\d{1,3}(?:\.\d{3})+)$/.test(amount)) return null;
+  const value = Number(amount.replaceAll('.', ''));
   return Number.isSafeInteger(value) && value > 0 && value <= maxPriceCOP ? value : null;
+}
+
+export function formatAdminPrice(amount: number) {
+  return `$${pesoFormat.format(amount)} COP`;
+}
+
+function initialPesoAmount(amount: number | null) {
+  if (amount === null || amount <= 0) return '';
+  return Number.isSafeInteger(amount) ? pesoFormat.format(amount) : String(amount).replace('.', ',');
+}
+
+function changePesoAmount(event: ChangeEvent<HTMLInputElement>, previous: string, update: (value: string) => void) {
+  const input = event.currentTarget;
+  const { value, selectionStart } = input;
+  const { data, inputType } = event.nativeEvent as InputEvent;
+  const digitEdit = (inputType === 'insertText' && /^\d$/.test(data ?? '')) || inputType?.startsWith('delete');
+  // A digit edit can temporarily leave an incomplete group in an otherwise valid amount.
+  const amount = digitEdit && positiveWholePesos(previous) !== null && /^[\d.]+$/.test(value)
+    ? value.replaceAll('.', '')
+    : value;
+  const pesos = positiveWholePesos(amount);
+  const formatted = pesos === null ? amount : pesoFormat.format(pesos);
+  update(formatted);
+
+  if (formatted === value || selectionStart === null) return;
+  const digitsBeforeCaret = value.slice(0, selectionStart).replace(/\D/g, '').length;
+  let caret = 0;
+  let digits = 0;
+  while (caret < formatted.length && digits < digitsBeforeCaret) {
+    if (/\d/.test(formatted[caret])) digits += 1;
+    caret += 1;
+  }
+  if (inputType === 'deleteContentForward' && formatted[caret] === '.') caret += 1;
+  requestAnimationFrame(() => {
+    if (input === document.activeElement && input.value === formatted) input.setSelectionRange(caret, caret);
+  });
 }
 
 function parseDiscountBasisPoints(input: string) {
@@ -54,9 +92,9 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
   const heading = useRef<HTMLHeadingElement>(null);
   const hadPromotion = activePromotion(item);
   const initialRegular = hadPromotion ? item.originalPrice : item.price;
-  const [regular, setRegular] = useState(initialRegular && initialRegular > 0 ? String(initialRegular) : '');
+  const [regular, setRegular] = useState(initialPesoAmount(initialRegular));
   const [hasPromotion, setHasPromotion] = useState(hadPromotion);
-  const [promotion, setPromotion] = useState<PromotionInput>({ field: 'price', value: hadPromotion ? String(item.price) : '' });
+  const [promotion, setPromotion] = useState<PromotionInput>({ field: 'price', value: hadPromotion ? initialPesoAmount(item.price) : '' });
   const [reason, setReason] = useState('');
   const [error, setError] = useState('');
   const [stale, setStale] = useState(false);
@@ -73,7 +111,7 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
     ? regularPrice !== null && basisPoints !== null ? priceAfterDiscount(regularPrice, basisPoints) : null
     : positiveWholePesos(promotion.value);
   const validPromo = promoPrice !== null && promoPrice > 0 && regularPrice !== null && promoPrice < regularPrice;
-  const amountInput = byPercentage ? (validPromo ? String(promoPrice) : '') : promotion.value;
+  const amountInput = byPercentage ? (validPromo ? pesoFormat.format(promoPrice) : '') : promotion.value;
   const percentInput = byPercentage ? promotion.value : (validPromo ? calculatedDiscount(regularPrice, promoPrice) : '');
   const valid = regularPrice !== null && (!hasPromotion || validPromo);
   const effectivePrice = hasPromotion ? promoPrice : regularPrice;
@@ -112,8 +150,10 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
       <fieldset className="ba-price-inputs" disabled={saving || stale}>
         <legend className="ba-sr">Precio y descuento</legend>
         <label className="ba-field">Precio regular (COP)
-          <input type="number" inputMode="numeric" min={1} max={maxPriceCOP} step={1} value={regular} required onChange={event => setRegular(event.target.value)}
-            aria-invalid={regularError || undefined} aria-describedby={regularError ? regularErrorId : undefined} />
+          <span className="ba-price-amount"><span aria-hidden="true">$</span>
+            <input type="text" inputMode="numeric" value={regular} required onChange={event => changePesoAmount(event, regular, setRegular)}
+              aria-invalid={regularError || undefined} aria-describedby={regularError ? regularErrorId : undefined} />
+          </span>
         </label>
         {regularError && <p id={regularErrorId} className="ba-price-validation">Ingresa un valor válido en pesos enteros.</p>}
         <label className="ba-price-toggle"><input type="checkbox" checked={hasPromotion} onChange={event => setHasPromotion(event.target.checked)} /> Activar promoción</label>
@@ -121,9 +161,11 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
           <p className="ba-price-scope">Edita el precio promocional o el descuento. El otro valor se calcula al instante.</p>
           <div className="ba-price-promotion-values">
             <label className="ba-field">Precio promocional (COP)
-              <input type="number" inputMode="numeric" min={1} max={maxPriceCOP} step={1} value={amountInput}
-                onChange={event => setPromotion({ field: 'price', value: event.target.value })}
-                aria-invalid={promotionError && !byPercentage || undefined} aria-describedby={promotionError && !byPercentage ? promotionErrorId : undefined} />
+              <span className="ba-price-amount"><span aria-hidden="true">$</span>
+                <input type="text" inputMode="numeric" value={amountInput}
+                  onChange={event => changePesoAmount(event, amountInput, value => setPromotion({ field: 'price', value }))}
+                  aria-invalid={promotionError && !byPercentage || undefined} aria-describedby={promotionError && !byPercentage ? promotionErrorId : undefined} />
+              </span>
             </label>
             <label className="ba-field">Descuento (%)
               <input type="text" inputMode="decimal" maxLength={12} value={percentInput}
@@ -142,9 +184,9 @@ export function PriceEditor({ item, saving = false, save, close, refreshPrices }
       {valid && effectivePrice !== null && !stale && <div className="ba-price-preview" role="status">
         <span>Precio que verá el cliente</span>
         <div>
-          <strong>{formatCOP(effectivePrice)}</strong>
+          <strong>{formatAdminPrice(effectivePrice)}</strong>
           {hasPromotion && regularPrice !== null && <>
-            <del>{formatCOP(regularPrice)}</del>
+            <del>{formatAdminPrice(regularPrice)}</del>
             {previewDiscount > 0 && <span className="ba-price-discount"><Tag size={13} aria-hidden="true" /> {previewDiscount}% de descuento</span>}
           </>}
         </div>

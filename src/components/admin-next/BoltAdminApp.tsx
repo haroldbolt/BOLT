@@ -10,7 +10,7 @@ import { api } from '../../lib/api';
 import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem, type InventoryScope, type PriceAdjustment, type PriceItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
 import { InventoryAdjustments } from './InventoryAdjustments';
-import { PriceEditor } from './PriceManagement';
+import { formatAdminPrice, PriceEditor } from './PriceManagement';
 import { SalesDashboard } from './SalesDashboard';
 import './boltAdmin.css';
 
@@ -537,12 +537,12 @@ function SearchBox({ label, value, change }: { label: string; value: string; cha
 }
 
 function InventoryPriceCell({ item, editable, saving, edit }: { item: InventoryItem; editable: boolean; saving: boolean; edit: () => void }) {
-  const price = item.price > 0 ? formatCOP(item.price) : 'Sin precio';
+  const price = item.price > 0 ? formatAdminPrice(item.price) : 'Sin precio';
   const discount = item.originalPrice ? Math.round(100 * (1 - item.price / item.originalPrice)) : 0;
   return <td className="ba-stock-price">
     {editable ? <button className="ba-stock-editable" type="button" disabled={saving} onClick={edit}
       aria-label={`Editar precio de ${item.name}, ${item.presentation}, ${price}`}>{price}</button> : <strong>{price}</strong>}
-    {item.originalPrice !== null && <small><span className="ba-sr">Precio regular </span><del>{formatCOP(item.originalPrice)}</del></small>}
+    {item.originalPrice !== null && <small><span className="ba-sr">Precio regular </span><del>{formatAdminPrice(item.originalPrice)}</del></small>}
     {discount > 0 && <small className="ba-stock-discount">{discount}% de descuento</small>}
   </td>;
 }
