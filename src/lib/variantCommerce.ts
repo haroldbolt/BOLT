@@ -1,11 +1,14 @@
 import type { Product } from '../types';
+import {verifiedPresentationLabel} from './presentationDisplay';
 
 export function presentationLabel(product: Product, id: string): string {
   const variants = product.presentaciones || [];
   const variant = variants.find(v => v.varianteId === id);
   if (!variant) return product.presentation || 'Presentación por confirmar';
-  const title = variant.nombre.trim() || 'Presentación por confirmar';
-  const duplicates = variants.filter(v => v.nombre.trim() === variant.nombre.trim());
+  const labelFor = (option: typeof variant) => verifiedPresentationLabel(product, option) ?? option.nombre.trim();
+  const rawTitle = labelFor(variant);
+  const title = rawTitle || 'Presentación por confirmar';
+  const duplicates = variants.filter(v => labelFor(v) === rawTitle);
   if (duplicates.length < 2) return title;
   const uniqueSku = variant.sku && duplicates.filter(v => v.sku === variant.sku).length === 1;
   return `${title} · ${uniqueSku ? `SKU ${variant.sku}` : `Ref. ${id.split('/').pop()}`}`;
