@@ -9,6 +9,7 @@ export interface AdminActor {
   storeIds: string[];
   canConfirm: boolean;
   canAdjustInventory: boolean;
+  canAdjustPrices: boolean;
 }
 
 export interface AdminSession {
@@ -53,6 +54,35 @@ export interface InventoryAdjustment {
   after: number;
   reason: string;
   actorName: string;
+}
+
+export interface PriceItem {
+  productId: string;
+  variantId: string;
+  name: string;
+  brand: string;
+  sku: string;
+  presentation: string;
+  status?: string;
+  price: number;
+  originalPrice: number | null;
+  revision: string;
+}
+
+export interface PricePage {
+  items: PriceItem[];
+  total: number;
+  offset: number;
+  limit: number;
+}
+
+export interface PriceAdjustment {
+  productId: string;
+  variantId: string;
+  expectedRevision: string;
+  regularPriceCOP: number;
+  promoPriceCOP: number | null;
+  reason: string;
 }
 
 export class AdminRequestError extends Error {
@@ -111,6 +141,12 @@ export const boltAdmin = {
   ),
   sales: (token: string | null, storeId: string, period: SalesPeriod, signal?: AbortSignal) => request<BoltAdminSalesReport>(
     `${base}/sales?${new URLSearchParams({ storeId, period })}`, token, { signal },
+  ),
+  prices: (token: string | null, query: string, offset: number, signal?: AbortSignal) => request<PricePage>(
+    `${base}/prices?${new URLSearchParams({ query, offset: String(offset), limit: '40' })}`, token, { signal },
+  ),
+  adjustPrice: (token: string | null, adjustment: PriceAdjustment) => request<{ item: PriceItem }>(
+    `${base}/prices`, token, { method: 'PUT', body: adjustment },
   ),
   adjustInventory: (token: string | null, item: InventoryItem, stock: number, reason: string) => request<{ item: InventoryItem }>(
     `${base}/inventory`, token, { method: 'PUT', body: { storeId: item.storeId, productId: item.productId, variantId: item.variantId, stock, expectedRevision: item.revision, reason } },

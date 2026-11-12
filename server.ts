@@ -95,7 +95,7 @@ function quoteForPurchase(request: any, catalog=products, orderList=ordersReposi
   const quote=evaluateDeliveryQuote(request,stores,catalog,capacityOrders,scopedContext);
   if(quote.recommendedMode && quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
     destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
-    charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,products.find(p=>p.id===i.productId)?.price]).sort(),
+    charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort(),
   })).digest('hex');
   if(quote.reasonCode==='TRANSPORT_DATA_PENDING' && quote.inventoryValidated && quote.assignedStoreId && quote.territoryInfo?.isCovered) {quote.message=REVIEW_MESSAGE;quote.reviewRequestToken=crypto.createHash('sha256').update(JSON.stringify({kind:'PENDING_REVIEW_ONLY',destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},storeId:quote.assignedStoreId,mode:request.requestedMode,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort()})).digest('hex');}
   return quote;
@@ -709,11 +709,27 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     }
   };
   app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req,res)=>createPurchase(req,res));
-  const reviewCatalog=(order:Order)=>products.map(p=>{
-    const ownReservation=order.items.filter(i=>i.productId===p.id).reduce((sum,item)=>sum+item.quantity,0);
-    const product=isDispatchSimulation?activateBoltAdminDemoProduct(order,p):p;
-    return {...product,reservedStockByStore:{...p.reservedStockByStore,[order.storeId]:Math.max(0,(p.reservedStockByStore[order.storeId]||0)-ownReservation)}};
-  });
+  function reviewCatalog(order: Order) {
+    // The authorized pending request already reserved these lines at their original prices.
+    const reservedItems = new Map<string, { quantity: number; price: number }>();
+    for (const item of order.items) {
+      const previous = reservedItems.get(item.productId);
+      reservedItems.set(item.productId, { quantity: (previous?.quantity ?? 0) + item.quantity, price: previous?.price ?? item.price });
+    }
+    return products.map(product => {
+      const item = reservedItems.get(product.id);
+      if (!item) return product;
+      const sale = isDispatchSimulation ? activateBoltAdminDemoProduct(order, product) : product;
+      return {
+        ...sale,
+        price: item.price,
+        reservedStockByStore: {
+          ...product.reservedStockByStore,
+          [order.storeId]: Math.max(0, (product.reservedStockByStore[order.storeId] ?? 0) - item.quantity),
+        },
+      };
+    });
+  }
   function quotePendingDelivery(req:Request,res:Response,order:Order|undefined) {
     if(!order || order.deliveryReview?.status!=='PENDING' || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION')return res.status(409).json({error:'La solicitud ya no está pendiente.'});
     const requestedMode=req.body?.deliveryMode ?? order.deliveryReview.requestedMode ?? 'PROGRAMADO';

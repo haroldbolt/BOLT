@@ -7,7 +7,7 @@ import type { AdminAuthService } from './adminAuthService';
 import { isBoltAdminDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
 import { buildBoltAdminSalesReport } from './boltAdminSales';
 import type { CatalogOperations } from './catalogOperations';
-import { saleVariant } from './variantCommerce';
+import { saleVariant, validOriginalPrice } from './variantCommerce';
 
 const base = '/api/v1/bolt-admin';
 const subaId = 'HUB_SUBA';
@@ -26,6 +26,7 @@ type Actor = {
   storeIds: string[];
   canConfirm: boolean;
   canAdjustInventory: boolean;
+  canAdjustPrices: boolean;
 };
 
 type PendingDeliveryAction = (req: Request, res: Response, order: Order, actor: Actor) => void;
@@ -114,6 +115,26 @@ function inventoryItem(product: Product, store: Store) {
   };
 }
 
+function priceItem(product: Product) {
+  const { originalPrice, price } = product;
+  return {
+    productId: product.parentProductId ?? product.id,
+    variantId: product.variantId ?? product.id,
+    name: product.name,
+    brand: product.brand,
+    sku: product.sku,
+    presentation: product.presentation,
+    price,
+    status: product.status,
+    originalPrice: validOriginalPrice(price, originalPrice) ?? null,
+    revision: product.commerceRevision,
+  };
+}
+
+function validPriceCOP(value: unknown): value is number {
+  return typeof value === 'number' && Number.isSafeInteger(value) && value > 0 && value <= Number.MAX_SAFE_INTEGER / 100;
+}
+
 function normalizeQuery(value: string) {
   return value.normalize('NFD').replace(/\p{Diacritic}/gu, '').toLowerCase().trim();
 }
@@ -130,6 +151,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
   const isVisibleProduct = (product: Product) => options.demo
     ? (product.parentProductId ?? product.id) === options.demo.productId
     : !product.status || product.status === 'ACTIVE';
+  const isVisiblePriceProduct = (product: Product) => !options.demo || isVisibleProduct(product);
 
   function bearer(req: Request) {
     const auth = req.get('Authorization');
@@ -149,7 +171,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     if (!admin || admin.role !== 'ADMINISTRADOR') return null;
     return {
       id: admin.userId, name: admin.name, email: admin.email, role: 'COORDINACION',
-      storeIds: activeStores().map(store => store.id), canConfirm: true, canAdjustInventory: true,
+      storeIds: activeStores().map(store => store.id), canConfirm: true, canAdjustInventory: true, canAdjustPrices: true,
     };
   }
 
@@ -220,6 +242,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
         storeIds: coordination ? activeStores().map(store => store.id) : [profile.storeId],
         canConfirm: true,
         canAdjustInventory: coordination,
+        canAdjustPrices: coordination,
       };
       const token = 'bolt_ops_demo_' + crypto.randomBytes(32).toString('base64url');
       demoSessions.set(token, { actor, expiresAt: now + 2 * 60 * 60 * 1000 });
@@ -385,6 +408,49 @@ export function mountBoltAdmin(app: Express, options: Options) {
       res.json({ item: inventoryItem(saleVariant(updated, variantId), store) });
     } catch {
       res.status(409).json({ error: 'No se pudo guardar el ajuste. Actualiza el inventario e inténtalo nuevamente.' });
+    }
+  });
+
+  app.get(base + '/prices', (req, res) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    if (!actor.canAdjustPrices) return res.status(403).json({ error: 'Tu perfil no puede administrar precios y promociones.' });
+    const query = typeof req.query.query === 'string' ? normalizeQuery(req.query.query.slice(0, 120)) : '';
+    const limit = Math.max(1, pageParam(req.query.limit, 40, 100));
+    const offset = pageParam(req.query.offset, 0, 100000);
+    const matches = options.getProducts().filter(product => isVisiblePriceProduct(product) &&
+      (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query)));
+    res.json({ items: matches.slice(offset, offset + limit).map(priceItem), total: matches.length, offset, limit });
+  });
+
+  app.put(base + '/prices', (req, res) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    if (!actor.canAdjustPrices) return res.status(403).json({ error: 'Tu perfil no puede administrar precios y promociones.' });
+    const { productId, variantId, expectedRevision, regularPriceCOP, promoPriceCOP, reason } = req.body || {};
+    const description = typeof reason === 'string' ? reason.trim() : '';
+    if (typeof productId !== 'string' || typeof variantId !== 'string' || typeof expectedRevision !== 'string' ||
+        !validPriceCOP(regularPriceCOP) || description.length < 5 || description.length > 240) {
+      return res.status(400).json({ error: 'Indica la presentación, un precio entero en COP y un motivo de 5 a 240 caracteres.' });
+    }
+    if (promoPriceCOP !== null && (!validPriceCOP(promoPriceCOP) || promoPriceCOP >= regularPriceCOP)) {
+      return res.status(400).json({ error: 'El precio de oferta debe ser mayor que cero y menor que el precio normal.' });
+    }
+    const product = options.getProducts().find(candidate => (candidate.parentProductId ?? candidate.id) === productId &&
+      (candidate.variantId ?? candidate.id) === variantId && isVisiblePriceProduct(candidate));
+    if (!product) return res.status(404).json({ error: 'La presentación no está disponible.' });
+    if (product.commerceRevision !== expectedRevision) {
+      return res.status(409).json({ error: 'La presentación cambió. Actualiza el precio antes de guardar.' });
+    }
+    const priceCOP = promoPriceCOP ?? regularPriceCOP;
+    const originalPriceCOP = promoPriceCOP === null ? null : regularPriceCOP;
+    const previous = priceItem(product);
+    if (previous.price === priceCOP && previous.originalPrice === originalPriceCOP) return res.json({ item: previous });
+    try {
+      const updated = options.catalog.edit(productId, { variantId, priceCOP, originalPriceCOP, expectedRevision, reason: description }, actor);
+      res.json({ item: priceItem(saleVariant(updated, variantId)) });
+    } catch {
+      res.status(409).json({ error: 'No se pudo guardar el precio. Actualiza la presentación e inténtalo nuevamente.' });
     }
   });
 }

@@ -2,7 +2,7 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
   ChevronRight, CircleAlert, ClipboardList, Clock3, FlaskConical, LayoutDashboard, LoaderCircle,
-  LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Store, X, Zap,
+  LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Store, Tags, X, Zap,
 } from 'lucide-react';
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
@@ -10,6 +10,7 @@ import { api } from '../../lib/api';
 import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
 import { InventoryAdjustments } from './InventoryAdjustments';
+import { PriceManagement } from './PriceManagement';
 import { SalesDashboard } from './SalesDashboard';
 import './boltAdmin.css';
 
@@ -18,6 +19,7 @@ const tabs = [
   { id: 'turbo', title: 'Turbo', icon: Zap },
   { id: 'scheduled', title: 'Programados', icon: CalendarDays },
   { id: 'inventory', title: 'Inventario', icon: Box },
+  { id: 'pricing', title: 'Precios', icon: Tags },
   { id: 'sales', title: 'Ventas', icon: ChartNoAxesCombined },
   { id: 'permissions', title: 'Permisos', icon: ShieldCheck },
 ] as const;
@@ -454,6 +456,18 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
 
         {tab === 'sales' && <SalesDashboard token={token} storeId={storeId} stores={session.stores} fetchReport={boltAdmin.sales} />}
 
+        {tab === 'pricing' && (actor.canAdjustPrices
+          ? <PriceManagement token={token} loadPrices={boltAdmin.prices} savePrice={boltAdmin.adjustPrice} />
+          : <>
+            <PageHeading title="Precios y promociones" text="Los precios de catálogo se aplican a todas las sedes que venden cada presentación." />
+            <section className="ba-panel ba-inventory-access" aria-label="Permisos de precios">
+              <div className="ba-panel-head"><div><h2>Acceso de Coordinación</h2><p>Coordinación administra los precios y las promociones.</p></div></div>
+              {isDemo && <button type="button" className="ba-btn ba-btn-secondary" disabled={busy} onClick={() => switchProfile('coordinacion', { tab: 'pricing', storeId })}>
+                <ShieldCheck size={16} aria-hidden="true" /> Entrar como Coordinación
+              </button>}
+            </section>
+          </>)}
+
         {tab === 'permissions' && <>
           <PageHeading title="Permisos" text="Consulta el acceso de tu perfil." />
           <section className="ba-panel ba-permissions">
@@ -462,6 +476,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
               <div><dt>Consultar pedidos, inventario y ventas</dt><dd>Autorizado en sus sedes</dd></div>
               <div><dt>Confirmar entregas</dt><dd>{actor.canConfirm ? 'Autorizado en sus sedes' : 'Sin permiso'}</dd></div>
               <div><dt>Ajustar existencias</dt><dd>{actor.canAdjustInventory ? 'Autorizado en sus sedes' : 'Sin permiso'}</dd></div>
+              <div><dt>Administrar precios y promociones</dt><dd>{actor.canAdjustPrices ? 'Autorizado para el catálogo' : 'Sin permiso'}</dd></div>
             </dl>
             <button type="button" className="ba-btn ba-btn-secondary" disabled={busy} onClick={signOut}><LogOut size={16} /> Cerrar sesión</button>
           </section>

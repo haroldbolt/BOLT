@@ -132,9 +132,29 @@ try {
   await admin(orderUrl + '/quote', { method: 'POST', token: kennedy, body: { deliveryMode: 'PROGRAMADO' }, expected: 403 });
   await admin(orderUrl + '/confirm', { method: 'POST', token: kennedy, body: {}, expected: 403 });
 
+  const pendingItem = pending.items[0];
+  const getFixturePrice = async () => {
+    const { items } = await admin('/prices', { token: coordination });
+    const item = items.find(item => item.productId === pendingItem.productId);
+    assert.ok(item, 'El precio de la presentación simulada debe estar disponible para Coordinación');
+    return item;
+  };
+  const priceBefore = await getFixturePrice();
+  assert.equal(priceBefore.price, 25_000);
+  const discount = {
+    productId: priceBefore.productId, variantId: priceBefore.variantId, expectedRevision: priceBefore.revision,
+    regularPriceCOP: priceBefore.price, promoPriceCOP: 20_000, reason: 'Promoción de prueba en Suba',
+  };
+  const updatePrice = (token, body, expected = 200) => admin('/prices', { method: 'PUT', token, body, expected });
+  await updatePrice(suba, discount, 403);
+  await updatePrice(coordination, { ...discount, promoPriceCOP: priceBefore.price }, 400);
+  const promotion = (await updatePrice(coordination, discount)).item;
+  assert.equal(promotion.price, 20_000);
+  assert.equal(promotion.originalPrice, 25_000);
+  await updatePrice(coordination, discount, 409);
+
   const before = await inventory();
   assert.ok(before.length > 0);
-  const pendingItem = pending.items[0];
   const findStock = rows => rows.find(item => item.variantId === pendingItem.productId || item.productId === pendingItem.productId);
   const initialStock = findStock(baseline);
   const reservedStock = findStock(before);
@@ -148,6 +168,7 @@ try {
   const scheduledWindow = quoteOptions.transportWindow || slot;
   const quote = await admin(orderUrl + '/quote', { method: 'POST', token: suba, body: { deliveryMode: 'PROGRAMADO', scheduledWindow } });
   assert.ok(quote.confirmationToken, quote.message);
+  assert.equal(quote.charges.subtotal, 50_000, 'La solicitud reservada conserva los precios originales');
   const confirmation = {
     deliveryMode: 'PROGRAMADO', scheduledWindow, confirmationToken: quote.confirmationToken,
     customerAccepted: true, customerAgreementReference: 'SIMULACIÓN: cliente de prueba acepta horario y costo',
@@ -155,6 +176,7 @@ try {
   await admin(orderUrl + '/confirm', { method: 'POST', token: suba, body: { ...confirmation, customerAccepted: false }, expected: 400 });
   const accepted = await admin(orderUrl + '/confirm', { method: 'POST', token: suba, body: confirmation, expected: [200, 201] });
   assert.equal((accepted.order || accepted).fulfillmentStatus, 'CONFIRMADO');
+  assert.equal((accepted.order || accepted).items[0].price, pendingItem.price);
   const repeated = await admin(orderUrl + '/confirm', { method: 'POST', token: suba, body: confirmation, expected: [200, 201] });
   assert.equal((repeated.order || repeated).id, fixture.orderId);
   assert.equal((await admin('/orders?storeId=HUB_SUBA', { token: suba })).orders.length, 1);
@@ -206,6 +228,7 @@ try {
   assert.equal(turboRow.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
   assert.equal(turboRow.deliveryReview.requestedMode, 'TURBO');
   assert.equal(turboRow.scheduledWindow, undefined);
+  assert.equal(turboRow.items[0].price, 20_000, 'Un pedido nuevo aplica la promoción vigente');
   const turboTracking = await api('/api/v1/orders/' + encodeURIComponent(turbo.orderId) + '/tracking', { guestToken: turbo.guestAccessToken });
   assert.deepEqual(turboTracking.dispatches, []);
   const scheduledRow = listing.find(order => order.id === fixture.orderId);
@@ -223,6 +246,12 @@ try {
   assert.equal(sales.summary.confirmedCOP, customer.totals.total);
   assert.equal(sales.summary.collectedCOP, 0);
   assert.equal(sales.products[0].units, pendingItem.quantity);
+  const currentPrice = await getFixturePrice();
+  const restored = (await updatePrice(coordination, {
+    ...discount, expectedRevision: currentPrice.revision, promoPriceCOP: null, reason: 'Restauración del precio de prueba',
+  })).item;
+  assert.equal(restored.price, 25_000);
+  assert.ok(restored.originalPrice == null);
   console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
 } finally {
   if (child && child.exitCode === null) {
