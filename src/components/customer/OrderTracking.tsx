@@ -1,3 +1,4 @@
+import {PendingDeliveryReceipt} from './PendingDeliveryReceipt';
 import {OrderEntrancePhoto} from './OrderEntrancePhoto';
 import {CustomerDispatches} from '../dispatch/CustomerDispatches';
 import { WarehouseSummary } from './WarehouseSummary';
@@ -111,6 +112,8 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack, g
       </div>
     );
   }
+
+  if(order.deliveryReview?.status==='PENDING') return <PendingDeliveryReceipt order={order} onBack={onBack} onRefresh={()=>void loadData()} onCancel={()=>void handleCancelOrder()} cancelling={cancelling} error={cancelError}/>;
 
   // Active shipment data if split order
   const isSplitOrder = !!order.isSplitOrder && !!order.childShipments?.length;

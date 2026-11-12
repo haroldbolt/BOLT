@@ -1,3 +1,4 @@
+import {canRequestDeliveryReview,hasConfirmedDeliveryQuote,visibleDeliveryCharges} from '../../lib/checkoutReadiness';
 import {ProductImage} from '../common/ProductImage';
 import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import type { DeliveryQuote } from '../../lib/deliveryService';
@@ -19,7 +20,6 @@ interface CartDrawerProps {
   onRemoveUnavailable?: (ref: CartReference) => void;
   pendingCount?: number;
   blockReason?: string;
-  deliveryMessage?: string;
   deliveryQuote?: DeliveryQuote | null;
   onRefreshCatalog?: () => void;
 }
@@ -32,16 +32,19 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
   onClearCart,
   onProceedToCheckout,
   currentStore,
-  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, deliveryMessage, onRefreshCatalog, deliveryQuote,
+  unavailableItems = [], onRemoveUnavailable, pendingCount, blockReason, onRefreshCatalog, deliveryQuote,
 }) => {
   if (!isOpen) return null;
 
   const hasPrescriptionItems=cartItems.some(i=>i.product.requiresPrescription);
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
   const totalWeightKg = deliveryQuote?.transportPlan?.feasible ? deliveryQuote.totalWeightKg : null;
-  const shipping = deliveryQuote?.charges?.shipping;
-  const serviceFee = deliveryQuote?.charges?.serviceFee;
-  const total = deliveryQuote?.charges?.total;
+  const ready=hasConfirmedDeliveryQuote(deliveryQuote);
+  const review=canRequestDeliveryReview(deliveryQuote);
+  const visibleCharges = visibleDeliveryCharges(deliveryQuote,subtotal);
+  const shipping = visibleCharges?.shipping;
+  const serviceFee = visibleCharges?.serviceFee;
+  const total = visibleCharges?.total;
 
   return (
     <div role="dialog" aria-modal="true" aria-label="Mi carrito" className="fixed inset-0 z-50 bg-black/60 backdrop-blur-xs flex justify-end animate-in fade-in">
@@ -65,8 +68,8 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
 
         {/* Item List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">
-          {(blockReason || deliveryMessage) && <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-950">
-            <p>{blockReason || deliveryMessage}</p>
+          {blockReason && <div role="status" className="rounded-2xl bg-amber-50 border border-amber-200 p-3 text-xs text-amber-950">
+            <p>{blockReason}</p>
             <button className="mt-2 font-bold underline" onClick={onRefreshCatalog}>Actualizar precio y disponibilidad</button>
           </div>}
           {unavailableItems.map((item, index) => <div key={cartReferenceKey(item)} className="rounded-2xl border border-amber-200 p-3 text-sm">
@@ -99,7 +102,7 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 </div>
               )}
 
-              <DeliveryPlanSummary quote={deliveryQuote} />
+              {!blockReason && <DeliveryPlanSummary quote={deliveryQuote} onRefresh={onRefreshCatalog} />}
 
               {cartItems.map(item => (
                 <div
@@ -156,30 +159,30 @@ export const CartDrawer: React.FC<CartDrawerProps> = ({
                 <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
               </div>
               <div className="flex justify-between items-center">
-                <span>Transporte ({deliveryQuote?.assignedStoreName || currentStore?.name || 'Sede pendiente de confirmar'}):</span>
+                <span>Envío:</span>
                 {shipping === 0 ? (
-                  <span className="font-bold text-emerald-600">¡GRATIS!</span>
+                  <span className="font-bold text-emerald-600">Envío gratis</span>
                 ) : (
                   <span className="font-bold text-slate-900">{shipping===undefined?'Por confirmar':formatCOP(shipping)}</span>
                 )}
               </div>
               <div className="flex justify-between">
-                <span>Tarifa de servicio y embalaje:</span>
-                <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':formatCOP(serviceFee)}</span>
+                <span>Tarifa de servicio:</span>
+                <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)}</span>
               </div>
-              <div className="flex justify-between text-[11px] text-slate-400">
+              {totalWeightKg !== null && <div className="flex justify-between text-[11px] text-slate-400">
                 <span>Peso total estimado:</span>
-                <span>{totalWeightKg===null?'Por confirmar':totalWeightKg.toLocaleString('es-CO')+' kg'}</span>
-              </div>
+                <span>{totalWeightKg.toLocaleString('es-CO')} kg</span>
+              </div>}
               <div className="border-t border-slate-200 pt-1.5 flex justify-between text-sm font-black text-slate-900">
-                <span>Total a pagar:</span>
+                <span>{review?'Total estimado:':'Total a pagar:'}</span>
                 <span className="text-red-600 text-base">{total===undefined?'Por confirmar':formatCOP(total)}</span>
               </div>
             </div>
 
             <button
               onClick={onProceedToCheckout}
-              disabled={!!blockReason || !deliveryQuote?.basketValidated || !deliveryQuote?.confirmationToken}
+              disabled={!!blockReason || (!ready && !review)}
               className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-300 active:scale-98 text-white font-black py-3.5 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition"
             >
               <span>Continuar con el pedido</span>

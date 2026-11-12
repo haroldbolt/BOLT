@@ -190,6 +190,10 @@ export class DispatchService {
     if (!legacy) order.orderNumber = order.purchaseCode;
     if (!this.state.guestSecret) this.state.guestSecret = secret();
     this.state.guestHashes[order.id] = hash(this.guestToken(order));
+    if(order.deliveryReview?.status==='PENDING') {
+      if(!this.state.events.some(e=>e.type==='DELIVERY_REVIEW_REQUESTED'&&e.detail===order.id)) this.event('DELIVERY_REVIEW_REQUESTED','CLIENTE',undefined,order.id);
+      return; // Receipt/private tracking only. No run, offer, vehicle, PIN disclosure or collection.
+    }
     const shipments = order.childShipments?.length
       ? order.childShipments
       : [order];
@@ -262,6 +266,24 @@ export class DispatchService {
       const result = this.repo.createOrder(order, products, warehouse);
       if (result.success) this.registerOrder(result.order!);
       return result;
+    });
+  }
+  confirmPendingOrder(id:string,candidate:Order,actorId:string,customerAgreementReference:string):{success:boolean;order?:Order;error?:string} {
+    return this.repo.transaction(()=>{
+      const order=this.repo.getOrderById(id);
+      if(!order || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION' || order.deliveryReview?.status!=='PENDING') fail('REVIEW_NOT_PENDING','Esta solicitud ya no está pendiente.',409);
+      const review=order!.deliveryReview!;
+      const identity={id:order!.id,orderNumber:order!.orderNumber,purchaseCode:order!.purchaseCode,createdAt:order!.createdAt,creationRequestId:order!.creationRequestId,creationRequestFingerprint:order!.creationRequestFingerprint,customerAccountId:order!.customerAccountId,secretDeliveryCode:order!.secretDeliveryCode,assignmentId:order!.assignmentId,tripId:order!.tripId,warehouseAssignment:order!.warehouseAssignment,statusHistory:order!.statusHistory};
+      if(candidate.storeId!==order!.storeId) fail('WAREHOUSE_CHANGED','La revisión debe conservar la sede asignada.',409);
+      if(JSON.stringify(candidate.items.map(i=>[i.productId,i.quantity,i.price]))!==JSON.stringify(order!.items.map(i=>[i.productId,i.quantity,i.price]))) fail('ITEMS_CHANGED','Los productos o precios cambiaron; solicita una nueva confirmación del cliente.',409);
+      order!.deliveryReview={...review,status:'CONFIRMED',confirmedAt:new Date(this.now()).toISOString(),confirmedBy:actorId,customerAgreementReference,confirmationToken:candidate.transportConfirmation};
+      const result=this.repo.transitionStatus(id,'CONFIRMADO',{role:'ADMINISTRADOR',id:actorId},{reason:'Entrega verificada y aceptada por el cliente',notes:customerAgreementReference});
+      this.checkResult(result);
+      Object.assign(order!,candidate,identity,{fulfillmentStatus:'CONFIRMADO',payment:{...candidate.payment,status:'PENDIENTE',transactionId:undefined},deliveryReview:{...review,status:'CONFIRMED',confirmedAt:new Date(this.now()).toISOString(),confirmedBy:actorId,customerAgreementReference,confirmationToken:candidate.transportConfirmation}});
+      if(order!.childShipments) order!.childShipments.forEach((s,i)=>{s.assignmentId=`${order!.assignmentId}-${i+1}`;s.tripId=`${order!.tripId}-${i+1}`;s.statusHistory=[]});
+      this.registerOrder(order!);
+      this.event('DELIVERY_REVIEW_CONFIRMED',actorId,undefined,id);
+      return {success:true,order:order!};
     });
   }
   guestToken(order: Order) {
@@ -1787,6 +1809,8 @@ export class DispatchService {
       .map((r) => this.driverDispatch(r, id));
   }
   customerMessage(orderId: string) {
+    const order=this.repo.getOrderById(orderId);
+    if(order?.deliveryReview?.status==='PENDING' && order.fulfillmentStatus==='PENDIENTE_CONFIRMACION') return 'Solicitud recibida. La sede confirmará contigo el costo y la disponibilidad de entrega. No se ha realizado ningún cobro ni reservado un horario.';
     const runs = Object.values(this.state.runs).filter(
       (r) => r.orderId === orderId,
     );
@@ -1856,7 +1880,7 @@ export class DispatchService {
       }));
   }
   historicalOrders() {
-    return this.repo.getAllOrders().map(order=>{
+    return this.repo.getAllOrders().filter(order=>!order.deliveryReview).map(order=>{
       const runs=Object.values(this.state.runs).filter(r=>r.orderId===order.id);
       const closed=terminal(order.fulfillmentStatus);
       return {id:order.id,code:order.purchaseCode||order.orderNumber,storeId:order.storeId,status:order.fulfillmentStatus,
@@ -1877,6 +1901,7 @@ export class DispatchService {
   }
   adminView() {
     return {
+      pendingDeliveryReviews:this.repo.getAllOrders().filter(o=>o.deliveryReview?.status==='PENDING' && o.fulfillmentStatus==='PENDIENTE_CONFIRMACION').map(o=>({id:o.id,code:o.purchaseCode||o.orderNumber,storeId:o.storeId,storeName:o.storeName,items:o.items.map(({productId,name,presentation,quantity,price})=>({productId,name,presentation,quantity,price})),subtotal:o.totals.subtotal,requestedAt:o.createdAt,requestedMode:o.deliveryReview?.requestedMode})),
       historicalOrders:this.historicalOrders(),
       config: this.state.config,
       providers: DISABLED_LIVE_PROVIDERS,

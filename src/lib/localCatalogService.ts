@@ -47,6 +47,64 @@ export interface RawLocalBodega {
   address: any;
 }
 
+// References verified against Gabrica Colombia. Prices are in COP.
+const gabricaHillSizes: Readonly<Record<string, {
+  placeholder: string;
+  keepOriginal?: boolean;
+  sizes: Array<{ sku: string; nombre: string; price: number; imageId?: number }>;
+}>> = {
+  '9524005634328': {
+    placeholder: '49236159267096',
+    sizes: [
+      { sku: '11001011', nombre: '3,5 lb', price: 105997, imageId: 160245 },
+      { sku: '11001012', nombre: '17,6 lb', price: 381120, imageId: 160252 },
+    ],
+  },
+  '9524025524504': {
+    placeholder: '49236322713880',
+    sizes: [{ sku: '11001006', nombre: '8 lb', price: 0 }],
+  },
+  '9524022214936': {
+    placeholder: '49236295450904',
+    keepOriginal: true,
+    sizes: [{ sku: '11001093', nombre: '8,5 lb', price: 307319, imageId: 160511 }],
+  },
+  '9524764868888': {
+    placeholder: '49238550020376',
+    sizes: [
+      { sku: '11001098', nombre: '6,3 lb', price: 231840, imageId: 160538 },
+      { sku: '11001099', nombre: '14,1 lb', price: 463439, imageId: 160544 },
+    ],
+  },
+};
+
+function addVerifiedHillSizes(product: RawLocalProduct, variants: ProductPresentation[]): ProductPresentation[] {
+  const correction = gabricaHillSizes[product.productoId.replace('gid://shopify/Product/', '')];
+  const original = variants[0];
+  if (!correction || variants.length !== 1 ||
+      original.varianteId !== `gid://shopify/ProductVariant/${correction.placeholder}` ||
+      original.nombre !== '0' || original.sku) {
+    return variants;
+  }
+
+  // A generic listing does not identify which package is actually on hand.
+  const sizes = correction.sizes.map(({ sku, nombre, price, imageId }) => ({
+    varianteId: `gabrica-${sku}`,
+    sku,
+    nombre,
+    price,
+    foto: imageId ? `https://gabrica.vtexassets.com/arquivos/ids/${imageId}-500-auto` : original.foto,
+    bodegaIds: original.bodegaIds,
+    stockByStore: {},
+    reservedStockByStore: {},
+  }));
+  if (correction.keepOriginal) {
+    // Preserve the existing 24 lb sale ID, inventory and administrative edits.
+    return [{ ...original, nombre: '24 lb' }, ...sizes];
+  }
+  return sizes;
+}
+
 class LocalCatalogService {
   private rawProducts: RawLocalProduct[] = [];
   private rawBodegas: RawLocalBodega[] = [];
@@ -190,7 +248,7 @@ class LocalCatalogService {
       );
 
       // Presentaciones (variantes)
-      const presentaciones: ProductPresentation[] = (p.presentaciones || []).map(v => ({
+      const originalVariants: ProductPresentation[] = (p.presentaciones || []).map(v => ({
         varianteId: v.varianteId,
         nombre: v.nombre,
         sku: v.sku,
@@ -199,7 +257,10 @@ class LocalCatalogService {
       }));
 
       // Foto principal: producto o primera variante
-      const primaryPhoto = p.foto || presentaciones[0]?.foto || '';
+      const presentaciones = addVerifiedHillSizes(p, originalVariants);
+      const primaryPhoto = presentaciones[0]?.varianteId.startsWith('gabrica-')
+        ? presentaciones[0].foto || p.foto || ''
+        : p.foto || presentaciones[0]?.foto || '';
 
       // Stock por bodega: productos de catálogo sin inventario asignado se marcan en 0
       const stockByStore: Record<string, number> = {

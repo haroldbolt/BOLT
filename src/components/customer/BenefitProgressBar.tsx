@@ -4,14 +4,14 @@ import { formatCOP } from '../../lib/formatters';
 
 interface BenefitProgressBarProps {
   subtotal: number;
-  threshold?: number;
+  threshold: number;
 }
 
 export const BenefitProgressBar: React.FC<BenefitProgressBarProps> = ({
   subtotal,
-  threshold = 70000,
+  threshold,
 }) => {
-  const percentage = Math.min(100, Math.round((subtotal / threshold) * 100));
+  const percentage = Math.min(100, threshold===0?100:Math.round((subtotal / threshold) * 100));
   const remaining = Math.max(0, threshold - subtotal);
   const isUnlocked = subtotal >= threshold;
 
@@ -27,7 +27,7 @@ export const BenefitProgressBar: React.FC<BenefitProgressBarProps> = ({
           <span>
             {isUnlocked ? (
               <span className="text-emerald-700 font-extrabold">
-                🎉 ¡Felicidades! Tienes Envío Turbo GRATIS
+                🎉 ¡Felicidades! Tienes envío GRATIS
               </span>
             ) : (
               <span>

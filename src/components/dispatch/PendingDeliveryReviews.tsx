@@ -1,0 +1,23 @@
+import React,{useState} from 'react';
+import {api} from '../../lib/api';
+import type {AdminDispatchData} from '../../lib/dispatchClient';
+import type {DeliveryQuote,ScheduledSlot} from '../../lib/deliveryService';
+import type {DeliveryMode} from '../../types';
+import {formatCOP} from '../../lib/formatters';
+import {DeliveryPlanSummary} from '../customer/DeliveryPlanSummary';
+import {hasConfirmedDeliveryQuote} from '../../lib/checkoutReadiness';
+export function PendingDeliveryReviews({orders,onChanged}:{orders:AdminDispatchData['pendingDeliveryReviews'];onChanged:()=>void}) {
+  return <section className="space-y-3"><h3 className="font-black text-xl">Solicitudes pendientes de confirmar ({orders.length})</h3>{orders.map(o=><Review key={o.id} order={o} onChanged={onChanged}/>)}</section>;
+}
+function Review({order,onChanged}:{order:AdminDispatchData['pendingDeliveryReviews'][number];onChanged:()=>void}) {
+  const [quote,setQuote]=useState<DeliveryQuote|null>(null),[mode,setMode]=useState<DeliveryMode>('PROGRAMADO'),[slot,setSlot]=useState<ScheduledSlot>(),[reference,setReference]=useState(''),[accepted,setAccepted]=useState(false),[busy,setBusy]=useState(false),[error,setError]=useState('');
+  const path=`orders/${encodeURIComponent(order.id)}/delivery-review/`;
+  const consult=async(selected?:ScheduledSlot)=>{setBusy(true);setError('');setQuote(null);setSlot(selected);setAccepted(false);try{setQuote(await api.transportAdmin(path+'quote','POST',{deliveryMode:mode,scheduledWindow:selected}));}catch(e){setError((e as Error).message)}finally{setBusy(false)}};
+  const confirm=async()=>{setBusy(true);setError('');try{await api.transportAdmin(path+'confirm','POST',{deliveryMode:quote?.recommendedMode,scheduledWindow:quote?.recommendedMode==='PROGRAMADO'?slot:undefined,confirmationToken:quote?.confirmationToken,customerAccepted:accepted,customerAgreementReference:reference});onChanged();}catch(e){setError((e as Error).message);setQuote(null);setAccepted(false)}finally{setBusy(false)}};
+  return <article className="bg-white border rounded-2xl p-4 space-y-3"><h4 className="font-black">{order.code} · {order.storeName}</h4><p className="text-sm">Sin cobro ni horario confirmado. Reserva de productos conservada; cancelar libera la reserva. Completa los datos de transporte en Catálogo / Transporte antes de confirmar.</p><ul className="text-sm">{order.items.map(i=><li key={i.productId}>{i.quantity} × {i.name} · {i.presentation}</li>)}</ul><p>Subtotal: {formatCOP(order.subtotal)}</p>
+    <select aria-label="Modalidad a consultar" value={mode} disabled={busy} onChange={e=>{setMode(e.target.value as DeliveryMode);setQuote(null);setSlot(undefined);setAccepted(false)}} className="border rounded-xl p-3"><option value="PROGRAMADO">Programado</option><option value="TURBO">Turbo</option></select>{' '}<button disabled={busy} onClick={()=>void consult()} className="min-h-11 px-4 border rounded-xl">Consultar disponibilidad real</button>
+    {quote&&<><DeliveryPlanSummary quote={quote}/>{quote.recommendedMode==='PROGRAMADO'&&<select aria-label="Franja de la solicitud" value={slot?`${slot.date}|${slot.slotId}`:''} disabled={busy} onChange={e=>void consult(quote.scheduledSlots.find(s=>`${s.date}|${s.slotId}`===e.target.value))} className="border rounded-xl p-3 w-full"><option value="">Selecciona una franja para proponer al cliente</option>{quote.scheduledSlots.filter(s=>s.availableCapacity>0&&!s.cutoffPassed).map(s=><option key={`${s.date}|${s.slotId}`} value={`${s.date}|${s.slotId}`}>{s.dateLabel} · {s.displayWindow}</option>)}</select>}
+    {hasConfirmedDeliveryQuote(quote)&&<div className="space-y-3"><p className="text-sm">Contacta al cliente y confirma esta modalidad, fecha, total y pago contra entrega antes de registrar su aceptación. No se envían mensajes automáticamente.</p><input aria-label="Referencia de aceptación del cliente" placeholder="Referencia de aceptación del cliente (sin secretos)" value={reference} onChange={e=>setReference(e.target.value)} maxLength={500} className="border rounded-xl p-3 w-full"/><label className="block text-sm"><input type="checkbox" checked={accepted} onChange={e=>setAccepted(e.target.checked)}/> El cliente aceptó esta entrega y su total contra entrega</label><button disabled={busy||!accepted||reference.trim().length<8||(quote.recommendedMode==='PROGRAMADO'&&!slot)} onClick={()=>void confirm()} className="min-h-11 px-5 bg-red-600 disabled:bg-slate-300 text-white rounded-xl font-bold">Confirmar entrega autorizada</button></div>}</>}
+    {error&&<p role="alert" className="text-red-700">{error}</p>}
+  </article>;
+}

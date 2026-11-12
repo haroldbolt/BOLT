@@ -193,10 +193,12 @@ export interface TurboDivididoDetails {
 }
 
 export interface DeliveryQuote {
+  /** Allows only a PENDIENTE_CONFIRMACION request, never transport/payment authorization. */
+  reviewRequestToken?: string;
   transportPlan?: TransportPlan;
   inventoryValidated?: boolean;
   confirmationToken?: string;
-  charges?: {subtotal:number;freeShippingFrom:number;shipping:number;ownShipping?:number;externalShipping?:number;serviceFee:number;total:number};
+  charges?: {mode?:'TURBO'|'PROGRAMADO';subtotal:number;freeShippingFrom:number;shipping:number;ownShipping?:number;externalShipping?:number;serviceFee:number;total:number};
   providerResponses?: import('../types/transport').ExternalProviderResponse[];
   transportWindow?: ScheduledSlot;
   warehouse?: {id:string;name:string;customerName:string;address?:string};

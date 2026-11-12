@@ -1,3 +1,5 @@
+import {BrandsView,BrandsShortcut} from './components/customer/BrandsView';
+import {catalogBrands,customerCatalog,matchesBrand,type CatalogSection,type BrandEntry} from './lib/brandDirectory';
 import {useCustomer} from './customer/client';
 import {FAVORITES_KEY} from './customer/data';
 import {beginDeviceLocation, type DeviceLocationAttempt} from './lib/deviceLocation';
@@ -18,6 +20,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Header } from './components/customer/Header';
 import { CampaignBanner } from './components/customer/CampaignBanner';
 import { ProductCard } from './components/customer/ProductCard';
+import { ProductPhotoSearch } from './components/customer/ProductPhotoSearch';
 import { CategoryCollageCard } from './components/customer/CategoryCollageCard';
 import { FarmaciaView } from './components/customer/FarmaciaView';
 import { ProductDetailModal } from './components/customer/ProductDetailModal';
@@ -62,9 +65,11 @@ export default function App() {
   const [orders, setOrders] = useState<Order[]>([]);
 
   // Customer UI state
-  const [selectedCategory, setSelectedCategory] = useState<MainCategory>('Todo');
+  const [selectedCategory, setSelectedCategory] = useState<CatalogSection>('Todo');
+  const [selectedBrandId,setSelectedBrandId]=useState<string|null>(null);
   const [currentTab, setCurrentTab] = useState<CustomerNavTab>('turbo');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isPhotoSearchOpen, setIsPhotoSearchOpen] = useState(false);
   const [productFilters, setProductFilters] = useState<ProductFilterState>(INITIAL_FILTER_STATE);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [favorites,setFavorites]=useState<Record<string,boolean>>(()=>{try{return JSON.parse(customerStorage?.getItem(FAVORITES_KEY)||'{}')}catch{return {}}});
@@ -223,7 +228,7 @@ export default function App() {
     try {
       const loaded = await api.getCatalog(undefined, { requireServer: true });
       if (requestId !== catalogRequest.current) return false;
-      setProducts(loaded); setCartCatalog(loaded);
+      setProducts(customerCatalog(loaded)); setCartCatalog(loaded);
       return true;
     } catch {
       if (requestId === catalogRequest.current) setCatalogError('No se pudo actualizar el catálogo. Tus selecciones siguen guardadas; reintenta para validar precio y disponibilidad.');
@@ -500,6 +505,11 @@ export default function App() {
     return orders.filter(o => o.fulfillmentStatus !== 'ENTREGADO' && o.fulfillmentStatus !== 'CANCELADO');
   }, [orders]);
 
+  const brandEntries=useMemo(()=>catalogBrands(products,currentStore),[products,currentStore]);
+  const selectedBrand=brandEntries.find(entry=>entry.id===selectedBrandId);
+  const openBrands=()=>{setSelectedCategory('Marcas');setSelectedBrandId(null);setCurrentTab('turbo');setSearchQuery('');setProductFilters(INITIAL_FILTER_STATE);window.scrollTo({top:0,behavior:'smooth'});};
+  const selectBrand=(entry:BrandEntry)=>{setSelectedCategory('Marcas');setSelectedBrandId(entry.id);setCurrentTab('turbo');setSearchQuery('');setProductFilters(INITIAL_FILTER_STATE);window.scrollTo({top:0,behavior:'smooth'});};
+
   // Base products matching search query or selected tab/category
   const baseCategoryOrSearchProducts = useMemo(() => {
     let list = [...products];
@@ -530,11 +540,13 @@ export default function App() {
       list = list.filter(p => !!favorites[p.id]);
     } else if (currentTab === 'ofertas') {
       list = list.filter(p => (p.discountPercent || 0) > 0);
+    } else if (selectedCategory === 'Marcas') {
+      list = selectedBrand ? list.filter(p=>matchesBrand(p,selectedBrand)) : [];
     } else if (selectedCategory !== 'Todo') {
       list = list.filter(p => p.category === selectedCategory || (p.pharmacySubcategory as any) === selectedCategory);
     }
     return list;
-  }, [products, currentStore, searchQuery, currentTab, selectedCategory, favorites]);
+  }, [products, currentStore, searchQuery, currentTab, selectedCategory, selectedBrand, favorites]);
 
   // Apply advanced filters: price range, brands, weight range
   const filteredProducts = useMemo(() => {
@@ -567,7 +579,7 @@ export default function App() {
 
   // Keep image-heavy catalogs responsive without hiding products from search or counts.
   const [visibleProductCount,setVisibleProductCount]=useState(48);
-  useEffect(()=>setVisibleProductCount(48),[searchQuery,selectedCategory,currentTab,productFilters,currentStore?.id]);
+  useEffect(()=>setVisibleProductCount(48),[searchQuery,selectedCategory,selectedBrandId,currentTab,productFilters,currentStore?.id]);
 
   // Rails data
   const lightningDeals = useMemo(() => products.filter(p => p.isLightningDeal || (p.discountPercent || 0) > 10), [products]);
@@ -644,14 +656,12 @@ export default function App() {
         onSelectStore={openAddressBook}
         selectedCategory={selectedCategory}
         onSelectCategory={(cat) => {
-          setSelectedCategory(cat);
-          setSearchQuery('');
-          if (cat === 'Farmacia') {
-            setCurrentTab('turbo');
-          }
+          setSelectedCategory(cat);setSelectedBrandId(null);setSearchQuery('');
+          setProductFilters(INITIAL_FILTER_STATE);setCurrentTab('turbo');
         }}
         searchQuery={searchQuery}
         onSearchChange={(q) => setSearchQuery(q)}
+        onOpenPhotoSearch={cartCatalog && !catalogError ? () => setIsPhotoSearchOpen(true) : undefined}
         activeOrdersCount={activeOrders.length}
         onOpenActiveOrders={() => {
           if (activeOrders.length > 0) {
@@ -697,7 +707,9 @@ export default function App() {
       )}
       <main className="max-w-7xl mx-auto px-3 sm:px-4 pl-safe pr-safe pt-3 space-y-4 pb-28 sm:pb-32">
         {/* If user selected Listas de Deseos tab */}
-        {currentTab === 'deseos' ? (
+        {currentTab === 'turbo' && selectedCategory === 'Marcas' && !selectedBrandId && !searchQuery.trim() ? (
+          <BrandsView entries={brandEntries} onSelect={selectBrand} loading={catalogLoading}/>
+        ) : currentTab === 'deseos' ? (
           <WishlistView
             collections={wishlistCollections}
             products={products}
@@ -742,6 +754,7 @@ export default function App() {
                   ? 'Tus Productos Favoritos'
                   : currentTab === 'ofertas'
                   ? 'Ofertas Relámpago y Promociones'
+                  : selectedCategory === 'Marcas' ? (selectedBrand?.name || 'Marca no disponible')
                   : `Categoría: ${selectedCategory}`}
               </h2>
               <span className="text-xs text-slate-500 font-semibold tabular-nums">
@@ -749,6 +762,7 @@ export default function App() {
               </span>
             </div>
 
+            {selectedCategory==='Marcas' && <button type="button" onClick={openBrands} className="min-h-11 text-sm font-bold text-red-600 underline">Ver todas las marcas</button>}
             {/* Barra de chips de filtros activos y disparador móvil */}
             <ActiveFilterChips
               filters={productFilters}
@@ -821,13 +835,7 @@ export default function App() {
                 onSelectCategory={(cat) => setSelectedCategory(cat)}
                 isSpecial={true}
               />
-              <CategoryCollageCard
-                title="Alimentos Premium"
-                category="Alimentos"
-                count={products.filter(p => p.category === 'Alimentos').length}
-                products={products.filter(p => p.category === 'Alimentos')}
-                onSelectCategory={(cat) => setSelectedCategory(cat)}
-              />
+              <BrandsShortcut onClick={openBrands}/>
               <CategoryCollageCard
                 title="Arenas Sanitarias"
                 category="Arenas"
@@ -879,7 +887,7 @@ export default function App() {
                 <div className="space-y-1">
                   {[
                     { cat: 'Farmacia', label: 'Farmacia Veterinaria', icon: '💊', count: products.filter(p => p.category === 'Farmacia' || p.category === 'Antipulgas').length },
-                    { cat: 'Alimentos', label: 'Alimentos Premium', icon: '🍖', count: products.filter(p => p.category === 'Alimentos').length },
+                    { cat: 'Marcas', label: 'Marcas', icon: '🏷️', count: new Set(brandEntries.map(entry=>entry.name)).size },
                     { cat: 'Arenas', label: 'Arenas Sanitarias', icon: '📦', count: products.filter(p => p.category === 'Arenas').length },
                     { cat: 'Snacks', label: 'Snacks & Churu', icon: '🦴', count: products.filter(p => p.category === 'Snacks').length },
                     { cat: 'Higiene', label: 'Higiene & Cuidado', icon: '🛁', count: products.filter(p => p.category === 'Higiene').length },
@@ -887,7 +895,7 @@ export default function App() {
                   ].map(item => (
                     <button
                       key={item.cat}
-                      onClick={() => setSelectedCategory(item.cat as MainCategory)}
+                      onClick={() => item.cat==='Marcas'?openBrands():setSelectedCategory(item.cat as MainCategory)}
                       className="w-full flex items-center justify-between px-2.5 py-1.5 rounded-xl text-xs font-semibold text-slate-700 hover:bg-red-50 hover:text-red-700 transition cursor-pointer text-left"
                     >
                       <span className="flex items-center gap-2 truncate">
@@ -917,7 +925,7 @@ export default function App() {
             {/* Panel derecho: Banner, categorías en tarjetas y rails de productos */}
             <div className="flex-1 min-w-0 space-y-4">
               {/* Promotional Campaign Banner */}
-              <CampaignBanner onSelectCategory={(cat) => setSelectedCategory(cat)} />
+              <CampaignBanner onSelectCategory={(cat) => cat==='Marcas'?openBrands():setSelectedCategory(cat)} />
 
             {/* Category Cards Collage Grid matching Rappi Turbo IMG_2743 */}
             <div className="space-y-2.5 pt-2">
@@ -942,13 +950,7 @@ export default function App() {
                   onSelectCategory={(cat) => setSelectedCategory(cat)}
                   isSpecial={true}
                 />
-                <CategoryCollageCard
-                  title="Alimentos Perro & Gato"
-                  category="Alimentos"
-                  count={products.filter(p => p.category === 'Alimentos').length}
-                  products={products.filter(p => p.category === 'Alimentos')}
-                  onSelectCategory={(cat) => setSelectedCategory(cat)}
-                />
+                <BrandsShortcut onClick={openBrands}/>
                 <CategoryCollageCard
                   title="Arenas Sanitarias"
                   category="Arenas"
@@ -1098,7 +1100,7 @@ export default function App() {
                   Recomendados para ti
                 </h3>
                 <button
-                  onClick={() => setSelectedCategory('Alimentos')}
+                  onClick={openBrands}
                   className="text-xs bg-slate-100 hover:bg-slate-200 text-slate-700 px-3 py-1 rounded-full font-bold transition"
                 >
                   Ver más
@@ -1167,6 +1169,13 @@ export default function App() {
       )}
       </main>
 
+      {isPhotoSearchOpen && (
+        <ProductPhotoSearch products={products} onClose={() => setIsPhotoSearchOpen(false)}
+          onOpenProduct={setDetailProduct}
+          onSearchByText={() => document.getElementById('catalog-text-search')?.focus()}
+        />
+      )}
+
       {/* Product Detail Modal */}
       <ProductDetailModal
         cartQuantities={cartQuantities}
@@ -1224,7 +1233,6 @@ export default function App() {
         pendingCount={catalogLoading || catalogError ? cartCount : undefined}
         blockReason={cartBlockReason}
         deliveryQuote={deliveryQuote}
-        deliveryMessage={cartItems.length > 0 && deliveryQuote && !deliveryQuote.basketValidated ? deliveryQuote.message : undefined}
         onRefreshCatalog={() => void refreshCatalog()}
         onProceedToCheckout={async () => {
           if (cartBlockReason || !cartItems.length) return;

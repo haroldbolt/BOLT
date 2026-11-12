@@ -1,0 +1,28 @@
+import {PushNotificationService} from '../lib/notifications';
+import {makeWarehouseAssignment} from '../lib/warehouseAssignment';
+import assert from 'node:assert/strict';
+import React from 'react';
+import {renderToStaticMarkup as render} from 'react-dom/server';
+import {CartDrawer} from '../components/customer/CartDrawer';
+import {CheckoutModal} from '../components/customer/CheckoutModal';
+import {PendingDeliveryReceipt} from '../components/customer/PendingDeliveryReceipt';
+import {fixtureProduct,fixtureConfig,fixtureDrivers} from './transportFixtures';
+import {INITIAL_STORES} from '../data/seedData';
+import {evaluateDeliveryQuote} from '../lib/deliveryService';
+import {REVIEW_MESSAGE} from '../lib/checkoutReadiness';
+import {pendingDeliveryOrder} from '../lib/pendingDeliveryOrder';
+const product=fixtureProduct('REVIEW-15KG',15000);delete product.transport;
+const destination={address:'Calle 3 #78-20, Kennedy',coordinates:{lat:4.6365,lng:-74.1448},municipality:'Bogotá',locality:'Kennedy'};
+const quote=evaluateDeliveryQuote({destination,items:[{productId:product.id,quantity:2}]},INITIAL_STORES,[product],[],{config:fixtureConfig(),drivers:fixtureDrivers,orders:[]});
+assert.equal(quote.reasonCode,'TRANSPORT_DATA_PENDING');assert.equal(quote.transportPlan?.feasible,false);quote.reviewRequestToken='isolated-receipt-token';quote.message=REVIEW_MESSAGE;
+const props={cartItems:[{product,quantity:2}],currentStore:INITIAL_STORES[0],isOpen:true,onClose:()=>{},deliveryQuote:quote};
+const cart=render(<CartDrawer {...props} onUpdateQuantity={()=>{}} onClearCart={()=>{}} onProceedToCheckout={()=>{}}/>);
+assert.equal(cart.split(REVIEW_MESSAGE).length-1,1);assert.ok(!cart.includes('Faltan peso'));assert.equal(cart.split('¡GRATIS!').length-1,1,'Only service is free; transport remains unconfirmed');assert.match(cart,/>Continuar con el pedido</);assert.ok(!/<button[^>]* disabled=""[^>]*>[^]*?Continuar con el pedido/.test(cart));
+const checkout=render(<CheckoutModal {...props} customerAddress={destination.address} customerCoordinates={destination.coordinates} onOrderSuccess={()=>{}}/>);
+assert.equal(checkout.split(REVIEW_MESSAGE).length-1,1);assert.match(checkout,/Enviar solicitud sin cobro/);assert.ok(!checkout.includes('Método de Pago'));assert.ok(!checkout.includes('Faltan peso'));assert.ok(!checkout.includes('~25'));assert.equal(checkout.split('¡GRATIS!').length-1,1,'Only service is free');
+const receipt=pendingDeliveryOrder({items:[{productId:product.id,quantity:2,price:product.price,name:product.name,presentation:product.presentation,sku:product.sku,brand:product.brand,image:product.image,weightKg:15,requiresPrescription:false}],customer:{name:'Fixture',phone:'0000000000',email:'fixture@example.invalid',isGuest:true},address:{...destination,details:'',porteriaPolicy:'DEJAR_EN_PORTERIA'},store:INITIAL_STORES[0],creationRequestId:'fixture',creationRequestFingerprint:'fixture'});
+assert.equal(receipt.fulfillmentStatus,'PENDIENTE_CONFIRMACION');assert.equal(receipt.payment.status,'PENDIENTE');assert.equal(receipt.payment.cashToCollect,0);assert.equal(receipt.deliveryMode,undefined);assert.equal(receipt.transportLoad,undefined);assert.equal(receipt.childShipments,undefined);
+const html=render(<PendingDeliveryReceipt order={receipt} onBack={()=>{}} onRefresh={()=>{}} onCancel={()=>{}} cancelling={false} error={null}/>);assert.ok(!html.includes(receipt.secretDeliveryCode));assert.match(html,/Solicitud recibida/);assert.ok(!html.includes('0 kg'));
+console.log('PASS pending review UI: one notice, continue enabled, request without payment/ETA, private receipt without PIN or invented capacity.');
+
+const notifications=new PushNotificationService({getItem:()=>null,setItem:()=>{}});receipt.warehouseAssignment=makeWarehouseAssignment(receipt.id,INITIAL_STORES[0]);assert.equal(notifications.notifyWarehouseAssignment(receipt),null);receipt.deliveryReview!.status='CONFIRMED';assert.ok(notifications.notifyWarehouseAssignment(receipt));

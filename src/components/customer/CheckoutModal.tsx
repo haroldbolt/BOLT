@@ -1,3 +1,4 @@
+import {canRequestDeliveryReview,hasConfirmedDeliveryQuote,visibleDeliveryCharges} from '../../lib/checkoutReadiness';
 import {useCustomer} from '../../customer/client';
 import {EntrancePhotoPreview} from './EntrancePhotoPicker';
 import {getEntrancePhoto,queueEntrancePhoto,sendPendingEntrancePhoto} from '../../lib/entrancePhotos';
@@ -136,11 +137,14 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const hasPrescriptionItems = cartItems.some(i => i.product.requiresPrescription);
 
   const subtotal = cartItems.reduce((acc, item) => acc + (item.product.price * item.quantity), 0);
-  const totalWeightKg = deliveryQuote?.totalWeightKg || 0;
+  const requestReview=canRequestDeliveryReview(deliveryQuote);
+  const deliveryConfirmed=hasConfirmedDeliveryQuote(deliveryQuote);
+  const totalWeightKg = deliveryConfirmed ? deliveryQuote!.totalWeightKg : 0;
   const totalWeightGrams = Math.round(totalWeightKg * 1000);
-  const shipping = deliveryQuote?.charges?.shipping ?? 0;
-  const serviceFee = deliveryQuote?.charges?.serviceFee ?? 0;
-  const total = subtotal + shipping + serviceFee + tip;
+  const visibleCharges=visibleDeliveryCharges(deliveryQuote,subtotal);
+  const pricedMode=visibleCharges?.mode || selectedMode;
+  const serviceFee = visibleCharges?.serviceFee;
+  const total = (visibleCharges?.total ?? subtotal) + (requestReview?0:tip);
 
   const selectedSlot = availableSlots.find(s => s.slotId === selectedSlotId);
 
@@ -174,13 +178,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             }
           : undefined;
 
-      if(!deliveryQuote?.basketValidated || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido)) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
-      if(!deliveryQuote.confirmationToken || !deliveryQuote.charges) throw new Error('Espera la cotización de transporte antes de confirmar.');
+      if(!requestReview && (!deliveryQuote?.basketValidated || deliveryQuote.destination.address !== address || !(selectedMode==='PROGRAMADO' ? deliveryQuote.availableModes.scheduled : selectedMode==='TURBO' ? deliveryQuote.availableModes.turbo : deliveryQuote.availableModes.turboDividido))) throw new Error(deliveryQuote?.message || 'Espera la validación de tu destino.');
+      if(!requestReview && (!deliveryQuote?.confirmationToken || !deliveryQuote?.charges)) throw new Error('Espera la cotización de transporte antes de confirmar.');
       const payload = {
-        confirmationToken:deliveryQuote.confirmationToken,
+        confirmationToken:requestReview?undefined:deliveryQuote?.confirmationToken,
+        requestDeliveryReview:requestReview,
+        reviewRequestToken:requestReview?deliveryQuote?.reviewRequestToken:undefined,
         // The server assigns the warehouse; no browser store choice is submitted.
         deliveryMode: selectedMode,
-        scheduledWindow: scheduledWindowPayload,
+        scheduledWindow: requestReview?undefined:scheduledWindowPayload,
         items: cartItems.map(item => ({
           productId: item.product.id,
           sku: item.product.sku,
@@ -208,8 +214,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           porteriaPolicy,
           coordinates: customerCoordinates,
         },
-        paymentMethod,
-        tip,
+        paymentMethod:requestReview?'CASH_ON_DELIVERY':paymentMethod,
+        tip:requestReview?0:tip,
       };
 
       // Capture this address's image before submitting; later address edits cannot change it.
@@ -221,7 +227,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }else if(referencePhotoId){pushService.triggerNotification('Pedido confirmado','La foto ya no está disponible en este dispositivo. El pedido se creó con tu dirección confirmada.');}
 
 
-      pushService.notifyWarehouseAssignment(newOrder);
+      if(newOrder.deliveryReview?.status==='PENDING') pushService.triggerNotification('Solicitud recibida','La sede confirmará contigo la entrega. No se ha realizado ningún cobro.');
+      else pushService.notifyWarehouseAssignment(newOrder);
 
       // Celebrate
       confetti({
@@ -254,13 +261,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           <div>
             <div className="flex items-center gap-2">
               <h3 className="font-black text-slate-900 text-lg">
-                {selectedMode === 'PROGRAMADO'
+                {requestReview ? 'Solicitar pedido' : selectedMode === 'PROGRAMADO'
                   ? 'Confirmar Envío Programado'
                   : selectedMode === 'TURBO_DIVIDIDO'
                   ? 'Confirmar Turbo Dividido'
                   : 'Confirmar Pedido Turbo'}
               </h3>
-              {selectedMode !== 'PROGRAMADO' && (
+              {deliveryConfirmed && selectedMode !== 'PROGRAMADO' && (
                 <span className="text-[11px] font-black bg-yellow-400 text-red-950 px-2 py-0.5 rounded-md flex items-center gap-1">
                   <Clock className="w-3 h-3" />
                   ~{deliveryQuote?.estimatedMinutes || 25} min
@@ -268,7 +275,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               )}
             </div>
             <p className="text-xs text-slate-500">
-              Sede propuesta: {deliveryQuote?.warehouse?.customerName || 'Sede pendiente de confirmar'} • Peso: {totalWeightKg.toFixed(1)} kg
+              Sede propuesta: {deliveryQuote?.warehouse?.customerName || 'Sede pendiente de confirmar'} • {deliveryConfirmed ? `Peso: ${totalWeightKg.toFixed(1)} kg` : 'Entrega pendiente de confirmación'}
             </p>
             {deliveryQuote?.warehouse?.address && <p className="text-[11px] text-slate-500 mt-1">{deliveryQuote.warehouse.address}</p>}
           </div>
@@ -300,7 +307,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </h4>
 
             {/* Outside Turbo coverage banner or auto-switch notification */}
-            {(deliveryQuote?.autoSwitchedToScheduled || selectedMode === 'PROGRAMADO' || (!deliveryQuote?.availableModes.turbo && !deliveryQuote?.availableModes.turboDividido && deliveryQuote?.availableModes.scheduled)) && (
+            {(!requestReview && (deliveryQuote?.autoSwitchedToScheduled || selectedMode === 'PROGRAMADO' || (!deliveryQuote?.availableModes.turbo && !deliveryQuote?.availableModes.turboDividido && deliveryQuote?.availableModes.scheduled))) && (
               <div className="p-3.5 bg-blue-50/90 border border-blue-200 rounded-2xl text-xs text-blue-950 space-y-1">
                 <p className="font-extrabold flex items-center gap-1.5 text-blue-900">
                   <Calendar className="w-4 h-4 text-blue-600 shrink-0" />
@@ -308,7 +315,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </p>
                 <p className="text-[11px] text-blue-800">
                   {deliveryQuote?.detectedLocalityName ? `Localidad: ${deliveryQuote.detectedLocalityName}. ` : ''}
-                  {deliveryQuote?.message || 'Selecciona a continuación la fecha y franja horaria para recibir tu compra.'}
+                  Selecciona a continuación la fecha y franja horaria para recibir tu compra.
                 </p>
               </div>
             )}
@@ -397,10 +404,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               )}
             </div>
 
-            <DeliveryPlanSummary quote={deliveryQuote} />
+            <DeliveryPlanSummary quote={deliveryQuote} onRefresh={onRefreshCatalog} />
 
             {/* Scheduled Slot Picker */}
-            {selectedMode === 'PROGRAMADO' && (
+            {!requestReview && selectedMode === 'PROGRAMADO' && (
               <div className="p-3.5 bg-slate-50 rounded-2xl border border-slate-200 space-y-2.5">
                 <div className="flex items-center justify-between">
                   <label className="text-[11px] font-extrabold text-slate-800 flex items-center gap-1.5">
@@ -614,6 +621,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
           {referencePhotoId&&<div className="p-3 border rounded-xl space-y-2"><h4 className="font-bold text-sm">Foto de la entrada</h4><EntrancePhotoPreview photoId={referencePhotoId}/><p className="text-xs text-slate-500">Se enviará con este pedido al confirmarlo.</p></div>}
 
+          {!requestReview && <>
           {/* Payment Method Selector */}
           <div className="space-y-2">
             <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
@@ -682,6 +690,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {deliveryQuote?.charges && !deliveryQuote.charges.externalShipping && <BenefitProgressBar subtotal={subtotal} threshold={deliveryQuote.charges.freeShippingFrom} />}
           </div>
 
+          </>}
           {/* Breakdown and Submit */}
           <div className="bg-slate-50 p-4 rounded-2xl space-y-2 border border-slate-100 text-xs text-slate-600">
             <div className="flex justify-between">
@@ -689,22 +698,22 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <span className="font-bold text-slate-900">{formatCOP(subtotal)}</span>
             </div>
             <div className="flex justify-between">
-              <span>Envío ({selectedMode === 'PROGRAMADO' ? 'Programado' : selectedMode === 'TURBO_DIVIDIDO' ? 'Turbo Dividido' : 'Turbo'}):</span>
-              <span className="font-bold text-emerald-600">{shipping === 0 ? '¡GRATIS!' : formatCOP(shipping)}</span>
+              <span>Envío ({pricedMode === 'PROGRAMADO' ? 'Programado' : pricedMode === 'TURBO_DIVIDIDO' ? 'Turbo Dividido' : 'Turbo'}):</span>
+              <span className="font-bold text-emerald-600">{!visibleCharges?'Por confirmar':visibleCharges.shipping === 0 ? 'Envío gratis' : formatCOP(visibleCharges.shipping)}</span>
             </div>
             <div className="flex justify-between">
               <span>Tarifa de servicio:</span>
-              <span className="font-bold text-slate-900">{formatCOP(serviceFee)}</span>
+              <span className="font-bold text-slate-900">{serviceFee===undefined?'Por confirmar':serviceFee===0?'¡GRATIS!':formatCOP(serviceFee)}</span>
             </div>
-            {tip > 0 && (
+            {!requestReview && tip > 0 && (
               <div className="flex justify-between">
                 <span>Propina repartidor:</span>
                 <span className="font-bold text-slate-900">{formatCOP(tip)}</span>
               </div>
             )}
             <div className="border-t border-slate-200 pt-2 flex justify-between text-base font-black text-slate-900">
-              <span>Total final:</span>
-              <span className="text-red-600">{formatCOP(total)}</span>
+              <span>{requestReview?'Total estimado:':'Total final:'}</span>
+              <span className="text-red-600">{visibleCharges?formatCOP(total):'Por confirmar'}</span>
             </div>
           </div>
 
@@ -712,13 +721,15 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {errorMessage && <button type="button" className="text-sm font-bold text-red-600 underline" onClick={onRefreshCatalog}>Actualizar carrito y volver a confirmar</button>}
           <button
             type="submit"
-            disabled={isSubmitting || !isEligibleForAny || !!cartBlockReason || !cartItems.length || (selectedMode==='PROGRAMADO' && !selectedSlot)}
+            disabled={isSubmitting || (!isEligibleForAny && !requestReview) || !!cartBlockReason || !cartItems.length || (!requestReview && selectedMode==='PROGRAMADO' && !selectedSlot)}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition active:scale-98 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (
-              <span>Procesando pago seguro...</span>
+              <span>{requestReview?'Enviando solicitud…':'Procesando pedido…'}</span>
+            ) : requestReview && !cartBlockReason ? (
+              <span>Enviar solicitud sin cobro</span>
             ) : cartBlockReason || !isEligibleForAny ? (
-              <span>{cartBlockReason || deliveryQuote?.message || 'Validando disponibilidad del carrito…'}</span>
+              <span>{cartBlockReason || 'Entrega pendiente de validar'}</span>
             ) : selectedMode === 'PROGRAMADO' && !selectedSlot ? (
               <span>Selecciona una franja para continuar</span>
             ) : selectedMode === 'PROGRAMADO' ? (

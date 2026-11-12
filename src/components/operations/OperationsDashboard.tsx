@@ -195,10 +195,12 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
     }
     return o.storeId === selectedStoreId;
   });
+  const pendingDeliveryRequests = storeOrders.filter(o => o.deliveryReview?.status === 'PENDING' && o.fulfillmentStatus === 'PENDIENTE_CONFIRMACION');
   const scheduledOrders = orders.filter(o => o.deliveryMode === 'PROGRAMADO');
   const pendingPrescriptionOrders = orders.filter(o => o.prescriptionReview?.status === 'PENDIENTE_REVISION');
 
   const filteredStoreOrders = storeOrders.filter(o => {
+    if (o.deliveryReview?.status === 'PENDING') return false;
     if (deliveryModeFilter === 'TODOS') return true;
     if (deliveryModeFilter === 'TURBO') return (!o.deliveryMode || o.deliveryMode === 'TURBO') && !o.isSplitOrder;
     if (deliveryModeFilter === 'TURBO_DIVIDIDO') return o.isSplitOrder || o.deliveryMode === 'TURBO_DIVIDIDO';
@@ -990,6 +992,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
             {/* Inactive / Excluded Store Audit Banners */}
             {renderAuditBanners()}
+            {pendingDeliveryRequests.length > 0 && (
+              <section aria-label="Solicitudes pendientes de entrega" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
+                <p className="font-bold">{pendingDeliveryRequests.length} solicitud(es) pendientes de confirmar entrega</p>
+                <p className="mt-1">Sin cobro ni horario confirmado. Revisa la capacidad y acuerda el costo y la entrega con el cliente.</p>
+                <button type="button" onClick={() => setActiveTab('DESPACHOS')} className="mt-2 min-h-11 font-bold underline">Revisar solicitudes</button>
+              </section>
+            )}
             <GroupedDispatches orders={filteredStoreOrders} transition={handleUpdateStatus} assign={handleAssignDriver} confirmReturn={handleConfirmPhysicalReturn} track={onViewOrderTracking} />
 
             {/* Delivery Mode Filter Chips */}
@@ -997,7 +1006,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               <span className="text-slate-400 text-[11px] uppercase mr-1">Filtrar por modo:</span>
               {[
                 { id: 'TODOS', label: 'Todos', count: storeOrders.length },
-                { id: 'TURBO', label: '⚡ Turbo (25 min)', count: storeOrders.filter(o => (!o.deliveryMode || o.deliveryMode === 'TURBO') && !o.isSplitOrder).length },
+                { id: 'TURBO', label: '⚡ Turbo (25 min)', count: storeOrders.filter(o => o.deliveryReview?.status !== 'PENDING' && (!o.deliveryMode || o.deliveryMode === 'TURBO') && !o.isSplitOrder).length },
                 { id: 'TURBO_DIVIDIDO', label: '⚡ Turbo en varias entregas', count: storeOrders.filter(o => o.isSplitOrder || o.deliveryMode === 'TURBO_DIVIDIDO').length },
                 { id: 'PROGRAMADO', label: '📅 Envío Programado', count: storeOrders.filter(o => o.deliveryMode === 'PROGRAMADO').length },
               ].map(f => {
@@ -1540,7 +1549,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             </div>
                             <p className="text-[11px] text-slate-600 font-medium truncate">{ord.customer.name} • {ord.deliveryAddress.address}</p>
                             <div className="flex justify-between items-center pt-1 text-[11px] text-slate-500 border-t border-slate-200/50">
-                              <span>Peso: {ord.totals.totalWeightKg} kg</span>
+                              <span>Peso: {ord.totals.totalWeightKg===null?'Pendiente de verificar':`${ord.totals.totalWeightKg} kg`}</span>
                               <span className="font-bold text-slate-900">{formatCOP(ord.totals.total)}</span>
                             </div>
                           </div>
