@@ -748,6 +748,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     getProducts:()=>products,
     getStores:()=>stores,
     getOrders:()=>ordersRepository.getAllOrders(),
+    getDispatchRuns:()=>Object.values(ordersRepository.dispatchState.runs),
     getOrder:id=>ordersRepository.getOrderById(id),
     quote:quotePendingDelivery,
     confirm:(req,res,order,actor)=>confirmPendingDelivery(req,res,order,{

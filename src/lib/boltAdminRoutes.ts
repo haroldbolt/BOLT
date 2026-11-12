@@ -1,13 +1,17 @@
 import crypto from 'node:crypto';
 import type { Express, Request, Response } from 'express';
+import { INITIAL_ORDERS } from '../data/seedData';
 import type { Order, Product, Store } from '../types';
+import type { DispatchRun } from '../types/dispatch';
 import type { AdminAuthService } from './adminAuthService';
-import type { BoltAdminDemoMode } from './boltAdminDemo';
+import { isBoltAdminDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
+import { buildBoltAdminSalesReport } from './boltAdminSales';
 import type { CatalogOperations } from './catalogOperations';
 import { saleVariant } from './variantCommerce';
 
 const base = '/api/v1/bolt-admin';
 const subaId = 'HUB_SUBA';
+const seedOrderIds = new Set(INITIAL_ORDERS.map(order => order.id));
 const demoProfiles = [
   { id: 'suba', name: 'Operador de Suba', role: 'SEDE', storeId: subaId },
   { id: 'kennedy', name: 'Operador de Kennedy', role: 'SEDE', storeId: 'HUB_KENNEDY' },
@@ -28,10 +32,11 @@ type PendingDeliveryAction = (req: Request, res: Response, order: Order, actor: 
 
 type Options = {
   adminAuth: Pick<AdminAuthService, 'verifySession' | 'logout'>;
-  catalog: Pick<CatalogOperations, 'edit'>;
+  catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog'>;
   getProducts: () => Product[];
   getStores: () => Store[];
   getOrders: () => Order[];
+  getDispatchRuns: () => DispatchRun[];
   getOrder: (id: string) => Order | undefined;
   quote: PendingDeliveryAction;
   confirm: PendingDeliveryAction;
@@ -264,6 +269,29 @@ export function mountBoltAdmin(app: Express, options: Options) {
     res.json({ orders });
   });
 
+  app.get(base + '/sales', (req, res) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    const period = req.query.period ?? 'today';
+    if (period !== 'today' && period !== '7d' && period !== '30d') {
+      return res.status(400).json({ error: 'Selecciona Hoy, Últimos 7 días o Últimos 30 días.' });
+    }
+    let stores: Store[];
+    if (req.query.storeId === 'all') {
+      stores = activeStores().filter(store => actor.storeIds.includes(store.id));
+    } else {
+      const store = selectStore(req, res, actor);
+      if (!store) return;
+      stores = [store];
+    }
+    const demo = !!options.demo;
+    const orders = options.getOrders().filter(order => demo ? isVisibleOrder(order) :
+      !seedOrderIds.has(order.id) && order.creationRequestFingerprint !== 'SIMULATION' && !isBoltAdminDemoOrder(order));
+    res.json(buildBoltAdminSalesReport({
+      period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,
+    }));
+  });
+
   app.get(base + '/orders/:orderId', (req, res) => {
     const actor = authorize(req, res);
     if (!actor) return;
@@ -306,6 +334,31 @@ export function mountBoltAdmin(app: Express, options: Options) {
       isVisibleProduct(product) && belongsToStore(product, store) &&
       (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query)));
     res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store)), total: products.length, offset, limit });
+  });
+
+  app.get(base + '/inventory/adjustments', (req, res) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    if (!actor.canAdjustInventory) return res.status(403).json({ error: 'Tu cuenta solo puede consultar el inventario.' });
+    const store = selectStore(req, res, actor);
+    if (!store) return;
+    const variants = new Map(options.getProducts()
+      .filter(product => isVisibleProduct(product) && belongsToStore(product, store))
+      .map(product => [`${product.parentProductId ?? product.id}:${product.variantId ?? product.id}`, product]));
+    const audit = options.catalog.getAuditLog();
+    const adjustments = [];
+    for (let index = audit.length - 1; index >= 0 && adjustments.length < 20; index--) {
+      const entry = audit[index];
+      if (entry.action !== 'MANUAL_VARIANT_EDIT' || !Array.isArray(entry.stockChanges)) continue;
+      const variant = variants.get(`${entry.productId}:${entry.variantId}`);
+      const change = entry.stockChanges.find((item: { storeId: string }) => item.storeId === store.id);
+      if (!variant || !change || change.before === change.after) continue;
+      adjustments.push({
+        id: `${entry.at}:${index}`, timestamp: entry.at, name: variant.name, sku: variant.sku, presentation: variant.presentation,
+        before: change.before, after: change.after, reason: entry.params?.reason || '', actorName: entry.actor?.name || '',
+      });
+    }
+    res.json({ adjustments });
   });
 
   app.put(base + '/inventory', (req, res) => {

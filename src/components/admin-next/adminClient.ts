@@ -1,4 +1,5 @@
 import type { DeliveryQuote } from '../../lib/deliveryService';
+import type { BoltAdminSalesReport, SalesPeriod } from '../../lib/boltAdminSales';
 import type { Order } from '../../types';
 
 export interface AdminActor {
@@ -40,6 +41,18 @@ export interface InventoryItem {
   available: number;
   countedAt: string | null;
   revision: string;
+}
+
+export interface InventoryAdjustment {
+  id: string;
+  timestamp: string;
+  name: string;
+  sku: string;
+  presentation: string;
+  before: number;
+  after: number;
+  reason: string;
+  actorName: string;
 }
 
 export class AdminRequestError extends Error {
@@ -92,6 +105,12 @@ export const boltAdmin = {
   ),
   inventory: (token: string | null, storeId: string, query: string, offset: number, signal?: AbortSignal) => request<{ items: InventoryItem[]; total: number; offset: number; limit: number }>(
     `${base}/inventory?${new URLSearchParams({ storeId, query, offset: String(offset), limit: '40' })}`, token, { signal },
+  ),
+  inventoryAdjustments: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ adjustments: InventoryAdjustment[] }>(
+    `${base}/inventory/adjustments?${new URLSearchParams({ storeId })}`, token, { signal },
+  ),
+  sales: (token: string | null, storeId: string, period: SalesPeriod, signal?: AbortSignal) => request<BoltAdminSalesReport>(
+    `${base}/sales?${new URLSearchParams({ storeId, period })}`, token, { signal },
   ),
   adjustInventory: (token: string | null, item: InventoryItem, stock: number, reason: string) => request<{ item: InventoryItem }>(
     `${base}/inventory`, token, { method: 'PUT', body: { storeId: item.storeId, productId: item.productId, variantId: item.variantId, stock, expectedRevision: item.revision, reason } },

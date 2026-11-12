@@ -185,6 +185,12 @@ try {
   assert.equal(updated.reserved, reservedStock.reserved);
   assert.equal(updated.available, adjustment.stock - updated.reserved);
   await admin('/inventory', { method: 'PUT', token: coordination, body: adjustment, expected: 409 });
+  await admin('/inventory/adjustments?storeId=HUB_SUBA', { token: suba, expected: 403 });
+  const history = await admin('/inventory/adjustments?storeId=HUB_SUBA', { token: coordination });
+  assert.equal(history.adjustments.length, 1);
+  const [auditEntry] = history.adjustments;
+  assert.deepEqual([auditEntry.before, auditEntry.after, auditEntry.reason, auditEntry.actorName], [reservedStock.stock, updated.stock, adjustment.reason, 'Coordinación']);
+  assert.deepEqual((await admin('/inventory/adjustments?storeId=HUB_KENNEDY', { token: coordination })).adjustments, []);
 
   const turboKey = crypto.randomUUID();
   const createTurbo = overrides => admin('/demo/orders', {
@@ -208,7 +214,16 @@ try {
   assert.deepEqual({ date, startTime, endTime }, {
     date: scheduledWindow.date, startTime: scheduledWindow.startTime, endTime: scheduledWindow.endTime,
   });
-  console.log('PASS BOLT Admin: acceso por sede, panel anterior, Turbo pendiente y Programado con su franja, pedidos idempotentes, seguimiento privado, recaudo cero y ajuste autorizado.');
+  await admin('/sales?storeId=HUB_SUBA', { expected: 401 });
+  await admin('/sales?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
+  const sales = await admin('/sales?storeId=all&period=7d', { token: suba });
+  assert.equal(sales.demo, true);
+  assert.deepEqual(sales.stores.map(store => store.id), ['HUB_SUBA']);
+  assert.equal(sales.summary.orderCount, 1);
+  assert.equal(sales.summary.confirmedCOP, customer.totals.total);
+  assert.equal(sales.summary.collectedCOP, 0);
+  assert.equal(sales.products[0].units, pendingItem.quantity);
+  console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
 } finally {
   if (child && child.exitCode === null) {
     child.kill('SIGTERM');

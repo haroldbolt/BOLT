@@ -1,0 +1,73 @@
+.ba-sales { display: grid; gap: 14px; min-width: 0; }
+.ba-sales-header { align-items: flex-end; }
+.ba-sales-controls { display: flex; align-items: flex-end; flex-wrap: wrap; gap: 7px; }
+.ba-sales-controls .ba-field select { min-height: 41px; }
+.ba-sales-period { display: flex; align-items: center; flex-wrap: wrap; gap: 5px 10px; color: var(--ba-dim); font-size: 12px; }
+.ba-sales-updated { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 4px; margin-left: auto; }
+.ba-sales-updated svg { flex: none; }
+.ba-sales-metrics { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
+.ba-sales-metric { padding: 12px; }
+.ba-sales-metric dt { display: flex; align-items: center; justify-content: space-between; gap: 5px; color: var(--ba-dim); font-size: 13px; font-weight: 630; line-height: 1.2; }
+.ba-sales-metric .ba-symbol { width: 30px; height: 30px; border-radius: 8px; }
+.ba-sales-metric dd { margin-top: 5px; }
+.ba-sales-metric strong { display: block; overflow-wrap: anywhere; color: var(--ba-text); font-size: clamp(21px, 3vw, 29px); font-weight: 760; line-height: 1.15; font-variant-numeric: tabular-nums; letter-spacing: -.035em; }
+.ba-sales-metric small { display: block; margin-top: 4px; color: var(--ba-dim); font-size: 11px; }
+
+.ba-sales-chart-options { display: flex; gap: 2px; padding: 3px; margin: 0; border: 1px solid var(--ba-border); border-radius: 8px; }
+.ba-sales-chart-options label { display: grid; cursor: pointer; }
+.ba-sales-chart-options input { position: absolute; width: 1px; height: 1px; clip-path: inset(50%); }
+.ba-sales-chart-options span { display: grid; place-items: center; min-height: 32px; padding: 2px 8px; border-radius: 5px; color: var(--ba-dim); font-size: 12px; font-weight: 650; }
+.ba-sales-chart-options input:checked + span { color: #6d315c; background: #f4edf6; }
+.ba-sales-chart-options input:focus-visible + span { outline: 3px solid #ea9bac; outline-offset: 1px; }
+.ba-sales-figure { margin: 0 16px; }
+.ba-sales-chart-area { display: grid; grid-template-columns: auto minmax(0, 1fr); align-items: stretch; gap: 0 10px; margin: 10px 0 33px; }
+.ba-sales-axis { display: flex; flex-direction: column; justify-content: space-between; color: var(--ba-dim); text-align: right; font-size: 11px; line-height: 1; white-space: nowrap; }
+.ba-sales-plot { display: grid; grid-template-rows: minmax(0, 1fr); min-width: 0; height: 180px; gap: clamp(1px, .6vw, 8px); border-block: 1px solid var(--ba-border); background: linear-gradient(var(--ba-border), var(--ba-border)) no-repeat center / 100% 1px; }
+.ba-sales-bucket { position: relative; display: flex; align-items: flex-end; justify-content: center; min-width: 0; height: 100%; }
+.ba-sales-bar { width: min(80%, 30px); background: #b28ab7; border-radius: 4px 4px 0 0; }
+.ba-sales-bar[data-peak] { background: #b43759; }
+.ba-sales-axis-label { position: absolute; bottom: -21px; color: var(--ba-dim); font-size: 10px; line-height: 1; white-space: nowrap; }
+.ba-sales-bucket:first-child .ba-sales-axis-label { left: 0; }
+.ba-sales-bucket:last-child .ba-sales-axis-label { right: 0; }
+.ba-sales-figure figcaption { display: flex; align-items: center; flex-wrap: wrap; gap: 3px 7px; padding: 8px 10px; border-radius: 8px; color: #663e65; background: #f6eff7; font-size: 12px; }
+.ba-sales-chart-data { padding: 9px 16px 13px; }
+.ba-sales-chart-data summary { width: fit-content; padding: 5px 0; color: #593964; font-size: 12px; font-weight: 650; cursor: pointer; }
+.ba-sales-chart-data[open] summary { margin-bottom: 7px; }
+.ba-sales-chart-data summary:focus-visible { outline: 3px solid #ea9bac; outline-offset: 3px; }
+
+.ba-sales-breakdowns { display: grid; grid-template-columns: minmax(0, 1.15fr) minmax(0, 1fr); align-items: start; gap: 10px; }
+.ba-sales-empty { padding: 5px 16px 19px; color: var(--ba-dim); font-size: 13px; }
+.ba-sales-table-scroll { overflow-x: auto; }
+.ba-sales-table { width: 100%; border-collapse: collapse; font-size: 13px; font-variant-numeric: tabular-nums; }
+.ba-sales-table th, .ba-sales-table td { padding: 7px 10px; text-align: left; border-top: 1px solid var(--ba-border); }
+.ba-sales-table th:first-child { overflow-wrap: anywhere; }
+.ba-sales-table :is(th, td):not(:first-child) { text-align: right; }
+.ba-sales-table thead { color: var(--ba-dim); background: #f8f7fa; font-size: 11px; }
+.ba-sales-table tbody th { color: var(--ba-text); font-weight: 640; }
+.ba-sales-table small { display: block; color: var(--ba-dim); font-size: 11px; font-weight: 470; }
+.ba-sales-table :is(td, th):last-child strong { white-space: nowrap; }
+.ba-sales-change { display: inline-flex; align-items: center; gap: 2px; color: var(--ba-dim); font-weight: 680; white-space: nowrap; }
+.ba-sales-change[data-direction="1"] { color: #186248; }
+.ba-sales-change[data-direction="-1"] { color: #9d2442; }
+
+@media (max-width: 950px) {
+  .ba-sales-breakdowns { grid-template-columns: minmax(0, 1fr); }
+}
+@media (max-width: 780px) {
+  .ba-sales-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+}
+@media (max-width: 480px) {
+  .ba-sales-updated { margin-left: 0; }
+  .ba-sales-metric { padding: 9px; }
+  .ba-sales-metric dt { font-size: 12px; }
+  .ba-sales-metric .ba-symbol { width: 24px; height: 24px; }
+  .ba-sales-metric .ba-symbol svg { width: 13px; }
+  .ba-sales-figure { margin: 0 10px; }
+  .ba-sales-plot { height: 130px; }
+  .ba-sales-chart-data { padding-inline: 10px; }
+  .ba-sales-table th, .ba-sales-table td { padding-inline: 7px; }
+}
+@media (pointer: coarse) {
+  .ba-sales-chart-options span { min-height: 44px; }
+  .ba-sales-chart-data summary { padding-block: 11px; }
+}

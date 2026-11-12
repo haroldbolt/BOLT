@@ -1,14 +1,16 @@
-import { useEffect, useRef, useState, type FormEvent, type ReactNode } from 'react';
+import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
-  ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, CheckCircle2, ChevronLeft,
+  ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
   ChevronRight, CircleAlert, ClipboardList, Clock3, FlaskConical, LayoutDashboard, LoaderCircle,
-  LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, Store, X, Zap,
+  LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Store, X, Zap,
 } from 'lucide-react';
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
-import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryItem } from './adminClient';
+import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
+import { InventoryAdjustments } from './InventoryAdjustments';
+import { SalesDashboard } from './SalesDashboard';
 import './boltAdmin.css';
 
 const tabs = [
@@ -16,9 +18,11 @@ const tabs = [
   { id: 'turbo', title: 'Turbo', icon: Zap },
   { id: 'scheduled', title: 'Programados', icon: CalendarDays },
   { id: 'inventory', title: 'Inventario', icon: Box },
+  { id: 'sales', title: 'Ventas', icon: ChartNoAxesCombined },
   { id: 'permissions', title: 'Permisos', icon: ShieldCheck },
 ] as const;
 type Tab = typeof tabs[number]['id'] | 'orders';
+type AdminLanding = { tab: Tab; storeId?: string };
 type OrderTab = 'orders' | 'turbo' | 'scheduled';
 type OrderFilters = { search: string; status: string };
 type InventoryPage = Awaited<ReturnType<typeof boltAdmin.inventory>>;
@@ -80,6 +84,7 @@ export function BoltAdminApp() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [attempt, setAttempt] = useState(0);
+  const [landing, setLanding] = useState<AdminLanding>({ tab: 'home' });
 
   useEffect(() => {
     const controller = new AbortController();
@@ -92,12 +97,13 @@ export function BoltAdminApp() {
     return () => controller.abort();
   }, [token, attempt]);
 
-  async function signIn(profileId?: string) {
+  async function signIn(profileId?: string, destination: AdminLanding = { tab: 'home' }) {
     if (busy) return;
     setBusy(true); setError('');
     try {
       const next = profileId ? await boltAdmin.demoLogin(profileId) : await boltAdmin.login(email.trim(), password);
       if (session?.actor && token && token !== next.token) void boltAdmin.logout(token).catch(() => {});
+      setLanding(destination);
       storeAdminToken(next.token); setSession(null); setToken(next.token); setPassword('');
     } catch (failure) { setError(errorText(failure)); }
     finally { setBusy(false); }
@@ -111,8 +117,8 @@ export function BoltAdminApp() {
     storeAdminToken(null); setSession(null); setToken(null); setAttempt(n => n + 1); setBusy(false);
   };
 
-  if (session?.actor) return <AdminWorkspace key={`${session.actor.id}:${token}`} session={session} actor={session.actor} token={token}
-    switchProfile={id => void signIn(id)} signOut={() => void signOut()} busy={busy} sessionError={error} />;
+  if (session?.actor) return <AdminWorkspace key={`${session.actor.id}:${token}`} session={session} actor={session.actor} token={token} landing={landing}
+    switchProfile={(id, destination) => void signIn(id, destination)} signOut={() => void signOut()} busy={busy} sessionError={error} />;
 
   return <main className="bolt-admin ba-login">
     <div className="ba-login-content">
@@ -140,12 +146,12 @@ export function BoltAdminApp() {
   </main>;
 }
 
-function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, sessionError }: {
-  session: AdminSession; actor: AdminActor; token: string | null; switchProfile: (id: string) => void;
+function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut, busy, sessionError }: {
+  session: AdminSession; actor: AdminActor; token: string | null; landing: AdminLanding; switchProfile: (id: string, destination?: AdminLanding) => void;
   signOut: () => void; busy: boolean; sessionError: string;
 }) {
-  const [tab, setTab] = useState<Tab>('home');
-  const [storeChoice, setStoreChoice] = useState('');
+  const [tab, setTab] = useState<Tab>(landing.tab);
+  const [storeChoice, setStoreChoice] = useState(landing.storeId ?? '');
   const [orders, setOrders] = useState<AdminOrder[] | null>(null);
   const [inventory, setInventory] = useState<InventoryPage | null>(null);
   const [selectedOrder, setSelectedOrder] = useState('');
@@ -163,6 +169,7 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   const [fixtureBusy, setFixtureBusy] = useState(false);
   const fixtureKeys = useRef<Partial<Record<DemoOrderMode, string>>>({});
   const [editItem, setEditItem] = useState<InventoryItem | null>(null);
+  const [showInventoryAdjustments, setShowInventoryAdjustments] = useState(landing.tab === 'inventory');
 
   const store = session.stores.find(item => item.id === storeChoice)
     || session.stores.find(item => item.id === 'HUB_SUBA') || session.stores[0];
@@ -225,7 +232,30 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
   function navigate(next: Tab) {
     if (next !== tab) setSelectedOrder('');
     setTab(next);
-    if (next !== 'inventory') setEditItem(null);
+    if (next !== 'inventory') {
+      setEditItem(null);
+      setShowInventoryAdjustments(false);
+    }
+  }
+
+  function openInventoryAdjustments(item?: InventoryItem) {
+    setShowInventoryAdjustments(true);
+    if (item) setEditItem(item);
+    else if (actor.canAdjustInventory && isDemo && inventory?.total === 1) setEditItem(inventory.items[0] ?? null);
+  }
+
+  function closeInventoryAdjustments() {
+    setShowInventoryAdjustments(false);
+    setEditItem(null);
+  }
+
+  function inventoryAdjusted(updated: InventoryItem) {
+    if (updated.storeId !== activeStore.current) return;
+    const isAdjustedItem = (item: InventoryItem) => item.productId === updated.productId && item.variantId === updated.variantId;
+    setInventory(page => page && { ...page, items: page.items.map(item => isAdjustedItem(item) ? updated : item) });
+    setEditItem(item => item && isAdjustedItem(item) ? updated : item);
+    setNotice('Ajuste registrado con su motivo y responsable.');
+    refresh();
   }
 
   function updateOrderFilters(view: OrderTab, changes: Partial<OrderFilters>) {
@@ -376,8 +406,24 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
         {tab === 'inventory' && <>
           <PageHeading title="Inventario" text={`${store?.name || 'Sin sede asignada'} · Existencias, reservas y disponibilidad por presentación`}>
             <button type="button" className="ba-btn ba-btn-secondary" onClick={refresh}><RefreshCw size={16} /> Actualizar</button>
+            {storeId && <button type="button" className="ba-btn ba-btn-primary" aria-expanded={showInventoryAdjustments}
+              onClick={() => showInventoryAdjustments ? closeInventoryAdjustments() : openInventoryAdjustments()}>
+              <SlidersHorizontal size={17} aria-hidden="true" /> Ajustes de inventario
+            </button>}
           </PageHeading>
-          <section className="ba-panel">
+          <div className={`ba-stock-workspace${showInventoryAdjustments ? ' ba-stock-with-adjustments' : ''}`}>
+          {showInventoryAdjustments && <aside className="ba-stock-adjustments">
+            {actor.canAdjustInventory ? <InventoryAdjustments
+              item={editItem} storeName={store?.name || ''} token={token} close={closeInventoryAdjustments} saved={inventoryAdjusted}
+              refreshRequested={() => { setEditItem(null); refresh(); }} /> : <section className="ba-panel ba-inventory-access" aria-label="Permisos para ajustar inventario">
+              <div className="ba-panel-head"><div><h2>Ajustes de inventario</h2><p>El perfil de sede puede consultar existencias. Coordinación puede ajustarlas.</p></div>
+                <button type="button" className="ba-icon-btn" aria-label="Cerrar ajustes de inventario" onClick={closeInventoryAdjustments}><X size={18} /></button></div>
+              {isDemo && <button type="button" className="ba-btn ba-btn-secondary" disabled={busy} onClick={() => switchProfile('coordinacion', { tab: 'inventory', storeId })}>
+                <ShieldCheck size={16} aria-hidden="true" /> Entrar como Coordinación
+              </button>}
+            </section>}
+          </aside>}
+          <section className="ba-panel ba-inventory-list">
             <div className="ba-filters"><SearchBox label="Buscar por SKU, producto o presentación" value={inventorySearch} change={setInventorySearch} /></div>
             {inventoryError ? <FetchError message={inventoryError} refresh={refresh} /> : !inventory ? <Loading text="Consultando inventario…" />
               : inventory.items.length === 0 ? <Empty icon={<PackageSearch size={24} />} title="Sin resultados de inventario" text="Revisa la búsqueda o la sede seleccionada." />
@@ -387,10 +433,13 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
                 </tr></thead><tbody>
                   {inventory.items.map(item => <tr key={`${item.productId}:${item.variantId}`}>
                     <th scope="row"><strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small></th>
-                    <td>{number.format(item.stock)}</td><td>{number.format(item.reserved)}</td>
+                    <td>{actor.canAdjustInventory ? <button className="ba-stock-editable" type="button" onClick={() => openInventoryAdjustments(item)}
+                      aria-label={`Ajustar existencias de ${item.name}, ${item.presentation}, ${number.format(item.stock)} unidades`}>
+                      {number.format(item.stock)}
+                    </button> : number.format(item.stock)}</td><td>{number.format(item.reserved)}</td>
                     <td><span className={`ba-stock-value ${item.available === 0 ? 'ba-stock-none' : ''}`}>{number.format(item.available)}</span></td>
                     <td className="ba-dim">{item.countedAt ? timeLabel(item.countedAt) : 'Sin registro'}</td>
-                    {actor.canAdjustInventory && <td><button type="button" className="ba-btn ba-btn-secondary ba-compact" aria-label={`Ajustar inventario de ${item.name}`} onClick={() => setEditItem(item)}>Ajustar</button></td>}
+                    {actor.canAdjustInventory && <td><button type="button" className="ba-btn ba-btn-secondary ba-compact" aria-label={`Ajustar inventario de ${item.name}, ${item.presentation}`} onClick={() => openInventoryAdjustments(item)}>Ajustar</button></td>}
                   </tr>)}
                 </tbody></table></div>
                 <div className="ba-pagination"><span>{number.format(inventoryPageStart)}–{number.format(inventory.offset + inventory.items.length)} de {number.format(inventory.total)}</span><div>
@@ -399,16 +448,18 @@ function AdminWorkspace({ session, actor, token, switchProfile, signOut, busy, s
                 </div></div>
               </>}
           </section>
-          {editItem && actor.canAdjustInventory && <InventoryEditor key={`${editItem.productId}:${editItem.variantId}:${editItem.revision}`} item={editItem} token={token}
-            close={() => setEditItem(null)} saved={() => { setEditItem(null); setNotice('Ajuste registrado con su motivo y responsable.'); refresh(); }} />}
+          </div>
+          {showInventoryAdjustments && actor.canAdjustInventory && storeId && <InventoryHistory key={storeId} storeId={storeId} token={token} revision={revision} />}
         </>}
+
+        {tab === 'sales' && <SalesDashboard token={token} storeId={storeId} stores={session.stores} fetchReport={boltAdmin.sales} />}
 
         {tab === 'permissions' && <>
           <PageHeading title="Permisos" text="Consulta el acceso de tu perfil." />
           <section className="ba-panel ba-permissions">
             <div className="ba-panel-head"><div><h2>{actor.name}</h2><p>{roleLabel(actor)}</p></div><span className="ba-status ba-status-success"><ShieldCheck size={14} /> Sesión activa</span></div>
             <dl><div><dt>Sedes autorizadas</dt><dd>{session.stores.map(item => item.name).join(' · ') || 'Sin sede asignada'}</dd></div>
-              <div><dt>Consultar pedidos e inventario</dt><dd>Autorizado en sus sedes</dd></div>
+              <div><dt>Consultar pedidos, inventario y ventas</dt><dd>Autorizado en sus sedes</dd></div>
               <div><dt>Confirmar entregas</dt><dd>{actor.canConfirm ? 'Autorizado en sus sedes' : 'Sin permiso'}</dd></div>
               <div><dt>Ajustar existencias</dt><dd>{actor.canAdjustInventory ? 'Autorizado en sus sedes' : 'Sin permiso'}</dd></div>
             </dl>
@@ -447,7 +498,7 @@ function FetchError({ message, refresh }: { message: string; refresh: () => void
 }
 
 function OrderRows({ orders, selected, onSelect }: { orders: AdminOrder[]; selected: string; onSelect: (order: AdminOrder) => void }) {
-  return <div className="ba-table-scroll"><table className="ba-table"><thead><tr><th scope="col">Pedido</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col"><span className="ba-sr">Detalle</span></th></tr></thead><tbody>
+  return <div className="ba-table-scroll"><table className="ba-table ba-order-table"><thead><tr><th scope="col">Pedido</th><th scope="col">Estado</th><th scope="col">Productos</th><th scope="col"><span className="ba-sr">Detalle</span></th></tr></thead><tbody>
     {orders.map(order => {
       const mode = orderMode(order);
       const scheduled = mode === 'PROGRAMADO';
@@ -515,31 +566,30 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, changed
   </section>;
 }
 
-function InventoryEditor({ item, token, close, saved }: { item: InventoryItem; token: string | null; close: () => void; saved: () => void }) {
-  const [stock, setStock] = useState(String(item.stock));
-  const [reason, setReason] = useState('');
-  const [busy, setBusy] = useState(false);
+function InventoryHistory({ storeId, token, revision }: { storeId: string; token: string | null; revision: number }) {
+  const [adjustments, setAdjustments] = useState<InventoryAdjustment[] | null>(null);
   const [error, setError] = useState('');
-  const heading = useRef<HTMLHeadingElement>(null);
-  useEffect(() => { heading.current?.focus({ preventScroll: true }); heading.current?.scrollIntoView({ block: 'center' }); }, []);
-  const quantity = Number(stock);
-  const valid = stock.trim() !== '' && Number.isSafeInteger(quantity) && quantity >= item.reserved && quantity !== item.stock && reason.trim().length >= 5;
-  async function submit(event: FormEvent) {
-    event.preventDefault();
-    if (!valid || busy) return;
-    setBusy(true); setError('');
-    try { await boltAdmin.adjustInventory(token, item, quantity, reason.trim()); saved(); }
-    catch (failure) { setError(errorText(failure)); }
-    finally { setBusy(false); }
-  }
-  return <section className="ba-panel ba-editor" aria-label="Ajustar inventario">
-    <div className="ba-panel-head"><div><h2 ref={heading} tabIndex={-1}>Ajustar existencias</h2><p>{item.name} · {item.presentation}</p></div><button className="ba-icon-btn" type="button" aria-label="Cerrar ajuste" onClick={close} disabled={busy}><X size={19} /></button></div>
-    <form onSubmit={event => void submit(event)}>
-      <p className="ba-info">Existencias registradas: {number.format(item.stock)} · Reservadas: {number.format(item.reserved)}</p>
-      <label className="ba-field">Nueva existencia<input type="number" value={stock} min={item.reserved} step="1" required onChange={event => setStock(event.target.value)} /></label>
-      <label className="ba-field">Motivo del ajuste<input value={reason} onChange={event => setReason(event.target.value)} required minLength={5} maxLength={240} placeholder="Describe qué originó el ajuste" /></label>
-      {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
-      <button type="submit" disabled={!valid || busy} className="ba-btn ba-btn-primary">{busy ? 'Guardando…' : 'Guardar ajuste'}</button>
-    </form>
+  useEffect(() => {
+    const controller = new AbortController();
+    setError('');
+    void boltAdmin.inventoryAdjustments(token, storeId, controller.signal).then(result => {
+      if (!controller.signal.aborted) setAdjustments(result.adjustments);
+    }).catch(failure => { if (!controller.signal.aborted) setError(errorText(failure)); });
+    return () => controller.abort();
+  }, [storeId, token, revision]);
+
+  return <section className="ba-panel ba-stock-history" aria-labelledby="ba-inventory-history-title">
+    <div className="ba-panel-head"><h2 id="ba-inventory-history-title">Ajustes manuales recientes</h2></div>
+    {error ? <p className="ba-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{error}</p>
+      : !adjustments ? <Loading text="Consultando ajustes…" />
+        : adjustments.length === 0 ? <p className="ba-history-empty">Todavía no hay ajustes registrados para esta sede.</p>
+          : <div className="ba-table-scroll"><table className="ba-table"><thead><tr>
+            <th scope="col">Producto / SKU</th><th scope="col">Existencias</th><th scope="col">Motivo</th><th scope="col">Registrado por</th>
+          </tr></thead><tbody>{adjustments.map(adjustment => <tr key={adjustment.id}>
+            <th scope="row"><strong>{adjustment.name}</strong><small>{[adjustment.presentation, adjustment.sku].filter(Boolean).join(' · ')}</small></th>
+            <td className="ba-history-stock">{number.format(adjustment.before)} → {number.format(adjustment.after)}</td>
+            <td>{adjustment.reason || 'Sin motivo registrado'}</td>
+            <td><strong>{adjustment.actorName || 'Sin responsable registrado'}</strong><small>{timeLabel(adjustment.timestamp)}</small></td>
+          </tr>)}</tbody></table></div>}
   </section>;
 }
