@@ -7,6 +7,8 @@ import type { AdminAuthService } from './adminAuthService';
 import { isBoltAdminDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
 import { buildBoltAdminSalesReport } from './boltAdminSales';
 import type { CatalogOperations } from './catalogOperations';
+import type { CatalogImagePatch } from './catalogImagePatch';
+import type { CatalogRepository } from './catalogRepository';
 import { saleVariant, validOriginalPrice } from './variantCommerce';
 
 const base = '/api/v1/bolt-admin';
@@ -34,6 +36,8 @@ type PendingDeliveryAction = (req: Request, res: Response, order: Order, actor: 
 type Options = {
   adminAuth: Pick<AdminAuthService, 'verifySession' | 'logout'>;
   catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog'>;
+  photos: Pick<CatalogRepository, 'getProductById' | 'applyImagePatches'>;
+  uploadPhoto: (dataUrl: string, filename?: string) => { url: string; discard: () => void };
   getProducts: () => Product[];
   getStores: () => Store[];
   getOrders: () => Order[];
@@ -106,6 +110,7 @@ function inventoryItem(product: Product, store?: Store, demoReadOnly = false) {
   const reserved = store && assignedToStore ? (product.reservedStockByStore[store.id] ?? 0) : 0;
   return {
     ...priceItem(product),
+    image: product.image,
     ...(demoReadOnly && { demoReadOnly: true }),
     storeId: store?.id ?? null,
     assignedToStore,
@@ -217,6 +222,27 @@ export function mountBoltAdmin(app: Express, options: Options) {
       return undefined;
     }
     return order;
+  }
+
+  function selectPhoto(req: Request, res: Response, productId: unknown, variantId: unknown) {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    if (!actor.canAdjustPrices) {
+      res.status(403).json({ error: 'Tu perfil solo puede consultar las fotos del catálogo.' });
+      return;
+    }
+    if (typeof productId !== 'string' || typeof variantId !== 'string') {
+      res.status(400).json({ error: 'Selecciona el producto y la presentación.' });
+      return;
+    }
+    const product = options.photos.getProductById(productId);
+    const variant = product?.presentaciones?.find(item => item.varianteId === variantId);
+    if (!product || product.id !== productId || (options.demo && product.id !== options.demo.productId) ||
+        (!variant && (product.presentaciones?.length || variantId !== product.id))) {
+      res.status(404).json({ error: 'La presentación no está disponible para editar fotos.' });
+      return;
+    }
+    return { actor, product, variant };
   }
 
   app.use(base, (_req, res, next) => {
@@ -406,6 +432,43 @@ export function mountBoltAdmin(app: Express, options: Options) {
       });
     }
     res.json({ adjustments });
+  });
+
+  app.get(base + '/inventory/photo', (req, res) => {
+    const selected = selectPhoto(req, res, req.query.productId, req.query.variantId);
+    if (!selected) return;
+    const { product, variant } = selected;
+    res.json({ productImage: product.image, variantImage: variant ? variant.foto || '' : null });
+  });
+
+  app.put(base + '/inventory/photo', (req, res) => {
+    const { productId, variantId, target, expectedImage, dataUrl, filename } = req.body || {};
+    const selected = selectPhoto(req, res, productId, variantId);
+    if (!selected) return;
+    const { actor, product, variant } = selected;
+    if ((target !== 'product' && target !== 'variant') || (target === 'variant' && !variant) ||
+        typeof expectedImage !== 'string' || typeof dataUrl !== 'string' || (filename !== undefined && typeof filename !== 'string')) {
+      return res.status(400).json({ error: 'Selecciona el destino y un archivo de imagen válido.' });
+    }
+    const before = target === 'variant' ? variant?.foto || '' : product.image;
+    if (before !== expectedImage) return res.status(409).json({ error: 'La foto cambió. Carga la versión vigente antes de guardar.' });
+
+    let upload: ReturnType<Options['uploadPhoto']>;
+    try { upload = options.uploadPhoto(dataUrl, filename); }
+    catch (error) { return res.status(400).json({ error: error instanceof Error ? error.message : 'No se pudo subir la foto.' }); }
+
+    const change = { before, after: upload.url };
+    const patch: CatalogImagePatch = {
+      productId: product.id, source: upload.url, checkedAt: new Date().toISOString(), reason: 'Foto actualizada desde BOLT Admin.',
+      ...(target === 'variant' && variant ? { variants: [{ variantId: variant.varianteId, ...change }] } : { image: change }),
+    };
+    try {
+      options.photos.applyImagePatches([patch], { name: actor.name, email: actor.email });
+      res.json({ image: upload.url });
+    } catch {
+      upload.discard();
+      res.status(500).json({ error: 'No se pudo guardar la foto. Vuelve a intentarlo.' });
+    }
   });
 
   app.put(base + '/inventory', (req, res) => {

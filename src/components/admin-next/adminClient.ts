@@ -33,6 +33,7 @@ export type DemoOrderMode = Extract<Order['deliveryMode'], 'TURBO' | 'PROGRAMADO
 export type InventoryScope = 'store' | 'catalog';
 
 export interface InventoryItem extends PriceItem {
+  image: string;
   storeId: string | null;
   assignedToStore: boolean;
   stock: number;
@@ -74,6 +75,22 @@ export interface PriceAdjustment {
   regularPriceCOP: number;
   promoPriceCOP: number | null;
   reason: string;
+}
+
+export interface InventoryPhotoSources {
+  productImage: string;
+  variantImage: string | null;
+}
+
+export type InventoryPhotoTarget = 'product' | 'variant';
+
+export interface InventoryPhotoUpdate {
+  productId: string;
+  variantId: string;
+  target: InventoryPhotoTarget;
+  expectedImage: string;
+  dataUrl: string;
+  filename?: string;
 }
 
 export class AdminRequestError extends Error {
@@ -126,6 +143,12 @@ export const boltAdmin = {
   ),
   inventory: (token: string | null, storeId: string | undefined, query: string, offset: number, scope: InventoryScope, signal?: AbortSignal) => request<{ items: InventoryItem[]; total: number; offset: number; limit: number }>(
     `${base}/inventory?${new URLSearchParams({ ...(storeId ? { storeId } : {}), query, scope, offset: String(offset), limit: '40' })}`, token, { signal },
+  ),
+  inventoryPhoto: (token: string | null, productId: string, variantId: string, signal?: AbortSignal) => request<InventoryPhotoSources>(
+    `${base}/inventory/photo?${new URLSearchParams({ productId, variantId })}`, token, { signal },
+  ),
+  updateInventoryPhoto: (token: string | null, update: InventoryPhotoUpdate) => request<{ image: string }>(
+    `${base}/inventory/photo`, token, { method: 'PUT', body: update },
   ),
   inventoryAdjustments: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ adjustments: InventoryAdjustment[] }>(
     `${base}/inventory/adjustments?${new URLSearchParams({ storeId })}`, token, { signal },

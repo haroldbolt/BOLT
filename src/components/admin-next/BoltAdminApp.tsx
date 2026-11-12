@@ -1,15 +1,17 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
-  ChevronRight, CircleAlert, ClipboardList, Clock3, FlaskConical, LayoutDashboard, LoaderCircle,
+  ChevronRight, CircleAlert, ClipboardList, Clock3, FlaskConical, ImagePlus, LayoutDashboard, LoaderCircle,
   LogOut, PackageSearch, Plus, RefreshCw, Search, ShieldCheck, SlidersHorizontal, Store, X, Zap,
 } from 'lucide-react';
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
-import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem, type InventoryScope, type PriceAdjustment, type PriceItem } from './adminClient';
+import { ProductImage } from '../common/ProductImage';
+import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type DemoOrderMode, type InventoryAdjustment, type InventoryItem, type InventoryPhotoUpdate, type InventoryScope, type PriceAdjustment, type PriceItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
 import { InventoryAdjustments } from './InventoryAdjustments';
+import { InventoryPhotoEditor } from './InventoryPhotoEditor';
 import { formatAdminPrice, PriceEditor } from './PriceManagement';
 import { SalesDashboard } from './SalesDashboard';
 import './boltAdmin.css';
@@ -27,7 +29,9 @@ type AdminLanding = { tab: Tab; storeId?: string };
 type OrderTab = 'orders' | 'turbo' | 'scheduled';
 type OrderFilters = { search: string; status: string };
 type InventoryPage = Awaited<ReturnType<typeof boltAdmin.inventory>>;
-type InventoryEditor = { mode: 'stock'; item: InventoryItem | null } | { mode: 'price'; item: InventoryItem };
+type InventoryEditor =
+  | { mode: 'stock'; item: InventoryItem | null }
+  | { mode: 'price' | 'photo'; item: InventoryItem };
 
 const orderTitles: Record<OrderTab, string> = { orders: 'Todos los pedidos', turbo: 'Pedidos Turbo', scheduled: 'Envíos programados' };
 const defaultOrderFilters: OrderFilters = { search: '', status: 'all' };
@@ -287,6 +291,13 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
     }
   }
 
+  async function saveInventoryPhoto(update: InventoryPhotoUpdate) {
+    await boltAdmin.updateInventoryPhoto(token, update);
+    setInventoryEditor(current => current?.mode === 'photo' && sameVariant(current.item, update) ? null : current);
+    setNotice(update.target === 'product' ? 'Foto principal guardada.' : 'Foto de la presentación guardada.');
+    refresh();
+  }
+
   function updateOrderFilters(view: OrderTab, changes: Partial<OrderFilters>) {
     setOrderFilters(current => ({ ...current, [view]: { ...(current[view] ?? defaultOrderFilters), ...changes } }));
   }
@@ -446,6 +457,9 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
               key={`${inventoryEditor.item.productId}:${inventoryEditor.item.variantId}:${inventoryEditor.item.revision}`}
               item={inventoryEditor.item} saving={priceSaving} save={saveInventoryPrice} close={closeInventoryEditor}
               refreshPrices={() => { closeInventoryEditor(); refresh(); }} />
+            : inventoryEditor.mode === 'photo' ? <InventoryPhotoEditor
+              key={`${inventoryEditor.item.productId}:${inventoryEditor.item.variantId}`}
+              item={inventoryEditor.item} token={token} save={saveInventoryPhoto} close={closeInventoryEditor} />
             : actor.canAdjustInventory ? <InventoryAdjustments
               item={inventoryEditor.item} storeName={store?.name || ''} token={token} close={closeInventoryEditor} saved={inventoryAdjusted}
               refreshRequested={() => { setInventoryEditor({ mode: 'stock', item: null }); refresh(); }} /> : <section className="ba-panel ba-inventory-access" aria-label="Permisos para ajustar inventario">
@@ -472,13 +486,26 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                 </tr></thead><tbody>
                   {inventory.items.map(item => {
                     const editableStock = actor.canAdjustInventory && !item.demoReadOnly && item.assignedToStore && (isDemo || !item.status || item.status === 'ACTIVE');
+                    const editableCatalog = actor.canAdjustPrices && !item.demoReadOnly;
                     return <tr key={`${item.productId}:${item.variantId}`} data-selected={inventoryEditor?.item && sameVariant(inventoryEditor.item, item) ? 'true' : undefined}>
-                      <th scope="row"><strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
-                        {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
-                        {item.demoReadOnly && <small>Solo consulta en la demo</small>}
-                        {!isDemo && item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
+                      <th scope="row">
+                        <div className="ba-inventory-product">
+                          <div aria-hidden="true"><ProductImage src={item.image} className="ba-inventory-thumbnail" loading="lazy" /></div>
+                          <div className="ba-inventory-product-text">
+                            <strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
+                            {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
+                            {item.demoReadOnly && <small>Solo consulta en la demo</small>}
+                            {!isDemo && item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
+                            {editableCatalog && <button type="button" className="ba-btn ba-btn-secondary ba-photo-trigger" disabled={priceSaving}
+                              aria-label={`Editar foto de ${[item.name, item.presentation].filter(Boolean).join(', ')}`}
+                              aria-expanded={inventoryEditor?.mode === 'photo' && sameVariant(inventoryEditor.item, item)}
+                              onClick={() => { setNotice(''); setInventoryEditor({ mode: 'photo', item }); }}>
+                              <ImagePlus size={14} aria-hidden="true" /> Editar foto
+                            </button>}
+                          </div>
+                        </div>
                       </th>
-                      <InventoryPriceCell item={item} editable={actor.canAdjustPrices && !item.demoReadOnly} saving={priceSaving}
+                      <InventoryPriceCell item={item} editable={editableCatalog} saving={priceSaving}
                         edit={() => { setNotice(''); setInventoryEditor({ mode: 'price', item }); }} />
                       <td>{editableStock ? <button className="ba-stock-editable" type="button" disabled={priceSaving} onClick={() => openInventoryAdjustments(item)}
                         aria-label={`Ajustar existencias de ${item.name}, ${item.presentation}, ${number.format(item.stock)} unidades`}>

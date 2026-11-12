@@ -150,6 +150,11 @@ export class CatalogRepository {
     return this.mergedProductsCache.filter(p => !p.status || p.status === 'ACTIVE');
   }
 
+  public registerBaselineProduct(product: Product): void {
+    this.baselineProducts = [...this.baselineProducts.filter(item => item.id !== product.id), product];
+    this.rebuildMergedCache();
+  }
+
   public getProductById(id: string): Product | undefined {
     if (!this.isLoaded) this.init();
     return this.mergedProductsCache.find(p => p.id === id || p.productoId === id || p.sku === id);

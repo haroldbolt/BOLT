@@ -73,12 +73,10 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
 const isDispatchSimulation=simulationEnabled();
+if (isDispatchSimulation) catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
 const catalogOperations = new CatalogOperations({
   file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),
-  products:()=>{
-    const catalog=catalogRepository.getAllProducts(true);
-    return isDispatchSimulation ? [...catalog.filter(p=>p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID),boltAdminDemoProduct()] : catalog;
-  },
+  products:()=>catalogRepository.getAllProducts(true),
   stores:()=>stores,
   orders:()=>ordersRepository.getAllOrders(),
 });
@@ -116,7 +114,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   app.use(express.json({ limit: '15mb' }));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
-  app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));
+  const uploadsRoot = path.join(process.cwd(), 'public', 'uploads');
+  const catalogUploadDir = path.join(uploadsRoot, 'catalog');
+  app.use('/uploads', express.static(uploadsRoot));
 
   // Función para validar encabezados binarios y guardar imagen en public/uploads/catalog
   function saveBase64Image(dataUrl: string, originalFilename?: string): { url: string; filename: string; size: number } {
@@ -164,16 +164,15 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       throw new Error(`Tipo de imagen no admitido (${mimeType}). Formatos soportados: JPEG, PNG, WEBP, GIF.`);
     }
 
-    const uploadDir = path.join(process.cwd(), 'public', 'uploads', 'catalog');
-    if (!fs.existsSync(uploadDir)) {
-      fs.mkdirSync(uploadDir, { recursive: true });
+    if (!fs.existsSync(catalogUploadDir)) {
+      fs.mkdirSync(catalogUploadDir, { recursive: true });
     }
 
     const cleanBaseName = originalFilename
       ? path.basename(originalFilename).replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 25)
       : 'foto';
     const uniqueFilename = `img-${Date.now()}-${crypto.randomBytes(4).toString('hex')}-${cleanBaseName}.${ext}`;
-    const filePath = path.join(uploadDir, uniqueFilename);
+    const filePath = path.join(catalogUploadDir, uniqueFilename);
 
     fs.writeFileSync(filePath, buffer);
 
@@ -761,6 +760,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   mountBoltAdmin(app,{
     adminAuth:adminAuthService,
     catalog:catalogOperations,
+    photos:catalogRepository,
+    uploadPhoto:(dataUrl, filename)=>{
+      const upload=saveBase64Image(dataUrl, filename);
+      return {url:upload.url, discard:()=>{
+        try { fs.rmSync(path.join(catalogUploadDir, upload.filename), { force: true }); }
+        catch (error) { console.error('No se pudo eliminar una foto de catálogo sin asignar.', error); }
+      }};
+    },
     getProducts:()=>products,
     getStores:()=>stores,
     getOrders:()=>ordersRepository.getAllOrders(),

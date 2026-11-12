@@ -23,6 +23,8 @@ const upstream = await freePort();
 const origin = 'http://127.0.0.1:' + port;
 const password = crypto.randomBytes(24).toString('hex');
 const adminPath = '/api/v1/bolt-admin';
+const photoPng = 'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAIAAACQd1PeAAAADElEQVR4nGP4z8AAAAMBAQDJ/pLvAAAAAElFTkSuQmCC';
+const photoDataUrl = 'data:image/png;base64,' + photoPng;
 let child;
 let gatewayCookie;
 
@@ -189,6 +191,10 @@ async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
   });
   await admin('/prices', {
     method: 'PUT', token: coordination, body: { ...edit, regularPriceCOP: price + 1, promoPriceCOP: null }, expected: 404,
+  });
+  await admin('/inventory/photo', {
+    method: 'PUT', token: coordination, expected: 404,
+    body: { productId: product.id, variantId: sku, target: 'variant', expectedImage: '', dataUrl: photoDataUrl },
   });
   assert.deepEqual((await inventory(suba)).items, inventoryRows);
   const after = (await catalog()).presentaciones.find(variant => variant.varianteId === sku);
@@ -384,6 +390,25 @@ try {
   })).item;
   assert.equal(restored.price, 25_000);
   assert.ok(restored.originalPrice == null);
+
+  const photoRoute = '/inventory/photo';
+  const photoIds = { productId: reservedStock.productId, variantId: reservedStock.variantId };
+  assert.equal(photoIds.productId, 'SIM-BOLT-ADMIN-SUBA');
+  const photoQuery = photoRoute + '?' + new URLSearchParams(photoIds);
+  const beforePhoto = await admin(photoQuery, { token: coordination });
+  assert.deepEqual(beforePhoto, { productImage: '', variantImage: '' });
+  const upload = { ...photoIds, target: 'variant', expectedImage: beforePhoto.variantImage, dataUrl: photoDataUrl, filename: 'simulacion.png' };
+  await admin(photoRoute, { method: 'PUT', token: suba, body: upload, expected: 403 });
+  const { image } = await admin(photoRoute, { method: 'PUT', token: coordination, body: upload });
+  assert.match(image, /^\/uploads\/catalog\/[^/]+\.png$/);
+  assert.deepEqual(await admin(photoQuery, { token: coordination }), { productImage: '', variantImage: image });
+  assert.equal(findStock(await inventory()).image, image);
+  const asset = await fetch(origin + image, { headers: { Cookie: gatewayCookie } });
+  assert.equal(asset.status, 200);
+  assert.match(asset.headers.get('content-type') || '', /^image\/png/);
+  assert.deepEqual(Buffer.from(await asset.arrayBuffer()), Buffer.from(photoPng, 'base64'));
+  assert.deepEqual(await api('/api/v1/catalog?all=true&q=SIM-BOLT-ADMIN-SUBA'), []);
+  console.log('PASS demo: Coordinación guarda una foto de variante, Suba solo consulta y el producto simulado sigue oculto en tienda.');
   console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
   await verifyCustomerCheckout({ suba, kennedy, coordination });
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
