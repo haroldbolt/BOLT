@@ -4,7 +4,7 @@ import crypto from 'node:crypto';
 import type { Product, Store, Order } from '../types';
 import { saleVariant, salesCatalog } from './variantCommerce';
 
-type Actor = { email: string; name: string };
+type Actor = { email: string; name: string; id?: string };
 type Numbers = Record<string, number>;
 type Effect = { sold: number; reserved: number };
 export type PriceSource = {
@@ -233,8 +233,8 @@ export class CatalogOperations {
     batch.status=batch.rows.every(r=>r.done)?'COMPLETED':'RUNNING';
     this.persist(next);return copy(batch);
   }
-  public edit(productId:string, params:{variantId?:string;priceCOP?:number;stockByStore?:Numbers;expectedRevision?:string},actor:Actor):Product {
-    actor={email:actor.email,name:actor.name};
+  public edit(productId:string, params:{variantId?:string;priceCOP?:number;stockByStore?:Numbers;expectedRevision?:string;reason?:string},actor:Actor):Product {
+    actor={email:actor.email,name:actor.name,...(actor.id?{id:actor.id}:{})};
     const p=this.getProducts().find(p=>p.id===productId);if(!p) throw new Error('Producto no encontrado');
     const variantId=params.variantId||p.presentaciones?.[0]?.varianteId||p.id;
     const v=p.presentaciones?.find(v=>v.varianteId===variantId);if(!v)throw new Error('Variante no encontrada');
@@ -242,14 +242,18 @@ export class CatalogOperations {
     if(params.priceCOP!==undefined && (!Number.isFinite(params.priceCOP)||params.priceCOP<=0))throw new Error('Precio COP inválido');
     const next=copy(this.state||this.fresh());const value=this.ensureValue(next,p,variantId);
     const current=saleVariant(p,variantId);
+    const stockChanges: Array<{storeId:string;before:number;after:number;reserved:number}> = [];
     for(const [storeId,qty] of Object.entries(params.stockByStore||{})) {
       const s=this.options.stores().find(s=>s.id===storeId);
       if(!s?.isActive || !(v.bodegaIds.includes(storeId)||!!s.shopifyLocationGid&&v.bodegaIds.includes(s.shopifyLocationGid)))throw new Error('Bodega no asociada o inactiva');
-      if(!Number.isSafeInteger(qty)||qty<(current.reservedStockByStore[storeId]||0))throw new Error('Existencia inválida o menor que reservas');
-      value.delta[storeId]=(value.delta[storeId]||0)+qty-(current.stockByStore[storeId]||0);
+      const before=current.stockByStore[storeId]||0;
+      const reserved=current.reservedStockByStore[storeId]||0;
+      if(!Number.isSafeInteger(qty)||qty<reserved)throw new Error('Existencia inválida o menor que reservas');
+      value.delta[storeId]=(value.delta[storeId]||0)+qty-before;
+      stockChanges.push({storeId,before,after:qty,reserved});
     }
     if(params.priceCOP!==undefined && params.priceCOP!==value.price){value.price=params.priceCOP;value.revision++;}
-    next.audit.push({at:new Date().toISOString(),actor,action:'MANUAL_VARIANT_EDIT',productId,variantId,params});
+    next.audit.push({at:new Date().toISOString(),actor,action:'MANUAL_VARIANT_EDIT',productId,variantId,params,...(stockChanges.length?{stockChanges}:{})});
     this.persist(next);return this.getProducts().find(p=>p.id===productId)!;
   }
   public reverse(id:string,actor:Actor):CatalogBatch {

@@ -27,7 +27,8 @@
     "test:pending-delivery": "tsx src/tests/pendingDeliveryReview.test.tsx && tsx src/tests/pendingShippingPrice.test.tsx && tsx src/tests/pendingDeliveryReviewHttp.test.ts",
     "test:turbo-pricing": "tsx src/tests/turboPricing.test.tsx && tsx src/tests/turboPricingHttp.test.ts",
     "test:brands": "tsx src/tests/brandDirectory.test.tsx",
-    "test:photo-search": "node --import tsx --test src/tests/productPhotoSearch.test.ts src/tests/productPhotoOcrRank.test.ts src/tests/photoSearchClient.test.tsx"
+    "test:photo-search": "node --import tsx --test src/tests/productPhotoSearch.test.ts src/tests/productPhotoOcrRank.test.ts src/tests/photoSearchClient.test.tsx",
+    "test:bolt-admin": "npm run build && node --import tsx src/tests/boltAdminDemo.test.ts && node deployment/demo-admin.test.mjs"
   },
   "dependencies": {
     "@better-auth/core": "1.7.20",

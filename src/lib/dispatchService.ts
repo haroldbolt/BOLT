@@ -72,6 +72,7 @@ export interface DispatchDependencies {
   now?: () => number;
   providers?: DispatchProvider[];
   simulation?: boolean;
+  holdDispatch?: (order: Order) => boolean;
   routeEstimate?: (
     driver: DriverProfile,
     store: Store,
@@ -268,7 +269,7 @@ export class DispatchService {
       return result;
     });
   }
-  confirmPendingOrder(id:string,candidate:Order,actorId:string,customerAgreementReference:string):{success:boolean;order?:Order;error?:string} {
+  confirmPendingOrder(id:string,candidate:Order,actorId:string,customerAgreementReference:string,actorDetails:{role:'ADMINISTRADOR'|'BODEGA';name?:string}={role:'ADMINISTRADOR'}):{success:boolean;order?:Order;error?:string} {
     return this.repo.transaction(()=>{
       const order=this.repo.getOrderById(id);
       if(!order || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION' || order.deliveryReview?.status!=='PENDING') fail('REVIEW_NOT_PENDING','Esta solicitud ya no está pendiente.',409);
@@ -277,7 +278,7 @@ export class DispatchService {
       if(candidate.storeId!==order!.storeId) fail('WAREHOUSE_CHANGED','La revisión debe conservar la sede asignada.',409);
       if(JSON.stringify(candidate.items.map(i=>[i.productId,i.quantity,i.price]))!==JSON.stringify(order!.items.map(i=>[i.productId,i.quantity,i.price]))) fail('ITEMS_CHANGED','Los productos o precios cambiaron; solicita una nueva confirmación del cliente.',409);
       order!.deliveryReview={...review,status:'CONFIRMED',confirmedAt:new Date(this.now()).toISOString(),confirmedBy:actorId,customerAgreementReference,confirmationToken:candidate.transportConfirmation};
-      const result=this.repo.transitionStatus(id,'CONFIRMADO',{role:'ADMINISTRADOR',id:actorId},{reason:'Entrega verificada y aceptada por el cliente',notes:customerAgreementReference});
+      const result=this.repo.transitionStatus(id,'CONFIRMADO',{...actorDetails,id:actorId},{reason:'Entrega verificada y aceptada por el cliente',notes:customerAgreementReference});
       this.checkResult(result);
       Object.assign(order!,candidate,identity,{fulfillmentStatus:'CONFIRMADO',payment:{...candidate.payment,status:'PENDIENTE',transactionId:undefined},deliveryReview:{...review,status:'CONFIRMED',confirmedAt:new Date(this.now()).toISOString(),confirmedBy:actorId,customerAgreementReference,confirmationToken:candidate.transportConfirmation}});
       if(order!.childShipments) order!.childShipments.forEach((s,i)=>{s.assignmentId=`${order!.assignmentId}-${i+1}`;s.tripId=`${order!.tripId}-${i+1}`;s.statusHistory=[]});
@@ -614,6 +615,7 @@ export class DispatchService {
       now = this.now(),
       c = this.state.config;
     if (
+      (this.deps.simulation && this.deps.holdDispatch?.(order)) ||
       !a?.enabled ||
       !d ||
       !v ||
@@ -670,6 +672,7 @@ export class DispatchService {
     try {
       const r = this.run(id),
         { order, shipment } = this.target(r);
+      if (this.deps.simulation && this.deps.holdDispatch?.(order)) return;
       if (
         order.scheduledWindow &&
         this.now() + Math.max(0, order.estimatedDeliveryMinutes * 60) * 1000 <

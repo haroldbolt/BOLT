@@ -1,0 +1,103 @@
+import type { DeliveryQuote } from '../../lib/deliveryService';
+import type { Order } from '../../types';
+
+export interface AdminActor {
+  id: string;
+  name: string;
+  role: 'COORDINACION' | 'SEDE';
+  storeIds: string[];
+  canConfirm: boolean;
+  canAdjustInventory: boolean;
+}
+
+export interface AdminSession {
+  mode: 'demo' | 'live';
+  actor: AdminActor | null;
+  stores: { id: string; name: string }[];
+  profiles: { id: string; name: string; role: AdminActor['role']; storeId?: string }[];
+}
+
+export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'createdAt' | 'storeId' | 'storeName' |
+  'fulfillmentStatus' | 'deliveryMode' | 'scheduledWindow' | 'items' | 'totals' | 'timestamps' | 'isSplitOrder' | 'statusHistory'> & {
+  deliveryReview?: Pick<NonNullable<Order['deliveryReview']>, 'status' | 'requestedAt' | 'requestedMode' | 'confirmedAt' | 'reasonCode'>;
+  customer?: Pick<Order['customer'], 'name' | 'phone' | 'email'>;
+  deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
+  payment?: Pick<Order['payment'], 'status' | 'method'>;
+};
+
+export interface InventoryItem {
+  storeId: string;
+  productId: string;
+  variantId: string;
+  name: string;
+  brand: string;
+  sku: string;
+  presentation: string;
+  stock: number;
+  reserved: number;
+  available: number;
+  countedAt: string | null;
+  revision: string;
+}
+
+export class AdminRequestError extends Error {
+  constructor(message: string, readonly status: number) {
+    super(message);
+    this.name = 'AdminRequestError';
+  }
+}
+
+const sessionTokenKey = 'bolt_admin_next_token';
+
+export function readAdminToken() {
+  try { return sessionStorage.getItem(sessionTokenKey); } catch { return null; }
+}
+
+export function storeAdminToken(token: string | null) {
+  try {
+    if (token) sessionStorage.setItem(sessionTokenKey, token);
+    else sessionStorage.removeItem(sessionTokenKey);
+  } catch { /* The current page can still hold the session in memory. */ }
+}
+
+async function request<T>(url: string, token: string | null, options: { body?: unknown; signal?: AbortSignal; method?: 'POST' | 'PUT'; idempotencyKey?: string } = {}): Promise<T> {
+  const headers = new Headers({ Accept: 'application/json' });
+  if (token) headers.set('Authorization', `Bearer ${token}`);
+  if (options.body !== undefined) headers.set('Content-Type', 'application/json');
+  if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
+  const response = await fetch(url, {
+    method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), headers, credentials: 'same-origin',
+    cache: 'no-store', redirect: 'error', signal: options.signal,
+    body: options.body === undefined ? undefined : JSON.stringify(options.body),
+  });
+  const result = await response.json().catch(() => null);
+  if (!response.ok || (result === null && response.status !== 204)) {
+    throw new AdminRequestError(typeof result?.error === 'string' ? result.error : 'No se pudo completar la consulta.', response.status);
+  }
+  return result as T;
+}
+
+const base = '/api/v1/bolt-admin';
+const orderPath = (orderId: string) => `${base}/orders/${encodeURIComponent(orderId)}`;
+
+export const boltAdmin = {
+  session: (token: string | null, signal?: AbortSignal) => request<AdminSession>(`${base}/session`, token, { signal }),
+  login: (email: string, password: string) => request<{ token: string }>('/api/v1/auth/login', null, { body: { email, password } }),
+  demoLogin: (profileId: string) => request<{ token: string; actor: AdminActor }>(`${base}/demo/session`, null, { body: { profileId } }),
+  logout: (token: string | null) => request<{ ok: boolean }>(`${base}/logout`, token, { body: {} }),
+  orders: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ orders: AdminOrder[] }>(
+    `${base}/orders?${new URLSearchParams({ storeId })}`, token, { signal },
+  ),
+  inventory: (token: string | null, storeId: string, query: string, offset: number, signal?: AbortSignal) => request<{ items: InventoryItem[]; total: number; offset: number; limit: number }>(
+    `${base}/inventory?${new URLSearchParams({ storeId, query, offset: String(offset), limit: '40' })}`, token, { signal },
+  ),
+  adjustInventory: (token: string | null, item: InventoryItem, stock: number, reason: string) => request<{ item: InventoryItem }>(
+    `${base}/inventory`, token, { method: 'PUT', body: { storeId: item.storeId, productId: item.productId, variantId: item.variantId, stock, expectedRevision: item.revision, reason } },
+  ),
+  createDemoOrder: (token: string | null, idempotencyKey: string) => request<{ orderId: string; guestAccessToken: string; trackingPath: string }>(
+    `${base}/demo/orders`, token, { body: {}, idempotencyKey },
+  ),
+  quote: (token: string | null, orderId: string, body: unknown) => request<DeliveryQuote>(`${orderPath(orderId)}/quote`, token, { body }),
+  confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),
+  startPreparation: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: {} }),
+};
