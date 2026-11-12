@@ -1,7 +1,7 @@
 import assert from 'node:assert/strict';
 import React from 'react';
 import { renderToStaticMarkup } from 'react-dom/server';
-import { ProductPhotoSearch } from '../components/customer/ProductPhotoSearch';
+import { getCameraCrop, ProductPhotoSearch } from '../components/customer/ProductPhotoSearch';
 import { INITIAL_PRODUCTS } from '../data/seedData';
 import { photoSearchAvailable, resolvePhotoMatches, searchCatalogPhoto } from '../lib/photoSearchClient';
 
@@ -33,6 +33,15 @@ assert.match(markup, /capture="environment"/);
 assert.match(markup, /Subir foto/);
 assert.match(markup, /Buscar por nombre/);
 assert.match(markup, /aria-label="Cerrar búsqueda por foto"/);
+
+// The preview uses object-cover. The JPEG must use the same source pixels as
+// the guide, including when the rear camera's aspect ratio differs.
+const rect = (left: number, top: number, width: number, height: number) => ({ left, top, width, height });
+const coordinates = (crop: ReturnType<typeof getCameraCrop>) => Object.values(crop).map(Math.round);
+assert.deepEqual(coordinates(getCameraCrop(1920, 1080, rect(20, 40, 320, 400), rect(60, 90, 240, 300))),
+  [636, 135, 648, 810]);
+assert.deepEqual(coordinates(getCameraCrop(1080, 1920, rect(0, 0, 360, 360), rect(40, 60, 280, 240))),
+  [120, 600, 840, 720]);
 
 const originalFetch = globalThis.fetch;
 const signal = new AbortController().signal;

@@ -53,3 +53,12 @@ test('tied product labels and distinct visible brands stay ambiguous', () => {
   const another = { ...kitten, id: 'otra-marca', brand: 'Otra Marca', name: 'Otra Marca Gatitos' };
   assert.equal(rankProductPhotoText('AGILITY GOLD KITTEN\nOTRA MARCA', [kitten, another]).confident, false);
 });
+
+test('a truncated brand in a camera frame still suggests the matching product', () => {
+  assert.deepEqual(rankProductPhotoText('AGIL\nGOLD\nKITTEN', catalog), {
+    matches: [{ productId: kitten.id }], confident: false,
+  });
+  assert.deepEqual(rankProductPhotoText('AG\nGOLD\nKITTEN', catalog), {
+    matches: [], confident: false,
+  });
+});
