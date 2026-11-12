@@ -44,9 +44,26 @@ function hasPhrase(text: string, phrase: string) {
   return phrase !== '' && ` ${text} `.includes(` ${phrase} `);
 }
 
+function hasTruncatedBrand(words: string[], brand: string) {
+  const parts = brand.split(' ');
+  if (parts.length < 2) return false;
+  return words.some((_, start) => {
+    if (start + parts.length > words.length) return false;
+    let truncated = 0;
+    for (const [offset, part] of parts.entries()) {
+      const observed = words[start + offset];
+      if (observed === part) continue;
+      if (observed.length < 4 || part.length - observed.length > 3 ||
+          !part.startsWith(observed) || ++truncated > 1) return false;
+    }
+    return truncated === 1;
+  });
+}
+
 export function rankProductPhotoText(text: string, catalog: readonly Product[]) {
   const recognized = normalize(text);
-  const words = new Set(recognized.split(' ').map(canonical));
+  const observedWords = recognized.split(' ');
+  const words = new Set(observedWords.map(canonical));
   const cat = [...catWords].some(word => words.has(word));
   const dog = [...dogWords].some(word => words.has(word));
   const species = cat === dog ? null : cat ? 'Gato' : 'Perro';
@@ -55,8 +72,10 @@ export function rankProductPhotoText(text: string, catalog: readonly Product[]) 
     product,
     brand: normalize(product.brand),
   }));
-  const observedBrands = [...new Set(eligible.map(({ brand }) => brand)
-    .filter(brand => hasPhrase(recognized, brand)))];
+  const catalogBrands = [...new Set(eligible.map(({ brand }) => brand))];
+  const exactBrands = catalogBrands.filter(brand => hasPhrase(recognized, brand));
+  const partialBrands = exactBrands.length ? [] : catalogBrands.filter(brand => hasTruncatedBrand(observedWords, brand));
+  const observedBrands = exactBrands.length ? exactBrands : partialBrands.length === 1 ? partialBrands : [];
   const brands = observedBrands.filter(brand => !observedBrands.some(other =>
     other !== brand && hasPhrase(other, brand)));
 
@@ -77,7 +96,7 @@ export function rankProductPhotoText(text: string, catalog: readonly Product[]) 
     left.productId.localeCompare(right.productId));
 
   const [first, second] = ranked;
-  const confident = Boolean(first?.distinctive && first.missing === 0 && brands.length === 1 &&
+  const confident = Boolean(first?.distinctive && first.missing === 0 && brands.length === 1 && exactBrands.length > 0 &&
     !(cat && dog) && (!second || first.matched > second.matched));
   const candidates = first?.matched ? ranked.filter(candidate => candidate.matched > 0) : ranked;
   return {

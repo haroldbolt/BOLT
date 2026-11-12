@@ -5,8 +5,8 @@ La búsqueda identifica el producto del catálogo. El cliente elige el peso, sab
 ## Recorrido del cliente
 
 1. Toca la cámara al lado de la búsqueda de texto.
-2. Toma una foto del frente del empaque o elige una de la galería.
-3. BOLT prepara la foto y empieza la búsqueda automáticamente.
+2. En «Tomar foto», permite que BOLT use la cámara y coloca la marca y el nombre del empaque dentro del recuadro. También puedes elegir una foto de la galería.
+3. BOLT analiza el área encuadrada. Si la cámara integrada no está disponible, el diálogo ofrece la cámara del dispositivo y la galería.
 4. Si BOLT encuentra una coincidencia clara, abre la ficha. Si hay varias posibilidades, elige entre las fichas sugeridas. Si la foto no permite identificar el producto, repítela o escribe el nombre.
 5. Selecciona la presentación en la ficha y consulta su precio y disponibilidad.
 
