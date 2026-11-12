@@ -4,6 +4,8 @@ import { acceptsDemoOrigin } from './src/lib/demoOrigin';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
+import {mountProductPhotoSearch} from './src/lib/productPhotoSearchRoutes';
+import type {ProductPhotoRecognizer} from './src/lib/productPhotoSearch';
 import {mountTrackingRecovery} from './src/lib/trackingRecovery';
 import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
 import {DispatchService} from './src/lib/dispatchService';
@@ -82,8 +84,9 @@ function quoteForPurchase(request: any, catalog=products, orderList=ordersReposi
   if(quote.reasonCode==='TRANSPORT_DATA_PENDING' && quote.inventoryValidated && quote.assignedStoreId && quote.territoryInfo?.isCovered) {quote.message=REVIEW_MESSAGE;quote.reviewRequestToken=crypto.createHash('sha256').update(JSON.stringify({kind:'PENDING_REVIEW_ONLY',destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},storeId:quote.assignedStoreId,mode:request.requestedMode,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort()})).digest('hex');}
   return quote;
 }
-export async function startServer(customerOverride?: Parameters<typeof mountCustomerAccounts>[2]) {
+export async function startServer(customerOverride?: Parameters<typeof mountCustomerAccounts>[2], photoRecognizer?: ProductPhotoRecognizer) {
   if(customerOverride && (!isDispatchSimulation || process.env.NODE_ENV==='production'))throw Error('Customer fixture is restricted to isolated local simulations');
+  if(photoRecognizer && (!isDispatchSimulation || process.env.NODE_ENV==='production'))throw Error('Photo recognition fixture is restricted to isolated local simulations');
   acquireCatalogWriterLock();
   acquireCatalogWriterLock(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'));
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
@@ -94,6 +97,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
+  mountProductPhotoSearch(app, {catalog:()=>catalogRepository.getAllProducts(false), recognizer:photoRecognizer});
   app.use(express.json({ limit: '15mb' }));
   app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
   app.use('/uploads', express.static(path.join(process.cwd(), 'public', 'uploads')));

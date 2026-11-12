@@ -1,9 +1,10 @@
 import {CATALOG_SECTIONS,type CatalogSection} from '../../lib/brandDirectory';
 import { COVERAGE_NOTICE } from '../../data/coverageConfig';
-import React, { useState } from 'react';
-import { Search, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark, Layers } from 'lucide-react';
+import React, { useEffect, useState } from 'react';
+import { Search, Camera, MapPin, ChevronDown, User, ShoppingBag, ShieldCheck, HelpCircle, Heart, Clock, Menu, X, ArrowLeft, Bell, Navigation, Calendar, Compass, Bookmark, Layers } from 'lucide-react';
 import { MainCategory, Store, DeliveryMode, ScheduledDeliveryWindow } from '../../types';
 import { DeliveryQuote } from '../../lib/deliveryService';
+import { photoSearchAvailable } from '../../lib/photoSearchClient';
 
 interface HeaderProps {
   customerIdentity?: {name:string;email:string}|null;
@@ -14,6 +15,7 @@ interface HeaderProps {
   onSelectCategory: (cat: CatalogSection) => void;
   searchQuery: string;
   onSearchChange: (q: string) => void;
+  onOpenPhotoSearch?: () => void;
   activeOrdersCount: number;
   onOpenActiveOrders: () => void;
   onNavigateToOperacion: () => void;
@@ -50,6 +52,7 @@ export const Header: React.FC<HeaderProps> = ({
   onSelectCategory,
   searchQuery,
   onSearchChange,
+  onOpenPhotoSearch,
   activeOrdersCount,
   onOpenActiveOrders,
   onNavigateToOperacion,
@@ -73,6 +76,14 @@ export const Header: React.FC<HeaderProps> = ({
 }) => {
   const [showStoreModal, setShowStoreModal] = useState(false);
   const [showAccountMenu, setShowAccountMenu] = useState(false);
+  const [photoSearchEnabled, setPhotoSearchEnabled] = useState(false);
+  useEffect(() => {
+    const controller = new AbortController();
+    void photoSearchAvailable(controller.signal).then(enabled => {
+      if (!controller.signal.aborted) setPhotoSearchEnabled(enabled);
+    }).catch(() => {});
+    return () => controller.abort();
+  }, []);
 
   // Determinar si aplica la modalidad de Envío Programado
   const isScheduledDelivery =
@@ -379,21 +390,30 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
 
           {/* ROW 4: SEARCH BAR */}
-          <div className="relative" id="tour-search-bar">
-            <Search className="absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" />
-            <input
-              type="text"
-              placeholder="Busca en Bolt Pets (alimentos, farmacia, marcas)..."
-              value={searchQuery}
-              onChange={(e) => onSearchChange(e.target.value)}
-              className="w-full bg-white text-slate-900 placeholder-slate-400 text-xs sm:text-sm font-medium rounded-full pl-10 pr-10 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
-            />
-            {searchQuery && (
-              <button
-                onClick={() => onSearchChange('')}
-                className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
-              >
-                <X className="w-3.5 h-3.5" />
+          <div className="flex items-center gap-2" id="tour-search-bar">
+            <div className="relative min-w-0 flex-1">
+              <Search className="pointer-events-none absolute left-4 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" aria-hidden="true" />
+              <input
+                id="catalog-text-search"
+                type="text"
+                placeholder="Busca en Bolt Pets (alimentos, farmacia, marcas)..."
+                value={searchQuery}
+                onChange={(e) => onSearchChange(e.target.value)}
+                className="min-h-11 w-full bg-white text-slate-900 placeholder-slate-400 text-xs sm:text-sm font-medium rounded-full pl-10 pr-10 py-2.5 shadow-sm focus:outline-none focus:ring-2 focus:ring-yellow-400"
+              />
+              {searchQuery && (
+                <button type="button" aria-label="Borrar búsqueda"
+                  onClick={() => onSearchChange('')}
+                  className="absolute right-3.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 p-1"
+                >
+                  <X className="w-3.5 h-3.5" aria-hidden="true" />
+                </button>
+              )}
+            </div>
+            {photoSearchEnabled && onOpenPhotoSearch && (
+              <button type="button" onClick={onOpenPhotoSearch} aria-label="Buscar por foto" title="Buscar por foto" aria-haspopup="dialog"
+                className="grid size-11 shrink-0 place-items-center rounded-full bg-white text-red-700 shadow-sm hover:bg-red-50 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-yellow-400">
+                <Camera size={20} aria-hidden="true" />
               </button>
             )}
           </div>

@@ -20,6 +20,7 @@ import React, { useState, useEffect, useMemo, useCallback, useRef } from 'react'
 import { Header } from './components/customer/Header';
 import { CampaignBanner } from './components/customer/CampaignBanner';
 import { ProductCard } from './components/customer/ProductCard';
+import { ProductPhotoSearch } from './components/customer/ProductPhotoSearch';
 import { CategoryCollageCard } from './components/customer/CategoryCollageCard';
 import { FarmaciaView } from './components/customer/FarmaciaView';
 import { ProductDetailModal } from './components/customer/ProductDetailModal';
@@ -68,6 +69,7 @@ export default function App() {
   const [selectedBrandId,setSelectedBrandId]=useState<string|null>(null);
   const [currentTab, setCurrentTab] = useState<CustomerNavTab>('turbo');
   const [searchQuery, setSearchQuery] = useState('');
+  const [isPhotoSearchOpen, setIsPhotoSearchOpen] = useState(false);
   const [productFilters, setProductFilters] = useState<ProductFilterState>(INITIAL_FILTER_STATE);
   const [isMobileFiltersOpen, setIsMobileFiltersOpen] = useState(false);
   const [favorites,setFavorites]=useState<Record<string,boolean>>(()=>{try{return JSON.parse(customerStorage?.getItem(FAVORITES_KEY)||'{}')}catch{return {}}});
@@ -659,6 +661,7 @@ export default function App() {
         }}
         searchQuery={searchQuery}
         onSearchChange={(q) => setSearchQuery(q)}
+        onOpenPhotoSearch={cartCatalog && !catalogError ? () => setIsPhotoSearchOpen(true) : undefined}
         activeOrdersCount={activeOrders.length}
         onOpenActiveOrders={() => {
           if (activeOrders.length > 0) {
@@ -1165,6 +1168,13 @@ export default function App() {
         </div>
       )}
       </main>
+
+      {isPhotoSearchOpen && (
+        <ProductPhotoSearch products={products} onClose={() => setIsPhotoSearchOpen(false)}
+          onOpenProduct={setDetailProduct}
+          onSearchByText={() => document.getElementById('catalog-text-search')?.focus()}
+        />
+      )}
 
       {/* Product Detail Modal */}
       <ProductDetailModal
