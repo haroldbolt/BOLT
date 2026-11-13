@@ -178,6 +178,61 @@ try {
  assert.deepEqual(emptyGalleryProduct.gallery,[]);
  assert.equal(saleVariant(emptyGalleryProduct,selectedVariant).image,uploadedVariant.body.image);
  assert.deepEqual(commerce(emptyGalleryProduct),baseline);
+
+ const inventory='/bolt-admin/inventory';
+ const storeId='HUB_SUBA';
+ const inventoryQuery=inventory+'?'+new URLSearchParams({storeId,query:selectedVariant});
+ const adminToken=restarted.body.token;
+ const readInventoryRow=async(sessionToken:string)=>{
+   const response=await request(inventoryQuery,'GET',undefined,sessionToken);
+   assert.equal(response.status,200);
+   const row=response.body.items.find((item:any)=>item.productId===productId&&item.variantId===selectedVariant);
+   assert.ok(row,'La presentación debe aparecer en el inventario de su sede');
+   return row;
+ };
+ const beforeAdjustment=await readInventoryRow(adminToken);
+ assert.deepEqual([beforeAdjustment.stock,beforeAdjustment.reserved,beforeAdjustment.available],[12,3,9]);
+ assert.deepEqual([beforeAdjustment.canEditStock,beforeAdjustment.canEditPrice,beforeAdjustment.canEditPhoto],[true,true,true]);
+ const adjustment={storeId,productId,variantId:selectedVariant,stock:10,expectedRevision:beforeAdjustment.revision,
+   reason:'Reconteo autorizado de la presentación'};
+ assert.equal((await request(inventory,'PUT',adjustment)).status,401);
+ const belowReserve=await request(inventory,'PUT',{...adjustment,stock:2},adminToken);
+ assert.equal(belowReserve.status,400);
+ assert.match(belowReserve.body.error,/reservadas/);
+ const adjusted=await request(inventory,'PUT',adjustment,adminToken);
+ assert.equal(adjusted.status,200,adjusted.body.error);
+ assert.deepEqual([adjusted.body.item.stock,adjusted.body.item.reserved,adjusted.body.item.available],[10,3,7]);
+ assert.deepEqual([adjusted.body.item.canEditStock,adjusted.body.item.canEditPrice,adjusted.body.item.canEditPhoto],[true,true,true]);
+ assert.equal((await request(inventory,'PUT',adjustment,adminToken)).status,409);
+
+ const prices='/bolt-admin/prices';
+ const promotion={productId,variantId:selectedVariant,regularPriceCOP:26_000,promoPriceCOP:20_000,
+   expectedRevision:adjusted.body.item.revision,reason:'Promoción de prueba por presentación'};
+ assert.equal((await request(prices,'PUT',promotion)).status,401);
+ const priced=await request(prices,'PUT',promotion,adminToken);
+ assert.equal(priced.status,200,priced.body.error);
+ assert.deepEqual([priced.body.item.price,priced.body.item.originalPrice],[20_000,26_000]);
+ const verifyInventory=async(sessionToken:string)=>{
+   const row=await readInventoryRow(sessionToken);
+   assert.deepEqual([row.stock,row.reserved,row.available,row.price,row.originalPrice,row.image],
+     [10,3,7,20_000,26_000,uploadedVariant.body.image]);
+   const product=await readProduct();
+   const updated=saleVariant(product,selectedVariant);
+   assert.deepEqual([updated.stockByStore,updated.reservedStockByStore,updated.price,updated.originalPrice,updated.image],
+     [{...baseline.variants[1].stockByStore,[storeId]:10},baseline.variants[1].reservedStockByStore,20_000,26_000,uploadedVariant.body.image]);
+   assert.deepEqual(commerce(product).variants[0],baseline.variants[0]);
+   assert.equal(saleVariant(product,firstVariant).image,firstVariantPhoto);
+   const history=await request(inventory+'/adjustments?'+new URLSearchParams({storeId}),'GET',undefined,sessionToken);
+   assert.equal(history.status,200);
+   const entries=history.body.adjustments.filter((entry:any)=>entry.reason===adjustment.reason);
+   assert.deepEqual(entries.map((entry:any)=>[entry.before,entry.after,entry.actorName]),[[12,10,adminCredentials.name]]);
+ };
+ await verifyInventory(adminToken);
+ await stop();await start();
+ const restoredAdmin=await request('/auth/login','POST',adminCredentials);
+ assert.equal(restoredAdmin.status,200);
+ await verifyInventory(restoredAdmin.body.token);
+ console.log('PASS HTTP BOLT Admin: edición de cantidades, precios y fotos de una presentación en modo operativo, reservas, auditoría y persistencia.');
  console.log('PASS HTTP BOLT Admin: límite de seis fotos, rechazo de la séptima, conflicto, orden, foto principal y retiro persistente sin cambiar las variantes.');
  console.log('PASS HTTP BOLT Admin: carga de bytes y asignación independiente a producto y variante, autenticación, conflicto y persistencia sin cambiar datos comerciales.');
  console.log('PASS HTTP: autenticación, campos protegidos, imágenes por variante, conflicto, idempotencia, catálogo y reinicio real sin alterar importes/stock/reservas.');
