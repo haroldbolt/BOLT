@@ -84,6 +84,7 @@ const catalogOperations = new CatalogOperations({
   products:()=>catalogRepository.getAllProducts(true),
   stores:()=>stores,
   orders:()=>ordersRepository.getAllOrders(),
+  demo:isDispatchSimulation,
 });
 const transportRepository = new TransportRepository();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
@@ -110,6 +111,15 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   acquireCatalogWriterLock(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'));
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
+  if (isDispatchSimulation && process.env.BOLT_DEMO_INITIALIZE_INVENTORY === '1') {
+    try {
+      const receipt = catalogOperations.initializeDemoInventory({ id: 'demo-launcher', name: 'BOLT Demo', email: 'demo@bolt.invalid' });
+      console.info('[Inventario demo] ' + JSON.stringify(receipt));
+    } catch (error) {
+      if (!(error instanceof RangeError)) throw error;
+      console.error('[Inventario demo] Lote sin aplicar.', error.message);
+    }
+  }
   const app = express();
   const PORT = parseInt(process.env.PORT || '3000', 10);
 

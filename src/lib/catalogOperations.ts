@@ -11,12 +11,22 @@ export type PriceSource = {
   shop: string; currency: string; complete: boolean; completedAt: string;
   variants: Array<{ id: string; sku?: string | null; title: string; price: string | null; compareAtPrice?: string | null; product: { id: string; title: string; handle: string } }>;
 };
-type Value = { productId: string; variantId: string; price: number; originalPrice?: number | null; stock: Numbers; reserved: Numbers; delta: Numbers; revision: number };
+type Value = { productId: string; variantId: string; price: number; originalPrice?: number | null; stock: Numbers; reserved: Numbers; delta: Numbers; revision: number; demoInventory?: true };
 type PricePlan = { status: string; reason?: string; before: number; rawConsulted?: string | null; consulted?: number; applied?: number; source?: string; sourceId?: string; method?: string; revision?: number; previousPromotion?: { originalPrice?: number | null } };
 type StockPlan = { storeId: string; storeName: string; status: string; before?: number; after?: number; reserved?: number; reason?: string; reversed?: boolean };
 type Row = { key: string; productId: string; product: string; variantId: string; variant: string; sku: string; price: PricePlan; stocks: StockPlan[]; done: boolean };
 export type CatalogBatch = { id: string; kind?: 'INVENTORY_ONLY'; inventoryDelta?: number; createdAt: string; actor: Actor; reason: string; source: { shop: string; currency: string; consultedAt: string; sha256: string }; backupPath: string; rows: Row[]; status: string; audit: Array<{ at: string; actor: Actor; action: string; count: number }> };
-type State = { version: 1; values: Record<string, Value>; baselineEffects: Record<string, Effect>; batches: Record<string, CatalogBatch>; audit: any[] };
+type DemoInventory = {
+  batchId: string;
+  stockPerStore: number;
+  storeIds: string[];
+  products: number;
+  variants: number;
+  rows: number;
+  changedRows: number;
+  appliedAt: string;
+};
+type State = { version: 1; values: Record<string, Value>; baselineEffects: Record<string, Effect>; batches: Record<string, CatalogBatch>; audit: any[]; demoInventory?: DemoInventory };
 const copy = <T>(v:T):T => structuredClone(v);
 const hash = (v: unknown) => crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const keyFor = (p: string, v: string) => JSON.stringify([p,v]);
@@ -46,7 +56,7 @@ export function parseCOP(raw: unknown, currency: string): number | null {
 
 export class CatalogOperations {
   private state?: State;
-  constructor(private options: { file: string; products: () => Product[]; stores: () => Store[]; orders: () => Order[] }) {
+  constructor(private options: { file: string; products: () => Product[]; stores: () => Store[]; orders: () => Order[]; demo?: boolean }) {
     if(fs.existsSync(options.file)) this.state = JSON.parse(fs.readFileSync(options.file,'utf8'));
   }
   private persist(next: State) {
@@ -90,6 +100,64 @@ export class CatalogOperations {
     }
     this.persist(state); // Establish a durable baseline, no stock adjustment or price import.
   }
+  public hasDemoInventory() {
+    return !!this.options.demo && !!this.state?.demoInventory;
+  }
+  public initializeDemoInventory(actor: Actor): DemoInventory & { alreadyApplied: boolean } {
+    if (!this.options.demo) throw new Error('Este lote solo está disponible en la demo.');
+    if (this.state?.demoInventory) return { ...copy(this.state.demoInventory), alreadyApplied: true };
+    const stockPerStore = 100;
+    const stores = this.options.stores().filter(store => store.isActive);
+    const products = this.getProducts().filter(product =>
+      (!product.status || product.status === 'ACTIVE') && !product.id.startsWith('SIM-'));
+    if (!stores.length || !products.length) throw new RangeError('El lote requiere sedes y referencias activas.');
+    const effects = orderEffects(this.options.orders());
+    const next = copy(this.state ?? this.fresh());
+    let variants = 0;
+    let changedRows = 0;
+    for (const product of products) {
+      for (const variant of product.presentaciones ?? []) {
+        variants++;
+        const value = this.ensureValue(next, product, variant.varianteId);
+        const current = this.current(product, variant.varianteId, next, effects);
+        for (const store of stores) {
+          const before = current.stockByStore[store.id] ?? 0;
+          const reserved = current.reservedStockByStore[store.id] ?? 0;
+          const delta = (value.delta[store.id] ?? 0) + stockPerStore - before;
+          if (!Number.isSafeInteger(before) || !Number.isSafeInteger(delta) ||
+              !Number.isSafeInteger(reserved) || reserved < 0 || reserved > stockPerStore) {
+            throw new RangeError(`Revisa el saldo o las reservas de ${current.sku || variant.varianteId} en ${store.name}.`);
+          }
+          if (before !== stockPerStore) {
+            value.delta[store.id] = delta;
+            changedRows++;
+          }
+        }
+        value.demoInventory = true;
+      }
+    }
+    const receipt: DemoInventory = {
+      batchId: 'demo-inventory-100-v1', stockPerStore,
+      storeIds: stores.map(store => store.id), products: products.length, variants,
+      rows: variants * stores.length, changedRows, appliedAt: new Date().toISOString(),
+    };
+    const before = JSON.stringify(this.state ?? null);
+    const backupDir = path.join(path.dirname(this.options.file), 'backups', receipt.batchId);
+    fs.mkdirSync(backupDir, { recursive: true, mode: 0o700 });
+    const backup = path.join(backupDir, `${hash(before)}.json`);
+    // Publish a complete backup before committing the new inventory.
+    const temporary = backup + '.tmp';
+    const fd = fs.openSync(temporary, 'w', 0o600);
+    try { fs.writeFileSync(fd, before); fs.fsyncSync(fd); } finally { fs.closeSync(fd); }
+    fs.renameSync(temporary, backup);
+    next.demoInventory = receipt;
+    next.audit.push({
+      at: receipt.appliedAt, actor: { id: actor.id, name: actor.name, email: actor.email },
+      action: 'SET_DEMO_INVENTORY', details: receipt,
+    });
+    this.persist(next);
+    return { ...copy(receipt), alreadyApplied: false };
+  }
   public getProducts(): Product[] {
     const effects=orderEffects(this.options.orders());
     const baseProducts=this.options.products();
@@ -112,12 +180,20 @@ export class CatalogOperations {
     return baseProducts.map(p=>{
       const variants=p.presentaciones?.length ? p.presentaciones : [{varianteId:p.id,nombre:p.presentation,sku:p.sku,foto:p.image,bodegaIds:p.bodegaIds||Object.keys(p.stockByStore),transport:p.transport}];
       const projections = variants.map(v => ({ variant: v, current: this.current(p, v.varianteId, this.state, effects) }));
-      const presentaciones = projections.map(({variant, current}) => ({
-        ...variant, price:current.price, originalPrice:current.originalPrice, discountPercent:current.discountPercent,
-        stockByStore:current.stockByStore, reservedStockByStore:current.reservedStockByStore, commerceRevision:current.commerceRevision,
-      }));
+      const demoStores = this.options.demo && this.state?.demoInventory?.storeIds;
+      const assignedDemoStores = new Set<string>();
+      const presentaciones = projections.map(({variant, current}) => {
+        const applied = demoStores && this.state?.values[keyFor(p.id, variant.varianteId)]?.demoInventory;
+        if (applied) demoStores.forEach(id => assignedDemoStores.add(id));
+        return {
+          ...variant, price:current.price, originalPrice:current.originalPrice, discountPercent:current.discountPercent,
+          stockByStore:current.stockByStore, reservedStockByStore:current.reservedStockByStore, commerceRevision:current.commerceRevision,
+          ...(applied && { bodegaIds: [...new Set([...(variant.bodegaIds ?? []), ...demoStores])] }),
+        };
+      });
       const first = projections[0].current;
-      return {...p,price:first.price,originalPrice:first.originalPrice,discountPercent:first.discountPercent,stockByStore:first.stockByStore,reservedStockByStore:first.reservedStockByStore,commerceRevision:first.commerceRevision,presentaciones};
+      return {...p,price:first.price,originalPrice:first.originalPrice,discountPercent:first.discountPercent,stockByStore:first.stockByStore,reservedStockByStore:first.reservedStockByStore,commerceRevision:first.commerceRevision,presentaciones,
+        ...(assignedDemoStores.size > 0 && { bodegaIds: [...new Set([...(p.bodegaIds ?? []), ...assignedDemoStores])] })};
     });
   }
   public getSalesProducts() {return salesCatalog(this.getProducts());}

@@ -53,7 +53,7 @@ function validPhotoEntries(value: unknown, gallery: string[]): value is PhotoEnt
 
 type Options = {
   adminAuth: Pick<AdminAuthService, 'verifySession' | 'logout'>;
-  catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog'>;
+  catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog' | 'hasDemoInventory'>;
   photos: Pick<CatalogRepository, 'getProductById' | 'applyImagePatches'>;
   uploadPhoto: (dataUrl: string, filename?: string) => { url: string; discard: () => void };
   getProducts: () => Product[];
@@ -421,9 +421,14 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const checkoutProductIds = new Set(options.demo && store && scope === 'store' ? options.getOrders()
       .filter(order => order.storeId === store.id && isDemoCheckoutOrder(order))
       .flatMap(order => order.items.map(item => item.productId)) : []);
+    const fullDemoInventory = options.catalog.hasDemoInventory();
     const products = options.getProducts().filter(product => {
-      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) || isDemoGalleryProduct(product) : !!store && belongsToStore(product, store) &&
-        (isVisibleProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id));
+      const active = !product.status || product.status === 'ACTIVE';
+      const visible = scope === 'catalog'
+        ? fullDemoInventory || isVisiblePriceProduct(product) || isDemoGalleryProduct(product)
+        : !!store && belongsToStore(product, store) && (
+          (fullDemoInventory && active) || isVisibleProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id)
+        );
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
     res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, !!options.demo && !isVisibleProduct(product), isDemoGalleryProduct(product))),

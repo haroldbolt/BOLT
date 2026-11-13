@@ -498,7 +498,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                             {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
                             {demoGalleryEdit ? <small>Prueba de galería · Edición de fotos</small>
                               : item.demoReadOnly && <small>Solo consulta en la demo</small>}
-                            {!isDemo && item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
+                            {item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
                             {editablePhoto && <button type="button" className="ba-btn ba-btn-secondary ba-photo-trigger" disabled={priceSaving}
                               aria-label={`Editar foto de ${[item.name, item.presentation].filter(Boolean).join(', ')}`}
                               aria-expanded={inventoryEditor?.mode === 'photo' && sameVariant(inventoryEditor.item, item)}

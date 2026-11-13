@@ -30,7 +30,7 @@ const photoDataUrl = 'data:image/png;base64,' + photoPng;
 let child;
 let gatewayCookie;
 
-async function startDemo() {
+async function startDemo({ initializeInventory = false } = {}) {
   child = spawn(process.execPath, ['deployment/start-demo.mjs', '--local-test'], {
     cwd: process.cwd(),
     env: {
@@ -42,6 +42,7 @@ async function startDemo() {
       BOLT_DEMO_PASSWORD: password,
       BOLT_DEMO_VOLUME: volume,
       BOLT_DEMO_CUSTOMER_ACCOUNTS: '0',
+      BOLT_DEMO_INITIALIZE_INVENTORY: initializeInventory ? '1' : '0',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -55,6 +56,13 @@ async function startDemo() {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('Demo failed to start: ' + errors);
+}
+
+async function stopDemo() {
+  if (child?.exitCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill('SIGTERM');
+  await exited;
 }
 
 async function api(endpoint, { method = 'GET', token, guestToken, idempotency, body, expected = 200 } = {}) {
@@ -262,6 +270,96 @@ async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
   assert.equal(after.price, price);
   assert.equal(after.stockByStore[storeId], stock);
   assert.equal(after.reservedStockByStore[storeId], quantity);
+  return { catalog, sku, quantity };
+}
+
+async function verifyDemoInventoryInitialization({ suba, coordination, checkout }) {
+  const storeId = 'HUB_SUBA';
+  const productName = 'Agility Gold Adulto Raza Grande';
+  const variantId = 'gid://shopify/ProductVariant/48875669717272';
+  const knownProduct = async () => {
+    const catalog = await api('/api/v1/catalog?all=true&q=' + encodeURIComponent(productName));
+    const product = catalog.find(item => item.id === 'gid://shopify/Product/9400676647192');
+    assert.ok(product, 'La presentación comercial conocida debe existir en el catálogo');
+    return product;
+  };
+  const photoFixture = async () => (await api('/api/v1/catalog?all=true&q=' + galleryFixtureId))
+    .find(item => item.id === galleryFixtureId);
+  const inventoryRow = async (token, selectedStore, query, matchVariant) => {
+    const search = new URLSearchParams({ storeId: selectedStore, query });
+    const { items } = await admin('/inventory?' + search, { token });
+    return items.find(row => row.variantId === matchVariant);
+  };
+  const commercialRow = (token, selectedStore) => inventoryRow(token, selectedStore, productName, variantId);
+  const oldFixtureRow = token => inventoryRow(token, storeId, orderFixtureId, orderFixtureId + '-1KG');
+  const receipt = () => JSON.parse(fs.readFileSync(path.join(
+    volume, 'bolt-dispatch-simulation-meeting', '.bolt-private', 'catalog-operations.json',
+  ), 'utf8')).demoInventory;
+  const [before, beforePhoto, fixtureBefore, stores] = await Promise.all([
+    knownProduct(), photoFixture(), oldFixtureRow(suba), api('/api/v1/stores'),
+  ]);
+  const beforeVariant = before.presentaciones.find(variant => variant.varianteId === variantId);
+  assert.ok(beforeVariant);
+  assert.ok(beforePhoto && fixtureBefore, 'Las dos muestras de simulación deben existir antes del lote');
+  const storeIds = stores.filter(store => store.isActive).map(store => store.id).sort();
+  assert.ok(storeIds.length > 1);
+  assert.equal(await commercialRow(suba, storeId), undefined);
+  assert.equal(receipt(), undefined);
+
+  await stopDemo();
+  await startDemo({ initializeInventory: true });
+  suba = (await demoLogin('suba')).token;
+  coordination = (await demoLogin('coordinacion')).token;
+  const batch = receipt();
+  assert.ok(batch.batchId);
+  assert.ok(Number.isFinite(Date.parse(batch.appliedAt)));
+  assert.equal(batch.stockPerStore, 100);
+  assert.deepEqual([...batch.storeIds].sort(), storeIds);
+  assert.ok(batch.products > 0 && batch.variants >= batch.products);
+  assert.equal(batch.rows, batch.variants * storeIds.length);
+  assert.ok(batch.changedRows > 0 && batch.changedRows <= batch.rows);
+
+  for (const activeStoreId of storeIds) {
+    const row = await commercialRow(coordination, activeStoreId);
+    assert.ok(row?.assignedToStore, 'La variante comercial debe mostrarse en ' + activeStoreId);
+    assert.equal(row.stock, 100);
+    assert.equal(row.demoReadOnly, true);
+    assert.equal(row.available, 100 - row.reserved);
+  }
+  const subaRow = await commercialRow(suba, storeId);
+  assert.equal(subaRow?.stock, 100);
+  const checkoutRow = await inventoryRow(suba, storeId, checkout.sku, checkout.sku);
+  assert.deepEqual([checkoutRow?.stock, checkoutRow?.reserved, checkoutRow?.available], [100, checkout.quantity, 100 - checkout.quantity]);
+  const checkoutVariant = (await checkout.catalog()).presentaciones.find(item => item.varianteId === checkout.sku);
+  assert.equal(checkoutVariant.reservedStockByStore[storeId], checkout.quantity);
+  assert.equal(checkoutVariant.stockByStore[storeId], 100);
+  const after = await knownProduct();
+  const afterVariant = after.presentaciones.find(variant => variant.varianteId === variantId);
+  assert.deepEqual([after.image, after.gallery, afterVariant.foto, afterVariant.price], [before.image, before.gallery, beforeVariant.foto, beforeVariant.price]);
+  assert.deepEqual(afterVariant.reservedStockByStore, beforeVariant.reservedStockByStore);
+  for (const store of stores.filter(store => !store.isActive)) {
+    assert.equal(afterVariant.stockByStore[store.id], beforeVariant.stockByStore[store.id]);
+  }
+  assert.deepEqual(await photoFixture(), beforePhoto, 'El lote conserva las fotos y stock cero de Pawise');
+  assert.deepEqual(await oldFixtureRow(suba), fixtureBefore, 'El lote conserva el inventario y reservas del escenario de pedidos');
+
+  const edit = { productId: before.id, variantId, expectedRevision: afterVariant.commerceRevision, reason: 'Prueba de reconteo posterior a la inicialización' };
+  await admin('/inventory', { method: 'PUT', token: coordination, expected: 404, body: { ...edit, storeId, stock: 97 } });
+  // Change the isolated volume through the existing administrator to prove a retry cannot reset later movements.
+  const simulation = await api('/api/v1/simulation');
+  const { token: legacyAdmin } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
+  await api('/api/v1/admin/catalog/products/' + encodeURIComponent(before.id) + '/pricing-stock', {
+    method: 'PATCH', token: legacyAdmin, body: { ...edit, stockByStore: { [storeId]: 97 } },
+  });
+  assert.equal((await commercialRow(suba, storeId)).stock, 97);
+
+  await stopDemo();
+  await startDemo({ initializeInventory: true });
+  const { token: restarted } = await demoLogin('coordinacion');
+  assert.equal((await commercialRow(restarted, storeId)).stock, 97);
+  assert.deepEqual(receipt(), batch);
+  assert.deepEqual(await photoFixture(), beforePhoto);
+  assert.deepEqual(await oldFixtureRow(restarted), fixtureBefore);
 }
 
 try {
@@ -474,12 +572,11 @@ try {
   console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
   await verifyDemoGallery({ suba, coordination });
   console.log('PASS demo: seis fotos de Pawise, principal y variante visibles en catálogo público, operación de galería acotada a Coordinación.');
-  await verifyCustomerCheckout({ suba, kennedy, coordination });
+  const checkout = await verifyCustomerCheckout({ suba, kennedy, coordination });
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
+  await verifyDemoInventoryInitialization({ suba, coordination, checkout });
+  console.log('PASS inventario demo: 100 por presentación y sede activa, reservas y fotos conservadas, lote idempotente tras reconteo y reinicio.');
 } finally {
-  if (child && child.exitCode === null) {
-    child.kill('SIGTERM');
-    await once(child, 'exit');
-  }
+  await stopDemo();
   fs.rmSync(volume, { recursive: true, force: true });
 }
