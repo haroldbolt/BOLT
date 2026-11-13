@@ -51,6 +51,7 @@ const photoSearchNames = [
 for (const name of photoSearchNames) {
   if (process.env[name] !== undefined) childEnv[name] = process.env[name];
 }
+if (process.env.BOLT_DEMO_EDIT_CATALOG === '1') childEnv.BOLT_DEMO_EDIT_CATALOG = '1';
 if (process.env.BOLT_DEMO_INITIALIZE_INVENTORY === '1') childEnv.BOLT_DEMO_INITIALIZE_INVENTORY = '1';
 Object.assign(childEnv, customer.env, { NODE_ENV: 'production', PORT: String(upstreamPort), BOLT_DISPATCH_SIMULATION: '1', BOLT_DATA_DIR: data });
 // The compatible storage check above is the same check used by the normal launcher.

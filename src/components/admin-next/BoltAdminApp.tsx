@@ -484,10 +484,6 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                   <th scope="col">Producto / SKU</th><th scope="col">Precio vigente</th><th scope="col">Existencias</th><th scope="col">Reservadas</th><th scope="col">Disponibles</th>
                 </tr></thead><tbody>
                   {inventory.items.map(item => {
-                    const editableStock = actor.canAdjustInventory && !item.demoReadOnly && item.assignedToStore && (isDemo || !item.status || item.status === 'ACTIVE');
-                    const editablePrice = actor.canAdjustPrices && (!item.demoReadOnly || item.canEditCatalog === true);
-                    const demoGalleryEdit = actor.canAdjustPrices && item.demoGalleryEdit === true;
-                    const editablePhoto = editablePrice || demoGalleryEdit;
                     return <tr key={`${item.productId}:${item.variantId}`} data-selected={inventoryEditor?.item && sameVariant(inventoryEditor.item, item) ? 'true' : undefined}>
                       <th scope="row">
                         <div className="ba-inventory-product">
@@ -495,10 +491,9 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                           <div className="ba-inventory-product-text">
                             <strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
                             {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
-                            {demoGalleryEdit ? <small>Prueba de galería · Edición de fotos</small>
-                              : isDemo && !editableStock && !editablePrice && <small>Solo consulta en la demo</small>}
+                            {item.demoReadOnly && <small>Solo consulta en la demo</small>}
                             {item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
-                            {editablePhoto && <button type="button" className="ba-btn ba-btn-secondary ba-photo-trigger" disabled={priceSaving}
+                            {item.canEditPhoto && <button type="button" className="ba-btn ba-btn-secondary ba-photo-trigger" disabled={priceSaving}
                               aria-label={`Editar foto de ${[item.name, item.presentation].filter(Boolean).join(', ')}`}
                               aria-expanded={inventoryEditor?.mode === 'photo' && sameVariant(inventoryEditor.item, item)}
                               onClick={() => { setNotice(''); setInventoryEditor({ mode: 'photo', item }); }}>
@@ -507,9 +502,9 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                           </div>
                         </div>
                       </th>
-                      <InventoryPriceCell item={item} editable={editablePrice} saving={priceSaving}
+                      <InventoryPriceCell item={item} editable={item.canEditPrice} saving={priceSaving}
                         edit={() => { setNotice(''); setInventoryEditor({ mode: 'price', item }); }} />
-                      <td>{editableStock ? <button className="ba-stock-editable" type="button" disabled={priceSaving} onClick={() => openInventoryAdjustments(item)}
+                      <td>{item.canEditStock ? <button className="ba-stock-editable" type="button" disabled={priceSaving} onClick={() => openInventoryAdjustments(item)}
                         aria-label={`Ajustar existencias de ${item.name}, ${item.presentation}, ${number.format(item.stock)} unidades`}>
                         {number.format(item.stock)}
                       </button> : item.assignedToStore ? number.format(item.stock) : '—'}</td>

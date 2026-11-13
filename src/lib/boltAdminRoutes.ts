@@ -53,7 +53,7 @@ function validPhotoEntries(value: unknown, gallery: string[]): value is PhotoEnt
 
 type Options = {
   adminAuth: Pick<AdminAuthService, 'verifySession' | 'logout'>;
-  catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog' | 'hasDemoInventory'>;
+  catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog'>;
   photos: Pick<CatalogRepository, 'getProductById' | 'applyImagePatches'>;
   uploadPhoto: (dataUrl: string, filename?: string) => { url: string; discard: () => void };
   getProducts: () => Product[];
@@ -66,6 +66,7 @@ type Options = {
   startPreparation: PendingDeliveryAction;
   demo?: {
     productId: string;
+    editCatalog?: boolean;
     galleryProductId?: string;
     isOrder: (order: Order) => boolean;
     createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
@@ -123,10 +124,11 @@ function belongsToStore(product: Product, store: Store) {
     : Object.hasOwn(product.stockByStore, store.id);
 }
 
-function inventoryItem(product: Product, store?: Store, permissions?: {
+function inventoryItem(product: Product, store: Store | undefined, permissions: {
   demoReadOnly: boolean;
-  demoGalleryEdit: boolean;
-  canEditCatalog: boolean;
+  canEditStock: boolean;
+  canEditPrice: boolean;
+  canEditPhoto: boolean;
 }) {
   const assignedToStore = !!store && belongsToStore(product, store);
   const stock = store && assignedToStore ? (product.stockByStore[store.id] ?? 0) : 0;
@@ -134,9 +136,10 @@ function inventoryItem(product: Product, store?: Store, permissions?: {
   return {
     ...priceItem(product),
     image: product.image,
-    ...(permissions?.demoReadOnly && { demoReadOnly: true }),
-    ...(permissions?.demoGalleryEdit && { demoGalleryEdit: true }),
-    ...(permissions?.canEditCatalog && { canEditCatalog: true }),
+    ...(permissions.demoReadOnly && { demoReadOnly: true }),
+    canEditStock: permissions.canEditStock,
+    canEditPrice: permissions.canEditPrice,
+    canEditPhoto: permissions.canEditPhoto,
     storeId: store?.id ?? null,
     assignedToStore,
     stock,
@@ -184,23 +187,25 @@ export function mountBoltAdmin(app: Express, options: Options) {
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
   const presentOrder = (order: Order) => boltAdminOrder(order, isDemoCheckoutOrder(order));
-  const isVisibleProduct = (product: Product) => options.demo
-    ? (product.parentProductId ?? product.id) === options.demo.productId
-    : !product.status || product.status === 'ACTIVE';
-  const canEditDemoCatalogProduct = (product: Product) =>
-    !!options.demo && options.catalog.hasDemoInventory() && !(product.parentProductId ?? product.id).startsWith('SIM-');
   const isActiveProduct = (product: Product) => !product.status || product.status === 'ACTIVE';
-  const isAdjustableStockProduct = (product: Product) =>
-    isVisibleProduct(product) || (canEditDemoCatalogProduct(product) && isActiveProduct(product));
-  const isVisiblePriceProduct = (product: Product) =>
-    !options.demo || isVisibleProduct(product) || canEditDemoCatalogProduct(product);
+  const isDemoFixture = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.productId;
   const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
+  const canEditDemoProduct = (product: Product) =>
+    options.demo?.editCatalog === true && !(product.parentProductId ?? product.id).startsWith('SIM-');
+  const isStockProduct = (product: Product) =>
+    isDemoFixture(product) || ((!options.demo || canEditDemoProduct(product)) && isActiveProduct(product));
+  const isCatalogEditProduct = (product: Product) =>
+    !options.demo || isDemoFixture(product) || canEditDemoProduct(product);
 
   function inventoryRow(product: Product, actor: Actor, store?: Store) {
+    const canEditCatalog = actor.canAdjustPrices && isCatalogEditProduct(product);
+    const canEditPhoto = actor.canAdjustPrices && (canEditCatalog || isDemoGalleryProduct(product));
+    const canEditStock = actor.canAdjustInventory && !!store && belongsToStore(product, store) && isStockProduct(product);
     return inventoryItem(product, store, {
-      demoReadOnly: !!options.demo && !isAdjustableStockProduct(product),
-      demoGalleryEdit: isDemoGalleryProduct(product),
-      canEditCatalog: actor.canAdjustPrices && canEditDemoCatalogProduct(product),
+      demoReadOnly: !!options.demo && !canEditCatalog && !canEditStock && !canEditPhoto,
+      canEditStock,
+      canEditPrice: canEditCatalog,
+      canEditPhoto,
     });
   }
 
@@ -277,7 +282,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const product = options.photos.getProductById(productId);
     const variant = product?.presentaciones?.find(item => item.varianteId === variantId);
-    if (!product || product.id !== productId || (!isVisiblePriceProduct(product) && !isDemoGalleryProduct(product)) ||
+    if (!product || product.id !== productId || (!isCatalogEditProduct(product) && !isDemoGalleryProduct(product)) ||
         (!variant && (product.presentaciones?.length || variantId !== product.id))) {
       res.status(404).json({ error: 'La presentación no está disponible para editar fotos.' });
       return;
@@ -440,13 +445,9 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const checkoutProductIds = new Set(options.demo && store && scope === 'store' ? options.getOrders()
       .filter(order => order.storeId === store.id && isDemoCheckoutOrder(order))
       .flatMap(order => order.items.map(item => item.productId)) : []);
-    const fullDemoInventory = options.catalog.hasDemoInventory();
     const products = options.getProducts().filter(product => {
-      const visible = scope === 'catalog'
-        ? fullDemoInventory || isVisiblePriceProduct(product) || isDemoGalleryProduct(product)
-        : !!store && belongsToStore(product, store) && (
-          (fullDemoInventory && isActiveProduct(product)) || isVisibleProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id)
-        );
+      const visible = scope === 'catalog' ? isCatalogEditProduct(product) || isDemoGalleryProduct(product) : !!store && belongsToStore(product, store) &&
+        (isStockProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id));
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
     res.json({ items: products.slice(offset, offset + limit).map(product => inventoryRow(product, actor, store)),
@@ -460,7 +461,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const store = selectStore(req, res, actor);
     if (!store) return;
     const variants = new Map(options.getProducts()
-      .filter(product => (isVisibleProduct(product) || canEditDemoCatalogProduct(product)) && belongsToStore(product, store))
+      .filter(product => (isStockProduct(product) || canEditDemoProduct(product)) && belongsToStore(product, store))
       .map(product => [`${product.parentProductId ?? product.id}:${product.variantId ?? product.id}`, product]));
     const audit = options.catalog.getAuditLog();
     const adjustments = [];
@@ -563,7 +564,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
       return res.status(400).json({ error: 'Indica la presentación, la existencia registrada y un motivo de 5 a 240 caracteres.' });
     }
     const product = options.getProducts().find(candidate => (candidate.parentProductId ?? candidate.id) === productId &&
-      (candidate.variantId ?? candidate.id) === variantId && isAdjustableStockProduct(candidate) && belongsToStore(candidate, store));
+      (candidate.variantId ?? candidate.id) === variantId && isStockProduct(candidate) && belongsToStore(candidate, store));
     if (!product) return res.status(404).json({ error: 'La presentación no está disponible para esta sede.' });
     if (product.commerceRevision !== expectedRevision) return res.status(409).json({ error: 'El inventario cambió. Actualiza el saldo antes de guardar.' });
     if (stock < (product.reservedStockByStore[store.id] ?? 0)) {
@@ -584,7 +585,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const query = typeof req.query.query === 'string' ? normalizeQuery(req.query.query.slice(0, 120)) : '';
     const limit = Math.max(1, pageParam(req.query.limit, 40, 100));
     const offset = pageParam(req.query.offset, 0, 100000);
-    const matches = options.getProducts().filter(product => isVisiblePriceProduct(product) &&
+    const matches = options.getProducts().filter(product => isCatalogEditProduct(product) &&
       (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query)));
     res.json({ items: matches.slice(offset, offset + limit).map(priceItem), total: matches.length, offset, limit });
   });
@@ -603,7 +604,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
       return res.status(400).json({ error: 'El precio de oferta debe ser mayor que cero y menor que el precio normal.' });
     }
     const product = options.getProducts().find(candidate => (candidate.parentProductId ?? candidate.id) === productId &&
-      (candidate.variantId ?? candidate.id) === variantId && isVisiblePriceProduct(candidate));
+      (candidate.variantId ?? candidate.id) === variantId && isCatalogEditProduct(candidate));
     if (!product) return res.status(404).json({ error: 'La presentación no está disponible.' });
     if (product.commerceRevision !== expectedRevision) {
       return res.status(409).json({ error: 'La presentación cambió. Actualiza el precio antes de guardar.' });

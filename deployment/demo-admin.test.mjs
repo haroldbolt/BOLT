@@ -30,7 +30,7 @@ const photoDataUrl = 'data:image/png;base64,' + photoPng;
 let child;
 let gatewayCookie;
 
-async function startDemo({ initializeInventory = false } = {}) {
+async function startDemo({ initializeInventory = false, editCatalog = false } = {}) {
   child = spawn(process.execPath, ['deployment/start-demo.mjs', '--local-test'], {
     cwd: process.cwd(),
     env: {
@@ -42,6 +42,7 @@ async function startDemo({ initializeInventory = false } = {}) {
       BOLT_DEMO_PASSWORD: password,
       BOLT_DEMO_VOLUME: volume,
       BOLT_DEMO_CUSTOMER_ACCOUNTS: '0',
+      BOLT_DEMO_EDIT_CATALOG: editCatalog ? '1' : '0',
       BOLT_DEMO_INITIALIZE_INVENTORY: initializeInventory ? '1' : '0',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
@@ -106,8 +107,7 @@ async function verifyDemoGallery({ suba, coordination }) {
     .find(item => item.productId === productId && item.variantId === variantId);
   const row = await inventory(coordination);
   assert.ok(row, 'Coordinación debe poder seleccionar la variante de prueba');
-  assert.equal(row.demoGalleryEdit, true);
-  assert.equal(row.demoReadOnly, true);
+  assert.deepEqual([row.canEditStock, row.canEditPrice, row.canEditPhoto], [false, false, true]);
   assert.deepEqual([row.stock, row.reserved, row.available], [0, 0, 0]);
   assert.equal((await inventory(suba))?.demoReadOnly, true);
 
@@ -270,7 +270,7 @@ async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
   assert.equal(after.price, price);
   assert.equal(after.stockByStore[storeId], stock);
   assert.equal(after.reservedStockByStore[storeId], quantity);
-  return { catalog, sku, quantity };
+  return { catalog, sku, quantity, reserved, storeId };
 }
 
 async function verifyDemoInventoryInitialization({ suba, coordination, checkout }) {
@@ -296,7 +296,7 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
     volume, 'bolt-dispatch-simulation-meeting', '.bolt-private', 'catalog-operations.json',
   ), 'utf8')).demoInventory;
   const [before, beforePhoto, fixtureBefore, stores] = await Promise.all([
-    knownProduct(), photoFixture(), oldFixtureRow(suba), api('/api/v1/stores'),
+    knownProduct(), photoFixture(), oldFixtureRow(coordination), api('/api/v1/stores'),
   ]);
   const beforeVariant = before.presentaciones.find(variant => variant.varianteId === variantId);
   assert.ok(beforeVariant);
@@ -328,7 +328,7 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   }
   const subaRow = await commercialRow(suba, storeId);
   assert.equal(subaRow?.stock, 100);
-  assert.ok(!subaRow.canEditCatalog);
+  assert.deepEqual([subaRow.canEditStock, subaRow.canEditPrice, subaRow.canEditPhoto], [false, false, false]);
   const checkoutRow = await inventoryRow(suba, storeId, checkout.sku, checkout.sku);
   assert.deepEqual([checkoutRow?.stock, checkoutRow?.reserved, checkoutRow?.available], [100, checkout.quantity, 100 - checkout.quantity]);
   const checkoutVariant = (await checkout.catalog()).presentaciones.find(item => item.varianteId === checkout.sku);
@@ -342,10 +342,10 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
     assert.equal(afterVariant.stockByStore[store.id], beforeVariant.stockByStore[store.id]);
   }
   assert.deepEqual(await photoFixture(), beforePhoto, 'El lote conserva las fotos y stock cero de Pawise');
-  assert.deepEqual(await oldFixtureRow(suba), fixtureBefore, 'El lote conserva el inventario y reservas del escenario de pedidos');
+  assert.deepEqual(await oldFixtureRow(coordination), fixtureBefore, 'El lote conserva el inventario y reservas del escenario de pedidos');
 
   const editable = await commercialRow(coordination, storeId);
-  assert.equal(editable.canEditCatalog, true);
+  assert.deepEqual([editable.canEditStock, editable.canEditPrice, editable.canEditPhoto], [true, true, true]);
   const ids = { productId: editable.productId, variantId: editable.variantId };
   const priceEdit = {
     ...ids, expectedRevision: editable.revision, regularPriceCOP: 240_000, promoPriceCOP: 180_000,
@@ -405,7 +405,7 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
 
   const { item: adjusted } = await adjustStock(coordination, edit);
   assert.deepEqual([adjusted.stock, adjusted.reserved, adjusted.available], [97, updatedInventory.reserved, 97 - updatedInventory.reserved]);
-  assert.equal(adjusted.canEditCatalog, true);
+  assert.deepEqual([adjusted.canEditStock, adjusted.canEditPrice, adjusted.canEditPhoto], [true, true, true]);
   assert.deepEqual([adjusted.price, adjusted.originalPrice, adjusted.image], [180_000, 240_000, image]);
   await adjustStock(coordination, edit, 409);
   assert.equal((await commercialRow(suba, storeId)).stock, 97);
@@ -435,6 +435,66 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   assert.deepEqual(receipt(), batch);
   assert.deepEqual(await photoFixture(), beforePhoto);
   assert.deepEqual(await oldFixtureRow(restarted), fixtureBefore);
+}
+
+async function verifyDemoCatalogEditing({ catalog, reserved, storeId }) {
+  await stopDemo();
+  await startDemo({ editCatalog: true });
+  const [{ token: suba }, { token: coordination }] = await Promise.all([demoLogin('suba'), demoLogin('coordinacion')]);
+  const { productId, variantId } = reserved;
+  const query = new URLSearchParams({ storeId, query: variantId });
+  const inventory = async token => (await admin('/inventory?' + query, { token })).items
+    .find(item => item.productId === productId && item.variantId === variantId);
+  const [before, editable, readOnly] = await Promise.all([catalog(), inventory(coordination), inventory(suba)]);
+  const capabilities = item => [item.canEditStock, item.canEditPrice, item.canEditPhoto];
+  assert.deepEqual(capabilities(editable), [true, true, true]);
+  assert.deepEqual(capabilities(readOnly), [false, false, false]);
+  assert.deepEqual([editable.stock, editable.reserved, editable.available, editable.price, editable.image],
+    [reserved.stock, reserved.reserved, reserved.available, reserved.price, reserved.image]);
+
+  const unassigned = (await admin('/inventory?' + new URLSearchParams({
+    storeId: 'HUB_KENNEDY', query: variantId, scope: 'catalog',
+  }), { token: coordination })).items.find(item => item.productId === productId && item.variantId === variantId);
+  assert.equal(unassigned.assignedToStore, false);
+  assert.deepEqual(capabilities(unassigned), [false, true, true]);
+  const stockEdit = {
+    storeId, productId, variantId, expectedRevision: editable.revision, stock: 9, reason: 'Reconteo de prueba en Suba',
+  };
+  const adjustStock = (token, body, expected = 200) => admin('/inventory', { method: 'PUT', token, body, expected });
+  await adjustStock(suba, stockEdit, 403);
+  await adjustStock(coordination, { ...stockEdit, storeId: 'HUB_KENNEDY' }, 404);
+  const rejected = await adjustStock(coordination, { ...stockEdit, stock: editable.reserved - 1 }, 400);
+  assert.match(rejected.error, /reservadas/);
+  const { item: adjusted } = await adjustStock(coordination, stockEdit);
+  assert.deepEqual([adjusted.stock, adjusted.reserved, adjusted.available], [9, reserved.reserved, 9 - reserved.reserved]);
+  assert.deepEqual([adjusted.price, adjusted.image], [reserved.price, reserved.image]);
+  await adjustStock(coordination, stockEdit, 409);
+
+  const priceEdit = {
+    productId, variantId, expectedRevision: adjusted.revision, regularPriceCOP: reserved.price, promoPriceCOP: 21_900,
+    reason: 'Promoción de prueba por presentación',
+  };
+  await admin('/prices', { method: 'PUT', token: suba, body: priceEdit, expected: 403 });
+  await admin('/prices', { method: 'PUT', token: coordination, body: priceEdit });
+  const photoRoute = '/inventory/photo';
+  const photo = await admin(photoRoute + '?' + new URLSearchParams({ productId, variantId }), { token: coordination });
+  const upload = { productId, variantId, target: 'variant', expectedImage: photo.variantImage, dataUrl: photoDataUrl };
+  await admin(photoRoute, { method: 'PUT', token: suba, body: upload, expected: 403 });
+  const { image } = await admin(photoRoute, { method: 'PUT', token: coordination, body: upload });
+  assert.match(image, /^\/uploads\/catalog\/[^/]+\.png$/);
+
+  const after = await catalog();
+  const previousVariant = before.presentaciones.find(variant => variant.varianteId === variantId);
+  const updatedVariant = after.presentaciones.find(variant => variant.varianteId === variantId);
+  assert.deepEqual(updatedVariant.stockByStore, { ...previousVariant.stockByStore, [storeId]: 9 });
+  assert.deepEqual(updatedVariant.reservedStockByStore, previousVariant.reservedStockByStore);
+  assert.deepEqual([updatedVariant.price, updatedVariant.originalPrice, updatedVariant.foto], [21_900, reserved.price, image]);
+  assert.deepEqual(after.presentaciones.filter(variant => variant.varianteId !== variantId),
+    before.presentaciones.filter(variant => variant.varianteId !== variantId));
+  const { adjustments } = await admin('/inventory/adjustments?storeId=' + storeId, { token: coordination });
+  const audit = adjustments.find(item => item.reason === stockEdit.reason);
+  assert.ok(audit);
+  assert.deepEqual([audit.before, audit.after, audit.actorName], [reserved.stock, 9, 'Coordinación']);
 }
 
 try {
@@ -649,7 +709,19 @@ try {
   console.log('PASS demo: seis fotos de Pawise, principal y variante visibles en catálogo público, operación de galería acotada a Coordinación.');
   const checkout = await verifyCustomerCheckout({ suba, kennedy, coordination });
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
-  await verifyDemoInventoryInitialization({ suba, coordination, checkout });
+  const baselineVolume = fs.mkdtempSync(path.join(os.tmpdir(), 'bolt-admin-baseline-test-'));
+  try {
+    await stopDemo();
+    fs.cpSync(volume, baselineVolume, { recursive: true, verbatimSymlinks: true });
+    await verifyDemoCatalogEditing(checkout);
+    await stopDemo();
+    fs.cpSync(baselineVolume, volume, { recursive: true, verbatimSymlinks: true });
+    await startDemo();
+    const [{ token: reloadedSuba }, { token: reloadedCoordination }] = await Promise.all([demoLogin('suba'), demoLogin('coordinacion')]);
+    await verifyDemoInventoryInitialization({ suba: reloadedSuba, coordination: reloadedCoordination, checkout });
+  } finally {
+    fs.rmSync(baselineVolume, { recursive: true, force: true });
+  }
   console.log('PASS inventario demo: Coordinación ajusta existencias por sede y presentación, conserva reservas e historial y el lote no se repite tras reiniciar.');
   console.log('PASS catálogo demo: Coordinación edita promoción y foto de una presentación desde Inventario, se reflejan en BOLT Cliente y persisten tras reiniciar.');
 } finally {
