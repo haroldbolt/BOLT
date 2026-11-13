@@ -86,4 +86,65 @@ assert.equal(demo.series.length, 30);
 assert.equal(demo.demo, true);
 assert.equal(demo.summary.collectedCOP, 0);
 
-console.log('PASS: periodos de Bogotá, órdenes únicas y confirmadas, alcance por sede, productos agrupados y recaudo respaldado.');
+const simulatedDeliveryAt = '2026-11-13T05:25:00Z';
+const simulatedOrder = testOrder('simulated-delivery', '2026-11-12T06:35:00Z', {
+  purchaseCode: 'BP-000011',
+  fulfillmentStatus: 'ENTREGADO',
+  timestamps: { confirmedAt: '2026-11-12T06:35:00Z', deliveredAt: simulatedDeliveryAt },
+  deliveryReview: { status: 'SIMULATED', requestedAt: '2026-11-12T05:00:00Z', reasonCode: 'MISSING_TRANSPORT_DATA' },
+  payment: { method: 'CASH_ON_DELIVERY', status: 'PENDIENTE', cashToCollect: 0 },
+  items: [{ ...item, name: 'Agility Gold Adulto Raza Grande', presentation: '15 kg', quantity: 1, price: 245_000 }],
+  totals: { ...seed.totals, total: 245_000 },
+});
+const otherStoreDelivery = { ...simulatedOrder, id: 'simulated-kennedy', purchaseCode: undefined, orderNumber: 'LEGACY-TEST', storeId: kennedy.id };
+const olderDelivery = { ...simulatedOrder, id: 'simulated-yesterday', timestamps: { deliveredAt: '2026-11-13T04:59:59Z' } };
+const futureDelivery = { ...simulatedOrder, id: 'simulated-future', timestamps: { deliveredAt: '2026-11-13T06:46:00Z' } };
+const pendingDelivery: Order = {
+  ...simulatedOrder,
+  id: 'simulated-not-delivered',
+  fulfillmentStatus: 'EN_CAMINO',
+  timestamps: { confirmedAt: '2026-11-13T05:15:00Z', deliveredAt: simulatedDeliveryAt },
+};
+const missingDeliveryDate = { ...simulatedOrder, id: 'simulated-no-date', timestamps: {} };
+const testOrders: Order[] = [
+  simulatedOrder,
+  otherStoreDelivery,
+  olderDelivery,
+  futureDelivery,
+  pendingDelivery,
+  missingDeliveryDate,
+  split,
+  { ...simulatedOrder, id: 'simulated-approved-payment', payment: { ...simulatedOrder.payment, status: 'APROBADO' } },
+  { ...simulatedOrder, id: 'simulated-balance-due', payment: { ...simulatedOrder.payment, cashToCollect: 245_000 } },
+  { ...simulatedOrder, id: 'simulated-no-balance', payment: { ...simulatedOrder.payment, cashToCollect: undefined } },
+  { ...simulatedOrder, id: 'simulated-with-transaction', payment: { ...simulatedOrder.payment, transactionId: 'FAKE-TEST' } },
+  { ...simulatedOrder, id: 'simulated-settled', payment: { ...simulatedOrder.payment, cashSettled: true } },
+];
+const mixedInputs = {
+  ...inputs,
+  orders: [...inputs.orders, ...testOrders],
+  runs: [...inputs.runs, { orderId: pendingDelivery.id, cashCollected: 245_000, deliveredAt: collectedAt, status: 'DELIVERED' as const }],
+  testOrders,
+};
+assert.deepEqual(today.testDeliveries, []);
+assert.deepEqual(buildBoltAdminSalesReport({ ...mixedInputs, period: 'today' }), today);
+
+const demoToday = buildBoltAdminSalesReport({ ...mixedInputs, period: 'today', demo: true });
+assert.deepEqual(demoToday.testDeliveries, [{
+  id: simulatedOrder.id,
+  code: 'BP-000011',
+  storeId: suba.id,
+  storeName: suba.name,
+  deliveredAt: new Date(simulatedDeliveryAt).toISOString(),
+  collectedCOP: 0,
+  items: [{ name: 'Agility Gold Adulto Raza Grande', presentation: '15 kg', quantity: 1 }],
+}]);
+assert.deepEqual(
+  { ...demoToday, testDeliveries: [] },
+  buildBoltAdminSalesReport({ ...inputs, period: 'today', demo: true }),
+);
+const demoWeek = buildBoltAdminSalesReport({ ...mixedInputs, period: '7d', demo: true, stores: [suba, kennedy] });
+assert.deepEqual(demoWeek.testDeliveries.map(({ id }) => id).sort(), [olderDelivery.id, otherStoreDelivery.id, simulatedOrder.id].sort());
+assert.equal(demoWeek.testDeliveries.find(({ id }) => id === otherStoreDelivery.id)?.code, 'LEGACY-TEST');
+
+console.log('PASS: periodos de Bogotá, órdenes únicas y confirmadas, alcance por sede, productos agrupados, recaudo respaldado y entregas simuladas separadas.');

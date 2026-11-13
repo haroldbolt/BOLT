@@ -14,6 +14,15 @@ export interface BoltAdminSalesReport {
   series: { key: string; label: string; orderCount: number; confirmedCOP: number }[];
   stores: { id: string; name: string; orderCount: number; confirmedCOP: number; collectedCOP: number }[];
   products: { id: string; name: string; units: number; previousUnits: number; revenueCOP: number; changePercent: number | null }[];
+  testDeliveries: {
+    id: string;
+    code: string;
+    storeId: string;
+    storeName: string;
+    deliveredAt: string;
+    collectedCOP: 0;
+    items: Pick<Order['items'][number], 'name' | 'presentation' | 'quantity'>[];
+  }[];
 }
 
 const hour = 60 * 60_000;
@@ -29,10 +38,11 @@ function orderConfirmedAt(order: Order) {
   return NaN;
 }
 
-export function buildBoltAdminSalesReport({ period, stores, orders, catalog, runs, demo, now = new Date() }: {
+export function buildBoltAdminSalesReport({ period, stores, orders, testOrders = [], catalog, runs, demo, now = new Date() }: {
   period: SalesPeriod;
   stores: readonly Pick<Store, 'id' | 'name'>[];
   orders: readonly Order[];
+  testOrders?: readonly Order[];
   catalog: readonly Pick<Product, 'id' | 'name' | 'parentProductId'>[];
   runs: readonly Pick<DispatchRun, 'orderId' | 'cashCollected' | 'status' | 'deliveredAt'>[];
   demo: boolean;
@@ -78,6 +88,7 @@ export function buildBoltAdminSalesReport({ period, stores, orders, catalog, run
     const store = storeTotals.get(order.storeId);
     if (!store || order.parentOrderId || counted.has(order.id) || order.fulfillmentStatus === 'CANCELADO' ||
         order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.deliveryReview?.status === 'PENDING' ||
+        order.deliveryReview?.status === 'SIMULATED' ||
         order.payment.status === 'REEMBOLSADO' || order.payment.status === 'RECHAZADO') continue;
     const timestamp = orderConfirmedAt(order);
     const current = timestamp >= start && timestamp <= nowMs;
@@ -120,5 +131,31 @@ export function buildBoltAdminSalesReport({ period, stores, orders, catalog, run
     const prior = previousUnits.get(product.id) ?? 0;
     return { ...product, previousUnits: prior, changePercent: prior > 0 ? Math.round(100 * (product.units - prior) / prior) : null };
   }).sort((a, b) => b.units - a.units || b.revenueCOP - a.revenueCOP || a.name.localeCompare(b.name, 'es-CO') || a.id.localeCompare(b.id));
-  return { period, updatedAt: now.toISOString(), from: dateKey(start), to: today, demo, summary, series, stores: [...storeTotals.values()], products: products.slice(0, 10) };
+
+  const testDeliveries: BoltAdminSalesReport['testDeliveries'] = [];
+  if (demo) {
+    const seen = new Set<string>();
+    for (const order of testOrders) {
+      const store = storeTotals.get(order.storeId);
+      const deliveredAt = order.timestamps?.deliveredAt;
+      if (!store || !deliveredAt || order.parentOrderId || seen.has(order.id) ||
+          order.fulfillmentStatus !== 'ENTREGADO' || order.deliveryReview?.status !== 'SIMULATED' ||
+          order.payment.status !== 'PENDIENTE' || order.payment.cashToCollect !== 0 ||
+          order.payment.transactionId || order.payment.cashSettled) continue;
+      const timestamp = Date.parse(deliveredAt);
+      if (!Number.isFinite(timestamp) || timestamp < start || timestamp > nowMs) continue;
+      seen.add(order.id);
+      testDeliveries.push({
+        id: order.id, code: order.purchaseCode ?? order.orderNumber,
+        storeId: store.id, storeName: store.name,
+        deliveredAt: new Date(timestamp).toISOString(), collectedCOP: 0,
+        items: order.items.map(({ name, presentation, quantity }) => ({ name, presentation, quantity })),
+      });
+    }
+    testDeliveries.sort((a, b) => b.deliveredAt.localeCompare(a.deliveredAt) || a.id.localeCompare(b.id));
+  }
+  return {
+    period, updatedAt: now.toISOString(), from: dateKey(start), to: today, demo, summary, series,
+    stores: [...storeTotals.values()], products: products.slice(0, 10), testDeliveries,
+  };
 }

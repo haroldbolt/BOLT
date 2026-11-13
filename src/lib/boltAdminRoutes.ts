@@ -386,10 +386,12 @@ export function mountBoltAdmin(app: Express, options: Options) {
       stores = [store];
     }
     const demo = !!options.demo;
-    const orders = options.getOrders().filter(order => demo ? isOperationalOrder(order) :
+    const allOrders = options.getOrders();
+    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) :
       !seedOrderIds.has(order.id) && order.creationRequestFingerprint !== 'SIMULATION' && !isBoltAdminDemoOrder(order));
     res.json(buildBoltAdminSalesReport({
       period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,
+      testOrders: demo ? allOrders : [],
     }));
   });
 
