@@ -332,7 +332,7 @@ export interface WarehouseAssignmentEvent {
 
 export interface Order {
   deliveryReview?: {
-    status: 'PENDING' | 'CONFIRMED';
+    status: 'PENDING' | 'CONFIRMED' | 'SIMULATED';
     requestedAt: string;
     reasonCode: string;
     requestedMode?: DeliveryMode;
