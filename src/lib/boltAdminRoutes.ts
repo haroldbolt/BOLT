@@ -189,9 +189,20 @@ export function mountBoltAdmin(app: Express, options: Options) {
     : !product.status || product.status === 'ACTIVE';
   const canEditDemoCatalogProduct = (product: Product) =>
     !!options.demo && options.catalog.hasDemoInventory() && !(product.parentProductId ?? product.id).startsWith('SIM-');
+  const isActiveProduct = (product: Product) => !product.status || product.status === 'ACTIVE';
+  const isAdjustableStockProduct = (product: Product) =>
+    isVisibleProduct(product) || (canEditDemoCatalogProduct(product) && isActiveProduct(product));
   const isVisiblePriceProduct = (product: Product) =>
     !options.demo || isVisibleProduct(product) || canEditDemoCatalogProduct(product);
   const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
+
+  function inventoryRow(product: Product, actor: Actor, store?: Store) {
+    return inventoryItem(product, store, {
+      demoReadOnly: !!options.demo && !isAdjustableStockProduct(product),
+      demoGalleryEdit: isDemoGalleryProduct(product),
+      canEditCatalog: actor.canAdjustPrices && canEditDemoCatalogProduct(product),
+    });
+  }
 
   function bearer(req: Request) {
     const auth = req.get('Authorization');
@@ -431,19 +442,14 @@ export function mountBoltAdmin(app: Express, options: Options) {
       .flatMap(order => order.items.map(item => item.productId)) : []);
     const fullDemoInventory = options.catalog.hasDemoInventory();
     const products = options.getProducts().filter(product => {
-      const active = !product.status || product.status === 'ACTIVE';
       const visible = scope === 'catalog'
         ? fullDemoInventory || isVisiblePriceProduct(product) || isDemoGalleryProduct(product)
         : !!store && belongsToStore(product, store) && (
-          (fullDemoInventory && active) || isVisibleProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id)
+          (fullDemoInventory && isActiveProduct(product)) || isVisibleProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id)
         );
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
-    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, {
-      demoReadOnly: !!options.demo && !isVisibleProduct(product),
-      demoGalleryEdit: isDemoGalleryProduct(product),
-      canEditCatalog: actor.canAdjustPrices && canEditDemoCatalogProduct(product),
-    })),
+    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryRow(product, actor, store)),
       total: products.length, offset, limit });
   });
 
@@ -454,7 +460,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const store = selectStore(req, res, actor);
     if (!store) return;
     const variants = new Map(options.getProducts()
-      .filter(product => isVisibleProduct(product) && belongsToStore(product, store))
+      .filter(product => (isVisibleProduct(product) || canEditDemoCatalogProduct(product)) && belongsToStore(product, store))
       .map(product => [`${product.parentProductId ?? product.id}:${product.variantId ?? product.id}`, product]));
     const audit = options.catalog.getAuditLog();
     const adjustments = [];
@@ -557,7 +563,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
       return res.status(400).json({ error: 'Indica la presentación, la existencia registrada y un motivo de 5 a 240 caracteres.' });
     }
     const product = options.getProducts().find(candidate => (candidate.parentProductId ?? candidate.id) === productId &&
-      (candidate.variantId ?? candidate.id) === variantId && isVisibleProduct(candidate) && belongsToStore(candidate, store));
+      (candidate.variantId ?? candidate.id) === variantId && isAdjustableStockProduct(candidate) && belongsToStore(candidate, store));
     if (!product) return res.status(404).json({ error: 'La presentación no está disponible para esta sede.' });
     if (product.commerceRevision !== expectedRevision) return res.status(409).json({ error: 'El inventario cambió. Actualiza el saldo antes de guardar.' });
     if (stock < (product.reservedStockByStore[store.id] ?? 0)) {
@@ -565,7 +571,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     try {
       const updated = options.catalog.edit(productId, { variantId, stockByStore: { [store.id]: stock }, expectedRevision, reason: description }, actor);
-      res.json({ item: inventoryItem(saleVariant(updated, variantId), store) });
+      res.json({ item: inventoryRow(saleVariant(updated, variantId), actor, store) });
     } catch {
       res.status(409).json({ error: 'No se pudo guardar el ajuste. Actualiza el inventario e inténtalo nuevamente.' });
     }

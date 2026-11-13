@@ -249,8 +249,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   }
 
   function openInventoryAdjustments(item?: InventoryItem) {
-    const demoItem = actor.canAdjustInventory && isDemo ? inventory?.items.find(row => row.assignedToStore && !row.demoReadOnly) : undefined;
-    setInventoryEditor({ mode: 'stock', item: item ?? demoItem ?? null });
+    setInventoryEditor({ mode: 'stock', item: item ?? null });
   }
 
   function closeInventoryEditor() {
@@ -497,7 +496,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                             <strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
                             {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
                             {demoGalleryEdit ? <small>Prueba de galería · Edición de fotos</small>
-                              : item.demoReadOnly && !editablePrice && <small>Solo consulta en la demo</small>}
+                              : isDemo && !editableStock && !editablePrice && <small>Solo consulta en la demo</small>}
                             {item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
                             {editablePhoto && <button type="button" className="ba-btn ba-btn-secondary ba-photo-trigger" disabled={priceSaving}
                               aria-label={`Editar foto de ${[item.name, item.presentation].filter(Boolean).join(', ')}`}

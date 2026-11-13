@@ -323,7 +323,7 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
     const row = await commercialRow(coordination, activeStoreId);
     assert.ok(row?.assignedToStore, 'La variante comercial debe mostrarse en ' + activeStoreId);
     assert.equal(row.stock, 100);
-    assert.equal(row.demoReadOnly, true);
+    assert.ok(!row.demoReadOnly);
     assert.equal(row.available, 100 - row.reserved);
   }
   const subaRow = await commercialRow(suba, storeId);
@@ -385,21 +385,53 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   assert.deepEqual([updatedInventory.stock, updatedInventory.reserved, updatedInventory.available],
     [subaRow.stock, subaRow.reserved, subaRow.available]);
 
-  const edit = { ...ids, expectedRevision: editedVariant.commerceRevision, reason: 'Prueba de reconteo posterior a la inicialización' };
-  await admin('/inventory', { method: 'PUT', token: coordination, expected: 404, body: { ...edit, storeId, stock: 97 } });
-  // Change the isolated volume through the existing administrator to prove a retry cannot reset later movements.
-  const simulation = await api('/api/v1/simulation');
-  const { token: legacyAdmin } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
-  await api('/api/v1/admin/catalog/products/' + encodeURIComponent(before.id) + '/pricing-stock', {
-    method: 'PATCH', token: legacyAdmin, body: { ...edit, stockByStore: { [storeId]: 97 } },
-  });
+  const edit = {
+    ...ids, storeId, expectedRevision: updatedInventory.revision, stock: 97,
+    reason: 'Prueba de reconteo posterior a la inicialización',
+  };
+  const adjustStock = (token, body, expected = 200) => admin('/inventory', { method: 'PUT', token, body, expected });
+  await adjustStock(suba, edit, 403);
+  const checkoutEdit = {
+    storeId, productId: checkoutRow.productId, variantId: checkoutRow.variantId,
+    expectedRevision: checkoutRow.revision, stock: checkout.quantity,
+    reason: 'Reconteo con pedido reservado',
+  };
+  const invalidStock = await adjustStock(coordination, { ...checkoutEdit, stock: checkout.quantity - 1 }, 400);
+  assert.match(invalidStock.error, /reservadas/);
+  assert.deepEqual(await inventoryRow(suba, storeId, checkout.sku, checkout.sku), checkoutRow);
+  const { item: reservedAdjustment } = await adjustStock(coordination, checkoutEdit);
+  assert.deepEqual([reservedAdjustment.stock, reservedAdjustment.reserved, reservedAdjustment.available],
+    [checkout.quantity, checkout.quantity, 0]);
+
+  const { item: adjusted } = await adjustStock(coordination, edit);
+  assert.deepEqual([adjusted.stock, adjusted.reserved, adjusted.available], [97, updatedInventory.reserved, 97 - updatedInventory.reserved]);
+  assert.equal(adjusted.canEditCatalog, true);
+  assert.deepEqual([adjusted.price, adjusted.originalPrice, adjusted.image], [180_000, 240_000, image]);
+  await adjustStock(coordination, edit, 409);
   assert.equal((await commercialRow(suba, storeId)).stock, 97);
+  const afterStock = await knownProduct();
+  const stockVariant = afterStock.presentaciones.find(variant => variant.varianteId === variantId);
+  assert.deepEqual(stockVariant.stockByStore, { ...editedVariant.stockByStore, [storeId]: 97 });
+  assert.deepEqual([stockVariant.reservedStockByStore, stockVariant.price, stockVariant.originalPrice, stockVariant.foto],
+    [editedVariant.reservedStockByStore, 180_000, 240_000, image]);
+  assert.deepEqual(afterStock.presentaciones.filter(variant => variant.varianteId !== variantId),
+    edited.presentaciones.filter(variant => variant.varianteId !== variantId));
+
+  const history = await admin('/inventory/adjustments?storeId=' + storeId, { token: coordination });
+  const adjustment = history.adjustments.find(entry => entry.reason === edit.reason);
+  assert.ok(adjustment, 'El ajuste comercial debe aparecer en el historial de la sede');
+  assert.deepEqual([adjustment.before, adjustment.after, adjustment.actorName], [100, 97, 'Coordinación']);
 
   await stopDemo();
   await startDemo({ initializeInventory: true });
   const { token: restarted } = await demoLogin('coordinacion');
   const persisted = await commercialRow(restarted, storeId);
   assert.deepEqual([persisted.stock, persisted.price, persisted.originalPrice, persisted.image], [97, 180_000, 240_000, image]);
+  const persistedReservation = await inventoryRow(restarted, storeId, checkout.sku, checkout.sku);
+  assert.deepEqual([persistedReservation.stock, persistedReservation.reserved, persistedReservation.available],
+    [checkout.quantity, checkout.quantity, 0]);
+  assert.ok((await admin('/inventory/adjustments?storeId=' + storeId, { token: restarted })).adjustments
+    .some(entry => entry.id === adjustment.id));
   assert.deepEqual(receipt(), batch);
   assert.deepEqual(await photoFixture(), beforePhoto);
   assert.deepEqual(await oldFixtureRow(restarted), fixtureBefore);
@@ -618,7 +650,7 @@ try {
   const checkout = await verifyCustomerCheckout({ suba, kennedy, coordination });
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
   await verifyDemoInventoryInitialization({ suba, coordination, checkout });
-  console.log('PASS inventario demo: 100 por presentación y sede activa, reservas y fotos conservadas, lote idempotente tras reconteo y reinicio.');
+  console.log('PASS inventario demo: Coordinación ajusta existencias por sede y presentación, conserva reservas e historial y el lote no se repite tras reiniciar.');
   console.log('PASS catálogo demo: Coordinación edita promoción y foto de una presentación desde Inventario, se reflejan en BOLT Cliente y persisten tras reiniciar.');
 } finally {
   await stopDemo();
