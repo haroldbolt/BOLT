@@ -105,6 +105,7 @@ export function SalesDashboard({ token, storeId, stores, fetchReport }: SalesDas
         <span className="ba-sales-updated"><Clock3 size={14} aria-hidden="true" />Actualizado a las <time dateTime={report.updatedAt}>{formatTimeBogota(report.updatedAt)}</time> · cada 15 s</span>
       </div>
       <SalesMetrics summary={report.summary} />
+      {!!report.testDeliveries?.length && <TestDeliveries deliveries={report.testDeliveries} />}
       <SalesChart series={report.series} />
       <div className="ba-sales-breakdowns">
         <ProductsTrend products={report.products} units={report.summary.units} />
@@ -133,6 +134,39 @@ function SalesMetrics({ summary }: { summary: BoltAdminSalesReport['summary'] })
       <dd><strong>{value}</strong>{description && <small>{description}</small>}</dd>
     </div>)}
   </dl>;
+}
+
+function TestDeliveries({ deliveries }: { deliveries: NonNullable<BoltAdminSalesReport['testDeliveries']> }) {
+  return <section className="ba-panel" aria-label="Entregas de prueba">
+    <div className="ba-panel-head">
+      <div>
+        <h2>Entregas de prueba</h2>
+        <p>Fuera de los totales de ventas y recaudo.</p>
+      </div>
+      <span className="ba-demo"><FlaskConical size={13} aria-hidden="true" />Simulación</span>
+    </div>
+    <div className="ba-sales-table-scroll">
+      <table className="ba-sales-table">
+        <thead><tr><th scope="col">Pedido</th><th scope="col">Productos</th><th scope="col">Recaudo</th></tr></thead>
+        <tbody>
+          {deliveries.map(delivery => <tr key={delivery.id}>
+            <th scope="row">
+              <strong>{delivery.code}</strong>
+              <small>{delivery.storeName} · Entregado</small>
+              <small><time dateTime={delivery.deliveredAt}>
+                {formatDateBogota(delivery.deliveredAt)} · {formatTimeBogota(delivery.deliveredAt)}
+              </time></small>
+            </th>
+            <td><ul>{delivery.items.map(({ name, presentation, quantity }, index) => <li key={`${index}-${name}`}>
+              {number.format(quantity)} × {name}
+              {presentation && <small>{presentation}</small>}
+            </li>)}</ul></td>
+            <td><strong>{formatCOP(delivery.collectedCOP)}</strong></td>
+          </tr>)}
+        </tbody>
+      </table>
+    </div>
+  </section>;
 }
 
 function SalesChart({ series }: { series: BoltAdminSalesReport['series'] }) {
