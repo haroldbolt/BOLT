@@ -278,7 +278,7 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   const productName = 'Agility Gold Adulto Raza Grande';
   const variantId = 'gid://shopify/ProductVariant/48875669717272';
   const knownProduct = async () => {
-    const catalog = await api('/api/v1/catalog?all=true&q=' + encodeURIComponent(productName));
+    const catalog = await api('/api/v1/catalog?' + new URLSearchParams({ q: productName, storeId }));
     const product = catalog.find(item => item.id === 'gid://shopify/Product/9400676647192');
     assert.ok(product, 'La presentación comercial conocida debe existir en el catálogo');
     return product;
@@ -328,6 +328,7 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   }
   const subaRow = await commercialRow(suba, storeId);
   assert.equal(subaRow?.stock, 100);
+  assert.ok(!subaRow.canEditCatalog);
   const checkoutRow = await inventoryRow(suba, storeId, checkout.sku, checkout.sku);
   assert.deepEqual([checkoutRow?.stock, checkoutRow?.reserved, checkoutRow?.available], [100, checkout.quantity, 100 - checkout.quantity]);
   const checkoutVariant = (await checkout.catalog()).presentaciones.find(item => item.varianteId === checkout.sku);
@@ -343,7 +344,48 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   assert.deepEqual(await photoFixture(), beforePhoto, 'El lote conserva las fotos y stock cero de Pawise');
   assert.deepEqual(await oldFixtureRow(suba), fixtureBefore, 'El lote conserva el inventario y reservas del escenario de pedidos');
 
-  const edit = { productId: before.id, variantId, expectedRevision: afterVariant.commerceRevision, reason: 'Prueba de reconteo posterior a la inicialización' };
+  const editable = await commercialRow(coordination, storeId);
+  assert.equal(editable.canEditCatalog, true);
+  const ids = { productId: editable.productId, variantId: editable.variantId };
+  const priceEdit = {
+    ...ids, expectedRevision: editable.revision, regularPriceCOP: 240_000, promoPriceCOP: 180_000,
+    reason: 'Promoción de prueba por presentación',
+  };
+  await admin('/prices', { method: 'PUT', token: suba, body: priceEdit, expected: 403 });
+  const { item: promoted } = await admin('/prices', { method: 'PUT', token: coordination, body: priceEdit });
+  assert.deepEqual([promoted.price, promoted.originalPrice], [180_000, 240_000]);
+  await admin('/prices', { method: 'PUT', token: coordination, body: priceEdit, expected: 409 });
+
+  const photoRoute = '/inventory/photo';
+  const photoQuery = photoRoute + '?' + new URLSearchParams(ids);
+  const photoBefore = await admin(photoQuery, { token: coordination });
+  const photoEdit = {
+    ...ids, target: 'variant', expectedImage: photoBefore.variantImage, dataUrl: photoDataUrl, filename: 'agility-15kg-prueba.png',
+  };
+  await admin(photoRoute, { method: 'PUT', token: suba, body: photoEdit, expected: 403 });
+  const { image } = await admin(photoRoute, { method: 'PUT', token: coordination, body: photoEdit });
+  assert.match(image, /^\/uploads\/catalog\/[^/]+\.png$/);
+  assert.deepEqual(await admin(photoQuery, { token: coordination }), { ...photoBefore, variantImage: image });
+  await admin(photoRoute, { method: 'PUT', token: coordination, body: photoEdit, expected: 409 });
+  const asset = await fetch(origin + image, { headers: { Cookie: gatewayCookie } });
+  assert.equal(asset.status, 200);
+  assert.deepEqual(Buffer.from(await asset.arrayBuffer()), Buffer.from(photoPng, 'base64'));
+
+  const edited = await knownProduct();
+  const editedVariant = edited.presentaciones.find(variant => variant.varianteId === variantId);
+  assert.deepEqual([editedVariant.price, editedVariant.originalPrice, editedVariant.foto], [180_000, 240_000, image]);
+  assert.deepEqual([editedVariant.stockByStore, editedVariant.reservedStockByStore], [afterVariant.stockByStore, afterVariant.reservedStockByStore]);
+  assert.deepEqual(edited.presentaciones.filter(variant => variant.varianteId !== variantId),
+    after.presentaciones.filter(variant => variant.varianteId !== variantId));
+  assert.deepEqual([edited.image, edited.gallery], [after.image, after.gallery]);
+
+  const updatedInventory = await commercialRow(suba, storeId);
+  assert.deepEqual([updatedInventory.price, updatedInventory.originalPrice, updatedInventory.image],
+    [180_000, 240_000, image]);
+  assert.deepEqual([updatedInventory.stock, updatedInventory.reserved, updatedInventory.available],
+    [subaRow.stock, subaRow.reserved, subaRow.available]);
+
+  const edit = { ...ids, expectedRevision: editedVariant.commerceRevision, reason: 'Prueba de reconteo posterior a la inicialización' };
   await admin('/inventory', { method: 'PUT', token: coordination, expected: 404, body: { ...edit, storeId, stock: 97 } });
   // Change the isolated volume through the existing administrator to prove a retry cannot reset later movements.
   const simulation = await api('/api/v1/simulation');
@@ -356,7 +398,8 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   await stopDemo();
   await startDemo({ initializeInventory: true });
   const { token: restarted } = await demoLogin('coordinacion');
-  assert.equal((await commercialRow(restarted, storeId)).stock, 97);
+  const persisted = await commercialRow(restarted, storeId);
+  assert.deepEqual([persisted.stock, persisted.price, persisted.originalPrice, persisted.image], [97, 180_000, 240_000, image]);
   assert.deepEqual(receipt(), batch);
   assert.deepEqual(await photoFixture(), beforePhoto);
   assert.deepEqual(await oldFixtureRow(restarted), fixtureBefore);
@@ -576,6 +619,7 @@ try {
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
   await verifyDemoInventoryInitialization({ suba, coordination, checkout });
   console.log('PASS inventario demo: 100 por presentación y sede activa, reservas y fotos conservadas, lote idempotente tras reconteo y reinicio.');
+  console.log('PASS catálogo demo: Coordinación edita promoción y foto de una presentación desde Inventario, se reflejan en BOLT Cliente y persisten tras reiniciar.');
 } finally {
   await stopDemo();
   fs.rmSync(volume, { recursive: true, force: true });

@@ -123,15 +123,20 @@ function belongsToStore(product: Product, store: Store) {
     : Object.hasOwn(product.stockByStore, store.id);
 }
 
-function inventoryItem(product: Product, store?: Store, demoReadOnly = false, demoGalleryEdit = false) {
+function inventoryItem(product: Product, store?: Store, permissions?: {
+  demoReadOnly: boolean;
+  demoGalleryEdit: boolean;
+  canEditCatalog: boolean;
+}) {
   const assignedToStore = !!store && belongsToStore(product, store);
   const stock = store && assignedToStore ? (product.stockByStore[store.id] ?? 0) : 0;
   const reserved = store && assignedToStore ? (product.reservedStockByStore[store.id] ?? 0) : 0;
   return {
     ...priceItem(product),
     image: product.image,
-    ...(demoReadOnly && { demoReadOnly: true }),
-    ...(demoGalleryEdit && { demoGalleryEdit: true }),
+    ...(permissions?.demoReadOnly && { demoReadOnly: true }),
+    ...(permissions?.demoGalleryEdit && { demoGalleryEdit: true }),
+    ...(permissions?.canEditCatalog && { canEditCatalog: true }),
     storeId: store?.id ?? null,
     assignedToStore,
     stock,
@@ -182,7 +187,10 @@ export function mountBoltAdmin(app: Express, options: Options) {
   const isVisibleProduct = (product: Product) => options.demo
     ? (product.parentProductId ?? product.id) === options.demo.productId
     : !product.status || product.status === 'ACTIVE';
-  const isVisiblePriceProduct = (product: Product) => !options.demo || isVisibleProduct(product);
+  const canEditDemoCatalogProduct = (product: Product) =>
+    !!options.demo && options.catalog.hasDemoInventory() && !(product.parentProductId ?? product.id).startsWith('SIM-');
+  const isVisiblePriceProduct = (product: Product) =>
+    !options.demo || isVisibleProduct(product) || canEditDemoCatalogProduct(product);
   const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
 
   function bearer(req: Request) {
@@ -258,7 +266,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const product = options.photos.getProductById(productId);
     const variant = product?.presentaciones?.find(item => item.varianteId === variantId);
-    if (!product || product.id !== productId || (options.demo && product.id !== options.demo.productId && !isDemoGalleryProduct(product)) ||
+    if (!product || product.id !== productId || (!isVisiblePriceProduct(product) && !isDemoGalleryProduct(product)) ||
         (!variant && (product.presentaciones?.length || variantId !== product.id))) {
       res.status(404).json({ error: 'La presentación no está disponible para editar fotos.' });
       return;
@@ -431,7 +439,11 @@ export function mountBoltAdmin(app: Express, options: Options) {
         );
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
-    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, !!options.demo && !isVisibleProduct(product), isDemoGalleryProduct(product))),
+    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, {
+      demoReadOnly: !!options.demo && !isVisibleProduct(product),
+      demoGalleryEdit: isDemoGalleryProduct(product),
+      canEditCatalog: actor.canAdjustPrices && canEditDemoCatalogProduct(product),
+    })),
       total: products.length, offset, limit });
   });
 

@@ -486,7 +486,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                 </tr></thead><tbody>
                   {inventory.items.map(item => {
                     const editableStock = actor.canAdjustInventory && !item.demoReadOnly && item.assignedToStore && (isDemo || !item.status || item.status === 'ACTIVE');
-                    const editablePrice = actor.canAdjustPrices && !item.demoReadOnly;
+                    const editablePrice = actor.canAdjustPrices && (!item.demoReadOnly || item.canEditCatalog === true);
                     const demoGalleryEdit = actor.canAdjustPrices && item.demoGalleryEdit === true;
                     const editablePhoto = editablePrice || demoGalleryEdit;
                     return <tr key={`${item.productId}:${item.variantId}`} data-selected={inventoryEditor?.item && sameVariant(inventoryEditor.item, item) ? 'true' : undefined}>
@@ -497,7 +497,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
                             <strong>{item.name}</strong><small>{[item.presentation, item.sku].filter(Boolean).join(' · ')}</small>
                             {!item.assignedToStore && <small>Sin asignación en esta sede</small>}
                             {demoGalleryEdit ? <small>Prueba de galería · Edición de fotos</small>
-                              : item.demoReadOnly && <small>Solo consulta en la demo</small>}
+                              : item.demoReadOnly && !editablePrice && <small>Solo consulta en la demo</small>}
                             {item.status && item.status !== 'ACTIVE' && <small>Inactivo</small>}
                             {editablePhoto && <button type="button" className="ba-btn ba-btn-secondary ba-photo-trigger" disabled={priceSaving}
                               aria-label={`Editar foto de ${[item.name, item.presentation].filter(Boolean).join(', ')}`}
