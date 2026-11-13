@@ -26,6 +26,7 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
   payment?: Pick<Order['payment'], 'status' | 'method'>;
   demoReadOnly?: boolean;
+  canSimulateDelivery?: boolean;
 };
 
 export type DemoOrderMode = Extract<Order['deliveryMode'], 'TURBO' | 'PROGRAMADO'>;
@@ -176,4 +177,7 @@ export const boltAdmin = {
   quote: (token: string | null, orderId: string, body: unknown) => request<DeliveryQuote>(`${orderPath(orderId)}/quote`, token, { body }),
   confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),
   startPreparation: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: {} }),
+  simulateInventoryDelivery: (token: string | null, orderId: string) => request<AdminOrder>(
+    `${orderPath(orderId)}/simulate-inventory-delivery`, token, { body: {} },
+  ),
 };

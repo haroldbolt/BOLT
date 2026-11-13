@@ -113,7 +113,7 @@ export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack, g
     );
   }
 
-  if(order.deliveryReview?.status==='PENDING') return <PendingDeliveryReceipt order={order} onBack={onBack} onRefresh={()=>void loadData()} onCancel={()=>void handleCancelOrder()} cancelling={cancelling} error={cancelError}/>;
+  if(order.deliveryReview?.status==='PENDING' || order.deliveryReview?.status==='SIMULATED') return <PendingDeliveryReceipt order={order} onBack={onBack} onRefresh={()=>void loadData()} onCancel={()=>void handleCancelOrder()} cancelling={cancelling} error={cancelError}/>;
 
   // Active shipment data if split order
   const isSplitOrder = !!order.isSplitOrder && !!order.childShipments?.length;

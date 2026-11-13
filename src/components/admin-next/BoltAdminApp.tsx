@@ -620,6 +620,15 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, changed
     } catch (failure) { setError(errorText(failure)); }
     finally { setPreparing(false); }
   };
+  const simulateDelivery = async () => {
+    if (preparing) return;
+    setPreparing(true); setError('');
+    try {
+      const result = await boltAdmin.simulateInventoryDelivery(token, order.id);
+      changed(result, 'Entrega simulada registrada sin cobro.');
+    } catch (failure) { setError(errorText(failure)); }
+    finally { setPreparing(false); }
+  };
   return <section className="ba-panel ba-order-detail" aria-label="Detalle del pedido">
     <div className="ba-panel-head"><div><p>Detalle del pedido</p><h2 ref={heading} tabIndex={-1}>{orderLabel(order)}</h2></div><button className="ba-icon-btn" type="button" aria-label="Cerrar detalle del pedido" onClick={close}><X size={19} /></button></div>
     <div className="ba-order-body">
@@ -633,7 +642,13 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, changed
       <section className="ba-order-items"><h3>Productos</h3><ul>{order.items.map(item => <li key={item.productId}><span>{item.name}<small>{item.presentation}</small></span><strong>×{number.format(item.quantity)}</strong></li>)}</ul>
         <div><span>{isPending(order) ? 'Subtotal de productos' : 'Total del pedido'}</span><strong>{formatCOP(isPending(order) ? order.totals.subtotal : order.totals.total)}</strong></div>
       </section>
-      {order.demoReadOnly && <p className="ba-info">Pedido recibido desde BOLT Cliente. Disponible para consulta en la demo.</p>}
+      {order.deliveryReview?.status === 'SIMULATED' && <p className="ba-info">Entrega simulada sin cobro.</p>}
+      {isDemo && actor.role === 'COORDINACION' && order.canSimulateDelivery &&
+        <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void simulateDelivery()}>
+          Simular entrega sin cobro
+        </button>}
+      {order.demoReadOnly && !order.canSimulateDelivery && order.deliveryReview?.status !== 'SIMULATED' &&
+        <p className="ba-info">Pedido recibido desde BOLT Cliente. Disponible para consulta en la demo.</p>}
       {!order.demoReadOnly && isPending(order) && (actor.canConfirm ? <DeliveryReviewPanel order={order} token={token} isDemo={isDemo}
         onConfirmed={result => changed(result, 'Entrega confirmada. Puedes consultar el nuevo estado del pedido.')} />
         : <p className="ba-info"><ShieldCheck size={16} /> Tu perfil no puede confirmar entregas.</p>)}

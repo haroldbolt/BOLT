@@ -10,6 +10,8 @@ import type { CatalogOperations } from './catalogOperations';
 import type { CatalogImagePatch } from './catalogImagePatch';
 import type { CatalogRepository } from './catalogRepository';
 import { catalogPhotoGallery, MAX_PRODUCT_GALLERY_PHOTOS } from './productImages';
+import { isDemoInventoryDeliveryOrder } from './demoInventoryDelivery';
+import type { OrdersRepository } from './ordersRepository';
 import { saleVariant, validOriginalPrice } from './variantCommerce';
 
 const base = '/api/v1/bolt-admin';
@@ -68,6 +70,7 @@ type Options = {
     productId: string;
     editCatalog?: boolean;
     galleryProductId?: string;
+    completeInventoryDelivery: OrdersRepository['completeDemoInventoryDelivery'];
     isOrder: (order: Order) => boolean;
     createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
     guestToken: (order: Order) => string;
@@ -186,7 +189,11 @@ export function mountBoltAdmin(app: Express, options: Options) {
   const isDemoCheckoutOrder = (order: Order) => !!options.demo && !!order.creationRequestId &&
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
-  const presentOrder = (order: Order) => boltAdminOrder(order, isDemoCheckoutOrder(order));
+  const presentOrder = (order: Order) => ({
+    ...boltAdminOrder(order, isDemoCheckoutOrder(order)),
+    ...(options.demo && order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' &&
+      order.deliveryReview?.status === 'PENDING' && isDemoInventoryDeliveryOrder(order) && { canSimulateDelivery: true }),
+  });
   const isActiveProduct = (product: Product) => !product.status || product.status === 'ACTIVE';
   const isDemoFixture = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.productId;
   const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
@@ -402,6 +409,20 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const order = selectOrder(req, res, actor);
     if (order) res.json({ order: presentOrder(order) });
   });
+
+  if (options.demo) {
+    const demo = options.demo;
+    app.post(base + '/orders/:orderId/simulate-inventory-delivery', (req, res) => {
+      const actor = authorize(req, res);
+      if (!actor) return;
+      if (actor.role !== 'COORDINACION') return res.status(403).json({ error: 'Solo Coordinación puede simular esta entrega.' });
+      const order = selectOrder(req, res, actor);
+      if (!order) return;
+      const result = demo.completeInventoryDelivery(order.id, { id: actor.id, name: actor.name, role: 'ADMINISTRADOR' });
+      if (!result.success || !result.order) return res.status(result.code ?? 409).json({ error: result.error });
+      res.json(presentOrder(result.order));
+    });
+  }
 
   app.post(base + '/orders/:orderId/quote', (req, res) => {
     const actor = authorize(req, res);

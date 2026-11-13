@@ -1,6 +1,7 @@
 import {FulfillmentStorage} from './fulfillmentStorage';
 import {newDispatchState, type DispatchState} from '../types/dispatch';
 import { makeWarehouseAssignment } from './warehouseAssignment';
+import { isDemoInventoryDeliveryOrder } from './demoInventoryDelivery';
 import { WAREHOUSES } from '../data/warehouseConfig';
 import type { Store } from '../types';
 import fs from 'fs';
@@ -886,6 +887,41 @@ export class OrdersRepository {
       deliveryCode,
       catalogProducts,
       reason: 'Entrega física completada y verificada mediante PIN secreto de 4 dígitos suministrado por el cliente.',
+    });
+  }
+
+  public completeDemoInventoryDelivery(orderId: string, actor: OrderActor) {
+    if (actor.role !== 'ADMINISTRADOR') {
+      return { success: false, code: 403, error: 'Solo Coordinación puede simular esta entrega.' };
+    }
+    const order = this.orders.find(candidate => candidate.id === orderId);
+    if (!order || !isDemoInventoryDeliveryOrder(order)) {
+      return { success: false, code: 404, error: 'Pedido de prueba no disponible.' };
+    }
+    if (order.fulfillmentStatus === 'ENTREGADO' && order.deliveryReview?.status === 'SIMULATED') {
+      return { success: true, order };
+    }
+    if (order.fulfillmentStatus !== 'PENDIENTE_CONFIRMACION' || order.deliveryReview?.status !== 'PENDING' ||
+        Object.values(this.dispatchState.runs).some(run => run.orderId === order.id)) {
+      return { success: false, code: 409, error: 'El pedido de prueba debe estar pendiente de confirmación y sin despacho.' };
+    }
+    const review = order.deliveryReview;
+    return this.transaction(() => {
+      const timestamp = new Date().toISOString();
+      const entry: OrderStatusHistoryEntry = {
+        id: `HIST-${order.id}-demo-delivery`, orderId: order.id,
+        previousStatus: order.fulfillmentStatus, newStatus: 'ENTREGADO',
+        timestamp, actor,
+        reason: 'Entrega simulada sin cobro para comprobar el descuento de inventario.',
+        metadata: { simulated: true },
+      };
+      order.fulfillmentStatus = 'ENTREGADO';
+      order.timestamps.deliveredAt = timestamp;
+      order.deliveryReview = { ...review, status: 'SIMULATED' };
+      (order.statusHistory ??= []).push(entry);
+      this.auditHistory.push(entry);
+      // El inventario se calcula desde el estado persistido del pedido.
+      return { success: true, order };
     });
   }
 
