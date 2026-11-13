@@ -794,6 +794,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     },
     demo:isDispatchSimulation ? {
       productId:BOLT_ADMIN_DEMO_PRODUCT_ID,
+      editCatalog:process.env.BOLT_DEMO_EDIT_CATALOG === '1',
       isOrder:isBoltAdminDemoOrder,
       createOrder:(requestId,requestedMode)=>createBoltAdminDemoOrder({requestId,requestedMode,catalog:products,store:stores.find(store=>store.id===BOLT_ADMIN_DEMO_STORE_ID),dispatch:dispatchService}),
       guestToken:order=>dispatchService.guestToken(order),

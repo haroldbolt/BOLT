@@ -66,6 +66,7 @@ type Options = {
   startPreparation: PendingDeliveryAction;
   demo?: {
     productId: string;
+    editCatalog?: boolean;
     isOrder: (order: Order) => boolean;
     createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
     guestToken: (order: Order) => string;
@@ -122,14 +123,22 @@ function belongsToStore(product: Product, store: Store) {
     : Object.hasOwn(product.stockByStore, store.id);
 }
 
-function inventoryItem(product: Product, store?: Store, demoReadOnly = false) {
+function inventoryItem(product: Product, store: Store | undefined, permissions: {
+  demoReadOnly: boolean;
+  canEditStock: boolean;
+  canEditPrice: boolean;
+  canEditPhoto: boolean;
+}) {
   const assignedToStore = !!store && belongsToStore(product, store);
   const stock = store && assignedToStore ? (product.stockByStore[store.id] ?? 0) : 0;
   const reserved = store && assignedToStore ? (product.reservedStockByStore[store.id] ?? 0) : 0;
   return {
     ...priceItem(product),
     image: product.image,
-    ...(demoReadOnly && { demoReadOnly: true }),
+    ...(permissions.demoReadOnly && { demoReadOnly: true }),
+    canEditStock: permissions.canEditStock,
+    canEditPrice: permissions.canEditPrice,
+    canEditPhoto: permissions.canEditPhoto,
     storeId: store?.id ?? null,
     assignedToStore,
     stock,
@@ -177,10 +186,25 @@ export function mountBoltAdmin(app: Express, options: Options) {
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
   const presentOrder = (order: Order) => boltAdminOrder(order, isDemoCheckoutOrder(order));
-  const isVisibleProduct = (product: Product) => options.demo
-    ? (product.parentProductId ?? product.id) === options.demo.productId
-    : !product.status || product.status === 'ACTIVE';
-  const isVisiblePriceProduct = (product: Product) => !options.demo || isVisibleProduct(product);
+  const isActiveProduct = (product: Product) => !product.status || product.status === 'ACTIVE';
+  const isDemoFixture = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.productId;
+  const canEditDemoProduct = (product: Product) =>
+    options.demo?.editCatalog === true && !(product.parentProductId ?? product.id).startsWith('SIM-');
+  const isStockProduct = (product: Product) =>
+    isDemoFixture(product) || ((!options.demo || canEditDemoProduct(product)) && isActiveProduct(product));
+  const isCatalogEditProduct = (product: Product) =>
+    !options.demo || isDemoFixture(product) || canEditDemoProduct(product);
+
+  function inventoryRow(product: Product, actor: Actor, store?: Store) {
+    const canEditCatalog = actor.canAdjustPrices && isCatalogEditProduct(product);
+    const canEditStock = actor.canAdjustInventory && !!store && belongsToStore(product, store) && isStockProduct(product);
+    return inventoryItem(product, store, {
+      demoReadOnly: !!options.demo && !canEditCatalog && !canEditStock,
+      canEditStock,
+      canEditPrice: canEditCatalog,
+      canEditPhoto: canEditCatalog,
+    });
+  }
 
   function bearer(req: Request) {
     const auth = req.get('Authorization');
@@ -255,7 +279,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const product = options.photos.getProductById(productId);
     const variant = product?.presentaciones?.find(item => item.varianteId === variantId);
-    if (!product || product.id !== productId || (options.demo && product.id !== options.demo.productId) ||
+    if (!product || product.id !== productId || !isCatalogEditProduct(product) ||
         (!variant && (product.presentaciones?.length || variantId !== product.id))) {
       res.status(404).json({ error: 'La presentación no está disponible para editar fotos.' });
       return;
@@ -419,11 +443,11 @@ export function mountBoltAdmin(app: Express, options: Options) {
       .filter(order => order.storeId === store.id && isDemoCheckoutOrder(order))
       .flatMap(order => order.items.map(item => item.productId)) : []);
     const products = options.getProducts().filter(product => {
-      const visible = scope === 'catalog' ? isVisiblePriceProduct(product) : !!store && belongsToStore(product, store) &&
-        (isVisibleProduct(product) || checkoutProductIds.has(product.id));
+      const visible = scope === 'catalog' ? isCatalogEditProduct(product) : !!store && belongsToStore(product, store) &&
+        (isStockProduct(product) || checkoutProductIds.has(product.id));
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
-    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryItem(product, store, !!options.demo && !isVisibleProduct(product))),
+    res.json({ items: products.slice(offset, offset + limit).map(product => inventoryRow(product, actor, store)),
       total: products.length, offset, limit });
   });
 
@@ -434,7 +458,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const store = selectStore(req, res, actor);
     if (!store) return;
     const variants = new Map(options.getProducts()
-      .filter(product => isVisibleProduct(product) && belongsToStore(product, store))
+      .filter(product => (isStockProduct(product) || canEditDemoProduct(product)) && belongsToStore(product, store))
       .map(product => [`${product.parentProductId ?? product.id}:${product.variantId ?? product.id}`, product]));
     const audit = options.catalog.getAuditLog();
     const adjustments = [];
@@ -537,7 +561,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
       return res.status(400).json({ error: 'Indica la presentación, la existencia registrada y un motivo de 5 a 240 caracteres.' });
     }
     const product = options.getProducts().find(candidate => (candidate.parentProductId ?? candidate.id) === productId &&
-      (candidate.variantId ?? candidate.id) === variantId && isVisibleProduct(candidate) && belongsToStore(candidate, store));
+      (candidate.variantId ?? candidate.id) === variantId && isStockProduct(candidate) && belongsToStore(candidate, store));
     if (!product) return res.status(404).json({ error: 'La presentación no está disponible para esta sede.' });
     if (product.commerceRevision !== expectedRevision) return res.status(409).json({ error: 'El inventario cambió. Actualiza el saldo antes de guardar.' });
     if (stock < (product.reservedStockByStore[store.id] ?? 0)) {
@@ -545,7 +569,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     try {
       const updated = options.catalog.edit(productId, { variantId, stockByStore: { [store.id]: stock }, expectedRevision, reason: description }, actor);
-      res.json({ item: inventoryItem(saleVariant(updated, variantId), store) });
+      res.json({ item: inventoryRow(saleVariant(updated, variantId), actor, store) });
     } catch {
       res.status(409).json({ error: 'No se pudo guardar el ajuste. Actualiza el inventario e inténtalo nuevamente.' });
     }
@@ -558,7 +582,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const query = typeof req.query.query === 'string' ? normalizeQuery(req.query.query.slice(0, 120)) : '';
     const limit = Math.max(1, pageParam(req.query.limit, 40, 100));
     const offset = pageParam(req.query.offset, 0, 100000);
-    const matches = options.getProducts().filter(product => isVisiblePriceProduct(product) &&
+    const matches = options.getProducts().filter(product => isCatalogEditProduct(product) &&
       (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query)));
     res.json({ items: matches.slice(offset, offset + limit).map(priceItem), total: matches.length, offset, limit });
   });
@@ -577,7 +601,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
       return res.status(400).json({ error: 'El precio de oferta debe ser mayor que cero y menor que el precio normal.' });
     }
     const product = options.getProducts().find(candidate => (candidate.parentProductId ?? candidate.id) === productId &&
-      (candidate.variantId ?? candidate.id) === variantId && isVisiblePriceProduct(candidate));
+      (candidate.variantId ?? candidate.id) === variantId && isCatalogEditProduct(candidate));
     if (!product) return res.status(404).json({ error: 'La presentación no está disponible.' });
     if (product.commerceRevision !== expectedRevision) {
       return res.status(409).json({ error: 'La presentación cambió. Actualiza el precio antes de guardar.' });

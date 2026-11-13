@@ -28,7 +28,7 @@ const photoDataUrl = 'data:image/png;base64,' + photoPng;
 let child;
 let gatewayCookie;
 
-async function startDemo() {
+async function startDemo({ editCatalog = false } = {}) {
   child = spawn(process.execPath, ['deployment/start-demo.mjs', '--local-test'], {
     cwd: process.cwd(),
     env: {
@@ -40,6 +40,7 @@ async function startDemo() {
       BOLT_DEMO_PASSWORD: password,
       BOLT_DEMO_VOLUME: volume,
       BOLT_DEMO_CUSTOMER_ACCOUNTS: '0',
+      BOLT_DEMO_EDIT_CATALOG: editCatalog ? '1' : '0',
     },
     stdio: ['ignore', 'ignore', 'pipe'],
   });
@@ -53,6 +54,13 @@ async function startDemo() {
     await new Promise(resolve => setTimeout(resolve, 100));
   }
   throw new Error('Demo failed to start: ' + errors);
+}
+
+async function stopDemo() {
+  if (!child || child.exitCode !== null || child.signalCode !== null) return;
+  const exited = once(child, 'exit');
+  child.kill('SIGTERM');
+  await exited;
 }
 
 async function api(endpoint, { method = 'GET', token, guestToken, idempotency, body, expected = 200 } = {}) {
@@ -201,6 +209,67 @@ async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
   assert.equal(after.price, price);
   assert.equal(after.stockByStore[storeId], stock);
   assert.equal(after.reservedStockByStore[storeId], quantity);
+  return { catalog, reserved, storeId };
+}
+
+async function verifyDemoCatalogEditing({ catalog, reserved, storeId }) {
+  await stopDemo();
+  await startDemo({ editCatalog: true });
+  const [{ token: suba }, { token: coordination }] = await Promise.all([demoLogin('suba'), demoLogin('coordinacion')]);
+  const { productId, variantId } = reserved;
+  const query = new URLSearchParams({ storeId, query: variantId });
+  const inventory = async token => (await admin('/inventory?' + query, { token })).items
+    .find(item => item.productId === productId && item.variantId === variantId);
+  const [before, editable, readOnly] = await Promise.all([catalog(), inventory(coordination), inventory(suba)]);
+  const capabilities = item => [item.canEditStock, item.canEditPrice, item.canEditPhoto];
+  assert.deepEqual(capabilities(editable), [true, true, true]);
+  assert.deepEqual(capabilities(readOnly), [false, false, false]);
+  assert.deepEqual([editable.stock, editable.reserved, editable.available, editable.price, editable.image],
+    [reserved.stock, reserved.reserved, reserved.available, reserved.price, reserved.image]);
+
+  const unassigned = (await admin('/inventory?' + new URLSearchParams({
+    storeId: 'HUB_KENNEDY', query: variantId, scope: 'catalog',
+  }), { token: coordination })).items.find(item => item.productId === productId && item.variantId === variantId);
+  assert.equal(unassigned.assignedToStore, false);
+  assert.deepEqual(capabilities(unassigned), [false, true, true]);
+  const stockEdit = {
+    storeId, productId, variantId, expectedRevision: editable.revision, stock: 9, reason: 'Reconteo de prueba en Suba',
+  };
+  const adjustStock = (token, body, expected = 200) => admin('/inventory', { method: 'PUT', token, body, expected });
+  await adjustStock(suba, stockEdit, 403);
+  await adjustStock(coordination, { ...stockEdit, storeId: 'HUB_KENNEDY' }, 404);
+  const rejected = await adjustStock(coordination, { ...stockEdit, stock: editable.reserved - 1 }, 400);
+  assert.match(rejected.error, /reservadas/);
+  const { item: adjusted } = await adjustStock(coordination, stockEdit);
+  assert.deepEqual([adjusted.stock, adjusted.reserved, adjusted.available], [9, reserved.reserved, 9 - reserved.reserved]);
+  assert.deepEqual([adjusted.price, adjusted.image], [reserved.price, reserved.image]);
+  await adjustStock(coordination, stockEdit, 409);
+
+  const priceEdit = {
+    productId, variantId, expectedRevision: adjusted.revision, regularPriceCOP: reserved.price, promoPriceCOP: 21_900,
+    reason: 'Promoción de prueba por presentación',
+  };
+  await admin('/prices', { method: 'PUT', token: suba, body: priceEdit, expected: 403 });
+  await admin('/prices', { method: 'PUT', token: coordination, body: priceEdit });
+  const photoRoute = '/inventory/photo';
+  const photo = await admin(photoRoute + '?' + new URLSearchParams({ productId, variantId }), { token: coordination });
+  const upload = { productId, variantId, target: 'variant', expectedImage: photo.variantImage, dataUrl: photoDataUrl };
+  await admin(photoRoute, { method: 'PUT', token: suba, body: upload, expected: 403 });
+  const { image } = await admin(photoRoute, { method: 'PUT', token: coordination, body: upload });
+  assert.match(image, /^\/uploads\/catalog\/[^/]+\.png$/);
+
+  const after = await catalog();
+  const previousVariant = before.presentaciones.find(variant => variant.varianteId === variantId);
+  const updatedVariant = after.presentaciones.find(variant => variant.varianteId === variantId);
+  assert.deepEqual(updatedVariant.stockByStore, { ...previousVariant.stockByStore, [storeId]: 9 });
+  assert.deepEqual(updatedVariant.reservedStockByStore, previousVariant.reservedStockByStore);
+  assert.deepEqual([updatedVariant.price, updatedVariant.originalPrice, updatedVariant.foto], [21_900, reserved.price, image]);
+  assert.deepEqual(after.presentaciones.filter(variant => variant.varianteId !== variantId),
+    before.presentaciones.filter(variant => variant.varianteId !== variantId));
+  const { adjustments } = await admin('/inventory/adjustments?storeId=' + storeId, { token: coordination });
+  const audit = adjustments.find(item => item.reason === stockEdit.reason);
+  assert.ok(audit);
+  assert.deepEqual([audit.before, audit.after, audit.actorName], [reserved.stock, 9, 'Coordinación']);
 }
 
 try {
@@ -410,12 +479,11 @@ try {
   assert.deepEqual(await api('/api/v1/catalog?all=true&q=SIM-BOLT-ADMIN-SUBA'), []);
   console.log('PASS demo: Coordinación guarda una foto de variante, Suba solo consulta y el producto simulado sigue oculto en tienda.');
   console.log('PASS BOLT Admin: pedidos y ventas por sede, seguimiento privado, recaudo cero, reservas, ajuste autorizado e historial.');
-  await verifyCustomerCheckout({ suba, kennedy, coordination });
+  const checkout = await verifyCustomerCheckout({ suba, kennedy, coordination });
   console.log('PASS checkout de invitado → Programados de Suba: reserva única de la variante, acceso privado y permisos de solo consulta.');
+  await verifyDemoCatalogEditing(checkout);
+  console.log('PASS catálogo habilitado de la demo: Coordinación conserva y edita existencias, precios y fotos por presentación.');
 } finally {
-  if (child && child.exitCode === null) {
-    child.kill('SIGTERM');
-    await once(child, 'exit');
-  }
+  await stopDemo();
   fs.rmSync(volume, { recursive: true, force: true });
 }
