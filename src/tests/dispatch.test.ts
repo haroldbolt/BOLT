@@ -11,6 +11,7 @@ import {
 } from "./transportFixtures";
 import {
   SimulatedDispatchProvider,
+  type DispatchProvider,
   type ProviderQuote,
 } from "../lib/dispatchProviders";
 import type { Order } from "../types";
@@ -26,6 +27,7 @@ function setup(
     providers?: any[];
     simulation?: boolean;
     routeEstimate?: any;
+    sandboxExternalBudgetCOP?: number;
   } = {},
 ) {
   const dir = path.join(root, String(++n));
@@ -81,9 +83,9 @@ function setup(
     });
     return id;
   }
-  function order(count = 1, cash = false): Order {
+  function order(count = 1, cash = false, sandboxFixture = false): Order {
     const base = structuredClone(INITIAL_ORDERS[0]);
-    const id = "TEST-" + crypto.randomUUID(),
+    const id = (sandboxFixture ? "SIM-" : "TEST-") + crypto.randomUUID(),
       item = {
         productId: product.id,
         sku: product.sku,
@@ -99,7 +101,7 @@ function setup(
     Object.assign(base, {
       id,
       creationRequestId: crypto.randomUUID(),
-      creationRequestFingerprint: "fixture",
+      creationRequestFingerprint: sandboxFixture ? "SIMULATION" : "fixture",
       purchaseCode: undefined,
       assignmentId: undefined,
       tripId: undefined,
@@ -781,6 +783,78 @@ test("Incident before pickup releases only after driver confirmation; stale esti
  const x=setup();x.provision();const o=x.order(),r=x.runs(o)[0];await x.service.search(r.id);x.service.respond(x.ids[0],r.offerId!,"accept");x.advance(61000);
  assert.equal(x.service.driverDispatch(r,x.ids[0]).pickupEstimate?.stale,true);assert.equal(x.service.adminView().orders[0].dispatches[0].estimate?.stale,true);
  x.service.incident(x.ids[0],r.id,"TEST: vehicle issue before pickup");x.service.requestRelease(r.id,"admin");assert.deepEqual(x.service.driverDispatch(r,x.ids[0]).actions,["release"]);x.service.confirmRelease(x.ids[0],r.id);assert.equal(r.status,"PENDING");assert.equal(r.driverId,undefined);assert.equal(o.items[0].quantity,1);
+});
+test("Cargo sandbox requires a marked simulation, own fleet fallback and an explicit aggregate budget", async () => {
+  const providers: DispatchProvider[] = [];
+  const x = setup({ providers, simulation: true, sandboxExternalBudgetCOP: 5500 });
+  let quotes = 0;
+  let requests = 0;
+  let externalCancelled = true;
+  const sandbox: DispatchProvider = {
+    id: "cargo-sandbox",
+    name: "Cargo sandbox fixture",
+    simulation: false,
+    sandboxOnly: true,
+    capabilities: { quote: true, request: true, status: true, cancel: true, cashCollection: false },
+    async quote({ shipment }) {
+      quotes++;
+      assert.equal(shipment?.totalValueCOP, 10000);
+      assert.equal(shipment?.items[0].quantity, 1);
+      assert.equal(shipment?.hasRestrictedItems, false);
+      return {
+        id: "CARGO-QUOTE",
+        providerId: sandbox.id,
+        expiresAt: x.now() + 60000,
+        costCOP: 5000,
+        deliveryEtaSeconds: 600,
+        estimate: { kind: "GEOGRAPHIC", meters: 1000, source: "CARGO_FIXTURE", observedAt: x.now() },
+        vehicle: { ...x.config.vehicles.find((v) => v.driverId === x.ids[0])!, driverId: "CARGO-FIXTURE" },
+        canCollectCash: false,
+        simulation: false,
+      };
+    },
+    async request({ shipment }) {
+      requests++;
+      assert.equal(shipment?.items[0].unitPriceCOP, 10000);
+      return { status: "ASSIGNED", reference: "CARGO-SERVICE", driver: { id: "124", name: "Conductor de prueba" } };
+    },
+    async status() {
+      return externalCancelled
+        ? { status: "CANCELLED", reference: "CARGO-SERVICE" }
+        : { status: "ACCEPTED", stage: "PICKED_UP", reference: "CARGO-SERVICE" };
+    },
+    async cancel() {
+      assert.fail("No cancel after external custody evidence");
+    },
+  };
+  providers.push(sandbox);
+  const customerRun = x.runs(x.order())[0];
+  await x.service.search(customerRun.id);
+  assert.equal(quotes, 0);
+  x.provision();
+  const ownRun = x.runs(x.order(1, false, true))[0];
+  await x.service.search(ownRun.id);
+  assert.equal(ownRun.status, "OFFER_PENDING");
+  assert.equal(quotes, 0);
+  const order = x.order(2, false, true);
+  const [first, second] = x.runs(order);
+  await Promise.all([x.service.search(first.id), x.service.search(second.id)]);
+  assert.equal(requests, 1, "one purchase may not exceed its sandbox budget across dispatches");
+  const selected = [first, second].find((run) => run.external)!;
+  assert.equal(selected.external?.simulation, false);
+  assert.equal(selected.estimate, undefined, "end-to-end time is not a pickup ETA");
+  await x.service.reconcile(selected.id);
+  assert.equal(selected.external?.providerStage, "CANCELLATION_UNVERIFIED");
+  assert.equal(selected.external?.status, "ASSIGNED", "unsolicited cancellation does not release a booking");
+  assert.equal(selected.status, "INCIDENT");
+  await x.service.search(selected.id);
+  assert.equal(requests, 1);
+  externalCancelled = false;
+  await x.service.reconcile(selected.id);
+  assert.equal(selected.external?.providerStage, "PICKED_UP");
+  assert.equal(selected.status, "INCIDENT");
+  assert.equal(selected.pickedUpAt, undefined, "the sandbox cannot claim physical custody");
+  await assert.rejects(x.service.cancelExternal(selected.id, "admin"), /custodia/);
 });
 let failed = 0;
 for (const [name, fn] of tests) {

@@ -9,6 +9,7 @@ import type {
   DispatchProvider,
   ProviderQuote,
   ProviderResult,
+  ProviderShipmentContext,
 } from "./dispatchProviders";
 import { DispatchService, DispatchError } from "./dispatchService";
 import type { OrdersRepository } from "./ordersRepository";
@@ -160,6 +161,7 @@ export function mountDispatchSimulation(
   stores: () => Store[],
   provider: LocalSimulationProvider,
   admin: (q: Request, r: Response, n: NextFunction) => unknown,
+  testDestination?: ProviderShipmentContext['destination'],
 ) {
   if (!simulationEnabled()) throw Error("Simulation disabled");
   const config = JSON.parse(fs.readFileSync(marker, "utf8")),
@@ -350,10 +352,11 @@ export function mountDispatchSimulation(
           isGuest: true,
         },
         deliveryAddress: {
-          address: "Destino ficticio de prueba · Cedritos, Bogotá",
-          details: "Simulación; no realizar entrega",
+          address: testDestination?.address ?? "Destino ficticio de prueba · Cedritos, Bogotá",
+          details: testDestination?.details ?? "Simulación; no realizar entrega",
           porteriaPolicy: "ENTREGAR_PERSONALMENTE" as any,
-          coordinates: { lat: 4.72422, lng: -74.03991 },
+          coordinates: testDestination?.coordinates ?? { lat: 4.72422, lng: -74.03991 },
+          municipality: testDestination?.city,
         },
         items: [item],
         isSplitOrder: true,

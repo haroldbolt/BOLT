@@ -74,6 +74,7 @@ export interface ExternalRequest {
   driver?: { id: string; name: string };
   estimate?: PickupEstimate;
   simulation: boolean;
+  providerStage?: "PICKED_UP" | "DELIVERED" | "FAILED" | "RETURNED" | "CANCELLATION_UNVERIFIED";
   collected?: number;
   cancellationPending?: boolean;
 }

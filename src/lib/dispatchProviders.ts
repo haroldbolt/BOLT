@@ -9,16 +9,28 @@ export interface ProviderQuote {
   vehicle: TransportVehicle;
   canCollectCash: boolean;
   simulation: boolean;
+  /** Estimated time from the store to the customer, never a pickup ETA. */
+  deliveryEtaSeconds?: number;
 }
 export interface ProviderResult {
   status: "UNKNOWN" | "ACCEPTED" | "ASSIGNED" | "REJECTED" | "CANCELLED";
   reference?: string;
   driver?: { id: string; name: string };
+  stage?: 'PICKED_UP' | 'DELIVERED' | 'FAILED' | 'RETURNED';
 }
+
+export interface ProviderShipmentContext {
+  destination: { address: string; city: string; coordinates: { lat: number; lng: number }; details?: string };
+  items: { productId: string; name: string; quantity: number; unitPriceCOP: number }[];
+  totalValueCOP: number;
+  hasRestrictedItems: boolean;
+}
+
 export interface DispatchProvider {
   id: string;
   name: string;
   simulation: boolean;
+  sandboxOnly?: boolean;
   capabilities: {
     quote: boolean;
     request: boolean;
@@ -31,11 +43,13 @@ export interface DispatchProvider {
     storeId: string;
     mode: string;
     cashCOP: number;
+    shipment?: ProviderShipmentContext;
   }): Promise<ProviderQuote | null>;
   request(input: {
     idempotencyKey: string;
     quote: ProviderQuote;
     dispatchId: string;
+    shipment?: ProviderShipmentContext;
   }): Promise<ProviderResult>;
   status(referenceOrKey: string): Promise<ProviderResult>;
   cancel(referenceOrKey: string): Promise<ProviderResult>;

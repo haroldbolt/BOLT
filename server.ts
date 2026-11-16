@@ -9,6 +9,7 @@ import type {ProductPhotoRecognizer} from './src/lib/productPhotoSearch';
 import {mountTrackingRecovery} from './src/lib/trackingRecovery';
 import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
 import {DispatchService} from './src/lib/dispatchService';
+import {configureRappiCargoSandbox} from './src/lib/rappiCargoSandboxConfig';
 import {mountDispatchRoutes,mountOrderAccess} from './src/lib/dispatchRoutes';
 import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/coverageConfig';
 import { TransportRepository } from './src/lib/transportRepository';
@@ -82,7 +83,11 @@ const catalogOperations = new CatalogOperations({
 });
 const transportRepository = new TransportRepository();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
-const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[],holdDispatch:isDispatchSimulation?isBoltAdminDemoOrder:undefined});
+const rappiCargoSandbox = configureRappiCargoSandbox(process.env, isDispatchSimulation);
+const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,
+  providers: rappiCargoSandbox ? [rappiCargoSandbox.provider] : simulationProvider ? [simulationProvider] : [],
+  sandboxExternalBudgetCOP: rappiCargoSandbox?.externalBudgetCOP,
+  holdDispatch:isDispatchSimulation?isBoltAdminDemoOrder:undefined});
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
 function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order) {
   request={...request,destination:enrichDestination(request.destination)};
@@ -212,7 +217,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   mountDispatchRoutes(app,dispatchService,ordersRepository,requireAdminAuth);
   mountTrackingRecovery(app,ordersRepository,dispatchService,requireAdminAuth);
-  if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth);
+  if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth,rappiCargoSandbox?.testDestination);
   else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
   app.use('/api/v1/operations',requireAdminAuth);
   mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token),customerAccounts.authorizeOrder);
