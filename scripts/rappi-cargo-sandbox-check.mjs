@@ -5,7 +5,7 @@ if (pointId && !/^[1-9]\d{0,14}$/.test(pointId)) throw Error('Identificador num√
 const token = (process.env.BOLT_RAPPI_CARGO_SANDBOX_TOKEN ?? (process.stdin.isTTY ? '' : readFileSync(0, 'utf8'))).trim();
 if (!token || /\s/.test(token)) throw Error('Falta el token del sandbox de Cargo.');
 
-const endpoint = pointId ? '/picking-point/view/' + pointId : '/picking-point/list?offset=0&limit=50';
+const endpoint = pointId ? '/picking-point/view/' + pointId + '/' : '/picking-point/list/?offset=0&limit=50';
 try {
   const response = await fetch('https://microservices.dev.rappi.com/api/cargo-api-gateway' + endpoint, {
     headers: { 'user-token': token, Accept: 'application/json' },

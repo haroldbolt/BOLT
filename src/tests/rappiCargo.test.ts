@@ -73,7 +73,7 @@ function makeProvider(reply: MockResponse) {
 
 function assertSandboxTraffic(requests: MockRequest[], paths: string[]) {
   const base = 'https://microservices.dev.rappi.com/api/cargo-api-gateway';
-  assert.deepEqual(requests.map(({ url }) => url.href), paths.map(path => `${base}/v3/order-${path}`));
+  assert.deepEqual(requests.map(({ url }) => url.href), paths.map(path => `${base}/v3/order-${path}/`));
   for (const { method, redirect, headers } of requests) {
     assert.equal(method, 'POST');
     assert.equal(redirect, 'error');
@@ -157,7 +157,7 @@ test('rechaza ofertas sin cobertura inmediata, con datos incompletos o con recar
 
 test('usa una referencia idempotente de BOLT y no interpreta la aceptación como asignación', async () => {
   const { provider, requests } = makeProvider(({ url, body }) => {
-    if (url.pathname.endsWith('order-validate')) return Response.json(validateResponse, { status: 201 });
+    if (url.pathname.endsWith('order-validate/')) return Response.json(validateResponse, { status: 201 });
     return Response.json({
       cargo_order_id: 123,
       rappi_order_id: 124,
@@ -193,8 +193,8 @@ test('rechaza enviar una cotización vencida, ajena o que corresponde a otro des
 
 test('concilia un ID duplicado consultando el pedido que ya existe', async () => {
   const { provider, requests } = makeProvider(({ url }) => {
-    if (url.pathname.endsWith('order-validate')) return Response.json(validateResponse, { status: 201 });
-    if (url.pathname.endsWith('order-create')) return Response.json({ code: 'ALREADY_EXTERNAL_ORDER_ID' }, { status: 409 });
+    if (url.pathname.endsWith('order-validate/')) return Response.json(validateResponse, { status: 201 });
+    if (url.pathname.endsWith('order-create/')) return Response.json({ code: 'ALREADY_EXTERNAL_ORDER_ID' }, { status: 409 });
     return Response.json({ state: 'in_progress', external_order_id: driverReference }, { status: 200 });
   });
   const quote = await provider.quote(quoteInput);
@@ -209,8 +209,8 @@ test('concilia un ID duplicado consultando el pedido que ya existe', async () =>
 
 test('un timeout de creación sin conciliación concluyente conserva el resultado desconocido', async () => {
   const { provider, requests } = makeProvider(({ url }) => {
-    if (url.pathname.endsWith('order-validate')) return Response.json(validateResponse, { status: 201 });
-    if (url.pathname.endsWith('order-create')) throw new DOMException('Timeout de prueba', 'TimeoutError');
+    if (url.pathname.endsWith('order-validate/')) return Response.json(validateResponse, { status: 201 });
+    if (url.pathname.endsWith('order-create/')) throw new DOMException('Timeout de prueba', 'TimeoutError');
     return Response.json({ code: 'ORDER_NOT_FOUND' }, { status: 404 });
   });
   const quote = await provider.quote(quoteInput);
@@ -262,7 +262,7 @@ test('mapea recogida y evita cancelar directamente cuando ya se recogió el pedi
 test('comprueba el estado remoto antes y después de solicitar una cancelación', async () => {
   let state = 'in_progress';
   const { provider, requests } = makeProvider(({ url }) => {
-    if (url.pathname.endsWith('order-cancel')) {
+    if (url.pathname.endsWith('order-cancel/')) {
       state = 'canceled';
       return Response.json({ successfull: true }, { status: 201 });
     }
@@ -279,7 +279,7 @@ test('comprueba el estado remoto antes y después de solicitar una cancelación'
 test('una cancelación sin confirmación no prueba que el repartidor no haya recogido', async () => {
   let state = 'in_progress';
   const { provider, requests } = makeProvider(({ url }) => {
-    if (url.pathname.endsWith('order-cancel')) {
+    if (url.pathname.endsWith('order-cancel/')) {
       state = 'canceled';
       return Response.json({ successfull: false }, { status: 201 });
     }

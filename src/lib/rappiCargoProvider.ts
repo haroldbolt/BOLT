@@ -87,7 +87,9 @@ export class RappiCargoSandboxProvider implements DispatchProvider {
   }
 
   private async post(endpoint: string, payload: Json, okStatus: number): Promise<Json> {
-    const response = await this.#fetch(SANDBOX_API + endpoint, {
+    // Cargo redirects paths without a trailing slash. Use the canonical path
+    // directly to keep the token on the configured host.
+    const response = await this.#fetch(SANDBOX_API + endpoint + '/', {
       method: 'POST',
       headers: { 'user-token': this.config.token, 'Content-Type': 'application/json', Accept: 'application/json' },
       body: JSON.stringify(payload),
