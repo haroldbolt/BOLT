@@ -21,6 +21,7 @@ import type {
   DispatchProvider,
   ProviderQuote,
   ProviderResult,
+  ProviderShipmentContext,
 } from "./dispatchProviders";
 import { DISABLED_LIVE_PROVIDERS } from "./dispatchProviders";
 export class DispatchError extends Error {
@@ -72,6 +73,7 @@ export interface DispatchDependencies {
   now?: () => number;
   providers?: DispatchProvider[];
   simulation?: boolean;
+  sandboxExternalBudgetCOP?: number;
   holdDispatch?: (order: Order) => boolean;
   routeEstimate?: (
     driver: DriverProfile,
@@ -80,6 +82,8 @@ export interface DispatchDependencies {
 }
 export class DispatchService {
   private inFlight = new Set<string>();
+  private providerPollInFlight = new Set<string>();
+  private lastProviderPoll = new Map<string, number>();
   private async bounded<T>(promise: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout>;
     try {
@@ -666,6 +670,38 @@ export class DispatchService {
       this.windowEnd(order)
     );
   }
+  private canUseProvider(provider: DispatchProvider, order: Order) {
+    if (provider.sandboxOnly) {
+      return !!this.deps.simulation && !provider.simulation &&
+        order.id.startsWith("SIM-") && order.creationRequestFingerprint === "SIMULATION";
+    }
+    return provider.simulation === !!this.deps.simulation;
+  }
+  private quoteFitsWindow(order: Order, provider: DispatchProvider, quote: ProviderQuote) {
+    if (provider.sandboxOnly) {
+      const eta = quote.deliveryEtaSeconds;
+      return typeof eta === "number" && Number.isFinite(eta) && eta > 0 &&
+        this.now() + eta * 1000 <= this.windowEnd(order);
+    }
+    return quote.estimate.kind === "ROUTE" && Number.isFinite(quote.estimate.seconds) &&
+      quote.estimate.seconds! >= 0 && this.windowAllows(order, quote.estimate.seconds!);
+  }
+  private providerShipment(order: Order, shipment: Order | ChildShipment): ProviderShipmentContext {
+    const { address, municipality, coordinates, details } = order.deliveryAddress;
+    return {
+      destination: {
+        address,
+        city: municipality || "",
+        coordinates: { ...coordinates },
+        ...(details ? { details } : {}),
+      },
+      items: shipment.items.map(({ productId, name, quantity, price }) => ({
+        productId, name, quantity, unitPriceCOP: price,
+      })),
+      totalValueCOP: shipment.items.reduce((total, item) => total + item.price * item.quantity, 0),
+      hasRestrictedItems: shipment.items.some((item) => item.requiresPrescription),
+    };
+  }
   async search(id: string, adminId = "SYSTEM") {
     if (this.inFlight.has(id)) return;
     this.inFlight.add(id);
@@ -770,18 +806,19 @@ export class DispatchService {
                 store.coordinates,
               )) || a.id.localeCompare(b.id),
       );
-      const quotes: { provider: DispatchProvider; quote: ProviderQuote }[] = [];
-      for (const p of this.deps.providers || []) {
+      const shipmentContext = this.providerShipment(order, shipment);
+      const eligibleOwnDriver = candidates.some((candidate) => this.eligible(r, candidate.id));
+      const quotes = (await Promise.all((this.deps.providers || []).map(async (p) => {
         if (
-          !this.deps.simulation ||
-          !p.simulation ||
+          !this.canUseProvider(p, order) ||
           !p.capabilities.quote ||
           !p.capabilities.request ||
           !p.capabilities.status ||
           r.attempted.includes("provider:" + p.id) ||
-          (r.cashDue > 0 && !p.capabilities.cashCollection)
+          (r.cashDue > 0 && !p.capabilities.cashCollection) ||
+          (p.sandboxOnly && (eligibleOwnDriver || !this.externalCostAllowed(r, 0, p)))
         )
-          continue;
+          return null;
         try {
           const q = await this.bounded(
             p.quote({
@@ -789,32 +826,34 @@ export class DispatchService {
               storeId: order.storeId,
               mode: order.deliveryMode || "TURBO",
               cashCOP: r.cashDue,
+              shipment: shipmentContext,
             }),
           );
           if (
             q &&
-            q.simulation &&
+            q.simulation === p.simulation &&
             q.providerId === p.id &&
             q.expiresAt > this.now() &&
             Number.isSafeInteger(q.costCOP) &&
             q.costCOP >= 0 &&
-            q.estimate.kind === "ROUTE" &&
-            Number.isFinite(q.estimate.seconds) &&
-            q.estimate.seconds! >= 0 &&
             q.estimate.observedAt <= this.now() &&
             this.now() - q.estimate.observedAt <=
               this.state.config.routeMaxAgeSeconds * 1000 &&
-            this.windowAllows(order, q.estimate.seconds!) &&
+            this.quoteFitsWindow(order, p, q) &&
             this.fit(r, q.vehicle) &&
             (!r.cashDue || q.canCollectCash) &&
-            this.externalCostAllowed(r, q.costCOP)
+            this.externalCostAllowed(r, q.costCOP, p)
           )
-            quotes.push({ provider: p, quote: q });
+            return { provider: p, quote: q };
         } catch {}
-      }
+        return null;
+      }))).filter((quote) => quote !== null);
       quotes.sort(
         (a, b) =>
-          a.quote.estimate.seconds! - b.quote.estimate.seconds! ||
+          Number(!!a.provider.sandboxOnly) - Number(!!b.provider.sandboxOnly) ||
+          (a.provider.sandboxOnly && b.provider.sandboxOnly
+            ? a.quote.deliveryEtaSeconds! - b.quote.deliveryEtaSeconds!
+            : a.quote.estimate.seconds! - b.quote.estimate.seconds!) ||
           a.provider.id.localeCompare(b.provider.id),
       );
       if (r !== this.state.runs[id] || r.status !== "SEARCHING") return;
@@ -836,12 +875,12 @@ export class DispatchService {
       const useExternal =
         external &&
         (!own ||
-          (own.estimate.kind === "ROUTE" &&
+          (!external.provider.sandboxOnly && own.estimate.kind === "ROUTE" &&
             external.quote.estimate.seconds! +
               this.state.config.routeTieSeconds <
               own.estimate.seconds!));
       if (useExternal) {
-        await this.requestExternal(r, external.provider, external.quote);
+        await this.requestExternal(r, external.provider, external.quote, shipmentContext);
         return;
       }
       if (own)
@@ -882,8 +921,10 @@ export class DispatchService {
       this.inFlight.delete(id);
     }
   }
-  private externalCostAllowed(r: DispatchRun, cost: number) {
-    const { order, shipment } = this.target(r);
+  private externalCostAllowed(r: DispatchRun, cost: number, provider: DispatchProvider) {
+    const { order } = this.target(r);
+    const budget = provider.sandboxOnly ? this.deps.sandboxExternalBudgetCOP : order.totals.shipping;
+    if (budget === undefined || !Number.isSafeInteger(budget) || budget < 0) return false;
     const contracted = Object.values(this.state.runs)
       .filter(
         (x) =>
@@ -893,25 +934,30 @@ export class DispatchService {
           !["CANCELLED", "REJECTED"].includes(x.external.status),
       )
       .reduce((sum, x) => sum + x.external!.costCOP, 0);
-    return cost + contracted <= order.totals.shipping;
+    return cost + contracted <= budget;
   }
   private async requestExternal(
     r: DispatchRun,
     p: DispatchProvider,
     q: ProviderQuote,
+    shipment: ProviderShipmentContext,
   ) {
     let request = false;
     this.repo.transaction(() => {
+      const { order } = this.target(r);
       if (
         r !== this.state.runs[r.id] ||
         r.status !== "SEARCHING" ||
+        !this.canUseProvider(p, order) ||
         q.expiresAt <= this.now() ||
-        !this.fit(r, q.vehicle) ||
+        !this.quoteFitsWindow(order, p, q) ||
         (r.external &&
           !["REJECTED", "CANCELLED"].includes(r.external.status)) ||
-        !this.externalCostAllowed(r, q.costCOP)
+        !this.externalCostAllowed(r, q.costCOP, p)
       )
         return;
+      const confirmedLoad = this.fit(r, q.vehicle);
+      if (!confirmedLoad) return;
       const key = `${r.id}:${crypto.randomUUID()}`;
       r.attempted.push("provider:" + p.id);
       r.external = {
@@ -920,12 +966,12 @@ export class DispatchService {
         status: "REQUESTING",
         quoteId: q.id,
         providerName: p.name,
-        confirmedLoad: this.fit(r, q.vehicle)!,
+        confirmedLoad,
         costCOP: q.costCOP,
         startedAt: this.now(),
         updatedAt: this.now(),
-        simulation: true,
-        estimate: q.estimate,
+        simulation: p.simulation,
+        estimate: p.sandboxOnly ? undefined : q.estimate,
       };
       r.reason = "EXTERNAL_REQUEST_PENDING";
       this.event("EXTERNAL_REQUESTED", "SYSTEM", r.id, p.id);
@@ -933,11 +979,12 @@ export class DispatchService {
     });
     if (!request) return;
     const key = r.external!.key;
-    const pending = p.request({
+    const pending = Promise.resolve().then(() => p.request({
       idempotencyKey: key,
       quote: q,
       dispatchId: r.id,
-    });
+      shipment,
+    }));
     // A timed-out call can still complete. Apply that response only to the same durable request key.
     void pending
       .then((result) => this.applyExternal(r.id, key, result))
@@ -965,6 +1012,31 @@ export class DispatchService {
         )
       )
         fail("INVALID_PROVIDER_STATUS", "Estado del proveedor inválido");
+      if (!e.simulation && result.stage) {
+        // Provider evidence is visible to operations. BOLT custody and inventory
+        // remain subject to their existing verification and delivery PIN.
+        if (e.providerStage === result.stage || e.providerStage === "DELIVERED" ||
+          e.providerStage === "RETURNED" || (e.providerStage === "FAILED" && result.stage === "PICKED_UP")) return;
+        e.providerStage = result.stage;
+        e.reference = result.reference || e.reference;
+        e.updatedAt = this.now();
+        r.status = "INCIDENT";
+        r.reason = "EXTERNAL_PROVIDER_" + result.stage + "_REQUIRES_RECONCILIATION";
+        this.event(r.reason, "SYSTEM", id, e.providerId);
+        return;
+      }
+      if (e.providerStage) return;
+      if (!e.simulation && result.status === "CANCELLED") {
+        // A status response can arrive after the provider picked up the shipment.
+        // Only the explicit cancellation response may release an external booking.
+        e.providerStage = "CANCELLATION_UNVERIFIED";
+        e.reference = result.reference || e.reference;
+        e.updatedAt = this.now();
+        r.status = "INCIDENT";
+        r.reason = "EXTERNAL_PROVIDER_CANCELLATION_REQUIRES_RECONCILIATION";
+        this.event(r.reason, "SYSTEM", id, e.providerId);
+        return;
+      }
       if (
         e.status === "ASSIGNED" &&
         ["UNKNOWN", "ACCEPTED", "REJECTED"].includes(result.status)
@@ -1038,11 +1110,12 @@ export class DispatchService {
   async reconcile(id: string) {
     const r = this.run(id),
       e = r.external;
-    if (!e || ["CANCELLED", "REJECTED"].includes(e.status)) return;
+    if (!e || ["CANCELLED", "REJECTED"].includes(e.status) || this.providerPollInFlight.has(id)) return;
     const p = this.deps.providers?.find(
-      (p) => p.id === e.providerId && p.simulation && this.deps.simulation,
+      (p) => p.id === e.providerId && p.simulation === e.simulation && this.canUseProvider(p, this.target(r).order),
     );
     if (!p?.capabilities.status) return;
+    this.providerPollInFlight.add(id);
     try {
       this.applyExternal(
         id,
@@ -1051,6 +1124,8 @@ export class DispatchService {
       );
     } catch {
       /* Keep unknown/pending. Never book a second service on timeout. */
+    } finally {
+      this.providerPollInFlight.delete(id);
     }
   }
   respond(id: string, offerId: string, action: "accept" | "reject") {
@@ -1297,14 +1372,14 @@ export class DispatchService {
   }
   async cancelExternal(id: string, adminId: string) {
     const r = this.run(id);
-    if (r.pickedUpAt)
+    if (r.pickedUpAt || r.external?.providerStage)
       fail(
         "CUSTODY_TRANSFER_REQUIRED",
         "No se cancela automáticamente un servicio con custodia",
       );
     const e = r.external,
       p = this.deps.providers?.find((p) => p.id === e?.providerId);
-    if (!e || !p?.capabilities.cancel || !p.simulation || !this.deps.simulation)
+    if (!e || !p?.capabilities.cancel || p.simulation !== e.simulation || !this.canUseProvider(p, this.target(r).order))
       fail(
         "CANCELLATION_UNAVAILABLE",
         "Cancelación no disponible; requiere reconciliación con el proveedor",
@@ -1320,8 +1395,13 @@ export class DispatchService {
     } catch {
       result = { status: "UNKNOWN" };
     }
+    if (result.stage) {
+      this.applyExternal(id, e!.key, result);
+      return;
+    }
     if (result.status !== "CANCELLED") {
       this.repo.transaction(() => {
+        if (r !== this.state.runs[id] || r.external?.key !== e!.key || r.external.providerStage) return;
         r.reason = "EXTERNAL_CANCELLATION_UNCONFIRMED";
         this.event("CANCELLATION_UNCONFIRMED", adminId, id);
       });
@@ -1331,7 +1411,8 @@ export class DispatchService {
       if (
         r !== this.state.runs[id] ||
         r.external?.key !== e!.key ||
-        r.pickedUpAt
+        r.pickedUpAt ||
+        r.external.providerStage
       )
         fail("STATE_CHANGED", "El estado cambió; reconcilia el servicio");
       const { order, shipment } = this.target(r);
@@ -1706,9 +1787,10 @@ export class DispatchService {
       if (
         r.external &&
         (["REQUESTING", "UNKNOWN", "ACCEPTED"].includes(r.external.status) ||
-          r.external.cancellationPending)
+          r.external.cancellationPending || (!r.external.simulation && r.external.status === "ASSIGNED"))
       ) {
         if (
+          ["REQUESTING", "UNKNOWN", "ACCEPTED"].includes(r.external.status) &&
           this.now() - r.external.startedAt >
             this.state.config.searchSeconds * 1000 &&
           r.status !== "INCIDENT"
@@ -1718,9 +1800,19 @@ export class DispatchService {
             r.reason = "EXTERNAL_PENDING_RECONCILIATION";
             this.event("INCIDENT", "SYSTEM", r.id);
           });
+        if (!r.external.simulation) {
+          if (r.external.providerStage === "DELIVERED" || r.external.providerStage === "RETURNED") {
+            this.lastProviderPoll.delete(r.id);
+            continue;
+          }
+          const lastPoll = this.lastProviderPoll.get(r.id);
+          if (lastPoll !== undefined && this.now() - lastPoll < 10000) continue;
+          this.lastProviderPoll.set(r.id, this.now());
+        }
         await this.reconcile(r.id);
         continue;
       }
+      this.lastProviderPoll.delete(r.id);
       if (["PENDING", "SEARCHING"].includes(r.status)) await this.search(r.id);
     }
   }
