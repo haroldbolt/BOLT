@@ -186,6 +186,7 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
 
   // Open Full Product Editor
   const handleOpenCreateModal = () => {
+    const storeIds = configuredStores.filter(store => store.isActive).map(store => store.id);
     setEditingProduct({
       id: '',
       sku: '',
@@ -202,20 +203,9 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
       requiresPrescription: false,
       storageCondition: 'TEMPERATURA_AMBIENTE',
       temperatureColdChain: false,
-      stockByStore: {
-        HUB_KENNEDY: 10,
-        HUB_ALAMOS: 10,
-        HUB_SUBA: 10,
-        HUB_CENTRO: 0,
-        HUB_FONTIBON: 0,
-      },
-      reservedStockByStore: {
-        HUB_KENNEDY: 0,
-        HUB_ALAMOS: 0,
-        HUB_SUBA: 0,
-        HUB_CENTRO: 0,
-        HUB_FONTIBON: 0,
-      },
+      bodegaIds: storeIds,
+      stockByStore: Object.fromEntries(storeIds.map(id => [id, 10])),
+      reservedStockByStore: Object.fromEntries(storeIds.map(id => [id, 0])),
       rating: 5,
       reviewsCount: 1,
       tags: ['Nuevo'],
@@ -363,7 +353,8 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
           </button>
           <button
             onClick={handleOpenCreateModal}
-            className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-2xl shadow-md flex items-center gap-1.5 transition cursor-pointer"
+            disabled={loading || !configuredStores.some(store => store.isActive)}
+            className="px-4 py-2.5 bg-red-600 hover:bg-red-700 text-white text-xs font-bold rounded-2xl shadow-md flex items-center gap-1.5 transition cursor-pointer disabled:opacity-50"
           >
             <Plus className="w-4 h-4" />
             <span>Nuevo Producto</span>
@@ -1092,25 +1083,24 @@ export const CatalogManagerTab: React.FC<CatalogManagerTabProps> = ({
                 <label className="block text-xs font-bold text-slate-800 mb-2">
                   Inventario por Bodega (Unidades Disponibles)
                 </label>
-                <div className="grid grid-cols-3 sm:grid-cols-5 gap-2.5">
-                  {['HUB_KENNEDY', 'HUB_ALAMOS', 'HUB_SUBA', 'HUB_CENTRO', 'HUB_FONTIBON'].map(storeKey => {
-                    const label = storeKey.replace('HUB_', '');
-                    return (
-                      <div key={storeKey} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
-                        <span className="block text-[10px] font-bold text-slate-500 uppercase">{label}</span>
-                        <input
-                          type="number"
-                          value={editingProduct.stockByStore?.[storeKey] ?? 0}
-                          onChange={e => {
-                            const newStock = { ...(editingProduct.stockByStore || {}) };
-                            newStock[storeKey] = Math.max(0, parseInt(e.target.value) || 0);
-                            setEditingProduct({ ...editingProduct, stockByStore: newStock });
-                          }}
-                          className="w-full mt-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-600"
-                        />
-                      </div>
-                    );
-                  })}
+                <div className="grid grid-cols-3 gap-2.5">
+                  {configuredStores.filter(store => store.isActive).map(store => (
+                    <label key={store.id} className="bg-slate-50 p-2.5 rounded-xl border border-slate-200">
+                      <span className="block text-[10px] font-bold text-slate-500 uppercase">{store.customerName || store.name}</span>
+                      <input
+                        type="number"
+                        value={editingProduct.stockByStore?.[store.id] ?? 0}
+                        onChange={e => setEditingProduct({
+                          ...editingProduct,
+                          stockByStore: {
+                            ...editingProduct.stockByStore,
+                            [store.id]: Math.max(0, parseInt(e.target.value) || 0),
+                          },
+                        })}
+                        className="w-full mt-1 bg-white border border-slate-200 rounded-lg px-2 py-1 text-xs font-mono font-bold text-center focus:outline-none focus:ring-2 focus:ring-red-600"
+                      />
+                    </label>
+                  ))}
                 </div>
               </div>
 

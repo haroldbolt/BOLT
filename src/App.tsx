@@ -62,7 +62,7 @@ export default function App() {
   const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   // App data state
-  const [stores, setStores] = useState<Store[]>(INITIAL_STORES);
+  const [stores, setStores] = useState<Store[]>(() => INITIAL_STORES.filter(store => store.isActive));
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>([]);
   const [recentOrder, setRecentOrder] = useState<Order | null>(null);

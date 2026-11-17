@@ -7,7 +7,7 @@ import {fixtureQuote as evaluateDeliveryQuote} from './transportFixtures';
  * 2. Strict 6,000 m boundary test (6000m valid, 6001m OUT_OF_COVERAGE).
  * 3. Strict 1,500 s boundary test (1500s valid, 1501s OVER_TIME_LIMIT).
  * 4. Automatic warehouse assignment (Kennedy, Álamos, Suba) based on lowest ETA.
- * 5. Non-Turbo warehouse (Centro) exclusion.
+ * 5. Only active warehouses handle new orders.
  * 6. Historical orders preservation.
  */
 
@@ -118,19 +118,28 @@ async function runTests() {
   assert(quoteSuba.eligibilityStatus === 'ELIGIBLE', 'Cliente Suba es ELIGIBLE');
   assert(quoteSuba.assignedStoreId === 'HUB_SUBA', 'Asigna automáticamente HUB_SUBA');
 
-  // Test 8: Non-Turbo store (Centro Histórico) is excluded from Turbo candidates
-  const centroClient = { lat: 4.6028, lng: -74.0754 };
-  const quoteCentro = evaluateDeliveryQuote(
+  // Test 8: Retiring a warehouse preserves scheduled coverage through the existing territorial assignments.
+  const scheduledTerritories = [
     {
-      destination: {
-        address: 'Calle 11 #15-53, Centro, Bogotá',municipality:'Bogotá',locality:'La Candelaria',
-        coordinates: centroClient,
-      },
+      locality: 'La Candelaria',
+      address: 'Calle 11 #15-53, La Candelaria, Bogotá',
+      coordinates: { lat: 4.6028, lng: -74.0754 },
+      expectedStore: 'HUB_KENNEDY',
     },
-    INITIAL_STORES,
-    INITIAL_PRODUCTS
-  );
-  assert(quoteCentro.assignedStoreId !== 'HUB_CENTRO', 'Sede Centro (turboEnabled: false) no es asignada a pedidos Turbo');
+    {
+      locality: 'Fontibón',
+      address: 'Calle 17 #99-42, Fontibón, Bogotá',
+      coordinates: { lat: 4.675, lng: -74.148 },
+      expectedStore: 'HUB_ALAMOS',
+    },
+  ];
+  for (const { locality, address, coordinates, expectedStore } of scheduledTerritories) {
+    const quote = evaluateDeliveryQuote({
+      destination: { address, coordinates, locality, municipality: 'Bogotá' },
+      requestedMode: 'PROGRAMADO',
+    }, INITIAL_STORES, INITIAL_PRODUCTS);
+    assert(quote.scheduledEligible === true && quote.assignedStoreId === expectedStore, `${locality} conserva cobertura Programado desde ${expectedStore}`);
+  }
 
   // Test 9: Strict 6,000m Geodesic Boundary: Point beyond 6 km from all hubs
   const farClient = { lat: 4.8620, lng: -74.0580 }; // Chía
@@ -430,10 +439,13 @@ async function runTests() {
   assert(aStore.shopifyLocationGid === 'gid://shopify/Location/115617890584', 'Álamos vinculado a GID 115617890584');
   assert(sStore.shopifyLocationGid === 'gid://shopify/Location/115617923352', 'Suba vinculado a GID 115617923352');
 
-  // Test 36: Centro excluded from Bolt Turbo
-  const cStore = INITIAL_STORES.find(s => s.id === 'HUB_CENTRO')!;
-  assert(cStore.turboEnabled === false, 'Sede Centro permanece excluida de la red Turbo');
-  assert(cStore.isActive === true, 'Sede Centro se preserva activa para operaciones administrativas');
+  // Test 36: Only three operational stores; retired IDs remain available for history.
+  const activeStoreIds = INITIAL_STORES.filter(store => store.isActive).map(store => store.id).sort();
+  assert(activeStoreIds.join(',') === 'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA', 'Álamos, Kennedy y Suba son las únicas sedes operativas');
+  for (const id of ['HUB_CENTRO', 'HUB_FONTIBON']) {
+    const retired = INITIAL_STORES.find(store => store.id === id);
+    assert(retired?.isActive === false && retired.turboEnabled === false && retired.enabledModes?.length === 0, `${id} conserva su ID histórico sin modalidades operativas`);
+  }
 
   // Test 37: Geocoded coordinates reported by Shopify
   assert(Math.abs(kStore.coordinates.lat - 4.6320297) < 0.0001, 'Coordenadas Kennedy coinciden con reporte de Shopify');

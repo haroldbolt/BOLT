@@ -86,7 +86,7 @@ export const api = {
       if (!res.ok) throw new Error('Error al consultar sedes');
       return await res.json();
     } catch {
-      return INITIAL_STORES;
+      return INITIAL_STORES.filter(store => store.isActive);
     }
   },
 
