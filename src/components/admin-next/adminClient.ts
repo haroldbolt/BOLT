@@ -178,4 +178,5 @@ export const boltAdmin = {
   confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),
   demoDispatch: (token: string | null, orderId: string) => request<{ order: AdminOrder }>(`${orderPath(orderId)}/demo-dispatch`, token, { body: {} }),
   startPreparation: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: {} }),
+  readyForDispatch: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/ready-for-dispatch`, token, { body: {} }),
 };

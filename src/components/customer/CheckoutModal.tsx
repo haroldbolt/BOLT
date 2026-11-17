@@ -6,15 +6,22 @@ import { DeliveryPlanSummary } from './DeliveryPlanSummary';
 import { pushService } from '../../lib/notifications';
 import React, { useState, useEffect, useMemo, useRef } from 'react';
 import { 
-  X, MapPin, CreditCard, DollarSign, FileText, CheckCircle2, 
+  X, MapPin, CreditCard, FileText, CheckCircle2, 
   ShieldCheck, ArrowRight, Upload, Phone, User, Building, Clock, 
   Edit3, Calendar, Sparkles, AlertTriangle, Truck
 } from 'lucide-react';
-import { CartItem, Store, PorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow, Order } from '../../types';
+import { CartItem, Store, PorteriaPolicy, DeliveryMode, PaymentMethod, ScheduledDeliveryWindow, Order } from '../../types';
 import { DeliveryQuote, LatLng, ScheduledSlot } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
 import { api } from '../../lib/api';
 import { BenefitProgressBar } from './BenefitProgressBar';
+
+const cashPaymentMethod = 'CASH_ON_DELIVERY' satisfies PaymentMethod;
+const unavailablePayments = [
+  { method: 'WOMPI_CARD', label: 'Tarjeta de crédito o débito' },
+  { method: 'WOMPI_PSE', label: 'PSE' },
+  { method: 'WOMPI_BANCOLOMBIA', label: 'Botón Bancolombia' },
+] as const satisfies ReadonlyArray<{ method: PaymentMethod; label: string }>;
 
 interface CheckoutModalProps {
   isOpen: boolean;
@@ -212,7 +219,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           porteriaPolicy,
           coordinates: customerCoordinates,
         },
-        paymentMethod:'CASH_ON_DELIVERY',
+        paymentMethod: cashPaymentMethod,
         tip:requestReview?0:tip,
       };
 
@@ -614,23 +621,29 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {referencePhotoId&&<div className="p-3 border rounded-xl space-y-2"><h4 className="font-bold text-sm">Foto de la entrada</h4><EntrancePhotoPreview photoId={referencePhotoId}/><p className="text-xs text-slate-500">Se enviará con este pedido al confirmarlo.</p></div>}
 
           {!requestReview && <>
-          {/* Payment Method Selector */}
-          <div className="space-y-2">
-            <h4 className="font-extrabold text-xs text-slate-900 flex items-center gap-1.5 uppercase tracking-wider">
-              <CreditCard className="w-3.5 h-3.5 text-red-600" />
-              Método de Pago
-            </h4>
-            <div className="flex items-center gap-2.5 rounded-2xl border-2 border-red-600 bg-red-50/60 p-3 text-xs font-bold text-red-900">
-              <DollarSign className="h-4 w-4 text-red-600" aria-hidden="true" />
+          <fieldset className="min-w-0 space-y-2">
+            <legend className="mb-2 flex items-center gap-1.5 text-xs font-extrabold uppercase tracking-wider text-slate-900">
+              <CreditCard className="h-3.5 w-3.5 text-red-600" aria-hidden="true" />
+              Método de pago
+            </legend>
+            <label className="flex min-h-11 items-center gap-2.5 rounded-2xl border-2 border-red-600 bg-red-50/60 p-3 text-xs font-bold text-red-900">
+              <input type="radio" name="paymentMethod" value={cashPaymentMethod} checked readOnly className="accent-red-600" />
               Efectivo contra entrega
-            </div>
+            </label>
+            {unavailablePayments.map(({ method, label }) => (
+              <label key={method} className="flex min-h-11 items-center gap-2.5 rounded-xl border border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-600">
+                <input type="radio" name="paymentMethod" value={method} disabled className="shrink-0" />
+                <span className="min-w-0 font-semibold">{label}</span>
+                <span className="ml-auto shrink-0 text-right">No disponible</span>
+              </label>
+            ))}
 
             {selectedMode === 'TURBO_DIVIDIDO' && (
               <p className="text-[11px] text-amber-900 bg-amber-50 p-2 rounded-xl border border-amber-200 font-medium">
                 💵 Al pagar contra entrega en pedido dividido, cada repartidor cobrará el monto proporcional de su envío correspondiente al entregártelo.
               </p>
             )}
-          </div>
+          </fieldset>
 
           {/* Driver Tip */}
           <div>

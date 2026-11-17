@@ -61,10 +61,12 @@ type Options = {
   getStores: () => Store[];
   getOrders: () => Order[];
   getDispatchRuns: () => DispatchRun[];
+  getDispatchRun: (id: string) => DispatchRun | undefined;
   getOrder: (id: string) => Order | undefined;
   quote: PendingDeliveryAction;
   confirm: PendingDeliveryAction;
   startPreparation: PendingDeliveryAction;
+  readyForDispatch: PendingDeliveryAction;
   demo?: {
     productId: string;
     editCatalog?: boolean;
@@ -115,7 +117,7 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
     payment: {
       method: order.payment.method,
       status: order.payment.status,
-      ...(customerDemo && { cashToCollect: order.payment.cashToCollect }),
+      ...(!demoReadOnly && { cashToCollect: order.payment.cashToCollect }),
     },
     ...(customerDemo && { demoCustomerCheckout: true }),
     timestamps: order.timestamps,
@@ -194,12 +196,12 @@ export function mountBoltAdmin(app: Express, options: Options) {
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
   const presentOrder = (order: Order) => {
-    const run = options.demo && isBoltCustomerDemoOrder(order)
-      ? options.getDispatchRuns().find(candidate => candidate.id === order.assignmentId && candidate.orderId === order.id)
+    const run = order.assignmentId && (!options.demo || isBoltCustomerDemoOrder(order))
+      ? options.getDispatchRun(order.assignmentId)
       : undefined;
     return {
       ...boltAdminOrder(order, isDemoCheckoutOrder(order)),
-      ...(run && { dispatch: {
+      ...(run && run.orderId === order.id && { dispatch: {
         id: run.id, code: run.code, status: run.status, providerId: run.providerId,
         driverName: run.driverId && order.driver?.id === run.driverId ? order.driver.name : undefined,
       } }),
@@ -442,6 +444,14 @@ export function mountBoltAdmin(app: Express, options: Options) {
     if (!actor.canConfirm) return res.status(403).json({ error: 'Tu cuenta no puede iniciar el alistamiento.' });
     const order = selectOrder(req, res, actor, true);
     if (order) options.startPreparation(req, res, order, actor);
+  });
+
+  app.post(base + '/orders/:orderId/ready-for-dispatch', (req, res) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    if (!actor.canConfirm) return res.status(403).json({ error: 'Tu cuenta no puede preparar despachos.' });
+    const order = selectOrder(req, res, actor, true);
+    if (order) options.readyForDispatch(req, res, order, actor);
   });
 
   if (options.demo?.startCustomerDispatch) {
