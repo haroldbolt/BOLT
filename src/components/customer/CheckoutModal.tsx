@@ -10,7 +10,7 @@ import {
   ShieldCheck, ArrowRight, Upload, Phone, User, Building, Clock, 
   Edit3, Calendar, Sparkles, AlertTriangle, Truck
 } from 'lucide-react';
-import { CartItem, Store, PaymentMethod, PorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow, Order } from '../../types';
+import { CartItem, Store, PorteriaPolicy, DeliveryMode, ScheduledDeliveryWindow, Order } from '../../types';
 import { DeliveryQuote, LatLng, ScheduledSlot } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
 import { api } from '../../lib/api';
@@ -60,7 +60,6 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const [address, setAddress] = useState(customerAddress ?? '');
   const [addressDetails, setAddressDetails] = useState(customerAddressDetails ?? '');
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
-  const [paymentMethod, setPaymentMethod] = useState<PaymentMethod>('WOMPI_CARD');
   const [tip, setTip] = useState(2000);
   const submitPending=useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -213,7 +212,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           porteriaPolicy,
           coordinates: customerCoordinates,
         },
-        paymentMethod:requestReview?'CASH_ON_DELIVERY':paymentMethod,
+        paymentMethod:'CASH_ON_DELIVERY',
         tip:requestReview?0:tip,
       };
 
@@ -621,34 +620,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <CreditCard className="w-3.5 h-3.5 text-red-600" />
               Método de Pago
             </h4>
-            <div className="grid grid-cols-2 gap-2">
-              {[
-                { id: 'WOMPI_CARD', label: 'Wompi Tarjeta Débito/Crédito', icon: CreditCard },
-                { id: 'WOMPI_PSE', label: 'PSE (Transferencia Banco)', icon: ShieldCheck },
-                { id: 'WOMPI_BANCOLOMBIA', label: 'Botón Bancolombia', icon: CheckCircle2 },
-                { id: 'CASH_ON_DELIVERY', label: 'Efectivo contra entrega', icon: DollarSign },
-              ].map(m => {
-                const Icon = m.icon;
-                const isSelected = paymentMethod === m.id;
-                return (
-                  <div
-                    key={m.id}
-                    onClick={() => setPaymentMethod(m.id as PaymentMethod)}
-                    className={`p-3 rounded-2xl border-2 cursor-pointer transition flex items-center gap-2.5 ${
-                      isSelected
-                        ? 'border-red-600 bg-red-50/60 text-red-900 font-bold'
-                        : 'border-slate-200 hover:border-slate-300 text-slate-700 font-medium'
-                    }`}
-                  >
-                    <Icon className={`w-4 h-4 ${isSelected ? 'text-red-600' : 'text-slate-400'}`} />
-                    <span className="text-xs leading-tight">{m.label}</span>
-                  </div>
-                );
-              })}
+            <div className="flex items-center gap-2.5 rounded-2xl border-2 border-red-600 bg-red-50/60 p-3 text-xs font-bold text-red-900">
+              <DollarSign className="h-4 w-4 text-red-600" aria-hidden="true" />
+              Efectivo contra entrega
             </div>
 
-            {/* COD reconciliation note for split orders */}
-            {paymentMethod === 'CASH_ON_DELIVERY' && selectedMode === 'TURBO_DIVIDIDO' && (
+            {selectedMode === 'TURBO_DIVIDIDO' && (
               <p className="text-[11px] text-amber-900 bg-amber-50 p-2 rounded-xl border border-amber-200 font-medium">
                 💵 Al pagar contra entrega en pedido dividido, cada repartidor cobrará el monto proporcional de su envío correspondiente al entregártelo.
               </p>

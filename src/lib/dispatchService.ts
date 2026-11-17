@@ -80,6 +80,7 @@ export interface DispatchDependencies {
 }
 export class DispatchService {
   private inFlight = new Set<string>();
+  private externalCancellations = new Set<string>();
   private async bounded<T>(promise: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout>;
     try {
@@ -607,6 +608,22 @@ export class DispatchService {
       ? plan.shipments[0]
       : null;
   }
+  private prescriptionPending(order: Order, shipment: Order | ChildShipment) {
+    return shipment.items.some((item) => item.requiresPrescription) &&
+      order.prescriptionReview?.status !== "APROBADA";
+  }
+  private holdForPrescription(run: DispatchRun, order: Order, shipment: Order | ChildShipment) {
+    if (!this.prescriptionPending(order, shipment)) return false;
+    if (run.reason !== "PRESCRIPTION_REVIEW_REQUIRED") {
+      this.repo.transaction(() => {
+        run.status = "PENDING";
+        run.searchStartedAt = undefined;
+        run.reason = "PRESCRIPTION_REVIEW_REQUIRED";
+        this.event("PRESCRIPTION_REVIEW_REQUIRED", "SYSTEM", run.id);
+      });
+    }
+    return true;
+  }
   private eligible(r: DispatchRun, id: string, allowOffer = false) {
     const a = this.state.accounts[id],
       d = this.repo.getDriverById(id),
@@ -693,6 +710,7 @@ export class DispatchService {
         shipment.fulfillmentStatus !== "LISTO_PARA_DESPACHO"
       )
         return;
+      if (this.holdForPrescription(r, order, shipment)) return;
       if (
         this.now() >= this.windowEnd(order) ||
         (r.searchStartedAt !== undefined &&
@@ -818,6 +836,7 @@ export class DispatchService {
           a.provider.id.localeCompare(b.provider.id),
       );
       if (r !== this.state.runs[id] || r.status !== "SEARCHING") return;
+      if (this.holdForPrescription(r, order, shipment)) return;
       if (
         this.now() >= this.windowEnd(order) ||
         this.now() - r.searchStartedAt! >=
@@ -948,7 +967,7 @@ export class DispatchService {
       this.applyExternal(r.id, key, { status: "UNKNOWN" });
     }
   }
-  applyExternal(id: string, key: string, result: ProviderResult) {
+  applyExternal(id: string, key: string, result: ProviderResult, actorId = "SYSTEM") {
     this.repo.transaction(() => {
       const r = this.run(id),
         e = r.external;
@@ -966,8 +985,9 @@ export class DispatchService {
       )
         fail("INVALID_PROVIDER_STATUS", "Estado del proveedor inválido");
       if (
-        e.status === "ASSIGNED" &&
-        ["UNKNOWN", "ACCEPTED", "REJECTED"].includes(result.status)
+        (e.status === "ASSIGNED" &&
+          ["UNKNOWN", "ACCEPTED", "REJECTED"].includes(result.status)) ||
+        (e.status === "ACCEPTED" && result.status === "UNKNOWN")
       )
         return;
       if (e.status === "ASSIGNED" && result.status === "ASSIGNED") return;
@@ -980,6 +1000,13 @@ export class DispatchService {
       e.updatedAt = this.now();
       if (result.status === "ASSIGNED" && result.driver) {
         const { order, shipment } = this.target(r);
+        if (this.prescriptionPending(order, shipment)) {
+          e.driver = { id: result.driver.id, name: result.driver.name };
+          r.status = "INCIDENT";
+          r.reason = "EXTERNAL_ASSIGNMENT_REQUIRES_PRESCRIPTION_REVIEW";
+          this.event("INCIDENT", "SYSTEM", id, r.reason);
+          return;
+        }
         if (
           shipment.fulfillmentStatus !== "LISTO_PARA_DESPACHO" &&
           r.status !== "ASSIGNED"
@@ -1021,12 +1048,13 @@ export class DispatchService {
                 { shipmentId: r.shipmentId },
               ),
             );
-          r.status = "PENDING";
+          if (shipment.fulfillmentStatus === "CANCELADO") this.markCancelled(r, order);
+          else r.status = "PENDING";
           r.providerId = undefined;
           r.assignedAt = undefined;
           r.reason = "EXTERNAL_" + result.status;
         }
-        this.event("EXTERNAL_" + result.status, "SYSTEM", id);
+        this.event("EXTERNAL_" + result.status, actorId, id);
       } else {
         r.reason =
           result.status === "UNKNOWN"
@@ -1074,6 +1102,8 @@ export class DispatchService {
       }
       const candidate = this.eligible(r, id, true),
         { order, shipment } = this.target(r);
+      if (this.prescriptionPending(order, shipment))
+        fail("PRESCRIPTION_REVIEW_REQUIRED", "Farmacia debe aprobar la fórmula antes de asignar el despacho");
       if (
         !candidate ||
         shipment.fulfillmentStatus !== "LISTO_PARA_DESPACHO" ||
@@ -1124,6 +1154,8 @@ export class DispatchService {
       if (r.status !== "ASSIGNED" || r.releaseRequested)
         fail("INVALID_STATE", "La recogida no está autorizada");
       const { order, shipment } = this.target(r);
+      if (this.prescriptionPending(order, shipment))
+        fail("PRESCRIPTION_REVIEW_REQUIRED", "Farmacia debe aprobar la fórmula antes de la recogida");
       const vehicle = this.deps
         .transport()
         .vehicles.find((v) => v.driverId === id);
@@ -1201,14 +1233,7 @@ export class DispatchService {
       r.deliveredAt = this.now();
       r.cashCollected += amount;
       if (!external) this.repo.getDriverById(id)!.cashBalance += amount;
-      const totalCollected = Object.values(this.state.runs)
-        .filter((x) => x.orderId === order.id)
-        .reduce((n, x) => n + x.cashCollected, 0);
-      order.payment.cashToCollect = Math.max(
-        0,
-        (order.payment.method === "CASH_ON_DELIVERY" ? order.totals.total : 0) -
-          totalCollected,
-      );
+      this.reduceCollection(order, amount);
       // Delivered != settled at warehouse. Separate settlement ledger is explicit.
       order.payment.cashSettled = order.payment.method !== "CASH_ON_DELIVERY";
       this.releaseDriver(r);
@@ -1309,48 +1334,34 @@ export class DispatchService {
         "CANCELLATION_UNAVAILABLE",
         "Cancelación no disponible; requiere reconciliación con el proveedor",
       );
-    this.repo.transaction(() => {
-      e!.cancellationPending = true;
-      r.reason = "EXTERNAL_CANCELLATION_PENDING";
-      this.event("EXTERNAL_CANCELLATION_REQUESTED", adminId, id);
-    });
-    let result: ProviderResult;
+    const key = e!.key;
+    if (["CANCELLED", "REJECTED"].includes(e!.status) || this.externalCancellations.has(key)) return;
+    this.externalCancellations.add(key);
     try {
-      result = await this.bounded(p!.cancel(e!.reference || e!.key));
-    } catch {
-      result = { status: "UNKNOWN" };
-    }
-    if (result.status !== "CANCELLED") {
       this.repo.transaction(() => {
-        r.reason = "EXTERNAL_CANCELLATION_UNCONFIRMED";
-        this.event("CANCELLATION_UNCONFIRMED", adminId, id);
+        e!.cancellationPending = true;
+        r.reason = "EXTERNAL_CANCELLATION_PENDING";
+        this.event("EXTERNAL_CANCELLATION_REQUESTED", adminId, id);
       });
-      return;
+      let result: ProviderResult;
+      try {
+        result = await this.bounded(p!.cancel(e!.reference || key));
+      } catch {
+        result = { status: "UNKNOWN" };
+      }
+      const current = this.run(id);
+      if (current.external?.key !== key || ["CANCELLED", "REJECTED"].includes(current.external.status)) return;
+      if (result.status === "CANCELLED") {
+        this.applyExternal(id, key, result, adminId);
+      } else {
+        this.repo.transaction(() => {
+          current.reason = "EXTERNAL_CANCELLATION_UNCONFIRMED";
+          this.event("CANCELLATION_UNCONFIRMED", adminId, id);
+        });
+      }
+    } finally {
+      this.externalCancellations.delete(key);
     }
-    this.repo.transaction(() => {
-      if (
-        r !== this.state.runs[id] ||
-        r.external?.key !== e!.key ||
-        r.pickedUpAt
-      )
-        fail("STATE_CHANGED", "El estado cambió; reconcilia el servicio");
-      const { order, shipment } = this.target(r);
-      if (shipment.fulfillmentStatus === "REPARTIDOR_ASIGNADO")
-        this.checkResult(
-          this.repo.transitionStatus(
-            order.id,
-            "LISTO_PARA_DESPACHO",
-            { role: "SISTEMA" },
-            { shipmentId: r.shipmentId },
-          ),
-        );
-      e!.status = "CANCELLED";
-      e!.cancellationPending = false;
-      r.assignedAt = undefined;
-      r.status = "PENDING";
-      r.providerId = undefined;
-      this.event("EXTERNAL_CANCELLED", adminId, id);
-    });
   }
   restart(id: string, adminId: string) {
     this.repo.transaction(() => {
@@ -1387,6 +1398,9 @@ export class DispatchService {
     return this.repo.transaction(() => {
       if (action !== "pickup" || r.status !== "ASSIGNED")
         fail("INVALID_STATE", "Estado simulado inválido");
+      const { order, shipment } = this.target(r);
+      if (this.prescriptionPending(order, shipment))
+        fail("PRESCRIPTION_REVIEW_REQUIRED", "Farmacia debe aprobar la fórmula antes de la recogida");
       this.checkResult(
         this.repo.confirmPickup(
           r.orderId,
@@ -1441,7 +1455,7 @@ export class DispatchService {
           400,
         );
       const other = Object.values(this.state.runs)
-        .filter((x) => x.orderId === order.id && x.id !== r.id)
+        .filter((x) => x.orderId === order.id && x.id !== r.id && x.status !== "CANCELLED")
         .reduce((n, x) => n + x.cashDue - x.cashCollected, 0);
       const outstanding =
         order.payment.method === "CASH_ON_DELIVERY"
@@ -1651,6 +1665,17 @@ export class DispatchService {
       return { ok: true };
     });
   }
+  private reduceCollection(order: Order, amount: number) {
+    const balance = order.payment.method === "CASH_ON_DELIVERY"
+      ? (order.payment.cashToCollect ?? order.totals.total)
+      : 0;
+    order.payment.cashToCollect = Math.max(0, balance - amount);
+  }
+  private markCancelled(run: DispatchRun, order: Order) {
+    if (run.status === "CANCELLED") return;
+    this.reduceCollection(order, Math.max(0, run.cashDue - run.cashCollected));
+    run.status = "CANCELLED";
+  }
   synchronizeOrders() {
     const changed = Object.values(this.state.runs).filter((r) => {
       const status = this.target(r).shipment.fulfillmentStatus;
@@ -1675,10 +1700,9 @@ export class DispatchService {
           offer.status = "RELEASED";
           this.unreserveOffer(offer);
         }
-        r.status =
-          this.target(r).shipment.fulfillmentStatus === "ENTREGADO"
-            ? "DELIVERED"
-            : "CANCELLED";
+        const { order, shipment } = this.target(r);
+        if (shipment.fulfillmentStatus === "ENTREGADO") r.status = "DELIVERED";
+        else this.markCancelled(r, order);
         this.event("ORDER_STATE_SYNCHRONIZED", "SYSTEM", r.id);
       }
     });
@@ -1767,7 +1791,7 @@ export class DispatchService {
       destination: r.driverId === id ? order.deliveryAddress : undefined,
       customerPhone: r.driverId === id ? order.customer.phone : undefined,
       pickupEstimate: this.estimateView(r.estimate),
-      cashToCollect: r.cashDue - r.cashCollected,
+      cashToCollect: r.status === "CANCELLED" ? 0 : r.cashDue - r.cashCollected,
       releaseRequested: r.releaseRequested,
       transfer: r.transfer
         ? {
@@ -1865,7 +1889,7 @@ export class DispatchService {
                     : undefined,
               }
             : undefined,
-        cashToCollect: r.cashDue - r.cashCollected,
+        cashToCollect: r.status === "CANCELLED" ? 0 : r.cashDue - r.cashCollected,
         events: this.state.events
           .filter(
             (e) =>

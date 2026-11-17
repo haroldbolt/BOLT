@@ -10,6 +10,7 @@ import {fixtureProduct,fixtureDrivers,fixtureConfig} from '../tests/transportFix
 import {api} from '../lib/api';
 
 const source=process.cwd(),root=fs.mkdtempSync(path.join(os.tmpdir(),'bolt-audit-legacy-'));
+const bootstrapToken=crypto.randomUUID();
 const digest=(x:any)=>crypto.createHash('sha256').update(JSON.stringify(x)).digest('hex');
 const sourceData=path.join(source,'src/data'),data=path.join(root,'orders');
 fs.cpSync(sourceData,path.join(root,'src/data'),{recursive:true,filter:p=>!path.basename(p).startsWith('persisted-')&&!path.basename(p).startsWith('tmp-')});
@@ -39,14 +40,14 @@ async function request(p:string,method='GET',body?:any,auth=admin,extra:any={}){
  const response=await res.json();return {status:res.status,data:response};
 }
 async function start(){
- child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:''},stdio:['ignore','pipe','pipe']});
+ child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
  child.stdout.on('data',(b:any)=>output+=b);child.stderr.on('data',(b:any)=>output+=b);
  for(let i=0;i<100;i++){if(child.exitCode!==null)throw Error('Isolated server exited');try{if((await request('/health','GET',undefined,'')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Isolated server failed readiness');
 }
 async function stop(){if(child&&child.exitCode===null){child.kill('SIGTERM');await new Promise(r=>child.once('exit',r));}}
 const credentials={email:'audit@example.invalid',password:'Temporary-'+crypto.randomUUID(),name:'Isolated administrator'};
 try {
- await start();assert.equal((await request('/auth/setup-admin','POST',credentials,'')).status,201);
+ await start();assert.equal((await request('/auth/setup-admin','POST',credentials,'',{'X-Bolt-Admin-Setup-Token':bootstrapToken})).status,201);
  admin=(await request('/auth/login','POST',credentials,'')).data.token;assert.ok(admin);
  assert.equal((await request('/auth/me')).data.user.role,'ADMINISTRADOR');
  const originalCatalog=await request('/catalog');const catalogHash=digest(originalCatalog.data);
@@ -75,7 +76,11 @@ try {
   assert.equal(r.status,label==='valid admin'?400:label==='invalid token'?403:401);
  }
  const store=(await request('/stores')).data.find((s:any)=>s.id==='HUB_SUBA');
- const validEntrance=await request('/stores/HUB_SUBA/verify-entrance','POST',{coordinates:store.coordinates});
+ const invalidEntrance=await request('/stores/HUB_SUBA/verify-entrance','POST',{coordinates:{lat:91,lng:181}});
+ assert.equal(invalidEntrance.status,400);
+ assert.deepEqual((await request('/stores')).data.find((s:any)=>s.id==='HUB_SUBA'),store);
+ const validEntrance=await request('/stores/HUB_SUBA/verify-entrance','POST',{coordinates:store.coordinates,verifiedBy:'Nombre falsificado'});
+ assert.equal(validEntrance.data.store.verifiedBy,credentials.name);
  assert.equal(validEntrance.status,200);evidence.warehouse.push({case:'valid admin with existing warehouse coordinates',status:200,structuralCoordinateValidationPassed:true,physicalPresenceVerified:false});
  for(const f of fixtures){
   if(f.fulfillmentStatus==='PENDIENTE_CONFIRMACION'){assert.equal((await request('/admin/dispatch/orders/'+f.id+'/register','POST',{})).status,409);continue;}

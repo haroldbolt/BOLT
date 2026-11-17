@@ -419,6 +419,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const reviewingOrder=review?.order;
     const purchaseCatalog=review?.catalog ?? products;
     try {
+      if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
+        return res.status(400).json({ code: 'INVALID_ORDER', error: 'Envía los datos del pedido.' });
+      }
       const creationRequestId=req.get('Idempotency-Key');
       if(!creationRequestId) return res.status(400).json({code:'IDEMPOTENCY_REQUIRED',error:'Falta el identificador estable de confirmación. Actualiza e intenta nuevamente.'});
       const creationRequestFingerprint=crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
@@ -434,15 +437,25 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         items: submittedItems,
         customer,
         deliveryAddress: rawDeliveryAddress,
-        paymentMethod,
+        paymentMethod: submittedPaymentMethod,
         tip = 0,
         deliveryMode: requestedDeliveryMode,
         scheduledWindow,
       } = req.body;
 
+      if (submittedPaymentMethod !== 'CASH_ON_DELIVERY' && submittedPaymentMethod !== 'EFECTIVO') {
+        const isOnlineMethod = ['WOMPI_CARD', 'WOMPI_PSE', 'WOMPI_BANCOLOMBIA'].includes(submittedPaymentMethod);
+        return res.status(400).json(isOnlineMethod
+          ? { code: 'PAYMENT_UNAVAILABLE', error: 'El pago en línea aún no está disponible. Selecciona efectivo contra entrega.' }
+          : { code: 'INVALID_PAYMENT_METHOD', error: 'Selecciona un medio de pago válido.' });
+      }
+      if (!customer || !['name', 'phone', 'email'].every(field => typeof customer[field] === 'string' && customer[field].trim())) {
+        return res.status(400).json({ error: 'Completa tus datos de contacto.' });
+      }
       if(!Array.isArray(submittedItems)||!submittedItems.length) return res.status(400).json({error:'Carrito vacío'});
       const canonicalItems=new Map<string,any>();
       for(const item of submittedItems) {
+        if (!item || typeof item !== 'object') return res.status(400).json({error:'Variante o cantidad inválida'});
         const p=purchaseCatalog.find(p=>p.id===item.productId);
         if(!p || p.status && p.status!=='ACTIVE' || !Number.isSafeInteger(item.quantity) || item.quantity<1) return res.status(400).json({error:'Variante o cantidad inválida'});
         if (demoGalleryProduct && (p.parentProductId ?? p.id) === demoGalleryProduct.id) {
@@ -450,11 +463,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         }
         if(!Number.isFinite(p.price)||p.price<=0 || item.price!==p.price) return res.status(409).json({code:'PRICE_CHANGED',error:'El precio cambió o está pendiente. Actualiza el carrito y confirma nuevamente.'});
         const existing=canonicalItems.get(p.id);
-        canonicalItems.set(p.id,{...item,productId:p.id,sku:p.sku,name:p.name,brand:p.brand,presentation:p.presentation,image:p.image,price:p.price,weightKg:p.weightKg,requiresPrescription:p.requiresPrescription,quantity:(existing?.quantity||0)+item.quantity});
+        canonicalItems.set(p.id,{productId:p.id,sku:p.sku,name:p.name,brand:p.brand,presentation:p.presentation,image:p.image,price:p.price,weightKg:p.weightKg,requiresPrescription:p.requiresPrescription,quantity:(existing?.quantity||0)+item.quantity});
       }
       const items=Array.from(canonicalItems.values());
       const deliveryAddress = enrichDestination(rawDeliveryAddress);
-      if (!items || !items.length || !customer || !deliveryAddress || !paymentMethod) {
+      if (!deliveryAddress) {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
       }
 
@@ -480,7 +493,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
         if(req.body.requestDeliveryReview===true && !reviewingOrder) {
           if(!evaluatedQuote.reviewRequestToken || req.body.reviewRequestToken!==evaluatedQuote.reviewRequestToken) return res.status(409).json({code:'REVIEW_CHANGED',error:'Actualiza el carrito antes de enviar la solicitud.'});
-          if(!customer.name?.trim() || !customer.phone?.trim() || !customer.email?.trim()) return res.status(400).json({error:'Completa tus datos de contacto.'});
           const warehouse=stores.find(s=>s.id===evaluatedQuote.assignedStoreId && s.isActive);
           if(!warehouse)return res.status(400).json({error:'Sede no disponible.'});
           if(items.some(i=>{const p=purchaseCatalog.find(p=>p.id===i.productId)!;return p.bodegaIds && !p.bodegaIds.includes(warehouse.id) && !p.bodegaIds.includes(warehouse.shopifyLocationGid||'')}))return res.status(400).json({error:'Variante no asociada a la sede.'});
@@ -579,7 +591,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const {shipping,serviceFee}=evaluatedQuote.charges;
       const total = subtotal + shipping + serviceFee + tip;
       const isAdminDemoOrder = isDispatchSimulation && isBoltAdminDemoOrder(reviewingOrder);
-      const cashToCollect = paymentMethod === 'CASH_ON_DELIVERY' && !isAdminDemoOrder ? total : 0;
+      if (!Number.isSafeInteger(total) || total <= 0) return res.status(400).json({error:'El total del pedido no es válido.'});
+      const cashToCollect = isAdminDemoOrder ? 0 : total;
       const random4DigitCode = crypto.randomInt(1000,10000).toString();
       const usedDeliveryCodes=new Set([random4DigitCode]);
       const nextDeliveryCode=()=>{let code:string;do{code=crypto.randomInt(1000,10000).toString();}while(usedDeliveryCodes.has(code));usedDeliveryCodes.add(code);return code;};
@@ -688,17 +701,16 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           totalWeightKg,
         },
         payment: {
-          method: paymentMethod,
-          status: paymentMethod === 'CASH_ON_DELIVERY' ? 'PENDIENTE' : 'APROBADO',
+          method: 'CASH_ON_DELIVERY',
+          status: 'PENDIENTE',
           cashToCollect,
           cashSettled: false,
-          transactionId: paymentMethod !== 'CASH_ON_DELIVERY' ? `TXN-WMP-${Date.now().toString().slice(-7)}` : undefined,
         },
-        prescriptionReview: {
-          status: hasPrescriptionItem ? 'APROBADA' : 'NO_REQUIERE',
-          reviewedBy: hasPrescriptionItem ? 'Farmacia Bolt Pets (Despacho Directo)' : undefined,
-          reviewedAt: hasPrescriptionItem ? new Date().toISOString() : undefined,
-        },
+        prescriptionReview: hasPrescriptionItem
+          ? reviewingOrder?.prescriptionReview && reviewingOrder.prescriptionReview.status !== 'NO_REQUIERE'
+            ? reviewingOrder.prescriptionReview
+            : { status: 'PENDIENTE_REVISION' }
+          : { status: 'NO_REQUIERE' },
         fulfillmentStatus: 'CONFIRMADO',
         secretDeliveryCode: random4DigitCode,
         estimatedDeliveryMinutes: estimatedMinutes,
@@ -856,42 +868,68 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     });
   });
 
+  function cancelOrderOrShipment(orderId: string, actor: OrderActor, shipmentId?: string, reason?: string) {
+    return ordersRepository.transaction(() => {
+      const order = ordersRepository.getOrderById(orderId);
+      if (!order) return { success: false, code: 404, error: 'Pedido no encontrado.' } as const;
+      const runs = Object.values(ordersRepository.dispatchState.runs).filter(run =>
+        run.orderId === order.id && (shipmentId === undefined || run.shipmentId === shipmentId));
+      if (runs.some(run => ['ASSIGNED', 'PICKED_UP', 'INCIDENT', 'OFFER_PENDING'].includes(run.status) ||
+          (run.external && !['CANCELLED', 'REJECTED'].includes(run.external.status)))) {
+        return { success: false, code: 409, error: 'Libera la asignación o gestiona la custodia antes de cancelar.' } as const;
+      }
+      // The catalog projects reservations from the committed order state.
+      const result = ordersRepository.transitionStatus(order.id, 'CANCELADO', actor, { shipmentId, reason });
+      if (result.success) dispatchService.synchronizeOrders();
+      return result;
+    });
+  }
+
   // Cancel order (Cliente solo antes de despacho; Bodega con motivo)
   app.post('/api/v1/orders/:orderId/cancel', (req: Request, res: Response) => {
-    const { reason, role, actorName } = req.body;
-    const actor = extractActor(req, role || 'CLIENTE');
-
-
-    const result = ordersRepository.transitionStatus(req.params.orderId, 'CANCELADO', actor, {
-      shipmentId:req.body.shipmentId,
-      reason: reason || 'Cancelación de pedido solicitada',
-      catalogProducts: products,
-    });
+    const { reason, shipmentId } = req.body || {};
+    if (shipmentId !== undefined && (typeof shipmentId !== 'string' || !shipmentId.trim())) return res.status(400).json({ error: 'Despacho inválido.' });
+    const result = cancelOrderOrShipment(req.params.orderId, extractActor(req), shipmentId, reason || 'Cancelación de pedido solicitada');
 
     if (!result.success) {
       return res.status(result.code || 400).json({ error: result.error });
     }
 
-    dispatchService.synchronizeOrders();
     res.json({ message: 'Pedido cancelado exitosamente', order: result.order });
   });
 
-  // Upload or update prescription document
+  // Prescription submissions and reviews use the same durable order record.
+  const prescriptionCanBeUpdated = (order: Order) =>
+    !['REPARTIDOR_ASIGNADO', 'EN_CAMINO', 'ENTREGADO', 'CANCELADO'].includes(order.fulfillmentStatus) &&
+    !order.childShipments?.some(shipment =>
+      ['REPARTIDOR_ASIGNADO', 'EN_CAMINO', 'ENTREGADO'].includes(shipment.fulfillmentStatus));
+
   app.post('/api/v1/orders/:orderId/prescription', (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
-    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
-    const { documentUrl, documentName, vetName, vetLicense } = req.body;
-    order.prescriptionReview = {
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado.' });
+    if (!order.items.some(item => item.requiresPrescription)) return res.status(409).json({ error: 'El pedido no requiere fórmula.' });
+    if (!prescriptionCanBeUpdated(order) || order.prescriptionReview?.status === 'APROBADA') {
+      return res.status(409).json({ error: 'La fórmula de este pedido ya fue aprobada o el despacho está en curso.' });
+    }
+    const { documentUrl, documentName, vetName, vetLicense } = req.body || {};
+    const url = typeof documentUrl === 'string' && documentUrl.length <= 2048 ? URL.parse(documentUrl) : null;
+    if (url?.protocol !== 'https:' || url.username || url.password ||
+        typeof documentName !== 'string' || !documentName.trim() || documentName.length > 180) {
+      return res.status(400).json({ error: 'Proporciona el nombre y un enlace HTTPS válido para la fórmula.' });
+    }
+    const result = ordersRepository.updatePrescriptionReview(order.id, {
       status: 'PENDIENTE_REVISION',
-      documentUrl,
-      documentName,
+      documentUrl: url.href,
+      documentName: documentName.trim(),
       uploadedAt: new Date().toISOString(),
-      vetName,
-      vetLicense,
-    };
-
-    res.json({ message: 'Fórmula veterinaria enviada a revisión', order });
+      vetName: typeof vetName === 'string' ? vetName.trim().slice(0, 180) : undefined,
+      vetLicense: typeof vetLicense === 'string' ? vetLicense.trim().slice(0, 100) : undefined,
+      reviewedBy: undefined,
+      reviewedAt: undefined,
+      reviewNotes: undefined,
+    });
+    if (!result.success) return res.status(result.code).json({error:result.error});
+    res.json({ message: 'Fórmula veterinaria enviada a revisión', order: result.order });
   });
 
   // Order access is enforced by mountOrderAccess before serving the tracking snapshot.
@@ -960,24 +998,19 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // ==========================================
 
   app.post('/api/v1/operations/orders/:orderId/status', (req: Request, res: Response) => {
-    const { status, shipmentId, reason, deliveryCode, notes } = req.body;
+    const { status, shipmentId, reason, deliveryCode, notes } = req.body || {};
     if (!status) {
       return res.status(400).json({ error: 'Se requiere especificar el parámetro status' });
     }
 
     if(['REPARTIDOR_ASIGNADO','EN_CAMINO','ENTREGADO'].includes(status))return res.status(409).json({error:'Usa el flujo autenticado del despacho para asignar, recoger o entregar.'});
-    const order=ordersRepository.getOrderById(req.params.orderId);
-    const selected=shipmentId?order?.childShipments?.find(s=>s.shipmentId===shipmentId):order;
-    const run=selected?.assignmentId?ordersRepository.dispatchState.runs[selected.assignmentId]:undefined;
-    if(status==='CANCELADO'&&run&&(['ASSIGNED','PICKED_UP','INCIDENT','OFFER_PENDING'].includes(run.status)||run.external&&!['CANCELLED','REJECTED'].includes(run.external.status)))return res.status(409).json({error:'Libera la asignación o gestiona la custodia antes de cancelar.'});
+    if (shipmentId !== undefined && (typeof shipmentId !== 'string' || !shipmentId.trim())) return res.status(400).json({ error: 'Despacho inválido.' });
     const actor = extractActor(req, 'BODEGA');
-    const result = ordersRepository.transitionStatus(req.params.orderId, status, actor, {
-      shipmentId,
-      reason,
-      deliveryCode,
-      catalogProducts: products,
-      notes,
-    });
+    const result = status === 'CANCELADO'
+      ? cancelOrderOrShipment(req.params.orderId, actor, shipmentId, reason)
+      : ordersRepository.transitionStatus(req.params.orderId, status, actor, {
+        shipmentId, reason, deliveryCode, catalogProducts: products, notes,
+      });
 
     if (!result.success) {
       return res.status(result.code || 400).json({ error: result.error });
@@ -992,18 +1025,25 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   app.post('/api/v1/operations/orders/:orderId/prescription/review', (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
-    if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-
-    const { status, reviewNotes, reviewerName } = req.body;
-    order.prescriptionReview = {
-      ...order.prescriptionReview,
-      status,
-      reviewNotes,
-      reviewedBy: reviewerName || 'Dra. Sandra Peña (Química Farmacéutica Veterinaria)',
-      reviewedAt: new Date().toISOString(),
-    };
-
-    res.json({ message: 'Revisión farmacéutica registrada', order });
+    if (!order) return res.status(404).json({ error: 'Pedido no encontrado.' });
+    if (!order.items.some(item => item.requiresPrescription) || !prescriptionCanBeUpdated(order)) {
+      return res.status(409).json({ error: 'El pedido no tiene una fórmula que se pueda revisar en este estado.' });
+    }
+    const { status, reviewNotes } = req.body || {};
+    if (!['APROBADA', 'RECHAZADA'].includes(status) || (reviewNotes !== undefined && typeof reviewNotes !== 'string')) {
+      return res.status(400).json({ error: 'Indica un resultado de revisión válido.' });
+    }
+    const notes = reviewNotes?.trim();
+    if (status === 'APROBADA' && !order.prescriptionReview?.documentUrl && !notes) {
+      return res.status(400).json({ error: 'Adjunta la fórmula o registra la evidencia que revisaste.' });
+    }
+    const actor = extractActor(req);
+    const result = ordersRepository.updatePrescriptionReview(order.id, {
+      status, reviewNotes: notes?.slice(0, 1000),
+      reviewedBy: actor.name || actor.id, reviewedAt: new Date().toISOString(),
+    });
+    if (!result.success) return res.status(result.code).json({error:result.error});
+    res.json({ message: 'Revisión farmacéutica registrada', order: result.order });
   });
 
   app.post('/api/v1/operations/orders/:orderId/assign-driver', async (req,res)=>{
@@ -1036,30 +1076,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Integrations status
-  app.get('/api/v1/integrations/status', (_req: Request, res: Response) => {
-    res.json({
-      shopifyOlfato: {
-        name: 'Shopify / Olfato',
-        status: 'En pruebas',
-        lastSync: new Date(Date.now() - 45 * 60 * 1000).toISOString(),
-        mappedSkusCount: 42,
-      },
-      siigoNube: {
-        name: 'Siigo Nube (Facturación Electrónica DIAN)',
-        status: 'En pruebas',
-        lastSync: new Date(Date.now() - 15 * 60 * 1000).toISOString(),
-        pendingInvoices: 2,
-      },
-      wompi: {
-        name: 'Wompi Colombia (Bancolombia, Tarjetas, PSE)',
-        status: 'Conectada (Ambiente Sandbox)',
-        lastTransaction: new Date(Date.now() - 12 * 60 * 1000).toISOString(),
-      },
-      whatsappBot: {
-        name: 'WhatsApp Business API Bot',
-        status: 'Conectada (Simulador Activo)',
-        activeConversations: 3,
-      },
+  app.get('/api/v1/integrations/status', requireAdminAuth, (_req: Request, res: Response) => {
+    res.set('Cache-Control', 'no-store').json({
+      shopifyOlfato: { name: 'Shopify / Olfato', status: 'Lectura de catálogo; sincronización automática desactivada' },
+      siigoNube: { name: 'Siigo Nube', status: 'Pendiente de integración' },
+      wompi: { name: 'Wompi Colombia', status: 'Pagos en línea desactivados' },
+      whatsappBot: { name: 'WhatsApp Business', status: 'Pendiente de integración' },
     });
   });
 
@@ -1068,21 +1090,21 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const store = stores.find(s => s.id === req.params.id);
     if (!store) return res.status(404).json({ error: 'Bodega no encontrada' });
 
-    const { coordinates, verifiedBy = 'Administrador Logística Bolt' } = req.body;
-    if (!coordinates || typeof coordinates.lat !== 'number' || typeof coordinates.lng !== 'number') {
+    const { lat, lng } = req.body?.coordinates ?? {};
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
       return res.status(400).json({ error: 'Coordenadas de entrada inválidas' });
     }
 
     const verifiedCoords = {
-      lat: Number(coordinates.lat.toFixed(6)),
-      lng: Number(coordinates.lng.toFixed(6)),
+      lat: Number(lat.toFixed(6)),
+      lng: Number(lng.toFixed(6)),
     };
 
     store.verifiedEntrance = verifiedCoords;
     store.coordinates = verifiedCoords; // Actualizar origen operacional de rutas
     store.verificationStatus = 'VERIFIED';
     store.verifiedAt = new Date().toISOString();
-    store.verifiedBy = verifiedBy;
+    store.verifiedBy = (req as any).adminSession.name;
 
     res.json({
       message: `Entrada física de cargue verificada para ${store.name}`,
@@ -1111,7 +1133,18 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   app.post('/api/v1/auth/setup-admin', (req: Request, res: Response) => {
+    const expected = process.env.BOLT_ADMIN_SETUP_TOKEN;
+    const supplied = req.get('X-Bolt-Admin-Setup-Token');
+    if (!expected || !supplied || !crypto.timingSafeEqual(
+      crypto.createHash('sha256').update(expected).digest(),
+      crypto.createHash('sha256').update(supplied).digest(),
+    )) {
+      return res.status(403).json({ error: 'Se requiere autorización para configurar el administrador inicial.' });
+    }
     const { email, password, name } = req.body || {};
+    if (typeof email !== 'string' || typeof password !== 'string' || typeof name !== 'string') {
+      return res.status(400).json({ error: 'Proporciona correo, contraseña y nombre.' });
+    }
     const result = adminAuthService.setupMasterAdmin({ email, password, name });
     if (!result.success) {
       return res.status(400).json({ error: result.error });
@@ -1125,7 +1158,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   app.post('/api/v1/auth/login', (req: Request, res: Response) => {
     const { email, password } = req.body || {};
-    if (!email || !password) {
+    if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password.trim()) {
       return res.status(400).json({ error: 'Proporciona correo y contraseña.' });
     }
     const result = adminAuthService.login(email, password);
