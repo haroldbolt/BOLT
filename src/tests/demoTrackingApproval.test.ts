@@ -34,7 +34,8 @@ test('approval applies to the designated unpaid pending order in the demo alone'
   assert(!isApprovedDemoTracking(order, true));
   assert(!isApprovedDemoTracking({ ...order, fulfillmentStatus: 'CANCELADO' }, true, order.id));
   assert(!isApprovedDemoTracking({ ...order, payment: { ...order.payment, cashToCollect: 490000 } }, true, order.id));
-  assert(!isApprovedDemoTracking({ ...order, assignmentId: 'ASSIGNMENT' }, true, order.id));
+  assert(isApprovedDemoTracking({ ...order, assignmentId: 'RESERVED-ID' }, true, order.id));
+  assert(!isApprovedDemoTracking({ ...order, timestamps: { pickedUpAt: new Date(start).toISOString() } }, true, order.id));
 });
 
 test('the simulated clock and GPS advance in a read-only view of the same purchase', () => {

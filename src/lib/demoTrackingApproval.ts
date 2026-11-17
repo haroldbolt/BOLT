@@ -9,7 +9,7 @@ export function isApprovedDemoTracking(order: Order, simulation: boolean, approv
   return simulation && !!approvedOrderId && order.id === approvedOrderId &&
     order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' && order.deliveryReview?.status === 'PENDING' &&
     order.deliveryReview.requestedMode === 'TURBO' && !order.isSplitOrder && !order.childShipments?.length &&
-    !order.driver && !order.assignmentId && !order.transportLoad &&
+    !order.driver && !order.timestamps?.pickedUpAt && !order.transportLoad &&
     order.payment.status === 'PENDIENTE' && order.payment.cashToCollect === 0 &&
     !order.payment.transactionId && !order.payment.cashSettled;
 }

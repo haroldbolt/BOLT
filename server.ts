@@ -336,7 +336,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   const hasDemoTrackingApproval = (order: Order) =>
-    isApprovedDemoTracking(order, isDispatchSimulation, process.env.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID);
+    isApprovedDemoTracking(order, isDispatchSimulation, process.env.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID) &&
+    dispatchService.customerDispatches(order.id).length === 0;
   const presentOrder = (order: Order) => {
     const warehouse=stores.find(store=>store.id===order.storeId);
     return {...order, demoTrackingPreview: hasDemoTrackingApproval(order) ? true : undefined, dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
