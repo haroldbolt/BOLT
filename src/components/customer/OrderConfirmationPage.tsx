@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { api } from '../../lib/api';
 import { OrderConfirmation, type ConfirmationOrder } from './OrderConfirmation';
+import { OrderTracking } from './OrderTracking';
 
 interface Props {
   orderId: string;
@@ -12,6 +13,7 @@ interface Props {
 export function OrderConfirmationPage({ orderId, initialOrder, onTrack, onContinue }: Props) {
   const [order, setOrder] = useState(initialOrder);
   const [loadFailed, setLoadFailed] = useState(false);
+  const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
     if (initialOrder) return;
@@ -24,7 +26,14 @@ export function OrderConfirmationPage({ orderId, initialOrder, onTrack, onContin
     return () => { active = false; };
   }, [orderId, initialOrder]);
 
-  if (order) return <OrderConfirmation order={order} onTrack={onTrack} onContinue={onContinue} />;
+  if (order) {
+    const awaitingConfirmation = order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED';
+    const canShowTracking = !awaitingConfirmation && order.fulfillmentStatus !== 'CANCELADO';
+    if (canShowTracking && !showSummary) {
+      return <OrderTracking key={orderId} orderId={orderId} guestOnly onBack={onContinue} onViewSummary={() => setShowSummary(true)} />;
+    }
+    return <OrderConfirmation order={order} onTrack={canShowTracking ? () => setShowSummary(false) : onTrack} onContinue={onContinue} />;
+  }
 
   return (
     <main className="min-h-screen bg-slate-50 p-4 text-slate-950 sm:p-8">

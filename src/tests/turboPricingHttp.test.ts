@@ -99,6 +99,11 @@ try {
  const q=await quote(59999);const payload={items:[{productId:'PRICE-59999',price:59999,quantity:1}],deliveryAddress:destination,deliveryMode:'TURBO',confirmationToken:q.confirmationToken,customer:{name:'SIMULACIÓN TARIFA',phone:'0000000000',email:'tarifa@example.invalid',isGuest:true},paymentMethod:'CASH_ON_DELIVERY',tip:0,shipping:0,serviceFee:1500,total:1};
  idem='pricing-once';const created=await call('/orders','POST',payload,'',201);guest=created.guestAccessToken;
  assert.equal(created.totals.shipping,10000);assert.equal(created.totals.serviceFee,0);assert.equal(created.totals.total,69999);assert.equal(created.payment.cashToCollect,69999);
+ const tracking=await call('/orders/'+created.id+'/tracking','GET',undefined,'');
+ assert.equal(tracking.timing.source,'VERIFIED_QUOTE');
+ assert.equal(tracking.timing.dueAt,new Date(created.originalPromiseWindow.end).toISOString());
+ assert.ok(Date.parse(tracking.timing.dueAt)>Date.parse(tracking.timing.startedAt));
+ assert.equal(tracking.telemetry,null);
  assert.equal((await call('/orders','POST',payload,'')).id,created.id);idem='';
  const stale=await quote(60000);const previous=await call('/admin/transport');
  await call('/admin/transport','PUT',{config:previous.config,revision:previous.revision},'',401);

@@ -51,3 +51,12 @@ export function enrichDestination<T extends {coordinates?: any; municipality?: s
   const urban=withinBounds && features.some((f:any)=>inGeometry(point,f.geometry));
   return {...resolved,locality,geographicExclusion:urban ? undefined : 'El destino está fuera de la zona urbana habilitada de este municipio. Las zonas rurales o de expansión permanecen excluidas.'};
 }
+
+// Extends telemetry intake only when both points are inside the same enabled
+// delivery area. The delivery engine remains responsible for destination eligibility.
+export function sameEnabledGpsArea(point: {lat: number; lng: number}, destination: {lat: number; lng: number}) {
+  const area = enrichDestination({coordinates: destination});
+  if (!area.municipalityCode || area.geographicExclusion) return false;
+  const observed = enrichDestination({coordinates: point});
+  return observed.municipalityCode === area.municipalityCode && !observed.geographicExclusion;
+}

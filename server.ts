@@ -22,6 +22,7 @@ import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
 import { describeWarehouse } from './src/lib/warehouseAssignment';
 import { enrichDestination } from './src/lib/serverGeography';
 import { parseAddressComponents } from './src/lib/addressGeography';
+import { buildCustomerTracking, CUSTOMER_TRACKING_TRAIL_POINTS } from './src/lib/customerTracking';
 // Set DISABLE_HMR per AI Studio environment constraints
 if (process.env.DISABLE_HMR === undefined) {
   process.env.DISABLE_HMR = 'true';
@@ -354,7 +355,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(400).json({ error: 'Faltan parámetros lat y lng' });
     }
 
-    const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    if (!apiKey) return res.status(503).json({ error: 'La búsqueda de dirección está temporalmente fuera de servicio.' });
     try {
       const response = await fetch(
         `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}&language=es&region=co`
@@ -399,7 +401,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(400).json({ error: 'Parámetro address requerido' });
     }
 
-    const apiKey = process.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
     const municipality=typeof req.query.municipality==='string' ? req.query.municipality : '';
     const result=await searchDeliveryAddress(String(address).slice(0,500),municipality.slice(0,100),apiKey);
     res.set('Cache-Control','no-store');
@@ -888,60 +890,37 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     res.json({ message: 'Fórmula veterinaria enviada a revisión', order });
   });
 
-  // Customer and Operational tracking endpoint (sanitized real GPS)
+  // Order access is enforced by mountOrderAccess before serving the tracking snapshot.
   app.get('/api/v1/orders/:orderId/tracking', (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
-    const shipmentId = req.query.shipmentId ? String(req.query.shipmentId) : undefined;
-    const child=shipmentId ? order.childShipments?.find(s=>s.shipmentId===shipmentId) : undefined;
-    if(shipmentId && !child) return res.status(404).json({error:'Entrega no encontrada en esta compra.'});
-    const tracked=child || order;
-    const lastPoint=ordersRepository.getLatestTelemetry(order.id,shipmentId);
-    const latestTelemetry=tracked.fulfillmentStatus==='EN_CAMINO'&&lastPoint&&Date.now()-lastPoint.timestamp<=ordersRepository.dispatchState.config.locationMaxAgeSeconds*1000?lastPoint:null;
+    const shipmentId = req.query.shipmentId;
+    if (shipmentId !== undefined && (typeof shipmentId !== 'string' || !shipmentId)) {
+      return res.status(400).json({ error: 'Identificador de despacho inválido' });
+    }
+    const child = shipmentId ? order.childShipments?.find(shipment => shipment.shipmentId === shipmentId) : undefined;
+    if (shipmentId && !child) return res.status(404).json({ error: 'Despacho no encontrado' });
 
+    const assignmentId = (child || order).assignmentId;
+    const state = ordersRepository.dispatchState;
+    const telemetryHistory = (order.isSplitOrder || order.childShipments?.length) && !child ? [] :
+      ordersRepository.getTelemetryHistory(order.id, child?.shipmentId, CUSTOMER_TRACKING_TRAIL_POINTS);
+    const tracking = buildCustomerTracking({
+      order,
+      child,
+      store: stores.find(store => store.id === order.storeId),
+      run: assignmentId && Object.hasOwn(state.runs, assignmentId) ? state.runs[assignmentId] : undefined,
+      telemetry: telemetryHistory.at(-1),
+      telemetryHistory,
+      maxAgeSeconds: state.config.locationMaxAgeSeconds,
+      simulation: isDispatchSimulation,
+    });
+    res.set('Cache-Control', 'private, no-store');
     res.json({
-      orderId: order.id,
-      shipmentId,
-      orderNumber: order.orderNumber,
-      status: tracked.fulfillmentStatus,
-      dispatches:dispatchService.customerDispatches(order.id),
-      dispatchStatusMessage:dispatchService.customerMessage(order.id),
-      locationStale:!!lastPoint&&!latestTelemetry,
-      deliveryMode: order.deliveryMode || 'TURBO',
-      warehouse:presentOrder(order).warehouse,
-      warehouseAssignment:order.warehouseAssignment,
-      scheduledWindow: order.scheduledWindow,
-      isSplitOrder: !!order.isSplitOrder,
-      shipmentCount: order.shipmentCount || (order.childShipments ? order.childShipments.length : 1),
-      childShipments: order.childShipments,
-      estimatedMinutes: tracked.estimatedDeliveryMinutes,
-      secretDeliveryCode: tracked.secretDeliveryCode,
-      driver: tracked.driver ? {
-        id: tracked.driver.id,
-        name: tracked.driver.name,
-        phone: tracked.driver.phone,
-        vehiclePlate: tracked.driver.vehiclePlate,
-        vehicleType: tracked.driver.vehicleType,
-        photo: tracked.driver.photo,
-        rating: tracked.driver.rating,
-      } : null,
-      telemetry: latestTelemetry ? {
-        pointId: latestTelemetry.pointId,
-        orderId: latestTelemetry.orderId,
-        shipmentId: latestTelemetry.shipmentId,
-        driverId: latestTelemetry.driverId,
-        latitude: latestTelemetry.latitude,
-        longitude: latestTelemetry.longitude,
-        accuracy: latestTelemetry.accuracy,
-        heading: latestTelemetry.heading,
-        speed: latestTelemetry.speed,
-        timestamp: latestTelemetry.timestamp,
-        sequenceNumber: latestTelemetry.sequenceNumber,
-        secondsAgo: Math.max(0, Math.floor((Date.now() - latestTelemetry.timestamp) / 1000)),
-      } : null,
-      hubCoordinates: stores.find(s => s.id === order.storeId)?.coordinates || null,
-      customerCoordinates: order.deliveryAddress.coordinates,
+      ...tracking,
+      dispatches: dispatchService.customerDispatches(order.id),
+      dispatchStatusMessage: dispatchService.customerMessage(order.id),
     });
   });
 

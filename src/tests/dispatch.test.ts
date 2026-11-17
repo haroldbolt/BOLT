@@ -14,6 +14,8 @@ import {
   type ProviderQuote,
 } from "../lib/dispatchProviders";
 import type { Order } from "../types";
+import { sameEnabledGpsArea } from "../lib/serverGeography";
+import municipalFixtures from "./municipal-coverage-fixtures.json";
 const root = fs.mkdtempSync(path.join(os.tmpdir(), "bolt-dispatch-"));
 process.env.BOLT_DATA_DIR = path.join(root, "singleton");
 const { OrdersRepository } = await import("../lib/ordersRepository");
@@ -81,7 +83,7 @@ function setup(
     });
     return id;
   }
-  function order(count = 1, cash = false): Order {
+  function order(count = 1, cash = false, delivery: Partial<Pick<Order, 'deliveryAddress' | 'deliveryMode' | 'scheduledWindow'>> = {}): Order {
     const base = structuredClone(INITIAL_ORDERS[0]);
     const id = "TEST-" + crypto.randomUUID(),
       item = {
@@ -133,6 +135,7 @@ function setup(
         status: cash ? "PENDIENTE" : "APROBADO",
         cashToCollect: cash ? count * 10000 + 10000 : 0,
       },
+      ...delivery,
     });
     base.childShipments =
       count > 1
@@ -781,6 +784,52 @@ test("Incident before pickup releases only after driver confirmation; stale esti
  const x=setup();x.provision();const o=x.order(),r=x.runs(o)[0];await x.service.search(r.id);x.service.respond(x.ids[0],r.offerId!,"accept");x.advance(61000);
  assert.equal(x.service.driverDispatch(r,x.ids[0]).pickupEstimate?.stale,true);assert.equal(x.service.adminView().orders[0].dispatches[0].estimate?.stale,true);
  x.service.incident(x.ids[0],r.id,"TEST: vehicle issue before pickup");x.service.requestRelease(r.id,"admin");assert.deepEqual(x.service.driverDispatch(r,x.ids[0]).actions,["release"]);x.service.confirmRelease(x.ids[0],r.id);assert.equal(r.status,"PENDING");assert.equal(r.driverId,undefined);assert.equal(o.items[0].quantity,1);
+});
+test("A driver can report GPS to an enabled Cajicá destination beyond the legacy metro bounds", async () => {
+  const x = setup();
+  const destination = municipalFixtures.find((fixture) => fixture.name === "Cajicá")!;
+  assert.ok(destination.coordinates.lat > 4.90);
+  const driverId = x.provision();
+  const slot = {
+    slotId: "cajica-gps-fixture",
+    date: "2026-11-07",
+    dateLabel: "7 de noviembre",
+    startTime: "10:00",
+    endTime: "12:00",
+    displayWindow: "10:00 a. m. a 12:00 p. m.",
+  };
+  for (const vehicle of x.config.vehicles) {
+    vehicle.scheduledSlots = [`${slot.date}|${slot.slotId}`];
+  }
+  const order = x.order(1, false, {
+    deliveryMode: "PROGRAMADO",
+    scheduledWindow: slot,
+    deliveryAddress: {
+      address: destination.address,
+      municipality: destination.municipality,
+      coordinates: destination.coordinates,
+      details: "",
+      porteriaPolicy: "DEJAR_EN_PORTERIA",
+    },
+  });
+  const dispatch = x.runs(order)[0];
+  await x.service.search(dispatch.id);
+  assert.ok(dispatch.offerId);
+  x.service.respond(driverId, dispatch.offerId, "accept");
+  x.service.pickup(driverId, dispatch.id, 1);
+  const tripId = x.repo.getOrderById(order.id)?.tripId;
+  assert.ok(tripId);
+  const point = {
+    orderId: order.id, driverId, assignmentId: dispatch.id, tripId,
+    latitude: destination.coordinates.lat, longitude: destination.coordinates.lng,
+    accuracy: 8, timestamp: x.now(), sequenceNumber: 1,
+  };
+  const actor = { role: "CONDUCTOR" as const, id: driverId };
+  assert.equal(x.repo.recordTelemetry(point, { ...actor, id: x.ids[1] }, sameEnabledGpsArea).code, 403);
+  assert.equal(x.repo.recordTelemetry({ ...point, latitude: 8 }, actor, sameEnabledGpsArea).code, 400);
+  assert.equal(x.repo.recordTelemetry({ ...point, accuracy: 250 }, actor, sameEnabledGpsArea).code, 400);
+  assert.equal(x.repo.recordTelemetry(point, actor, sameEnabledGpsArea).success, true);
+  assert.equal(x.repo.getLatestTelemetry(order.id)?.latitude, destination.coordinates.lat);
 });
 let failed = 0;
 for (const [name, fn] of tests) {

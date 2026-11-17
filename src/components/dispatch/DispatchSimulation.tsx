@@ -85,6 +85,30 @@ export function DispatchSimulation() {
                 BOLT Conductor
               </a>
             </div>
+            {enabled && (
+              <section className="rounded-2xl border border-red-200 bg-red-50 p-4 space-y-3">
+                <h2 className="text-xl font-black">Seguimiento desde el celular</h2>
+                <p className="text-sm">Mira cómo avanza un pedido ficticio de Suba. El recorrido dura cuatro minutos y usa ubicaciones de prueba.</p>
+                <button
+                  type="button"
+                  className={primary}
+                  disabled={a.busy}
+                  onClick={() => void a.run(async () => {
+                    let requestId = sessionStorage.getItem("bolt_tracking_preview_request");
+                    if (!requestId) {
+                      requestId = crypto.randomUUID();
+                      sessionStorage.setItem("bolt_tracking_preview_request", requestId);
+                    }
+                    const result = await dispatchClient.simulation("/tracking-preview", "POST", { requestId });
+                    api.saveOrderAccess(result.order.id, result.guestAccessToken);
+                    sessionStorage.removeItem("bolt_tracking_preview_request");
+                    window.location.assign("/simulacion/cliente/" + encodeURIComponent(result.order.id));
+                  }, "Pedido ficticio listo")}
+                >
+                  Probar cronómetro y GPS
+                </button>
+              </section>
+            )}
             <details className="bg-white border rounded-2xl p-4">
               <summary className="font-bold cursor-pointer">
                 Cuentas ficticias de conductor

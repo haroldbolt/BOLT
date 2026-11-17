@@ -1006,7 +1006,8 @@ export class OrdersRepository {
 
   public recordTelemetry(
     point: GPSTelemetry,
-    actor: OrderActor
+    actor: OrderActor,
+    sameDeliveryArea?: (point: {lat: number; lng: number}, destination: {lat: number; lng: number}) => boolean,
   ): { success: boolean; code?: number; error?: string; point?: GPSTelemetry } {
     if (!point || !point.orderId) {
       return { success: false, code: 400, error: 'Identificador de pedido obligatorio en telemetría' };
@@ -1091,22 +1092,18 @@ export class OrdersRepository {
       };
     }
 
-    // 3. Validación de coordenadas dentro de la cobertura metropolitana de Bogotá
-    // Límites estrictos: Latitud 4.4000 a 4.9000, Longitud -74.3000 a -73.9000
-    if (
-      typeof point.latitude !== 'number' ||
-      typeof point.longitude !== 'number' ||
-      isNaN(point.latitude) ||
-      isNaN(point.longitude) ||
-      point.latitude < 4.40 ||
-      point.latitude > 4.90 ||
-      point.longitude < -74.30 ||
-      point.longitude > -73.90
-    ) {
+    const { latitude: lat, longitude: lng } = point;
+    if (!Number.isFinite(lat) || !Number.isFinite(lng) || Math.abs(lat) > 90 || Math.abs(lng) > 180) {
+      return { success: false, code: 400, error: 'Coordenadas GPS inválidas.' };
+    }
+    // La caja histórica conserva los puntos de tránsito. Cajicá, entre otras
+    // zonas habilitadas, puede extenderse fuera de esa caja.
+    const inMetroArea = lat >= 4.40 && lat <= 4.90 && lng >= -74.30 && lng <= -73.90;
+    if (!inMetroArea && !sameDeliveryArea?.({lat, lng}, order.deliveryAddress.coordinates)) {
       return {
         success: false,
         code: 400,
-        error: `Coordenadas GPS (${point.latitude}, ${point.longitude}) fuera del perímetro de cobertura de Bogotá (4.40 a 4.90 lat, -74.30 a -73.90 lng).`,
+        error: 'Ubicación GPS fuera de la zona de este despacho.',
       };
     }
 
@@ -1192,11 +1189,11 @@ export class OrdersRepository {
     return null;
   }
 
-  public getTelemetryHistory(orderId: string, shipmentId?: string): GPSTelemetry[] {
+  public getTelemetryHistory(orderId: string, shipmentId?: string, maxPoints?: number): GPSTelemetry[] {
     const streamKey = shipmentId ? `${orderId}:${shipmentId}` : orderId;
     const history = this.telemetryHistory[streamKey];
     if (history && history.length > 0) {
-      return [...history];
+      return maxPoints === undefined ? [...history] : history.slice(-maxPoints);
     }
     return [];
   }

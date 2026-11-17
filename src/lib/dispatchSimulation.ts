@@ -15,6 +15,11 @@ import type { OrdersRepository } from "./ordersRepository";
 import type { TransportRepository } from "./transportRepository";
 import { planTransport } from "./transportPlanner";
 import { getCheckoutPreviewOrder } from "./checkoutPreview";
+const trackingPrefix = "SIM-TRACK-";
+const trackingFingerprint = "SIMULATION_TRACKING_V1";
+const trackingDurationMs = 4 * 60_000;
+const trackingPulseMs = 7_000;
+
 const marker = path.join(
   process.cwd(),
   ".bolt-private",
@@ -406,6 +411,206 @@ export function mountDispatchSimulation(
       };
     }),
   );
+  function trackingDriver(order: Order) {
+    const [kind, id, initialShift] = order.creationRequestFingerprint?.split(":") ?? [];
+    if (!order.id.startsWith(trackingPrefix) || kind !== trackingFingerprint ||
+        !fixtureIds.includes(id) || !["OFF_DUTY", "AVAILABLE"].includes(initialShift))
+      return undefined;
+    return { id, initialShift };
+  }
+
+  function trackingPulse(order: Order, now = Date.now()) {
+    const driver = trackingDriver(order);
+    const run = order.assignmentId && repo.dispatchState.runs[order.assignmentId];
+    if (!driver || !run || run.orderId !== order.id || run.driverId !== driver.id ||
+        run.status !== "PICKED_UP" || run.transfer || !run.pickedUpAt || !order.tripId ||
+        order.fulfillmentStatus !== "EN_CAMINO" || order.payment.cashToCollect !== 0 ||
+        repo.dispatchState.accounts[driver.id]?.activeDispatchId !== run.id) return;
+    const deadline = Date.parse(order.originalPromiseWindow.end);
+    if (!Number.isFinite(deadline)) return;
+    if (now >= deadline) {
+      repo.transaction(() => {
+        s.deliver(driver.id, run.id, order.secretDeliveryCode, 0);
+        if (driver.initialShift === "OFF_DUTY") s.shift(driver.id, "END");
+      });
+      return;
+    }
+    const previous = repo.getLatestTelemetry(order.id);
+    if (previous && now <= previous.timestamp) return;
+    const origin = store.verifiedEntrance ?? store.coordinates;
+    const destination = order.deliveryAddress.coordinates;
+    const progress = Math.max(0, Math.min(1, (now - run.pickedUpAt) / (trackingDurationMs - trackingPulseMs)));
+    const result = repo.recordTelemetry({
+      orderId: order.id,
+      assignmentId: run.id,
+      tripId: order.tripId,
+      driverId: driver.id,
+      latitude: origin.lat + (destination.lat - origin.lat) * progress,
+      longitude: origin.lng + (destination.lng - origin.lng) * progress,
+      timestamp: now,
+      sequenceNumber: Math.max(now, (previous?.sequenceNumber ?? 0) + 1),
+      accuracy: 5,
+      speed: 0,
+      heading: 0,
+    }, { role: "CONDUCTOR", id: driver.id });
+    if (!result.success) throw Error("No se pudo actualizar la posición ficticia.");
+  }
+
+  async function startTrackingPreview(requestId: string) {
+    const orders = repo.getAllOrders();
+    const previous = orders.find(order => order.creationRequestId === requestId);
+    if (previous) {
+      if (!trackingDriver(previous)) throw Error("Identificador utilizado por otra simulación.");
+      return { order: previous, guestAccessToken: s.guestToken(previous) };
+    }
+    const current = orders.find(order => trackingDriver(order) && order.fulfillmentStatus === "EN_CAMINO");
+    if (current) {
+      const stillRunning = Date.now() < Date.parse(current.originalPromiseWindow.end);
+      if (stillRunning) return { order: current, guestAccessToken: s.guestToken(current) };
+      trackingPulse(current);
+    }
+    const catalog = products();
+    const product = catalog.find(entry => entry.id === "SIM-FOOD-20KG");
+    if (!product) throw Error("Catálogo de pruebas no cargado.");
+    const { config: transportConfig } = transport.read();
+    const candidate = fixtureIds.flatMap(id => {
+      const account = repo.dispatchState.accounts[id];
+      const profile = repo.getDriverById(id);
+      if (!account?.enabled || !profile || account.activeDispatchId ||
+          !["OFF_DUTY", "AVAILABLE"].includes(account.status) ||
+          orders.some(order => (order.childShipments?.length ? order.childShipments : [order]).some(shipment =>
+            shipment.driver?.id === id && (!["ENTREGADO", "CANCELADO"].includes(shipment.fulfillmentStatus) || shipment.physicalReturnPending)))) return [];
+      const plan = planTransport([{ productId: product.id, quantity: 1 }], [product], store.id, "TURBO", {
+        config: {
+          ...transportConfig,
+          vehicles: transportConfig.vehicles.filter(vehicle => vehicle.driverId === id),
+          externalProviders: [],
+        },
+        drivers: [{ ...profile, isOnline: true, currentStatus: "DISPONIBLE" }],
+        orders: [],
+      });
+      return plan.feasible && plan.shipments.length === 1 ? [{ id, initialShift: account.status, load: plan.shipments[0] }] : [];
+    })[0];
+    if (!candidate) throw Error("Los conductores de prueba están ocupados. Completa sus despachos para volver a intentar.");
+
+    const now = Date.now();
+    const confirmedAt = new Date(now).toISOString();
+    const id = trackingPrefix + crypto.randomUUID();
+    const fixture = structuredClone(INITIAL_ORDERS[0]);
+    const order: Order = {
+      ...fixture,
+      id,
+      orderNumber: id,
+      creationRequestId: requestId,
+      creationRequestFingerprint: [trackingFingerprint, candidate.id, candidate.initialShift].join(":"),
+      purchaseCode: undefined,
+      assignmentId: undefined,
+      tripId: undefined,
+      createdAt: confirmedAt,
+      storeId: store.id,
+      storeName: store.name,
+      customer: {
+        name: "Cliente de simulación",
+        phone: "0000000000",
+        email: "cliente@simulation.test",
+        isGuest: true,
+      },
+      deliveryAddress: {
+        address: "Destino ficticio de prueba · Cedritos, Bogotá",
+        details: "Simulación de seguimiento; no realizar entrega.",
+        porteriaPolicy: "DEJAR_EN_PORTERIA",
+        coordinates: { lat: 4.72422, lng: -74.03991 },
+      },
+      items: [{
+        productId: product.id, sku: product.sku, name: product.name, brand: product.brand,
+        presentation: product.presentation, price: product.price, quantity: 1, image: product.image,
+        weightKg: product.weightKg, requiresPrescription: false,
+      }],
+      isSplitOrder: false,
+      childShipments: undefined,
+      driver: undefined,
+      transportLoad: candidate.load,
+      fulfillmentStatus: "CONFIRMADO",
+      deliveryMode: "TURBO",
+      scheduledWindow: undefined,
+      secretDeliveryCode: String(crypto.randomInt(1000, 10000)),
+      statusHistory: [],
+      timestamps: { confirmedAt },
+      // This timer belongs exclusively to the isolated walkthrough, not to an operational quote.
+      transportConfirmation: "sim-tracking-" + id,
+      deliveryQuoteSnapshot: {
+        quoteId: "sim-tracking-" + id, assignedStoreId: store.id,
+        totalSeconds: trackingDurationMs / 1000, estimatedMinutes: trackingDurationMs / 60_000,
+        geographicDistanceMeters: 0, roadDistanceMeters: 0, configVersion: trackingFingerprint,
+      },
+      // Search still validates the fixture's timer window. The real checkout uses its own ETA.
+      estimatedDeliveryMinutes: 0,
+      originalPromiseWindow: { start: confirmedAt, end: new Date(now + trackingDurationMs).toISOString() },
+      totals: {
+        subtotal: product.price, shipping: 0, serviceFee: 0, tip: 0, discount: 0,
+        total: product.price, totalWeightKg: product.weightKg,
+      },
+      payment: { method: "WOMPI_CARD", status: "APROBADO", cashToCollect: 0 },
+    };
+    const runId = repo.transaction(() => {
+      const result = s.createOrder(order, catalog, store);
+      if (!result.success || !result.order?.assignmentId) throw Error(result.error || "No se pudo crear el pedido de prueba.");
+      const run = repo.dispatchState.runs[result.order.assignmentId];
+      // Scope the search for this new dispatch alone. Other demo orders, offers and providers are untouched.
+      run.attempted = [
+        "provider:" + provider.id,
+        ...Object.keys(repo.dispatchState.accounts).filter(id => id !== candidate.id),
+      ];
+      for (const status of ["EN_ALISTAMIENTO", "LISTO_PARA_DESPACHO"] as const) {
+        const step = repo.transitionStatus(order.id, status, { role: "SISTEMA", id: "sim-tracking" }, { catalogProducts: catalog });
+        if (!step.success) throw Error(step.error);
+      }
+      if (candidate.initialShift === "OFF_DUTY") s.shift(candidate.id, "START");
+      const location = store.verifiedEntrance ?? store.coordinates;
+      s.location(candidate.id, { latitude: location.lat, longitude: location.lng, accuracy: 5, timestamp: now });
+      return run.id;
+    });
+
+    await s.search(runId, "sim-tracking");
+    const ready = repo.getOrderById(order.id)!;
+    const run = repo.dispatchState.runs[runId];
+    const offer = run.offerId ? repo.dispatchState.offers[run.offerId] : undefined;
+    if (!offer || offer.driverId !== candidate.id || offer.status !== "PENDING") {
+      repo.transitionStatus(order.id, "CANCELADO", { role: "SISTEMA", id: "sim-tracking" }, {
+        reason: "Simulación sin oferta vigente",
+        catalogProducts: catalog,
+      });
+      const account = repo.dispatchState.accounts[candidate.id];
+      if (candidate.initialShift === "OFF_DUTY" && !account.activeDispatchId) s.shift(candidate.id, "END");
+      throw Error("El conductor de prueba ya no está disponible. Vuelve a intentar.");
+    }
+    repo.transaction(() => {
+      s.respond(candidate.id, offer.id, "accept");
+      s.arrived(candidate.id, run.id);
+      s.pickup(candidate.id, run.id, 1);
+      trackingPulse(ready);
+    });
+    return { order: ready, guestAccessToken: s.guestToken(ready) };
+  }
+
+  let startingPreview: ReturnType<typeof startTrackingPreview> | undefined;
+  app.post("/api/v1/admin/simulation/tracking-preview", wrap(q => {
+    const requestId = String(q.body?.requestId || "");
+    if (!/^[\w-]{10,100}$/.test(requestId)) throw Error("Identificador de solicitud requerido.");
+    startingPreview ??= startTrackingPreview(requestId).finally(() => { startingPreview = undefined; });
+    return startingPreview;
+  }));
+
+  const trackingInterval = setInterval(() => {
+    for (const order of repo.getAllOrders()) {
+      if (order.fulfillmentStatus === "EN_CAMINO" && order.id.startsWith(trackingPrefix)) {
+        try { trackingPulse(order); }
+        catch { console.error("No se pudo avanzar el recorrido simulado de seguimiento."); }
+      }
+    }
+  }, trackingPulseMs);
+  trackingInterval.unref();
+
   // Driver middleware has already authenticated this path. Never accepts a driver id from the browser.
   app.post(
     "/api/v1/driver/simulation/location",
