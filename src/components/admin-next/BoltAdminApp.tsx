@@ -822,8 +822,7 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
         <div><dt>Pedido</dt><dd>{orderLabel(order)}</dd></div>
         <div><dt>Sede</dt><dd>{order.storeName}</dd></div>
         <div><dt>Modalidad</dt><dd>{deliveryModeLabel(orderMode(order))}</dd></div>
-        {order.demoCashCheckout && dispatchStatus && <div><dt>Estado del despacho</dt><dd>{dispatchStatus}</dd></div>
-
+        {order.demoCashCheckout && dispatchStatus && <div><dt>Estado del despacho</dt><dd>{dispatchStatus}</dd></div>}
         {dispatch?.driverName && <div><dt>Repartidor de prueba</dt><dd>{dispatch.driverName}</dd></div>}
         {orderMode(order) === 'PROGRAMADO' && <div><dt>Franja</dt><dd><DeliverySchedule window={order.scheduledWindow} /></dd></div>}
         {order.demoCashCheckout && order.payment?.cashToCollect !== undefined && <div><dt>Efectivo de prueba</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
