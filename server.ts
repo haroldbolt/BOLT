@@ -1,6 +1,7 @@
 import {REVIEW_MESSAGE} from './src/lib/checkoutReadiness';
 import {pendingDeliveryOrder} from './src/lib/pendingDeliveryOrder';
 import { acceptsDemoOrigin } from './src/lib/demoOrigin';
+import { adminEntry, adminEntryPath } from './deployment/admin-entry.mjs';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
@@ -8,14 +9,15 @@ import {mountProductPhotoSearch} from './src/lib/productPhotoSearchRoutes';
 import type {ProductPhotoRecognizer} from './src/lib/productPhotoSearch';
 import {mountTrackingRecovery} from './src/lib/trackingRecovery';
 import {simulationEnabled,LocalSimulationProvider,mountDispatchSimulation} from './src/lib/dispatchSimulation';
-import {DispatchService} from './src/lib/dispatchService';
+import {DispatchService, DispatchError} from './src/lib/dispatchService';
 import {mountDispatchRoutes,mountOrderAccess} from './src/lib/dispatchRoutes';
 import { COVERAGE_MUNICIPALITIES, scheduledServiceReady } from './src/data/coverageConfig';
 import { TransportRepository } from './src/lib/transportRepository';
 import { validateTransportAttributes } from './src/lib/transportPlanner';
 import { CatalogOperations } from './src/lib/catalogOperations';
 import { boltAdminOrder, boltAdminPhotoPath, mountBoltAdmin } from './src/lib/boltAdminRoutes';
-import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltAdminDemoProduct, boltAdminDemoReviewContext, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
+import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltCustomerDemoCheckout, boltCustomerDemoVehicle, isBoltCustomerDemoDriver, isBoltCustomerDemoOrder, boltAdminDemoProduct, boltAdminDemoReviewContext, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
+import { createCustomerDemoDispatch } from './src/lib/boltCustomerDemoDispatch';
 import { matchesCatalogCategory } from './src/lib/catalogCategories';
 import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
@@ -83,7 +85,20 @@ const catalogOperations = new CatalogOperations({
 });
 const transportRepository = new TransportRepository();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
-const dispatchService=new DispatchService({repo:ordersRepository,stores:()=>stores,products:()=>products,transport:()=>transportRepository.read().config,simulation:isDispatchSimulation,providers:simulationProvider?[simulationProvider]:[],holdDispatch:isDispatchSimulation?isBoltAdminDemoOrder:undefined});
+const dispatchService = new DispatchService({
+  repo: ordersRepository,
+  stores: () => stores,
+  products: () => products,
+  transport: () => transportRepository.read().config,
+  simulation: isDispatchSimulation,
+  providers: simulationProvider ? [simulationProvider] : [],
+  holdDispatch: order => isBoltAdminDemoOrder(order) && !customerDemoDispatch?.isStarting(order.id),
+  simulationVehicle: boltCustomerDemoVehicle,
+  isSimulationDriver: isBoltCustomerDemoDriver,
+});
+const customerDemoDispatch = isDispatchSimulation
+  ? createCustomerDemoDispatch(ordersRepository, dispatchService, () => stores)
+  : undefined;
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
 function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order) {
   request={...request,destination:enrichDestination(request.destination)};
@@ -220,7 +235,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   mountEntrancePhotos(app,ordersRepository,dispatchService,path.join(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'),'private-entrance-photos'));
   // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
   let dispatchTickRunning=false;
-  const dispatchTimer=setInterval(async()=>{if(dispatchTickRunning||!Object.keys(ordersRepository.dispatchState.runs).length)return;dispatchTickRunning=true;try{await dispatchService.tick()}catch{console.error('[Dispatch] worker failed; durable state retained')}finally{dispatchTickRunning=false}},1000);
+  const dispatchTimer=setInterval(async()=>{if(dispatchTickRunning||!Object.keys(ordersRepository.dispatchState.runs).length)return;dispatchTickRunning=true;try{await dispatchService.tick(); customerDemoDispatch?.tick()}catch{console.error('[Dispatch] worker failed; durable state retained')}finally{dispatchTickRunning=false}},1000);
   dispatchTimer.unref();
 
   // ==========================================
@@ -321,10 +336,45 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   const presentOrder = (order: Order) => {
     const warehouse=stores.find(store=>store.id===order.storeId);
-    return {...order, dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
+    return {...order, ...(isDispatchSimulation && isBoltCustomerDemoOrder(order) && {demoCustomerCheckout:true as const}), dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
       storeName:order.warehouseAssignment?.store.name || warehouse?.name || '',
       warehouse:order.warehouseAssignment?.store || describeWarehouse(warehouse)};
   };
+
+  if (isDispatchSimulation) {
+    const scenarioStore = () => stores.find(store => store.id === BOLT_ADMIN_DEMO_STORE_ID);
+    const handleScenario = (res: Response, action: () => unknown) => {
+      res.set('Cache-Control', 'no-store');
+      try {
+        res.json(action());
+      } catch (error) {
+        if (error instanceof DispatchError) return res.status(error.status).json({ error: error.message, code: error.code });
+        console.error('[BOLT Cliente] El pedido de simulación no pudo completarse.');
+        return res.status(500).json({ error: 'No se pudo crear el pedido de prueba.' });
+      }
+    };
+    app.get('/api/v1/simulation/customer-checkout', (_req, res) => {
+      handleScenario(res, () => boltCustomerDemoCheckout(products, scenarioStore()));
+    });
+    app.post('/api/v1/simulation/customer-checkout', (req, res) => {
+      handleScenario(res, () => {
+        const order = createBoltAdminDemoOrder({
+          requestId: req.get('Idempotency-Key'),
+          origin: 'customer',
+          catalog: products,
+          store: scenarioStore(),
+          dispatch: dispatchService,
+        });
+        return {
+          order: presentOrder(order),
+          guestAccessToken: dispatchService.guestToken(order),
+          trackingPath: '/pedido/' + encodeURIComponent(order.id),
+        };
+      });
+    });
+  } else {
+    app.all('/api/v1/simulation/customer-checkout', (_req, res) => res.status(404).json({ error: 'Simulación no disponible.' }));
+  }
 
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
@@ -812,6 +862,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       isOrder:isBoltAdminDemoOrder,
       createOrder:(requestId,requestedMode)=>createBoltAdminDemoOrder({requestId,requestedMode,catalog:products,store:stores.find(store=>store.id===BOLT_ADMIN_DEMO_STORE_ID),dispatch:dispatchService}),
       guestToken:order=>dispatchService.guestToken(order),
+      startCustomerDispatch: (order, actor) => customerDemoDispatch!.start(order, {
+        id: actor.id,
+        name: actor.name,
+        role: actor.role === 'SEDE' ? 'BODEGA' : 'ADMINISTRADOR',
+      }),
     } : undefined,
   });
 
@@ -1318,9 +1373,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // FRONTEND MOUNTING (VITE IN DEV / STATIC IN PROD)
   // ==========================================
 
+  // The old URLs remain entry links for the new Admin. API routes are unchanged.
+  app.get(['/admin', '/operacion'], (req, res) => {
+    res.redirect(302, adminEntry(new URL(req.originalUrl, 'http://localhost')) ?? adminEntryPath);
+  });
+
   app.get('/admin/nuevo', (req, res, next) => {
     if (req.path !== '/admin/nuevo') return next();
-    res.redirect(308, '/admin/nuevo/' + req.originalUrl.slice(req.path.length));
+    res.redirect(308, adminEntry(new URL(req.originalUrl, 'http://localhost')) ?? adminEntryPath);
   });
 
   if (process.env.NODE_ENV !== 'production') {
@@ -1333,11 +1393,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     });
     app.use(vite.middlewares);
   } else {
-    // The new HTML entry creates a dist/admin directory. Keep the existing admin route on the storefront shell.
-    app.get('/admin', (req, res) => {
-      if (req.path === '/admin/') return res.redirect(308, '/admin' + req.originalUrl.slice(req.path.length));
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
-    });
     app.use(express.static(path.join(__dirname, 'dist')));
     app.get('*', (_req: Request, res: Response) => {
       res.sendFile(path.join(__dirname, 'dist', 'index.html'));

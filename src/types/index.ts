@@ -331,6 +331,7 @@ export interface WarehouseAssignmentEvent {
 }
 
 export interface Order {
+  demoCustomerCheckout?: true;
   deliveryReview?: {
     status: 'PENDING' | 'CONFIRMED' | 'SIMULATED';
     requestedAt: string;

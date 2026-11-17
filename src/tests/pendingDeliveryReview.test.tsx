@@ -7,6 +7,7 @@ import {CartDrawer} from '../components/customer/CartDrawer';
 import {CheckoutModal} from '../components/customer/CheckoutModal';
 import {PendingDeliveryReceipt} from '../components/customer/PendingDeliveryReceipt';
 import {OrderConfirmation} from '../components/customer/OrderConfirmation';
+import {formatCOP} from '../lib/formatters';
 import {getCheckoutPreviewOrder} from '../lib/checkoutPreview';
 import {fixtureProduct,fixtureConfig,fixtureDrivers} from './transportFixtures';
 import {INITIAL_STORES} from '../data/seedData';
@@ -43,5 +44,14 @@ assert.match(confirmedSummary,/Entrega programada/);
 assert.match(confirmedSummary,/Pendiente · Pago contra entrega/);
 assert.doesNotMatch(confirmedSummary,/Costo y horario por confirmar/);
 console.log('PASS post-checkout receipt distinguishes confirmed delivery with cash on delivery from an uncharged request.');
+
+const simulatedOrder=getCheckoutPreviewOrder('confirmado');
+const simulatedSummary=render(<OrderConfirmation order={{...simulatedOrder,demoCustomerCheckout:true,payment:{...simulatedOrder.payment,cashToCollect:0}}} {...actions}/>);
+assert.match(simulatedSummary,/Pedido de prueba sin cobro/);
+assert.match(simulatedSummary,/Total de prueba/);
+assert.ok(simulatedSummary.includes(`Total a cobrar: ${formatCOP(0)}`));
+assert.match(simulatedSummary,/Ver mi pedido/);
+assert.doesNotMatch(simulatedSummary,/Pago contra entrega/);
+console.log('PASS simulated checkout receipt shows the actual zero collection separately from the simulated order total.');
 
 const notifications=new PushNotificationService({getItem:()=>null,setItem:()=>{}});receipt.warehouseAssignment=makeWarehouseAssignment(receipt.id,INITIAL_STORES[0]);assert.equal(notifications.notifyWarehouseAssignment(receipt),null);receipt.deliveryReview!.status='CONFIRMED';assert.ok(notifications.notifyWarehouseAssignment(receipt));

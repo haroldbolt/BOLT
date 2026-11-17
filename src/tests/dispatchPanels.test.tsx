@@ -6,7 +6,9 @@ import { DriverPanel } from "../components/dispatch/DriverPanel";
 import { DispatchManager } from "../components/dispatch/DispatchManager";
 import { PushNotificationService } from "../lib/notifications";
 import { INITIAL_ORDERS } from "../data/seedData";
-import { api } from "../lib/api";
+import { api, bindPageAdminToken } from "../lib/api";
+import { DeliveryReviewPanel } from "../components/admin-next/DeliveryReviewPanel";
+import type { AdminOrder } from "../components/admin-next/adminClient";
 import { dispatchClient, driverSession } from "../lib/dispatchClient";
 const map = new Map();
 globalThis.localStorage = {
@@ -37,6 +39,27 @@ assert.equal(
 );
 await dispatchClient.admin();
 assert.equal(calls.at(-1).options.headers.Authorization, "Bearer admin-test");
+const releaseLiveSession = bindPageAdminToken("live-admin-same-page");
+await dispatchClient.admin();
+assert.equal(calls.at(-1).options.headers.Authorization, "Bearer live-admin-same-page");
+assert.equal(map.get("bolt_admin_token"), "admin-test");
+await api.getOrder("o", true);
+assert(!new Headers(calls.at(-1).options.headers).get("Authorization"));
+releaseLiveSession();
+await dispatchClient.admin();
+assert.equal(calls.at(-1).options.headers.Authorization, "Bearer admin-test");
+
+const pendingDemo = {
+  id: "demo-customer-order",
+  demoCustomerCheckout: true,
+  deliveryReview: { requestedMode: "TURBO" },
+} as AdminOrder;
+const demoReview = renderToStaticMarkup(<DeliveryReviewPanel isDemo order={pendingDemo} token="scoped-test" onConfirmed={() => {}} />);
+assert.match(demoReview, /Confirmar entrega de prueba/);
+assert.doesNotMatch(demoReview, /Referencia de aceptación/);
+const liveReview = renderToStaticMarkup(<DeliveryReviewPanel isDemo={false} order={pendingDemo} token="live-test" onConfirmed={() => {}} />);
+assert.match(liveReview, /Consultar disponibilidad/);
+assert.doesNotMatch(liveReview, /Confirmar entrega de prueba/);
 driverSession.set("");
 assert.match(renderToStaticMarkup(<DriverPanel />), /Ingresar como conductor/);
 assert(!renderToStaticMarkup(<DriverPanel />).includes("Carlos"));

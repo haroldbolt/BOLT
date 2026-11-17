@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useRef, useState } from 'react';
 import { CalendarDays, Check, ClipboardCheck, LoaderCircle, MapPin, ShieldCheck } from 'lucide-react';
 import type { DeliveryMode } from '../../types';
 import type { DeliveryQuote, ScheduledSlot } from '../../lib/deliveryService';
@@ -29,6 +29,8 @@ export function DeliveryReviewPanel({ order, token, isDemo, onConfirmed }: {
   const [reference, setReference] = useState('');
   const [busy, setBusy] = useState<'quote' | 'confirm' | null>(null);
   const [error, setError] = useState('');
+  const demoInFlight = useRef(false);
+  const customerDemo = isDemo && order.demoCustomerCheckout === true;
 
   const consult = async (chosen?: ScheduledSlot) => {
     if (busy) return;
@@ -70,6 +72,43 @@ export function DeliveryReviewPanel({ order, token, isDemo, onConfirmed }: {
       setAccepted(false);
     } finally { setBusy(null); }
   };
+
+  async function confirmCustomerDemo() {
+    if (demoInFlight.current) return;
+    demoInFlight.current = true;
+    setBusy('confirm');
+    setError('');
+    try {
+      const result = await boltAdmin.quote(token, order.id, { deliveryMode: 'TURBO' });
+      if (result.recommendedMode !== 'TURBO' || !hasConfirmedDeliveryQuote(result)) {
+        throw new Error(result.message || 'No se pudo validar el envío Turbo de prueba.');
+      }
+      const confirmed = await boltAdmin.confirm(token, order.id, {
+        deliveryMode: result.recommendedMode,
+        confirmationToken: result.confirmationToken,
+        customerAccepted: true,
+        customerAgreementReference: 'Aceptación simulada del pedido de prueba de BOLT Cliente.',
+      });
+      onConfirmed(confirmed);
+    } catch (failure) {
+      setError(failure instanceof Error ? failure.message : 'No pudimos confirmar la entrega de prueba.');
+    } finally {
+      demoInFlight.current = false;
+      setBusy(null);
+    }
+  }
+
+  if (customerDemo) return <section className="ba-review" aria-label="Confirmación de entrega de prueba">
+    <div className="ba-review-heading">
+      <span className="ba-symbol ba-symbol-amber"><ClipboardCheck size={18} aria-hidden="true" /></span>
+      <div><h3>Confirmar entrega de prueba</h3><p>Validaremos el envío Turbo de Suba con aceptación simulada y $0 de cobro.</p></div>
+    </div>
+    <button type="button" className="ba-btn ba-btn-primary" disabled={!!busy} onClick={() => void confirmCustomerDemo()}>
+      {busy ? <LoaderCircle size={16} className="ba-spin" aria-hidden="true" /> : <Check size={16} aria-hidden="true" />}
+      {busy ? 'Validando entrega…' : 'Confirmar entrega de prueba'}
+    </button>
+    {error && <p className="ba-error" role="alert"><ShieldCheck size={16} aria-hidden="true" />{error}</p>}
+  </section>;
 
   return <section className="ba-review" aria-label="Confirmación de entrega">
     <div className="ba-review-heading">
