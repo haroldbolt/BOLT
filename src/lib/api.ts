@@ -1,6 +1,7 @@
 import type {AddressSearchResult} from './addressSearch';
 import {backendAuthorization} from './backendRequest';
-import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint, DeliveryTracking } from '../types';
+import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint } from '../types';
+import type { CustomerTracking } from '../types/customerTracking';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
 
@@ -126,8 +127,8 @@ export const api = {
   },
 
   async getOrder(orderId: string, guestOnly=false): Promise<Order> {
-    const res = await authorizedFetch(`${BASE_URL}/orders/${orderId}`,{},guestOnly);
-    if (!res.ok) throw new Error('Pedido no encontrado');
+    const res = await authorizedFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}`,{cache:'no-store'},guestOnly);
+    if (!res.ok) throw Object.assign(new Error('Pedido no encontrado'), {status:res.status});
     return await res.json();
   },
 
@@ -172,14 +173,15 @@ export const api = {
     return await res.json();
   },
 
-  async getTracking(orderId: string, shipmentId?: string, guestOnly=false): Promise<DeliveryTracking> {
+  async getTracking(orderId: string, shipmentId?: string, guestOnly=false): Promise<CustomerTracking> {
+    const orderPath = `${BASE_URL}/orders/${encodeURIComponent(orderId)}/tracking`;
     const url = shipmentId
-      ? `${BASE_URL}/orders/${orderId}/tracking?shipmentId=${encodeURIComponent(shipmentId)}`
-      : `${BASE_URL}/orders/${orderId}/tracking`;
-    const res = await authorizedFetch(url,{},guestOnly);
+      ? `${orderPath}?shipmentId=${encodeURIComponent(shipmentId)}`
+      : orderPath;
+    const res = await authorizedFetch(url,{cache:'no-store'},guestOnly);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
-      throw new Error(err.error || 'Error al consultar rastreo');
+      throw Object.assign(new Error(err.error || 'Error al consultar rastreo'), {status:res.status});
     }
     return await res.json();
   },
