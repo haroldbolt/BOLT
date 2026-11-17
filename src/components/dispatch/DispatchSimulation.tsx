@@ -116,7 +116,7 @@ export function DispatchSimulation() {
               <p className="text-sm my-2">
                 Cada pestaña mantiene su propia sesión de conductor.
               </p>
-              {info.drivers.map((d: any) => (
+              {[...info.drivers, ...(info.cashCheckoutDriver ? [info.cashCheckoutDriver] : [])].map((d: any) => (
                 <div key={d.id} className="py-3 border-t">
                   <strong>{d.name}</strong>
                   <p className="text-sm break-all">{d.email}</p>

@@ -96,8 +96,8 @@ try {
   const admin = await login('/auth/login', simulation.admin);
   const suba = await login('/bolt-admin/demo/session', { profileId: 'suba' }, 201);
   const kennedy = await login('/bolt-admin/demo/session', { profileId: 'kennedy' }, 201);
-  const driverFixture = simulation.drivers.find(candidate => candidate.id === 'SIM-CASH-SUBA');
-  assert.ok(driverFixture);
+  const driverFixture = simulation.cashCheckoutDriver;
+  assert.equal(driverFixture.id, 'SIM-CASH-SUBA');
   const driver = await login('/driver/auth/login', driverFixture);
   const driverAction = (route, body, status) => action('/driver' + route, body, driver, status);
   await driverAction('/shift', { action: 'START' });

@@ -203,16 +203,18 @@ export function mountDispatchSimulation(
     config.initialized = true;
     fs.writeFileSync(marker, JSON.stringify(config), { mode: 0o600 });
   }
+  const publicFixture = (fixture: { driver: { id: string; name: string }; email: string; password: string }) => ({
+    id: fixture.driver.id,
+    name: fixture.driver.name,
+    email: fixture.email,
+    password: fixture.password,
+  });
   function info() {
     return {
       enabled: true,
       admin: config.admin,
-      drivers: availableFixtures.map((d: any) => ({
-        id: d.driver.id,
-        name: d.driver.name,
-        email: d.email,
-        password: d.password,
-      })),
+      drivers: config.drivers.map(publicFixture),
+      cashCheckoutDriver: publicFixture(config.cashCheckoutDriver),
       provider: provider.read(),
       orders: repo
         .getAllOrders()
@@ -248,12 +250,8 @@ export function mountDispatchSimulation(
       .json({
         enabled: true,
         admin: config.admin,
-        drivers: availableFixtures.map((d: any) => ({
-          id: d.driver.id,
-          name: d.driver.name,
-          email: d.email,
-          password: d.password,
-        })),
+        drivers: config.drivers.map(publicFixture),
+        cashCheckoutDriver: publicFixture(config.cashCheckoutDriver),
       }),
   );
   app.use("/api/v1/admin/simulation", admin, (_q, r, n) => {
