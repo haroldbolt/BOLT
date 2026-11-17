@@ -73,6 +73,8 @@ export interface DispatchDependencies {
   providers?: DispatchProvider[];
   simulation?: boolean;
   holdDispatch?: (order: Order) => boolean;
+  simulationVehicle?: (order: Order) => TransportVehicle | undefined;
+  isSimulationDriver?: (driverId: string) => boolean;
   routeEstimate?: (
     driver: DriverProfile,
     store: Store,
@@ -624,11 +626,17 @@ export class DispatchService {
     }
     return true;
   }
+  private dispatchVehicle(order: Order, id: string) {
+    const scopedVehicle = this.deps.simulation ? this.deps.simulationVehicle?.(order) : undefined;
+    if (scopedVehicle) return scopedVehicle.driverId === id ? scopedVehicle : undefined;
+    if (this.deps.simulation && this.deps.isSimulationDriver?.(id)) return undefined;
+    return this.deps.transport().vehicles.find(vehicle => vehicle.driverId === id);
+  }
   private eligible(r: DispatchRun, id: string, allowOffer = false) {
     const a = this.state.accounts[id],
       d = this.repo.getDriverById(id),
-      v = this.deps.transport().vehicles.find((v) => v.driverId === id),
       { order } = this.target(r),
+      v = this.dispatchVehicle(order, id),
       now = this.now(),
       c = this.state.config;
     if (
@@ -792,6 +800,7 @@ export class DispatchService {
       for (const p of this.deps.providers || []) {
         if (
           !this.deps.simulation ||
+          this.deps.simulationVehicle?.(order) ||
           !p.simulation ||
           !p.capabilities.quote ||
           !p.capabilities.request ||
@@ -1156,9 +1165,7 @@ export class DispatchService {
       const { order, shipment } = this.target(r);
       if (this.prescriptionPending(order, shipment))
         fail("PRESCRIPTION_REVIEW_REQUIRED", "Farmacia debe aprobar la fórmula antes de la recogida");
-      const vehicle = this.deps
-        .transport()
-        .vehicles.find((v) => v.driverId === id);
+      const vehicle = this.dispatchVehicle(order, id);
       if (!vehicle || !this.fit(r, vehicle))
         fail(
           "CAPACITY_CHANGED",

@@ -19,9 +19,13 @@ export function DispatchManager({
   authenticated,
   onAuthenticate,
   storeFilter,
+  initialOrderRef,
+  onViewOrderTracking,
 }: {
   authenticated: boolean;
   storeFilter?:string[];
+  initialOrderRef?: string;
+  onViewOrderTracking?: (orderId: string) => void;
   onAuthenticate: () => void;
 }) {
   const load = useCallback(() => dispatchClient.admin(), []),
@@ -29,8 +33,11 @@ export function DispatchManager({
     a = useDispatchAction(q.refresh);
   const [transfers, setTransfers] = useState<Record<string, string>>({}),
     [config, setConfig] = useState<Record<string, number>>({});
+  const [orderRef, setOrderRef] = useState(initialOrderRef?.toLowerCase());
+  const matchesOrder = ({ id, code }: { id: string; code?: string }) =>
+    !orderRef || [id, code].some(value => value?.toLowerCase() === orderRef);
   const data = q.data,
-    visibleOrders=q.data?.orders.filter(o=>!storeFilter||storeFilter.includes(o.storeId))||[],
+    visibleOrders=q.data?.orders.filter(o=>(!storeFilter||storeFilter.includes(o.storeId)) && matchesOrder(o))||[],
     seconds = (n: number | null) =>
       n === null ? "Sin datos" : `${Math.round(n)} s`;
   if (!authenticated)
@@ -64,12 +71,13 @@ export function DispatchManager({
           Abrir BOLT Conductor
         </a>
       </div>
+      {orderRef && <button type="button" className={control} onClick={() => setOrderRef(undefined)}>Ver todos los despachos de la sede</button>}
       <Feedback error={a.error || q.error} notice={a.notice} />
       {q.loading && <p role="status">Consultando operación…</p>}
       {data && (
         <>
           <PendingDeliveryReviews orders={(data.pendingDeliveryReviews||[]).filter(o=>!storeFilter||storeFilter.includes(o.storeId))} onChanged={q.refresh}/>
-          <HistoricalOperations orders={data.historicalOrders.filter(o=>!storeFilter||storeFilter.includes(o.storeId))} onChanged={q.refresh}/>
+          <HistoricalOperations orders={data.historicalOrders.filter(o=>!storeFilter||storeFilter.includes(o.storeId))} onChanged={q.refresh} onViewOrderTracking={onViewOrderTracking}/>
           <div className="grid sm:grid-cols-4 gap-3">
             {[
               [
@@ -109,14 +117,9 @@ export function DispatchManager({
                     {order.warehouse?.name || order.storeId} · {order.status}
                   </p>
                 </div>
-                <a
-                  href={"/pedido/" + order.id}
-                  className={control}
-                  target="_blank"
-                  rel="noopener"
-                >
-                  Ver seguimiento
-                </a>
+                {onViewOrderTracking
+                  ? <button type="button" className={control} onClick={() => onViewOrderTracking(order.id)}>Ver seguimiento</button>
+                  : <a href={"/pedido/" + order.id} className={control} target="_blank" rel="noopener">Ver seguimiento</a>}
               </header>
               <div className="px-4"><OrderEntrancePhoto orderId={order.id} audience="admin"/></div>
               <div className="grid lg:grid-cols-2 gap-4 p-4">

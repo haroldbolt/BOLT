@@ -30,7 +30,7 @@ import { CartDrawer } from './components/customer/CartDrawer';
 import { CheckoutModal } from './components/customer/CheckoutModal';
 import { OrderConfirmationPage } from './components/customer/OrderConfirmationPage';
 import { OrderTracking } from './components/customer/OrderTracking';
-import { OperationsDashboard } from './components/operations/OperationsDashboard';
+import { DemoCustomerCheckout } from './components/customer/DemoCustomerCheckout';
 import { OrderHistoryModal } from './components/customer/OrderHistoryModal';
 import { PushNotificationBanner } from './components/notifications/PushNotificationBanner';
 import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
@@ -66,6 +66,16 @@ export default function App() {
   const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>([]);
   const [recentOrder, setRecentOrder] = useState<Order | null>(null);
+  const [customerDemoCheckoutEnabled, setCustomerDemoCheckoutEnabled] = useState(false);
+  useEffect(() => {
+    if (currentPath !== '/') return;
+    const controller = new AbortController();
+    fetch('/api/v1/simulation/customer-checkout', { signal: controller.signal, cache: 'no-store' })
+      .then(response => response.ok && response.headers.get('content-type')?.includes('application/json') ? response.json() : null)
+      .then(data => { if (!controller.signal.aborted) setCustomerDemoCheckoutEnabled(data?.enabled === true); })
+      .catch(() => { if (!controller.signal.aborted) setCustomerDemoCheckoutEnabled(false); });
+    return () => controller.abort();
+  }, [currentPath]);
 
   // Customer UI state
   const [selectedCategory, setSelectedCategory] = useState<CatalogSection>('Todo');
@@ -588,6 +598,9 @@ export default function App() {
   if(currentPath==='/recuperar-seguimiento')return <TrackingRecovery/>;
   if(currentPath==='/conductor')return <DriverPanel/>;
   if(currentPath==='/simulacion')return <DispatchSimulation/>;
+  if (currentPath === '/demo/pedido-suba') {
+    return <DemoCustomerCheckout onOrderSuccess={order => navigateTo('/pedido/' + encodeURIComponent(order.id))} />;
+  }
   if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking key={currentPath} orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
 
   const confirmationMatch = currentPath.match(/^\/confirmacion\/([a-zA-Z0-9_-]+)\/?$/);
@@ -615,18 +628,6 @@ export default function App() {
       />
       <PushNotificationBanner onNavigateToOrder={(id)=>navigateTo('/pedido/'+id)} />
       </>
-    );
-  }
-
-  // -------------------------------------------------------------
-  // RENDER: OPERATIONS DASHBOARD & CATALOG ADMIN (/operacion, /admin)
-  // -------------------------------------------------------------
-  if (currentPath === '/operacion' || currentPath === '/admin') {
-    return (
-      <OperationsDashboard
-        onBackToCustomer={() => navigateTo('/')}
-        onViewOrderTracking={(orderId) => navigateTo(`/pedido/${orderId}`)}
-      />
     );
   }
 
@@ -674,7 +675,7 @@ export default function App() {
             navigateTo(`/pedido/${activeOrders[0].id}`);
           }
         }}
-        onNavigateToOperacion={() => navigateTo('/operacion')}
+        onNavigateToOperacion={() => window.location.assign('/admin/nuevo/')}
         onOpenOrderHistory={() => {
           setOrderHistoryInitialTab('history');
           setIsOrderHistoryOpen(true);
@@ -701,6 +702,12 @@ export default function App() {
         }}
         wishlistCollectionsCount={wishlistCollections.length}
       />
+      {customerDemoCheckoutEnabled && <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
+        <span className="font-medium text-slate-700">Demo privada · Entrega de prueba desde Suba</span>
+        <a className="inline-flex min-h-11 items-center rounded-xl bg-red-700 px-4 font-bold text-white" href="/demo/pedido-suba">
+          Probar pedido sin cobro
+        </a>
+      </div>}
 
       {/* Main Content Container */}
       {(cartStorageWarning || catalogError || (catalogLoading && cartCount > 0) || unavailableCartItems.length > 0) && (

@@ -286,7 +286,7 @@ export const Header: React.FC<HeaderProps> = ({
                       className="w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center gap-2.5 text-red-700 font-bold transition"
                     >
                       <ShieldCheck className="w-4 h-4 text-red-600" />
-                      <span>Panel Operativo (/operacion)</span>
+                      <span>BOLT Admin</span>
                     </button>
 
                     <button

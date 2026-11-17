@@ -16,6 +16,7 @@ import { WarehouseSummary } from './WarehouseSummary';
 interface OrderTrackingProps {
   orderId: string;
   guestOnly?: boolean;
+  adminView?: boolean;
   onBack: () => void;
   onViewSummary?: () => void;
 }
@@ -75,7 +76,7 @@ function readDemoTrackingStart(orderId: string) {
   }
 }
 
-export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummary }: OrderTrackingProps) {
+export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = false, onViewSummary }: OrderTrackingProps) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -173,19 +174,20 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
     } finally { setCancelling(false); }
   };
 
-  if (!order) return <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
+  const Container = adminView ? 'section' : 'main';
+  if (!order) return <Container className="min-h-screen bg-slate-50 p-6 text-slate-900">
     <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-5">
-      <h1 className="text-lg font-bold">Seguimiento de tu pedido</h1>
+      <h1 className="text-lg font-bold">{adminView ? 'Seguimiento del pedido' : 'Seguimiento de tu pedido'}</h1>
       <p className="mt-2 text-sm text-slate-600" role={loadError ? 'alert' : 'status'}>{loadError || 'Cargando los detalles de tu entrega…'}</p>
       {loadError && <div className="mt-3 flex flex-wrap gap-3 text-sm font-semibold text-red-700">
         <button type="button" onClick={() => void load(true)} className="min-h-11 underline">Reintentar</button>
-        <a href="/recuperar-seguimiento" className="inline-flex min-h-11 items-center underline">Recuperar seguimiento privado</a>
+        {!adminView && <a href="/recuperar-seguimiento" className="inline-flex min-h-11 items-center underline">Recuperar seguimiento privado</a>}
       </div>}
       <button type="button" onClick={onBack} className="min-h-11 text-sm underline">Volver</button>
     </div>
-  </main>;
+  </Container>;
 
-  if (approvedDemo && !demoRunning) return <main className="min-h-dvh bg-slate-50 p-4 text-slate-950 sm:p-8">
+  if (!adminView && approvedDemo && !demoRunning) return <main className="min-h-dvh bg-slate-50 p-4 text-slate-950 sm:p-8">
     <section className="mx-auto max-w-xl space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
       <div className="flex flex-wrap justify-between gap-2">
         <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-red-800">
@@ -202,7 +204,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
     </section>
   </main>;
 
-  if (!approvedDemo && (order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED')) return <PendingDeliveryReceipt order={order} onBack={onBack}
+  if (!adminView && !approvedDemo && (order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED')) return <PendingDeliveryReceipt order={order} onBack={onBack}
     onRefresh={() => void load(true)} onCancel={() => void cancel()} cancelling={cancelling} error={cancelError} />;
 
   const status = tracking?.status ?? child?.fulfillmentStatus ?? order.fulfillmentStatus;
@@ -226,6 +228,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
   const stale = status === 'EN_CAMINO' && !!locationAt && !fresh;
   const provider = dispatch?.driverConfirmed ? dispatch.provider : null;
   const items = child?.items ?? order.items;
+  const cashToCollect = dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0;
   const pin = approvedDemo ? undefined : tracking?.secretDeliveryCode;
   const focusedStep = stepByStatus[status] ?? -1;
   const recordedStep = stages.reduce((last, stage, index) => timing?.stages[stage.time] ? index : last, -1);
@@ -235,14 +238,14 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
   const supportEmail = import.meta.env?.VITE_BOLT_SUPPORT_EMAIL || BUSINESS.email;
   const supportHref = /^\S+@\S+\.\S+$/.test(supportEmail) ? `mailto:${supportEmail}` : null;
 
-  return <main className="min-h-dvh bg-slate-50 px-4 pb-10 pt-3 text-slate-950 sm:px-6">
+  return <Container className="min-h-dvh bg-slate-50 px-4 pb-10 pt-3 text-slate-950 sm:px-6">
     <div className="mx-auto max-w-6xl">
       <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
         <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-semibold hover:bg-slate-100"
-          onClick={onBack}><ArrowLeft className="size-4" aria-hidden="true" /> Volver a la tienda</button>
+          onClick={onBack}><ArrowLeft className="size-4" aria-hidden="true" /> {adminView ? 'Volver a BOLT Admin' : 'Volver a la tienda'}</button>
         <div className="flex flex-wrap items-center gap-1.5 text-sm font-bold">
           {onViewSummary && <button type="button" onClick={onViewSummary} className="min-h-11 rounded-full border border-slate-200 bg-white px-3">Resumen</button>}
-          {supportHref && <a className="inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3" href={supportHref}>
+          {!adminView && supportHref && <a className="inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3" href={supportHref}>
             <CircleHelp className="size-4" aria-hidden="true" /> Ayuda</a>}
         </div>
       </header>
@@ -252,7 +255,9 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
           <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="Estado y tiempo de la entrega">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
               <p className="break-all text-sm font-semibold text-slate-600">Pedido {order.purchaseCode || order.orderNumber}</p>
-              {tracking?.simulation && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">Simulación</span>}
+              {(tracking?.simulation || order.demoCustomerCheckout) && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">
+                {order.demoCustomerCheckout ? 'Prueba sin cobro' : 'Simulación'}
+              </span>}
             </div>
             <h1 className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">{approvedDemo
               ? done ? 'Recorrido de prueba completado' : 'Tu pedido de prueba está en camino'
@@ -310,7 +315,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
         <div className="min-w-0 space-y-4">
           <LiveDeliveryMap key={child?.shipmentId ?? order.id}
             origin={tracking?.origin}
-            destination={{ name: 'Tu dirección de entrega', coordinates: tracking?.destination.coordinates }}
+            destination={{ name: adminView ? 'Dirección de entrega' : 'Tu dirección de entrega', coordinates: tracking?.destination.coordinates }}
             route={fresh ? tracking?.trail : undefined}
             inTransit={status === 'EN_CAMINO'}
             courier={fresh ? { coordinates: { lat: telemetry.latitude, lng: telemetry.longitude }, updatedAt: telemetry.timestamp, freshness: 'live' }
@@ -329,7 +334,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
               {provider && <p className="text-sm text-slate-600">{provider}</p>}
               {driver?.vehicleType && <p className="text-xs text-slate-600">{driver.vehicleType}{driver.vehiclePlate && ` · Placa ${driver.vehiclePlate}`}</p>}
             </div>
-            {contact && <div className="flex flex-wrap gap-2">
+            {!adminView && contact && <div className="flex flex-wrap gap-2">
               <a href={`tel:+${contact}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-sm font-bold">
                 <Phone className="size-4" aria-hidden="true" /> Llamar</a>
               {import.meta.env?.VITE_BOLT_TRACKING_WHATSAPP === '1' && <a href={`https://wa.me/${contact}`}
@@ -337,7 +342,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
                 <MessageCircle className="size-4" aria-hidden="true" /> WhatsApp</a>}
             </div>}
           </section>}
-          {pin && <div className="flex items-center justify-between gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
+          {!adminView && pin && <div className="flex items-center justify-between gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
             <span className="flex items-center gap-2 text-sm font-bold"><KeyRound className="size-4 shrink-0" aria-hidden="true" /> Código de entrega</span>
             <strong className="text-lg tracking-widest">{pin}</strong>
           </div>}
@@ -358,14 +363,14 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
         {handoffLabel && <p className="mt-2 text-sm text-slate-700">{handoffLabel}</p>}
         {order.deliveryAddress.details && <p className="mt-2 break-words text-sm text-slate-700">Instrucciones: {order.deliveryAddress.details}</p>}
         {!approvedDemo && order.totals.tip > 0 && <p className="mt-2 text-sm text-slate-700">Propina del pedido: {formatCOP(order.totals.tip)}</p>}
-        {!approvedDemo && (dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0) > 0 && <p className="mt-2 text-sm font-semibold">
-          Pago contra entrega: {formatCOP(dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0)}</p>}
-        {!approvedDemo && <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 font-bold"><span>Total del pedido</span><span>{formatCOP(order.totals.total)}</span></div>}
-        {!approvedDemo && (status === 'PENDIENTE_CONFIRMACION' || status === 'CONFIRMADO') && <button type="button" disabled={cancelling}
+        {!approvedDemo && (order.demoCustomerCheckout || cashToCollect > 0) && <p className="mt-2 text-sm font-semibold">
+          {order.demoCustomerCheckout ? 'Total a cobrar' : 'Pago contra entrega'}: {formatCOP(cashToCollect)}</p>}
+        {!approvedDemo && <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 font-bold"><span>{order.demoCustomerCheckout ? 'Total de prueba' : 'Total del pedido'}</span><span>{formatCOP(order.totals.total)}</span></div>}
+        {!adminView && !approvedDemo && (status === 'PENDIENTE_CONFIRMACION' || status === 'CONFIRMADO') && <button type="button" disabled={cancelling}
           onClick={() => void cancel()} className="mt-3 min-h-11 rounded-xl border border-red-200 px-3 text-sm font-bold text-red-800">
           {cancelling ? 'Cancelando…' : child ? 'Cancelar esta entrega' : 'Cancelar pedido'}</button>}
         {cancelError && <p role="alert" className="mt-2 text-sm text-red-800">{cancelError}</p>}
       </section>
     </div>
-  </main>;
+  </Container>;
 }

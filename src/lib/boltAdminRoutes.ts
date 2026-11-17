@@ -4,7 +4,8 @@ import { INITIAL_ORDERS } from '../data/seedData';
 import type { Order, Product, Store } from '../types';
 import type { DispatchRun } from '../types/dispatch';
 import type { AdminAuthService } from './adminAuthService';
-import { isBoltAdminDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
+import { isBoltAdminDemoOrder, isBoltCustomerDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
+import { DispatchError } from './dispatchService';
 import { buildBoltAdminSalesReport } from './boltAdminSales';
 import type { CatalogOperations } from './catalogOperations';
 import type { CatalogImagePatch } from './catalogImagePatch';
@@ -74,6 +75,7 @@ type Options = {
     isOrder: (order: Order) => boolean;
     createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
     guestToken: (order: Order) => string;
+    startCustomerDispatch?: (order: Order, actor: Actor) => Promise<Order>;
   };
 };
 
@@ -83,6 +85,7 @@ function sessionActor({ email: _email, ...actor }: Actor) {
 
 export function boltAdminOrder(order: Order, demoReadOnly = false) {
   const review = order.deliveryReview;
+  const customerDemo = isBoltCustomerDemoOrder(order);
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -113,7 +116,12 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
       productId, sku, name, brand, presentation, price, quantity, image, weightKg, requiresPrescription,
     })) : order.items,
     totals: order.totals,
-    payment: { method: order.payment.method, status: order.payment.status },
+    payment: {
+      method: order.payment.method,
+      status: order.payment.status,
+      ...(customerDemo && { cashToCollect: order.payment.cashToCollect }),
+    },
+    ...(customerDemo && { demoCustomerCheckout: true }),
     timestamps: order.timestamps,
     statusHistory: order.statusHistory?.map(({ previousStatus, newStatus, timestamp, actor }) => ({
       previousStatus, newStatus, timestamp, ...(!demoReadOnly && { actor }),
@@ -189,11 +197,20 @@ export function mountBoltAdmin(app: Express, options: Options) {
   const isDemoCheckoutOrder = (order: Order) => !!options.demo && !!order.creationRequestId &&
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
-  const presentOrder = (order: Order) => ({
-    ...boltAdminOrder(order, isDemoCheckoutOrder(order)),
-    ...(options.demo && order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' &&
-      order.deliveryReview?.status === 'PENDING' && isDemoInventoryDeliveryOrder(order) && { canSimulateDelivery: true }),
-  });
+  const presentOrder = (order: Order) => {
+    const run = options.demo && isBoltCustomerDemoOrder(order)
+      ? options.getDispatchRuns().find(candidate => candidate.id === order.assignmentId && candidate.orderId === order.id)
+      : undefined;
+    return {
+      ...boltAdminOrder(order, isDemoCheckoutOrder(order)),
+      ...(options.demo && order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' &&
+        order.deliveryReview?.status === 'PENDING' && isDemoInventoryDeliveryOrder(order) && { canSimulateDelivery: true }),
+      ...(run && { dispatch: {
+        id: run.id, code: run.code, status: run.status, providerId: run.providerId,
+        driverName: run.driverId && order.driver?.id === run.driverId ? order.driver.name : undefined,
+      } }),
+    };
+  };
   const isActiveProduct = (product: Product) => !product.status || product.status === 'ACTIVE';
   const isDemoFixture = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.productId;
   const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
@@ -397,7 +414,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const demo = !!options.demo;
     const allOrders = options.getOrders();
-    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) :
+    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) && !isBoltCustomerDemoOrder(order) :
       !seedOrderIds.has(order.id) && order.creationRequestFingerprint !== 'SIMULATION' && !isBoltAdminDemoOrder(order));
     res.json(buildBoltAdminSalesReport({
       period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,
@@ -448,6 +465,25 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const order = selectOrder(req, res, actor, true);
     if (order) options.startPreparation(req, res, order, actor);
   });
+
+  if (options.demo?.startCustomerDispatch) {
+    const startCustomerDispatch = options.demo.startCustomerDispatch;
+    app.post(base + '/orders/:orderId/demo-dispatch', async (req, res) => {
+      const actor = authorize(req, res);
+      if (!actor) return;
+      if (!actor.canConfirm) return res.status(403).json({ error: 'Tu cuenta no puede iniciar despachos de prueba.' });
+      const order = selectOrder(req, res, actor, true);
+      if (!order) return;
+      if (!isBoltCustomerDemoOrder(order)) return res.status(404).json({ error: 'Despacho de prueba no encontrado.' });
+      try {
+        res.json({ order: presentOrder(await startCustomerDispatch(order, actor)) });
+      } catch (error) {
+        if (error instanceof DispatchError) return res.status(error.status).json({ error: error.message, code: error.code });
+        console.error('[BOLT Admin] La simulación de despacho no pudo completarse.');
+        return res.status(500).json({ error: 'No se pudo iniciar el despacho simulado.' });
+      }
+    });
+  }
 
   app.get(base + '/inventory', (req, res) => {
     const actor = authorize(req, res);

@@ -437,6 +437,82 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   assert.deepEqual(await oldFixtureRow(restarted), fixtureBefore);
 }
 
+async function verifyUnifiedNoChargeCheckout() {
+  const endpoint = '/api/v1/simulation/customer-checkout';
+  const gated = await fetch(origin + endpoint);
+  assert.equal(gated.status, 401);
+  const [{ token: suba }, { token: kennedy }] = await Promise.all([demoLogin('suba'), demoLogin('kennedy')]);
+  const scenario = await api(endpoint);
+  assert.equal(scenario.enabled, true);
+  assert.equal(scenario.storeId, 'HUB_SUBA');
+  assert.equal(scenario.deliveryMode, 'TURBO');
+  assert.equal(scenario.cashToCollect, 0);
+  assert.equal(scenario.items[0].quantity, 1);
+  const productId = scenario.items[0].productId;
+  const inventory = async token => (await admin('/inventory?storeId=HUB_SUBA&query=' + encodeURIComponent(scenario.items[0].sku), { token })).items
+    .find(row => row.productId === productId);
+  const before = await inventory(suba);
+  const baseline = await admin('/sales?storeId=HUB_SUBA', { token: suba });
+  const checkout = { method: 'POST', idempotency: crypto.randomUUID(), body: {} };
+  await api(endpoint, { ...checkout, idempotency: 'bad-key', expected: 400 });
+  const { order, guestAccessToken, trackingPath } = await api(endpoint, checkout);
+  assert.equal(order.demoCustomerCheckout, true);
+  assert.equal(order.payment.cashToCollect, 0);
+  assert.equal(order.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
+  assert.equal(order.storeId, 'HUB_SUBA');
+  assert.deepEqual(order.dispatches, []);
+  assert.equal(trackingPath, '/pedido/' + order.id);
+  assert.equal((await api(endpoint, checkout)).order.id, order.id);
+  const after = await inventory(suba);
+  assert.deepEqual([after.stock, after.reserved, after.available], [before.stock, before.reserved + 1, before.available - 1]);
+  const path = '/orders/' + order.id;
+  const ops = { method: 'POST', token: suba, body: {} };
+  await admin(path + '/demo-dispatch', { ...ops, expected: 409 });
+  await admin(path + '/quote', { ...ops, token: kennedy, expected: 403 });
+  await admin(path + '/demo-dispatch', { ...ops, token: kennedy, expected: 403 });
+  const list = (await admin('/orders?storeId=HUB_SUBA', { token: suba })).orders;
+  assert.deepEqual(list.filter(row => row.id === order.id).map(row => row.demoCustomerCheckout), [true]);
+
+  const quote = await admin(path + '/quote', { ...ops, body: { deliveryMode: 'TURBO' } });
+  assert.equal(quote.recommendedMode, 'TURBO', quote.message);
+  assert.equal(quote.assignedStoreId, 'HUB_SUBA');
+  assert.ok(quote.confirmationToken);
+  const confirmation = {
+    ...ops, expected: [200, 201],
+    body: {
+      deliveryMode: 'TURBO', confirmationToken: quote.confirmationToken, customerAccepted: true,
+      customerAgreementReference: 'Simulación: comprador acepta el pedido de prueba sin cobro.',
+    },
+  };
+  const confirmed = await admin(path + '/confirm', confirmation);
+  assert.equal(confirmed.id, order.id);
+  assert.equal(confirmed.purchaseCode, order.purchaseCode);
+  assert.equal(confirmed.fulfillmentStatus, 'CONFIRMADO');
+  assert.equal(confirmed.payment.cashToCollect, 0);
+  assert.equal((await admin(path + '/confirm', confirmation)).id, order.id);
+  const [first, retry] = await Promise.all([
+    admin(path + '/demo-dispatch', ops),
+    admin(path + '/demo-dispatch', ops),
+  ]);
+  assert.deepEqual(first.order.dispatch, retry.order.dispatch);
+  assert.equal(first.order.fulfillmentStatus, 'EN_CAMINO');
+  assert.equal(first.order.dispatch.status, 'PICKED_UP');
+  assert.equal(first.order.dispatch.providerId, 'OWN');
+  const trackingUrl = '/api/v1' + path + '/tracking';
+  await api(trackingUrl, { expected: 403 });
+  const getTracking = () => api(trackingUrl, { guestToken: guestAccessToken });
+  const tracking = await getTracking();
+  assert.equal(tracking.orderId, order.id);
+  assert.equal(tracking.status, 'EN_CAMINO');
+  assert.equal(tracking.simulation, true);
+  assert.equal(tracking.locationStatus, 'LIVE');
+  assert.ok(tracking.telemetry && tracking.timing.dueAt);
+  assert.deepEqual(tracking.dispatches.map(row => row.cashToCollect), [0]);
+  assert.deepEqual((await admin('/sales?storeId=HUB_SUBA', { token: suba })).summary, baseline.summary);
+  assert.deepEqual(await inventory(suba), after);
+  console.log('PASS: BOLT Cliente → reserva en Suba → despacho simulado y GPS privado del mismo pedido, sin cobro ni venta real.');
+}
+
 async function verifyDemoCatalogEditing({ catalog, reserved, storeId }) {
   await stopDemo();
   await startDemo({ editCatalog: true });
@@ -514,9 +590,12 @@ try {
   const panel = await fetch(origin + entry, { headers: { Cookie: gatewayCookie } });
   assert.equal(panel.status, 200);
   assert.match(await panel.text(), /<title>BOLT Admin<\/title>/);
-  const legacy = await fetch(origin + '/admin', { headers: { Cookie: gatewayCookie } });
-  assert.equal(new URL(legacy.url).pathname, '/admin');
-  assert.match(await legacy.text(), /<title>Bolt Pets Colombia<\/title>/);
+  for (const alias of ['/admin', '/operacion?tab=DESPACHOS']) {
+    const redirected = await fetch(origin + alias, { headers: { Cookie: gatewayCookie } });
+    assert.equal(new URL(redirected.url).pathname, entry);
+    assert.match(await redirected.text(), /<title>BOLT Admin<\/title>/);
+    if (alias.includes('DESPACHOS')) assert.equal(new URL(redirected.url).searchParams.get('view'), 'dispatch');
+  }
 
   const initial = await admin('/session');
   assert.equal(initial.mode, 'demo');
@@ -715,6 +794,7 @@ try {
     fs.cpSync(volume, baselineVolume, { recursive: true, verbatimSymlinks: true });
     await verifyDemoCatalogEditing(checkout);
     await stopDemo();
+    fs.rmSync(volume, { recursive: true, force: true });
     fs.cpSync(baselineVolume, volume, { recursive: true, verbatimSymlinks: true });
     await startDemo();
     const [{ token: reloadedSuba }, { token: reloadedCoordination }] = await Promise.all([demoLogin('suba'), demoLogin('coordinacion')]);
@@ -724,6 +804,7 @@ try {
   }
   console.log('PASS inventario demo: Coordinación ajusta existencias por sede y presentación, conserva reservas e historial y el lote no se repite tras reiniciar.');
   console.log('PASS catálogo demo: Coordinación edita promoción y foto de una presentación desde Inventario, se reflejan en BOLT Cliente y persisten tras reiniciar.');
+  await verifyUnifiedNoChargeCheckout();
 } finally {
   await stopDemo();
   fs.rmSync(volume, { recursive: true, force: true });

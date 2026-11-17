@@ -6,6 +6,14 @@ import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } fro
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
 
 const BASE_URL = '/api/v1';
+let pageAdminToken: string | undefined;
+
+// Reused administrative tools share the verified live session for this page.
+export function bindPageAdminToken(token: string) {
+  pageAdminToken = token;
+  return () => { if (pageAdminToken === token) pageAdminToken = undefined; };
+}
+
 let pendingCheckoutRequest: {fingerprint:string;requestId:string} | undefined;
 
 const guestOrderKey='bolt_guest_order_access_v1';
@@ -367,6 +375,7 @@ export const api = {
   // ==========================================
 
   getStoredAdminToken(): string | null {
+    if (pageAdminToken !== undefined) return pageAdminToken;
     try{return localStorage.getItem('bolt_admin_token') || sessionStorage.getItem('bolt_admin_token');}catch{return null;}
   },
 
@@ -425,7 +434,7 @@ export const api = {
       headers: { 'Authorization': `Bearer ${token}` },
     });
     if (!res.ok) {
-      this.setStoredAdminToken(null);
+      if (pageAdminToken === undefined) this.setStoredAdminToken(null);
       return null;
     }
     return await res.json();

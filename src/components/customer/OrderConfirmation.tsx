@@ -6,7 +6,7 @@ import { ProductImage } from '../common/ProductImage';
 export type ConfirmationOrder = Pick<Order,
   'id' | 'orderNumber' | 'purchaseCode' | 'fulfillmentStatus' | 'deliveryReview' |
   'deliveryMode' | 'scheduledWindow' | 'estimatedDeliveryMinutes' | 'deliveryAddress' |
-  'items' | 'totals' | 'payment'>;
+  'items' | 'totals' | 'payment' | 'demoCustomerCheckout'>;
 
 interface Props {
   order: ConfirmationOrder;
@@ -29,8 +29,9 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
   const delivered = order.fulfillmentStatus === 'ENTREGADO';
   const unconfirmedTotal = pending || order.deliveryReview?.status === 'PENDING';
   const title = cancelled ? 'Pedido cancelado' : pending ? 'Recibimos tu pedido' : delivered ? 'Pedido entregado' : '¡Pedido confirmado!';
-  const description = cancelled ? 'Consulta los detalles de la cancelación en tu pedido.' : pending
-    ? 'La sede confirmará la entrega contigo.'
+  const description = cancelled ? 'Consulta los detalles de la cancelación en tu pedido.'
+    : order.demoCustomerCheckout ? 'Consulta la reserva en Suba y el despacho simulado con este mismo número de pedido.'
+    : pending ? 'La sede confirmará la entrega contigo.'
     : delivered ? 'Gracias por comprar en Bolt Pets.' : 'Consulta el avance de tu entrega desde el seguimiento.';
   const StatusIcon = cancelled ? X : pending ? Clock3 : Check;
   const statusStyle = cancelled ? 'bg-slate-100 text-slate-600' : pending ? 'bg-amber-100 text-amber-800' : 'bg-emerald-100 text-emerald-800';
@@ -50,6 +51,7 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
             <StatusIcon className="size-6" aria-hidden="true" />
           </span>
           <h1 className="text-2xl font-black tracking-tight sm:text-3xl">{title}</h1>
+          {order.demoCustomerCheckout && <p className="mt-2 text-sm font-bold text-red-700">Pedido de prueba sin cobro</p>}
           <p className="mt-2 text-sm text-slate-600 sm:text-base">{description}</p>
           <p className="mt-3 break-all text-sm font-bold text-slate-700">Pedido {order.purchaseCode || order.orderNumber}</p>
           <div className="mx-auto mt-5 flex max-w-sm flex-col gap-1.5 sm:flex-row sm:justify-center">
@@ -92,7 +94,7 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
                   <PriceRow label="Envío" amount={order.totals.shipping === 0 ? 'Gratis' : formatCOP(order.totals.shipping)} />
                   {order.totals.serviceFee > 0 && <PriceRow label="Tarifa de servicio" amount={formatCOP(order.totals.serviceFee)} />}
                   {order.totals.tip > 0 && <PriceRow label="Propina" amount={formatCOP(order.totals.tip)} />}
-                  <PriceRow label="Total del pedido" amount={formatCOP(order.totals.total)} strong />
+                  <PriceRow label={order.demoCustomerCheckout ? 'Total de prueba' : 'Total del pedido'} amount={formatCOP(order.totals.total)} strong />
                 </>
               )}
             </dl>
@@ -103,7 +105,9 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
               <h2 id="confirmation-payment" className="flex items-center gap-2 text-base font-extrabold">
                 <CreditCard className="size-4 text-slate-600" aria-hidden="true" /> Pago
               </h2>
-              <p className="mt-2 text-sm font-semibold text-slate-800">{paymentDetails(order.payment, unconfirmedTotal)}</p>
+              <p className="mt-2 text-sm font-semibold text-slate-800">
+                {order.demoCustomerCheckout ? `Total a cobrar: ${formatCOP(order.payment.cashToCollect ?? 0)}` : paymentDetails(order.payment, unconfirmedTotal)}
+              </p>
             </section>
 
             <section aria-labelledby="confirmation-delivery" className="rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">

@@ -37,7 +37,7 @@ try {
   const reviewPage=await (await request('/__demo', { headers: { Cookie: cookie } })).text();
   assert.match(reviewPage, /SIMULACIÓN/);
   assert.match(reviewPage, /href="\/cuenta"/);
-  assert.match(reviewPage, /href="\/demo\/checkout"/);
+  assert.match(reviewPage, /href="\/demo\/pedido-suba"/);
   assert.match(reviewPage, /href="\/admin\/nuevo\/"/);
   assert.match(reviewPage, /Registro real pendiente de configuración/);
   assert.equal((await request('/api/v1/simulation', { headers: { Cookie: cookie } })).status, 200);
@@ -56,8 +56,15 @@ try {
     assert.equal(resumed.headers.get('location'), previewPath);
     assert.match(resumed.headers.get('set-cookie'), /__Host-bolt_demo_return=;.*Max-Age=0/);
   }
-  for (const adminPath of ['/admin/nuevo', '/admin/nuevo/']) {
-    const entry = await request(adminPath);
+  for (const [path, expected] of [
+    ['/admin/nuevo', '/admin/nuevo/'],
+    ['/admin/nuevo/', '/admin/nuevo/'],
+    ['/operacion?tab=DESPACHOS', '/admin/nuevo/?view=dispatch'],
+    ['/admin?view=scheduled&sede=HUB_SUBA&pedido=BP-000014&redirect=https://evil.example', '/admin/nuevo/?view=scheduled&sede=HUB_SUBA&pedido=BP-000014'],
+    ['/demo/pedido-suba', '/demo/pedido-suba'],
+    ['/pedido/ORD-fixture', '/pedido/ORD-fixture'],
+  ]) {
+    const entry = await request(path);
     assert.match(await entry.text(), /Clave de la reunión/);
     const continuation = entry.headers.get('set-cookie').split(';')[0];
     const resumed = await request('/__demo/login', {
@@ -65,7 +72,7 @@ try {
       headers: { Origin: origin, Cookie: continuation },
       body: new URLSearchParams({ password }),
     });
-    assert.equal(resumed.headers.get('location'), '/admin/nuevo/');
+    assert.equal(resumed.headers.get('location'), expected);
   }
   assert.equal((await request('/api/v1/test', { method: 'POST', headers: { Cookie: cookie, Origin: 'https://evil.example' }, body: '{}' })).status, 403);
   assert.equal((await request('/api/v1/test', { method: 'POST', headers: { Cookie: cookie, Origin: origin, Authorization: 'Bearer fixture-admin', 'X-Order-Token': 'fixture-guest', 'X-Forwarded-Host': 'evil.example' }, body: '{}' })).status, 200);
