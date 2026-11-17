@@ -23,6 +23,7 @@ import { describeWarehouse } from './src/lib/warehouseAssignment';
 import { enrichDestination } from './src/lib/serverGeography';
 import { parseAddressComponents } from './src/lib/addressGeography';
 import { buildCustomerTracking, CUSTOMER_TRACKING_TRAIL_POINTS } from './src/lib/customerTracking';
+import { isApprovedDemoTracking, projectApprovedDemoTracking } from './src/lib/demoTrackingApproval';
 // Set DISABLE_HMR per AI Studio environment constraints
 if (process.env.DISABLE_HMR === undefined) {
   process.env.DISABLE_HMR = 'true';
@@ -334,9 +335,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     res.json(filtered);
   });
 
+  const hasDemoTrackingApproval = (order: Order) =>
+    isApprovedDemoTracking(order, isDispatchSimulation, process.env.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID);
   const presentOrder = (order: Order) => {
     const warehouse=stores.find(store=>store.id===order.storeId);
-    return {...order, dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
+    return {...order, demoTrackingPreview: hasDemoTrackingApproval(order) ? true : undefined, dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
       storeName:order.warehouseAssignment?.store.name || warehouse?.name || '',
       warehouse:order.warehouseAssignment?.store || describeWarehouse(warehouse)};
   };
@@ -917,6 +920,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       simulation: isDispatchSimulation,
     });
     res.set('Cache-Control', 'private, no-store');
+    const simulationStart = req.query.simulationStartedAt;
+    if (typeof simulationStart === 'string' && /^\d{13}$/.test(simulationStart) && !child && hasDemoTrackingApproval(order)) {
+      return res.json(projectApprovedDemoTracking(tracking, Number(simulationStart), Date.parse(tracking.timing.serverTime)));
+    }
     res.json({
       ...tracking,
       dispatches: dispatchService.customerDispatches(order.id),

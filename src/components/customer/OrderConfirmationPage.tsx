@@ -3,6 +3,12 @@ import { api } from '../../lib/api';
 import { OrderConfirmation, type ConfirmationOrder } from './OrderConfirmation';
 import { OrderTracking } from './OrderTracking';
 
+type ConfirmationWithDemo = ConfirmationOrder & { demoTrackingPreview?: true };
+
+function awaitingConfirmation(order: ConfirmationOrder) {
+  return order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED';
+}
+
 interface Props {
   orderId: string;
   initialOrder: ConfirmationOrder | null;
@@ -11,12 +17,12 @@ interface Props {
 }
 
 export function OrderConfirmationPage({ orderId, initialOrder, onTrack, onContinue }: Props) {
-  const [order, setOrder] = useState(initialOrder);
+  const [order, setOrder] = useState<ConfirmationWithDemo | null>(initialOrder);
   const [loadFailed, setLoadFailed] = useState(false);
   const [showSummary, setShowSummary] = useState(false);
 
   useEffect(() => {
-    if (initialOrder) return;
+    if (initialOrder && !awaitingConfirmation(initialOrder)) return;
     let active = true;
     api.getOrder(orderId, true).then((result) => {
       if (active) setOrder(result);
@@ -27,8 +33,7 @@ export function OrderConfirmationPage({ orderId, initialOrder, onTrack, onContin
   }, [orderId, initialOrder]);
 
   if (order) {
-    const awaitingConfirmation = order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED';
-    const canShowTracking = !awaitingConfirmation && order.fulfillmentStatus !== 'CANCELADO';
+    const canShowTracking = (order.demoTrackingPreview || !awaitingConfirmation(order)) && order.fulfillmentStatus !== 'CANCELADO';
     if (canShowTracking && !showSummary) {
       return <OrderTracking key={orderId} orderId={orderId} guestOnly onBack={onContinue} onViewSummary={() => setShowSummary(true)} />;
     }

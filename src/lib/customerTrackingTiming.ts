@@ -14,7 +14,7 @@ export function readDeliveryClock(
   const end = terminalAt === undefined ? now : readDate(terminalAt);
   const elapsedSeconds = start === null || end === null || !Number.isFinite(end) || end < start
     ? null : Math.floor((end - start) / 1000);
-  const due = timing?.source === 'VERIFIED_QUOTE' || timing?.source === 'BOOKED_WINDOW'
+  const due = timing?.source === 'VERIFIED_QUOTE' || timing?.source === 'BOOKED_WINDOW' || timing?.source === 'SIMULATION'
     ? readDate(timing.dueAt) : null;
   const remainingSeconds = terminalAt !== undefined || due === null || !Number.isFinite(now) || (start !== null && due < start)
     ? null : Math.max(0, Math.ceil((due - now) / 1000));

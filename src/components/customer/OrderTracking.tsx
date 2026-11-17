@@ -62,6 +62,19 @@ function clientPhone(value?: string) {
   return /^3\d{9}$/.test(digits) ? '57' + digits : /^573\d{9}$/.test(digits) ? digits : null;
 }
 
+function demoTrackingKey(orderId: string) {
+  return 'bolt-demo-tracking-start:' + orderId;
+}
+
+function readDemoTrackingStart(orderId: string) {
+  try {
+    const startedAt = Number(sessionStorage.getItem(demoTrackingKey(orderId)));
+    return Number.isSafeInteger(startedAt) && startedAt > 0 ? startedAt : undefined;
+  } catch {
+    return undefined;
+  }
+}
+
 export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummary }: OrderTrackingProps) {
   const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
   const [loadError, setLoadError] = useState('');
@@ -69,6 +82,8 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
   const [now, setNow] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
+  const [startingDemo, setStartingDemo] = useState(false);
+  const demoStart = useRef<{ orderId: string; startedAt: number } | null>(null);
   const requestVersion = useRef(0);
   const currentRequest = useRef<number | undefined>(undefined);
 
@@ -80,14 +95,19 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
       const order = await api.getOrder(orderId, guestOnly);
       if (version !== requestVersion.current) return;
       const shipmentId = order.isSplitOrder ? order.childShipments?.[activeIndex]?.shipmentId : undefined;
-      const tracking = await api.getTracking(orderId, shipmentId, guestOnly);
+      const demoStartedAt = order.demoTrackingPreview
+        ? (demoStart.current?.orderId === orderId ? demoStart.current.startedAt : readDemoTrackingStart(orderId))
+        : undefined;
+      const tracking = await api.getTracking(orderId, shipmentId, guestOnly, demoStartedAt);
       if (version !== requestVersion.current) return;
       const received = { order, tracking, receivedAt: performance.now() };
       setSnapshot(received);
       setNow(getClockTime(received));
       setLoadError('');
-      pushService.notifyWarehouseAssignment(order);
-      pushService.notifyDispatchEvents(order);
+      if (!order.demoTrackingPreview) {
+        pushService.notifyWarehouseAssignment(order);
+        pushService.notifyDispatchEvents(order);
+      }
     } catch (error) {
       if (version !== requestVersion.current) return;
       const status = (error as { status?: number })?.status;
@@ -128,9 +148,21 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
   const shipments = order?.isSplitOrder ? order.childShipments ?? [] : [];
   const child = shipments[activeIndex];
   const tracking = order && snapshot && snapshot.tracking.shipmentId === child?.shipmentId ? snapshot.tracking : null;
+  const approvedDemo = order?.demoTrackingPreview === true;
+  const demoRunning = approvedDemo && tracking?.timing.source === 'SIMULATION';
+
+  const startDemoTracking = async () => {
+    if (!approvedDemo || startingDemo) return;
+    const startedAt = Date.parse(tracking?.timing.serverTime ?? '');
+    if (!Number.isSafeInteger(startedAt) || startedAt <= 0) return;
+    setStartingDemo(true);
+    demoStart.current = { orderId, startedAt };
+    try { sessionStorage.setItem(demoTrackingKey(orderId), String(startedAt)); } catch { /* The view keeps the timestamp in memory. */ }
+    try { await load(true); } finally { setStartingDemo(false); }
+  };
 
   const cancel = async () => {
-    if (!order) return;
+    if (!order || approvedDemo) return;
     setCancelling(true);
     setCancelError(null);
     try {
@@ -153,7 +185,24 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
     </div>
   </main>;
 
-  if (order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED') return <PendingDeliveryReceipt order={order} onBack={onBack}
+  if (approvedDemo && !demoRunning) return <main className="min-h-dvh bg-slate-50 p-4 text-slate-950 sm:p-8">
+    <section className="mx-auto max-w-xl space-y-4 rounded-3xl border border-slate-200 bg-white p-5 shadow-sm sm:p-8">
+      <div className="flex flex-wrap justify-between gap-2">
+        <button type="button" onClick={onBack} className="inline-flex min-h-11 items-center gap-2 text-sm font-bold text-red-800">
+          <ArrowLeft className="size-4" aria-hidden="true" /> Volver a BOLT</button>
+        {onViewSummary && <button type="button" onClick={onViewSummary} className="min-h-11 rounded-full border border-slate-200 px-3 text-sm font-bold">Resumen</button>}
+      </div>
+      <p className="text-sm font-semibold text-slate-600">Pedido {order.purchaseCode || order.orderNumber}</p>
+      <h1 className="text-2xl font-black">Recorrido de prueba aprobado</h1>
+      <p className="text-sm text-slate-700">Sigue el cronómetro Turbo y la ubicación simulada del repartidor. Cobro de la prueba: {formatCOP(0)}.</p>
+      <button type="button" onClick={() => void startDemoTracking()} disabled={startingDemo || !tracking?.timing.serverTime}
+        className="min-h-11 rounded-xl bg-red-700 px-4 text-sm font-bold text-white disabled:opacity-50">
+        {startingDemo ? 'Iniciando…' : 'Iniciar recorrido de prueba'}</button>
+      {loadError && <p role="alert" className="text-sm text-red-800">{loadError}</p>}
+    </section>
+  </main>;
+
+  if (!approvedDemo && (order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED')) return <PendingDeliveryReceipt order={order} onBack={onBack}
     onRefresh={() => void load(true)} onCancel={() => void cancel()} cancelling={cancelling} error={cancelError} />;
 
   const status = tracking?.status ?? child?.fulfillmentStatus ?? order.fulfillmentStatus;
@@ -167,9 +216,9 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
   const scheduled = timing?.source === 'BOOKED_WINDOW' ? tracking?.scheduledWindow : undefined;
   const countdown = !terminal && !incident && !isScheduled && clock.remainingSeconds !== null && !clock.overdue;
   const dispatches: PublicDispatch[] = (order as Order & { dispatches?: PublicDispatch[] }).dispatches ?? [];
-  const dispatch = dispatches.find(entry => entry.shipmentId === child?.shipmentId);
+  const dispatch = approvedDemo ? undefined : dispatches.find(entry => entry.shipmentId === child?.shipmentId);
   const driver = tracking?.driver;
-  const contact = status === 'REPARTIDOR_ASIGNADO' || status === 'EN_CAMINO' ? clientPhone(driver?.phone) : null;
+  const contact = !approvedDemo && (status === 'REPARTIDOR_ASIGNADO' || status === 'EN_CAMINO') ? clientPhone(driver?.phone) : null;
   const locationAt = tracking?.lastLocationAt;
   const telemetry = tracking?.telemetry;
   const fresh = status === 'EN_CAMINO' && tracking?.locationStatus === 'LIVE' && telemetry &&
@@ -177,7 +226,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
   const stale = status === 'EN_CAMINO' && !!locationAt && !fresh;
   const provider = dispatch?.driverConfirmed ? dispatch.provider : null;
   const items = child?.items ?? order.items;
-  const pin = tracking?.secretDeliveryCode;
+  const pin = approvedDemo ? undefined : tracking?.secretDeliveryCode;
   const focusedStep = stepByStatus[status] ?? -1;
   const recordedStep = stages.reduce((last, stage, index) => timing?.stages[stage.time] ? index : last, -1);
   const progress = Math.max(focusedStep, recordedStep);
@@ -205,7 +254,10 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
               <p className="break-all text-sm font-semibold text-slate-600">Pedido {order.purchaseCode || order.orderNumber}</p>
               {tracking?.simulation && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">Simulación</span>}
             </div>
-            <h1 className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">{headings[status]}</h1>
+            <h1 className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">{approvedDemo
+              ? done ? 'Recorrido de prueba completado' : 'Tu pedido de prueba está en camino'
+              : headings[status]}</h1>
+            {approvedDemo && <p className="mt-2 text-sm font-semibold text-slate-700">Cobro de la prueba: {formatCOP(0)}</p>}
             {dispatch?.code && shipments.length > 1 && <p className="mt-1 text-sm text-slate-600">Despacho {dispatch.code}</p>}
             {countdown ? <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-red-700 px-4 py-3 text-white">
               <div><p className="font-black">Turbo</p><p className="text-xs">Tiempo estimado restante</p></div>
@@ -214,12 +266,15 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
               <p className="font-bold">Entrega programada</p>
               <p>{scheduled.dateLabel} · {scheduled.displayWindowShort || scheduled.displayWindow}</p>
             </div> : !terminal && !incident ? <p className="mt-3 text-sm text-slate-700">
-              {isScheduled ? 'Franja de entrega por confirmar.' : clock.overdue ? 'El tiempo estimado ya pasó. Aquí puedes seguir el estado de la entrega.' : 'Hora de llegada por confirmar.'}
+              {approvedDemo ? 'Finalizando recorrido de prueba…' : isScheduled ? 'Franja de entrega por confirmar.' : clock.overdue ? 'El tiempo estimado ya pasó. Aquí puedes seguir el estado de la entrega.' : 'Hora de llegada por confirmar.'}
             </p> : null}
             {showElapsed && <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
               <Clock3 className="size-4 shrink-0" aria-hidden="true" />
               <span>{done ? 'Tiempo de entrega' : cancelled ? 'Tiempo hasta la cancelación' : 'Tiempo desde la confirmación'}: <span className="font-bold tabular-nums text-slate-900">{formatDeliveryClock(clock.elapsedSeconds!)}</span></span>
             </p>}
+            {approvedDemo && done && <button type="button" onClick={() => void startDemoTracking()} disabled={startingDemo}
+              className="mt-3 min-h-11 rounded-xl bg-red-700 px-4 text-sm font-bold text-white disabled:opacity-50">
+              {startingDemo ? 'Iniciando…' : 'Repetir recorrido de prueba'}</button>}
             {loadError && <p role="status" className="mt-2 text-sm text-amber-900">No se pudo actualizar. Mostramos el último estado disponible.</p>}
           </section>
 
@@ -291,7 +346,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
 
       <section aria-label="Detalles del pedido" className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
         <WarehouseSummary order={order} />
-        <OrderEntrancePhoto orderId={order.id} audience={guestOnly ? 'customer' : api.getStoredAdminToken() ? 'admin' : 'customer'} />
+        {!approvedDemo && <OrderEntrancePhoto orderId={order.id} audience={guestOnly ? 'customer' : api.getStoredAdminToken() ? 'admin' : 'customer'} />}
         <h2 className="mt-3 font-bold">{child ? 'Productos de esta entrega' : 'Productos del pedido'}</h2>
         <ul className="mt-1 divide-y divide-slate-100 text-sm">
           {items.map(item => <li key={item.productId} className="flex flex-wrap items-start justify-between gap-2 py-2">
@@ -302,11 +357,11 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummar
         {tracking?.cargo && <p className="mt-1 text-sm text-slate-600">Peso con embalaje: {new Intl.NumberFormat('es-CO').format(tracking.cargo.grossWeightGrams / 1000)} kg</p>}
         {handoffLabel && <p className="mt-2 text-sm text-slate-700">{handoffLabel}</p>}
         {order.deliveryAddress.details && <p className="mt-2 break-words text-sm text-slate-700">Instrucciones: {order.deliveryAddress.details}</p>}
-        {order.totals.tip > 0 && <p className="mt-2 text-sm text-slate-700">Propina del pedido: {formatCOP(order.totals.tip)}</p>}
-        {(dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0) > 0 && <p className="mt-2 text-sm font-semibold">
+        {!approvedDemo && order.totals.tip > 0 && <p className="mt-2 text-sm text-slate-700">Propina del pedido: {formatCOP(order.totals.tip)}</p>}
+        {!approvedDemo && (dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0) > 0 && <p className="mt-2 text-sm font-semibold">
           Pago contra entrega: {formatCOP(dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0)}</p>}
-        <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 font-bold"><span>Total del pedido</span><span>{formatCOP(order.totals.total)}</span></div>
-        {(status === 'PENDIENTE_CONFIRMACION' || status === 'CONFIRMADO') && <button type="button" disabled={cancelling}
+        {!approvedDemo && <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 font-bold"><span>Total del pedido</span><span>{formatCOP(order.totals.total)}</span></div>}
+        {!approvedDemo && (status === 'PENDIENTE_CONFIRMACION' || status === 'CONFIRMADO') && <button type="button" disabled={cancelling}
           onClick={() => void cancel()} className="mt-3 min-h-11 rounded-xl border border-red-200 px-3 text-sm font-bold text-red-800">
           {cancelling ? 'Cancelando…' : child ? 'Cancelar esta entrega' : 'Cancelar pedido'}</button>}
         {cancelError && <p role="alert" className="mt-2 text-sm text-red-800">{cancelError}</p>}

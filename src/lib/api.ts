@@ -173,11 +173,12 @@ export const api = {
     return await res.json();
   },
 
-  async getTracking(orderId: string, shipmentId?: string, guestOnly=false): Promise<CustomerTracking> {
+  async getTracking(orderId: string, shipmentId?: string, guestOnly=false, simulationStartedAt?: number): Promise<CustomerTracking> {
     const orderPath = `${BASE_URL}/orders/${encodeURIComponent(orderId)}/tracking`;
-    const url = shipmentId
-      ? `${orderPath}?shipmentId=${encodeURIComponent(shipmentId)}`
-      : orderPath;
+    const params = new URLSearchParams();
+    if (shipmentId) params.set('shipmentId', shipmentId);
+    if (simulationStartedAt !== undefined) params.set('simulationStartedAt', String(simulationStartedAt));
+    const url = params.size > 0 ? `${orderPath}?${params}` : orderPath;
     const res = await authorizedFetch(url,{cache:'no-store'},guestOnly);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
