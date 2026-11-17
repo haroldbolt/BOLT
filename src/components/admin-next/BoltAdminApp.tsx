@@ -370,6 +370,10 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   }
 
   function openDispatch(order: AdminOrder) {
+    if (!isDemo) {
+      openLiveDispatches(order.id);
+      return;
+    }
     navigate('dispatch');
     setSelectedOrder(order.id);
   }
@@ -693,6 +697,11 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
+  const canPrepare = !order.demoReadOnly && !order.demoCustomerCheckout && actor.canConfirm && !order.isSplitOrder;
+  const startingPreparation = order.fulfillmentStatus === 'CONFIRMADO';
+  const canOpenDispatch = isDemo ? !!order.dispatch || (!!order.demoCustomerCheckout && !isClosed(order))
+    : !!order.dispatch || (!isPending(order) && !isClosed(order));
+  const cashToCollect = order.payment?.cashToCollect ?? 0;
   useEffect(() => {
     heading.current?.focus({ preventScroll: true });
     if (window.matchMedia('(max-width: 1050px)').matches) heading.current?.scrollIntoView({ block: 'start' });
@@ -701,8 +710,13 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
     if (preparing) return;
     setPreparing(true); setError('');
     try {
-      const result = await boltAdmin.startPreparation(token, order.id);
-      changed(result, 'Alistamiento iniciado. El pedido está en preparación.');
+      if (startingPreparation) {
+        const result = await boltAdmin.startPreparation(token, order.id);
+        changed(result, 'Alistamiento iniciado. El pedido está en preparación.');
+      } else {
+        const result = await boltAdmin.readyForDispatch(token, order.id);
+        changed(result, 'Pedido listo para despacho. Consulta su asignación en Despachos.');
+      }
     } catch (failure) { setError(errorText(failure)); }
     finally { setPreparing(false); }
   };
@@ -719,16 +733,18 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
       <section className="ba-order-items"><h3>Productos</h3><ul>{order.items.map(item => <li key={`${item.productId}:${item.sku}`}><span>{item.name}<small>{item.presentation}</small></span><strong>×{number.format(item.quantity)}</strong></li>)}</ul>
         <div><span>{isPending(order) ? 'Subtotal de productos' : 'Total del pedido'}</span><strong>{formatCOP(isPending(order) ? order.totals.subtotal : order.totals.total)}</strong></div>
       </section>
+      {!order.demoCustomerCheckout && order.payment?.status === 'PENDIENTE' && cashToCollect > 0 &&
+        <p className="ba-info">Efectivo por recaudar · {formatCOP(cashToCollect)}</p>}
       {order.demoCustomerCheckout && <p className="ba-info"><FlaskConical size={16} aria-hidden="true" /> Pedido de prueba{order.payment?.cashToCollect === 0 && <> · Recaudo {formatCOP(order.payment.cashToCollect)}</>}</p>}
       {order.demoReadOnly && <p className="ba-info">Pedido recibido desde BOLT Cliente. Disponible para consulta en la demo.</p>}
       {!order.demoReadOnly && isPending(order) && (actor.canConfirm ? <DeliveryReviewPanel order={order} token={token} isDemo={isDemo}
         onConfirmed={result => changed(result, 'Entrega confirmada. Puedes consultar el nuevo estado del pedido.')} />
         : <p className="ba-info"><ShieldCheck size={16} /> Tu perfil no puede confirmar entregas.</p>)}
-      {!order.demoReadOnly && !order.demoCustomerCheckout && actor.canConfirm && order.fulfillmentStatus === 'CONFIRMADO' && order.isSplitOrder !== true && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
-        {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} Iniciar alistamiento
+      {canPrepare && (startingPreparation || order.fulfillmentStatus === 'EN_ALISTAMIENTO') && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
+        {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} {startingPreparation ? 'Iniciar alistamiento' : 'Marcar listo para despacho'}
       </button>}
-      {order.demoCustomerCheckout && !isClosed(order) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
-      {(order.dispatch || (order.demoCustomerCheckout && !isClosed(order))) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewDispatch}><Truck size={16} aria-hidden="true" /> Ver despacho</button>}
+      {(!isDemo || order.demoCustomerCheckout) && order.items.length === 1 && !isClosed(order) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
+      {canOpenDispatch && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewDispatch}><Truck size={16} aria-hidden="true" /> Ver despacho</button>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
       {!!order.statusHistory?.length && <details className="ba-order-history"><summary>Historial del pedido</summary>
         <ul>{[...order.statusHistory].reverse().map((item, index) => <li key={`${item.timestamp}:${index}`}>

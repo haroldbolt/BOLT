@@ -64,7 +64,8 @@ function extractActor(req:Request, _defaultRole?:ActorRole):OrderActor {
 
 // Authoritative in-memory state initialized from local catalog repository (persisted overrides + 3.830 productos agrupados)
 let stores: Store[] = localCatalogService.getStores().length > 0 ? localCatalogService.getStores() : JSON.parse(JSON.stringify(INITIAL_STORES));
-const activeStores = () => stores.filter(store => store.isActive);
+const pilotStoreId = process.env.BOLT_PILOT_STORE_ID;
+const activeStores = () => stores.filter(store => store.isActive && (!pilotStoreId || store.id === pilotStoreId));
 let products: Product[] = catalogRepository.getAllProducts(true);
 
 // Registro de carga de catálogo local
@@ -77,6 +78,13 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
 const isDispatchSimulation=simulationEnabled();
+if (pilotStoreId && (pilotStoreId !== 'HUB_SUBA' || isDispatchSimulation || !activeStores().length)) {
+  throw Error('El piloto requiere una instalación operativa separada con Suba activa.');
+}
+const pilotCheckoutHold = {
+  code: 'RAPPI_CASH_UNCONFIRMED',
+  error: 'Estamos preparando el recaudo en efectivo para las entregas de Suba. Aún no puedes confirmar tu pedido.',
+};
 if (isDispatchSimulation) catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
 const catalogOperations = new CatalogOperations({
   file:path.join(process.cwd(),'.bolt-private','catalog-operations.json'),
@@ -108,6 +116,25 @@ function quoteForPurchase(request: any, catalog=products, orderList=ordersReposi
   const context={...transportContext(),orders:capacityOrders};
   const scopedContext=isDispatchSimulation?boltAdminDemoReviewContext(reviewingOrder,context):context;
   const quote=evaluateDeliveryQuote(request,stores,catalog,capacityOrders,scopedContext);
+  if (pilotStoreId && quote.territoryInfo?.isCovered &&
+      quote.eligibilityStatus !== 'OUT_OF_COVERAGE' && quote.eligibilityStatus !== 'ADDRESS_NEEDS_CONFIRMATION') {
+    return {
+      ...quote,
+      eligibilityStatus: 'ESTIMATE_UNAVAILABLE' as const,
+      reasonCode: pilotCheckoutHold.code,
+      message: pilotCheckoutHold.error,
+      basketValidated: false,
+      recommendedMode: null,
+      effectiveMode: undefined,
+      availableModes: { turbo: false, turboDividido: false, scheduled: false },
+      scheduledEligible: false,
+      scheduledSlots: [],
+      autoSwitchedToScheduled: false,
+      transportPlan: undefined,
+      confirmationToken: undefined,
+      reviewRequestToken: undefined,
+    };
+  }
   if(quote.recommendedMode && quote.transportPlan?.feasible && quote.basketValidated) quote.confirmationToken=crypto.createHash('sha256').update(JSON.stringify({
     destination:{address:request.destination.address,coordinates:request.destination.coordinates,locality:request.destination.locality,municipality:request.destination.municipality},mode:quote.recommendedMode,slot:request.scheduledWindow ? {date:request.scheduledWindow.date,slotId:request.scheduledWindow.slotId}:null,
     charges:quote.charges,shipments:quote.transportPlan.shipments,items:(request.items||[]).map((i:any)=>[i.productId,i.quantity,catalog.find(p=>p.id===i.productId)?.price]).sort(),
@@ -481,6 +508,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           ? { code: 'PAYMENT_UNAVAILABLE', error: 'El pago en línea aún no está disponible. Selecciona efectivo contra entrega.' }
           : { code: 'INVALID_PAYMENT_METHOD', error: 'Selecciona un medio de pago válido.' });
       }
+
+      // The pilot opens orders once a production Cargo integration can validate collection on the backend.
+      if (pilotStoreId) return res.status(503).json(pilotCheckoutHold);
+
       if (!customer || !['name', 'phone', 'email'].every(field => typeof customer[field] === 'string' && customer[field].trim())) {
         return res.status(400).json({ error: 'Completa tus datos de contacto.' });
       }
@@ -825,6 +856,23 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const {userId,name}=(req as any).adminSession;
     confirmPendingDelivery(req,res,ordersRepository.getOrderById(req.params.orderId),{id:userId,name,role:'ADMINISTRADOR'});
   });
+  const updatePreparation = (res: Response, order: Order, actor: ReviewActor,
+    target: 'EN_ALISTAMIENTO' | 'LISTO_PARA_DESPACHO', current: 'CONFIRMADO' | 'EN_ALISTAMIENTO', reason: string) => {
+    if (order.isSplitOrder && order.childShipments?.length) {
+      return res.status(409).json({error:'Gestiona el alistamiento por entrega en Despachos.'});
+    }
+    if (order.fulfillmentStatus === target || (target === 'LISTO_PARA_DESPACHO' && order.timestamps.prepCompletedAt)) {
+      return res.json(boltAdminOrder(order));
+    }
+    if (order.fulfillmentStatus !== current) {
+      return res.status(409).json({error: target === 'EN_ALISTAMIENTO'
+        ? 'Solo se puede iniciar el alistamiento de un pedido confirmado.'
+        : 'Inicia el alistamiento antes de marcar el pedido listo para despacho.'});
+    }
+    const result = ordersRepository.transaction(() => ordersRepository.transitionStatus(order.id, target, actor, {reason}));
+    if (!result.success || !result.order) return res.status(result.code || 409).json({error:result.error || 'No se pudo actualizar el alistamiento.'});
+    return res.json(boltAdminOrder(result.order));
+  };
   mountBoltAdmin(app,{
     adminAuth:adminAuthService,
     catalog:catalogOperations,
@@ -837,26 +885,21 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       }};
     },
     getProducts:()=>products,
-    getStores:()=>stores,
+    getStores:activeStores,
     getOrders:()=>ordersRepository.getAllOrders(),
     getDispatchRuns:()=>Object.values(ordersRepository.dispatchState.runs),
+    getDispatchRun:id=>ordersRepository.dispatchState.runs[id],
     getOrder:id=>ordersRepository.getOrderById(id),
     quote:quotePendingDelivery,
     confirm:(req,res,order,actor)=>confirmPendingDelivery(req,res,order,{
       id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
     },boltAdminOrder),
-    startPreparation:(_req,res,order,actor)=>{
-      if(order.isSplitOrder && order.childShipments?.length) {
-        return res.status(409).json({error:'Gestiona el alistamiento por entrega desde el panel actual.'});
-      }
-      if(order.fulfillmentStatus==='EN_ALISTAMIENTO')return res.json(boltAdminOrder(order));
-      if(order.fulfillmentStatus!=='CONFIRMADO')return res.status(409).json({error:'Solo se puede iniciar el alistamiento de un pedido confirmado.'});
-      const result=ordersRepository.transaction(()=>ordersRepository.transitionStatus(order.id,'EN_ALISTAMIENTO',{
-        id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
-      },{reason:'Alistamiento iniciado desde BOLT Admin'}));
-      if(!result.success || !result.order)return res.status(result.code || 409).json({error:result.error || 'No se pudo iniciar el alistamiento.'});
-      res.json(boltAdminOrder(result.order));
-    },
+    startPreparation:(_req,res,order,actor)=>updatePreparation(res, order, {
+      id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
+    }, 'EN_ALISTAMIENTO', 'CONFIRMADO', 'Alistamiento iniciado desde BOLT Admin'),
+    readyForDispatch:(_req,res,order,actor)=>updatePreparation(res, order, {
+      id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
+    }, 'LISTO_PARA_DESPACHO', 'EN_ALISTAMIENTO', 'Pedido preparado desde BOLT Admin'),
     demo:isDispatchSimulation ? {
       productId:BOLT_ADMIN_DEMO_PRODUCT_ID,
       editCatalog:process.env.BOLT_DEMO_EDIT_CATALOG === '1',
