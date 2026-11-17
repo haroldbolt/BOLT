@@ -87,7 +87,19 @@ const pilotCheckoutHold = {
   code: 'RAPPI_CASH_UNCONFIRMED',
   error: 'Estamos preparando el recaudo en efectivo para las entregas de Suba. Aún no puedes confirmar tu pedido.',
 };
-if (isDispatchSimulation) catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
+if (isDispatchSimulation) {
+  catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
+  const fixture = boltAdminDemoProduct();
+  catalogRepository.registerBaselineProduct({
+    ...fixture,
+    id: cashDemoSku,
+    sku: cashDemoSku,
+    name: 'Alimento de prueba · Efectivo Suba',
+    description: 'Referencia ficticia para probar el checkout en efectivo.',
+    status: 'ACTIVE',
+    presentaciones: undefined,
+  });
+}
 const pawiseSample = isDispatchSimulation
   ? localCatalogService.getAllGroupedProducts().find(product => product.id === 'gid://shopify/Product/10416260317464')
   : undefined;
@@ -335,7 +347,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
     const { category, species, storeId, q, all } = req.query;
-    let filtered = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
+    let filtered = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID && p.id!==cashDemoSku);
 
     // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
     if (all !== 'true') {
@@ -429,7 +441,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if (isDispatchSimulation) {
     const cashCheckoutFixture = () => {
       const store = activeStores().find(candidate => candidate.id === cashDemoStoreId);
-      const product = products.find(candidate => candidate.id === 'SIM-CARD' && candidate.sku === cashDemoSku && candidate.status === 'ACTIVE');
+      const product = products.find(candidate => candidate.id === cashDemoSku && candidate.sku === cashDemoSku && candidate.status === 'ACTIVE');
       if (!store || !product?.transport || !Number.isSafeInteger(product.price) || product.price <= 0) return undefined;
       return {
         store,
@@ -593,6 +605,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       }
       const items=Array.from(canonicalItems.values());
       const cashDemo = isDispatchSimulation && customer.email === cashDemoEmail;
+      if (isDispatchSimulation && !cashDemo && items.some(item => item.sku === cashDemoSku)) {
+        return res.status(400).json({ error: 'Usa la pantalla de prueba de efectivo en Suba.' });
+      }
       if (cashDemo && ((req as any).customerAccountId || items.length !== 1 || items[0].sku !== cashDemoSku ||
           items[0].quantity !== 1 || submittedPaymentMethod !== 'CASH_ON_DELIVERY' || tip !== 0 ||
           requestedDeliveryMode !== 'TURBO' || req.body.requestDeliveryReview === true)) {
@@ -1379,7 +1394,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   app.get('/api/v1/admin/catalog', requireAdminAuth, (req: Request, res: Response) => {
     const { q, category, status } = req.query;
-    let all = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
+    let all = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID && p.id!==cashDemoSku);
 
     if (status && status !== 'TODOS') {
       all = all.filter(p => (p.status || 'ACTIVE') === status);

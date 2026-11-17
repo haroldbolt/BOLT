@@ -87,7 +87,7 @@ try {
   const fixture = await api(cashCheckoutPath);
   const { product, address } = fixture;
   assert.equal(fixture.store.id, storeId);
-  assert.equal(product.sku, 'SIM-CARD-1');
+  assert.equal(product.sku, 'SIM-BOLT-EFECTIVO-SUBA');
   assert.equal(product.price, 25_000);
   assert.ok(address.coordinates);
   const simulation = await api('/simulation');

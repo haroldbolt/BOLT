@@ -2,7 +2,7 @@ import type { TransportVehicle } from '../types/transport';
 import type { Order } from '../types';
 
 export const cashDemoEmail = 'efectivo-suba@example.invalid';
-export const cashDemoSku = 'SIM-CARD-1';
+export const cashDemoSku = 'SIM-BOLT-EFECTIVO-SUBA';
 export const cashDemoStoreId = 'HUB_SUBA';
 export const cashDemoDriverId = 'SIM-CASH-SUBA';
 export const cashDemoDriverName = 'Conductor de prueba · Efectivo Suba';
