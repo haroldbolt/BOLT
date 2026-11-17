@@ -182,4 +182,5 @@ export const boltAdmin = {
   simulateInventoryDelivery: (token: string | null, orderId: string) => request<AdminOrder>(
     `${orderPath(orderId)}/simulate-inventory-delivery`, token, { body: {} },
   ),
+  readyForDispatch: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/ready-for-dispatch`, token, { body: {} }),
 };

@@ -8,6 +8,7 @@ import {evaluateDeliveryQuote} from '../lib/deliveryService';
 import {validateTransportConfig} from '../lib/transportPlanner';
 import {BenefitProgressBar} from '../components/customer/BenefitProgressBar';
 import {CartDrawer} from '../components/customer/CartDrawer';
+import {CheckoutModal} from '../components/customer/CheckoutModal';
 const destination={address:'Calle 3 #78-20, Kennedy',coordinates:{lat:4.6365,lng:-74.1448},municipality:'Bogotá',locality:'Kennedy'};
 for(const [subtotal,shipping] of [[59999,10000],[60000,0],[60001,0]]) {
  const product=fixtureProduct('TARIFF-FIXTURE',1000);product.price=subtotal;
@@ -15,6 +16,16 @@ for(const [subtotal,shipping] of [[59999,10000],[60000,0],[60001,0]]) {
  assert.equal(quote.recommendedMode,'TURBO');assert.equal(quote.charges?.shipping,shipping);assert.equal(quote.charges?.serviceFee,0);assert.equal(quote.charges?.total,subtotal+shipping);assert.equal(quote.charges?.freeShippingFrom,60000);
  quote.confirmationToken='fixture';const html=render(<CartDrawer cartItems={[{product,quantity:1}]} currentStore={INITIAL_STORES[0]} isOpen onClose={()=>{}} onUpdateQuantity={()=>{}} onClearCart={()=>{}} onProceedToCheckout={()=>{}} deliveryQuote={quote}/>);
  assert.match(html,/Tarifa de servicio:/);assert.equal(html.split('¡GRATIS!').length-1,1);assert.equal(html.includes('Envío gratis'),shipping===0);
+ const checkout=render(<CheckoutModal cartItems={[{product,quantity:1}]} currentStore={INITIAL_STORES[0]} isOpen onClose={()=>{}} onOrderSuccess={()=>{}} deliveryQuote={quote} customerAddress={destination.address} customerCoordinates={destination.coordinates}/>);
+ const paymentInputs=checkout.match(/<input[^>]*name="paymentMethod"[^>]*>/g) ?? [];
+ assert.equal(paymentInputs.length,4);
+ const cash=paymentInputs.find(input=>input.includes('value="CASH_ON_DELIVERY"'));
+ assert.ok(cash?.includes('checked=""')&&!cash.includes('disabled'));
+ for(const method of ['WOMPI_CARD','WOMPI_PSE','WOMPI_BANCOLOMBIA']) {
+   const online=paymentInputs.find(input=>input.includes(`value="${method}"`));
+   assert.ok(online?.includes('disabled=""')&&!online.includes('checked'));
+ }
+ assert.equal(checkout.split('No disponible</span>').length-1,3);
  console.log('PASS Turbo subtotal',subtotal,'shipping',shipping,'service 0');
 }
 const product=fixtureProduct('SPLIT-TARIFF',20000);product.price=20000;const config=fixtureConfig();
@@ -31,3 +42,25 @@ assert.equal(quote.charges?.shipping,0);assert.equal(quote.transportPlan?.shipme
 for(const value of [-1,NaN,1.5]) {const bad=fixtureConfig();bad.pricing.turbo!.shipping=value;assert.throws(()=>validateTransportConfig(bad,fixtureDrivers,INITIAL_STORES.map(s=>s.id)));}
 assert.ok(!render(<BenefitProgressBar subtotal={60000} threshold={60000}/>).includes('Agrega'));
 console.log('PASS split tariff once, external costs retained, scheduled fallback, invalid tariff rejected, benefit threshold.');
+
+const blockedCashQuote = {
+ ...quote,
+ eligibilityStatus: 'ESTIMATE_UNAVAILABLE' as const,
+ reasonCode: 'RAPPI_CASH_UNCONFIRMED',
+ message: 'Estamos preparando el recaudo en efectivo para las entregas de Suba.',
+ availableModes: {turbo:false,turboDividido:false,scheduled:false},
+ recommendedMode: null,
+ basketValidated: false,
+ transportPlan: undefined,
+ confirmationToken: undefined,
+ reviewRequestToken: undefined,
+ charges: undefined,
+};
+const blockedProps = {cartItems:[{product,quantity:1}],currentStore:INITIAL_STORES[0],isOpen:true,onClose:()=>{},deliveryQuote:blockedCashQuote};
+const blockedCart = render(<CartDrawer {...blockedProps} onUpdateQuantity={()=>{}} onClearCart={()=>{}} onProceedToCheckout={()=>{}}/>);
+const blockedCheckout = render(<CheckoutModal {...blockedProps} selectedMode="TURBO" customerAddress={destination.address} customerCoordinates={destination.coordinates} onOrderSuccess={()=>{}}/>);
+assert.ok(blockedCart.includes(blockedCashQuote.message));
+assert.ok(blockedCheckout.includes(blockedCashQuote.message));
+assert.match(blockedCart,/<button[^>]+disabled=""[^>]*><span>Continuar con el pedido<\/span>/);
+assert.match(blockedCheckout,/<button type="submit" disabled=""[^>]*><span>Entrega pendiente de validar<\/span>/);
+console.log('PASS missing verified cash collection keeps the cart and blocks checkout with the server message.');
