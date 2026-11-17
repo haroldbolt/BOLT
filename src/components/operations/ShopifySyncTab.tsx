@@ -229,9 +229,9 @@ export const ShopifySyncTab: React.FC<ShopifySyncTabProps> = ({ onRefreshData })
         {/* Métricas de Integración */}
         <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 mt-6 pt-6 border-t border-slate-100">
           <div className="p-3 bg-slate-50 rounded-xl border border-slate-100">
-            <span className="text-[11px] text-slate-500 font-semibold block">Sedes Mapeadas</span>
+            <span className="text-[11px] text-slate-500 font-semibold block">Sedes activas mapeadas</span>
             <span className="text-base font-extrabold text-slate-900 font-mono mt-0.5 block">
-              3 Turbo + 1 Centro
+              {syncState?.locations.length ?? '—'}
             </span>
             <span className="text-[10px] text-emerald-600 font-bold block mt-0.5">Sin duplicados en Shopify</span>
           </div>

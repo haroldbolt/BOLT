@@ -64,6 +64,7 @@ function extractActor(req:Request, _defaultRole?:ActorRole):OrderActor {
 
 // Authoritative in-memory state initialized from local catalog repository (persisted overrides + 3.830 productos agrupados)
 let stores: Store[] = localCatalogService.getStores().length > 0 ? localCatalogService.getStores() : JSON.parse(JSON.stringify(INITIAL_STORES));
+const activeStores = () => stores.filter(store => store.isActive);
 let products: Product[] = catalogRepository.getAllProducts(true);
 
 // Registro de carga de catálogo local
@@ -251,7 +252,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       catalogSource: 'LOCAL_CATALOG (src/data/catalogo-local)',
       timezone: 'America/Bogota',
       locale: 'es-CO',
-      storesCount: stores.length,
+      storesCount: activeStores().length,
       totalProductosAgrupados: products.length,
       totalVariantes: localCatalogService.getTotalVariantsCount(),
       productosActivos: products.filter(p => p.status === 'ACTIVE').length,
@@ -282,7 +283,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   // Stores
   app.get('/api/v1/stores', (_req: Request, res: Response) => {
-    res.json(stores);
+    res.json(activeStores());
   });
 
   // Catalog
@@ -298,13 +299,13 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
     if (storeId) {
       const storeIdStr = String(storeId);
-      const storeObj = stores.find(s => s.id === storeIdStr || s.shopifyLocationGid === storeIdStr);
-      const targetGid = storeObj?.shopifyLocationGid || storeIdStr;
+      const storeObj = activeStores().find(s => s.id === storeIdStr || s.shopifyLocationGid === storeIdStr);
+      if (!storeObj) return res.json([]);
 
       filtered = filtered.filter(p => {
         if (!p.bodegaIds) return true;
         if (p.bodegaIds.length === 0) return false; // Una lista vacía no significa disponibilidad en todas las bodegas
-        return p.bodegaIds.includes(targetGid) || p.bodegaIds.includes(storeIdStr);
+        return p.bodegaIds.includes(storeObj.id) || (!!storeObj.shopifyLocationGid && p.bodegaIds.includes(storeObj.shopifyLocationGid));
       });
     }
 
@@ -1114,7 +1115,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   // Verify and calibrate warehouse dispatch entrance
   app.post('/api/v1/stores/:id/verify-entrance', requireAdminAuth, (req: Request, res: Response) => {
-    const store = stores.find(s => s.id === req.params.id);
+    const store = activeStores().find(s => s.id === req.params.id);
     if (!store) return res.status(404).json({ error: 'Bodega no encontrada' });
 
     const { lat, lng } = req.body?.coordinates ?? {};
@@ -1141,7 +1142,17 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   // Shopify sync state & triggers
   app.get('/api/v1/shopify/status', (_req: Request, res: Response) => {
-    res.json(shopifyService.getState());
+    const status = shopifyService.getState();
+    const ids = new Set(activeStores().map(store => store.id));
+    res.json({
+      ...status,
+      activeWarehousesCount: ids.size,
+      locations: status.locations.filter(location => ids.has(location.storeId)),
+      inventoryItems: status.inventoryItems.map(item => ({
+        ...item,
+        quantitiesByLocation: Object.fromEntries(Object.entries(item.quantitiesByLocation).filter(([id]) => ids.has(id))),
+      })),
+    });
   });
 
   app.post('/api/v1/shopify/sync', requireAdminAuth, (_req,res)=>res.status(409).json({error:'Sincronización automática desactivada. Usa un lote explícito de lectura de precios.'}));
@@ -1217,7 +1228,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // RUTAS DE GESTIÓN DE CATÁLOGO (PROTEGIDAS POR TOKEN)
   // ==========================================
 
-  app.get('/api/v1/admin/transport', requireAdminAuth, (_req,res)=>res.json({...transportRepository.read(),drivers:ordersRepository.getAllDrivers(),stores,scheduledSlots:generateScheduledSlots(new Date())}));
+  app.get('/api/v1/admin/transport', requireAdminAuth, (_req,res)=>res.json({...transportRepository.read(),drivers:ordersRepository.getAllDrivers(),stores:activeStores(),scheduledSlots:generateScheduledSlots(new Date())}));
   app.put('/api/v1/admin/transport', requireAdminAuth, (req,res)=>{
     try {res.json(transportRepository.update(req.body.config,req.body.revision,(req as any).adminSession,ordersRepository.getAllDrivers(),stores));}
     catch(error:any) {res.status(409).json({error:error.message});}

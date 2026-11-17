@@ -52,6 +52,13 @@ test('Legacy order resolved by stable ID, never a browser or saved display name'
  assert.equal(resolveOrderWarehouse(legacy,WAREHOUSES)?.customerName,'Suba');
  assert.equal(resolveOrderWarehouse({storeId:'UNKNOWN'},WAREHOUSES),undefined);
 });
+test('A retired warehouse can still be resolved on a historical order',()=>{
+ const historical=INITIAL_ORDERS.find(order=>order.storeId==='HUB_CENTRO');
+ assert.ok(historical);
+ const store=WAREHOUSES.find(warehouse=>warehouse.id===historical.storeId);
+ assert.equal(store?.isActive,false);
+ assert.equal(resolveOrderWarehouse(historical,WAREHOUSES)?.name,historical.storeName);
+});
 test('Commercial address visibility is respected',()=>assert.equal(describeWarehouse({...WAREHOUSES[0],showAddressToCustomer:false})?.address,undefined));
 test('Fourth configured test warehouse works dynamically and does not enable unassigned coverage',()=>{
  const original=WAREHOUSES[2].scheduledLocalities;
