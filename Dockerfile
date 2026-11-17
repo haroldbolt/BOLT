@@ -7,6 +7,9 @@ FROM node:22.22.0-bookworm-slim AS build
 WORKDIR /opt/bolt
 COPY --from=installer /opt/bolt/node_modules ./node_modules
 COPY . .
+# Opciones públicas de compilación para Google Maps. La clave del servidor se configura en runtime.
+ARG VITE_GOOGLE_MAPS_API_KEY
+ARG VITE_GOOGLE_MAPS_TRACKING_MAP_ID
 RUN npm run lint && npm run build
 
 FROM node:22.22.0-bookworm-slim AS demo

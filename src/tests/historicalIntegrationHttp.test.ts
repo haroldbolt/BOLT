@@ -141,7 +141,17 @@ try {
   assert.equal((await request('/admin/dispatch/recoveries/'+id+'/approve','POST',approval)).status,200);
   const access=(await request('/tracking-recovery/status','POST',{id,secret},'')).data;
   assert.ok(access.guestAccessToken);
-  assert.equal((await request('/orders/'+f.id+'/tracking','GET',undefined,'',{'X-Order-Token':access.guestAccessToken})).status,200);
+  const authHeaders = { 'X-Order-Token': access.guestAccessToken };
+  const tracking = await request('/orders/'+f.id+'/tracking','GET',undefined,'',authHeaders);
+  assert.equal(tracking.status,200);
+  assert.equal(tracking.data.status,f.fulfillmentStatus);
+  assert.equal(tracking.data.timing.dueAt,null,'Historical promises without a checkout quote never start a countdown');
+  assert.equal(tracking.data.telemetry,null,'Historical records do not invent a GPS location');
+  assert.equal(tracking.data.simulation,false);
+  if(f.fulfillmentStatus==='PENDIENTE_CONFIRMACION')assert.equal(tracking.data.timing.startedAt,null);
+  if(f.fulfillmentStatus!=='EN_CAMINO')assert.equal(tracking.data.secretDeliveryCode,undefined);
+  const unknownShipment = await request('/orders/'+f.id+'/tracking?shipmentId=nonexistent','GET',undefined,'',authHeaders);
+  assert.equal(unknownShipment.status,404);
   const listing=await request('/admin/dispatch/recoveries');assert.ok(!JSON.stringify(listing).includes(secret));assert.ok(!JSON.stringify(listing).includes(access.guestAccessToken));
   const persisted=fs.readFileSync(path.join(data,'persisted-fulfillment.json'),'utf8');assert.ok(!persisted.includes(secret));assert.ok(!persisted.includes(access.guestAccessToken));
  }

@@ -1,6 +1,7 @@
 import type { Express, Request, Response, NextFunction } from "express";
 import { DispatchService, DispatchError } from "./dispatchService";
 import type { OrdersRepository } from "./ordersRepository";
+import { sameEnabledGpsArea } from "./serverGeography";
 export function mountDispatchRoutes(
   app: Express,
   s: DispatchService,
@@ -163,7 +164,8 @@ export function mountDispatchRoutes(
         r.driverId !== id ||
         r.orderId !== req.body.orderId ||
         r.shipmentId !== req.body.shipmentId ||
-        r.status !== "PICKED_UP"
+        r.status !== "PICKED_UP" ||
+        (r.transfer?.releasedAt && !r.transfer.acceptedAt)
       )
         throw new DispatchError(403, "FORBIDDEN", "Telemetría no autorizada");
       return repo.transaction(() => {
@@ -171,6 +173,7 @@ export function mountDispatchRoutes(
         const result = repo.recordTelemetry(
           { ...req.body, driverId: id },
           { role: "CONDUCTOR", id },
+          sameEnabledGpsArea,
         );
         if (!result.success)
           throw new DispatchError(

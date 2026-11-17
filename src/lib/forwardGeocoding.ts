@@ -9,6 +9,7 @@ const municipalityKey=(value?:string)=>coverageMunicipality(value)?.code || norm
 export async function searchDeliveryAddress(address:string, municipality:string, apiKey:string, fetcher:typeof fetch=fetch):Promise<AddressSearchResult> {
   if(!municipality.trim()) return {status:'MUNICIPALITY_REQUIRED',candidates:[],message:'Elige el municipio de entrega para buscar la dirección en el lugar correcto.'};
   if(!address.trim()) return {status:'NO_RESULTS',candidates:[],message:'Escribe la dirección completa de entrega.'};
+  if(!apiKey) return {status:'UNAVAILABLE',candidates:[],message:'La búsqueda de direcciones está temporalmente fuera de servicio. Puedes confirmar el punto en el mapa.'};
   const requestedPolicy=coverageMunicipality(municipality);
   const name=requestedPolicy?.name || municipality.trim();
   const url=new URL('https://maps.googleapis.com/maps/api/geocode/json');

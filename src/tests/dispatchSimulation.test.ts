@@ -171,10 +171,24 @@ try {
       "",
     );
     assert(tracking.telemetry);
+    assert.equal(tracking.locationStatus, "LIVE");
+    assert.equal(tracking.telemetry.shipmentId, task.shipmentId);
+    assert.equal(tracking.telemetry.driverId, undefined);
+    assert.equal(tracking.telemetry.assignmentId, undefined);
+    assert.equal(tracking.simulation, true);
+    assert.equal(tracking.timing.dueAt, null, "a simulator fixture cannot invent a verified checkout ETA");
+    const summary = await call("/orders/" + order.id + "/tracking", "GET", undefined, "");
+    assert.equal(summary.shipmentCount, 2);
+    assert.equal(summary.telemetry, null);
+    assert.equal(summary.secretDeliveryCode, undefined);
+    const siblingId = order.childShipments.find((s: any) => s.shipmentId !== task.shipmentId).shipmentId;
+    const siblingTracking = await call("/orders/" + order.id + "/tracking?shipmentId=" + siblingId, "GET", undefined, "");
+    assert.equal(siblingTracking.telemetry, null);
     const own = await call("/orders/" + order.id, "GET", undefined, "");
     const pin = own.childShipments.find(
       (s: any) => s.shipmentId === task.shipmentId,
     ).secretDeliveryCode;
+    assert.equal(tracking.secretDeliveryCode, pin);
     await call(
       "/driver/assignments/" + task.assignmentId + "/delivered",
       "POST",
@@ -182,6 +196,13 @@ try {
       token,
     );
     const after = await call("/orders/" + order.id, "GET", undefined, "");
+    const deliveredTracking = await call(
+      "/orders/" + order.id + "/tracking?shipmentId=" + task.shipmentId, "GET", undefined, "",
+    );
+    assert.equal(deliveredTracking.status, "ENTREGADO");
+    assert.equal(deliveredTracking.locationStatus, "NOT_IN_TRANSIT");
+    assert.equal(deliveredTracking.telemetry, null);
+    assert.equal(deliveredTracking.secretDeliveryCode, undefined);
     if (index === 0) assert.notEqual(after.fulfillmentStatus, "ENTREGADO");
     else assert.equal(after.fulfillmentStatus, "ENTREGADO");
   }

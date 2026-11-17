@@ -1,791 +1,316 @@
-import {PendingDeliveryReceipt} from './PendingDeliveryReceipt';
-import {OrderEntrancePhoto} from './OrderEntrancePhoto';
-import {CustomerDispatches} from '../dispatch/CustomerDispatches';
-import { WarehouseSummary } from './WarehouseSummary';
-import { resolveOrderWarehouse } from '../../lib/warehouseAssignment';
-import React, { useEffect, useState, useRef } from 'react';
-import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
-import { 
-  ArrowLeft, Phone, ShieldCheck, Clock, CheckCircle2, 
-  MapPin, AlertTriangle, Navigation, RefreshCw, Key, ChevronUp, ChevronDown,
-  Calendar, Layers, Truck
-} from 'lucide-react';
-import { Order, GPSTelemetry, ChildShipment } from '../../types';
-import { formatCOP, formatTimeBogota, timeAgoSpanish } from '../../lib/formatters';
+import { useCallback, useEffect, useRef, useState } from 'react';
+import { ArrowLeft, Bike, Check, CircleHelp, Clock3, KeyRound, MapPin, MessageCircle, Phone, RefreshCw } from 'lucide-react';
+import type { FulfillmentStatus, Order } from '../../types';
+import type { CustomerTracking, TrackingStage } from '../../types/customerTracking';
+import type { PublicDispatch } from '../../lib/dispatchClient';
+import { BUSINESS } from '../../customer/legal';
 import { api } from '../../lib/api';
+import { formatDeliveryClock, readDeliveryClock } from '../../lib/customerTrackingTiming';
+import { formatCOP, formatTimeBogota } from '../../lib/formatters';
 import { pushService } from '../../lib/notifications';
-import { useFoldable } from '../../hooks/useFoldable';
-
-declare const google: any;
+import { LiveDeliveryMap } from './LiveDeliveryMap';
+import { OrderEntrancePhoto } from './OrderEntrancePhoto';
+import { PendingDeliveryReceipt } from './PendingDeliveryReceipt';
+import { WarehouseSummary } from './WarehouseSummary';
 
 interface OrderTrackingProps {
   orderId: string;
   guestOnly?: boolean;
   onBack: () => void;
+  onViewSummary?: () => void;
 }
 
-// Sub-component to manage map bounds and center smoothly
-const MapController: React.FC<{
-  hub: { lat: number; lng: number };
-  customer: { lat: number; lng: number };
-  driver?: { lat: number; lng: number };
-  recenterTrigger: number;
-  isDualScreen?: boolean;
-}> = ({ hub, customer, driver, recenterTrigger, isDualScreen }) => {
-  const map = useMap();
-
-  useEffect(() => {
-    if (!map || typeof google === 'undefined') return;
-    const bounds = new google.maps.LatLngBounds();
-    bounds.extend(hub);
-    bounds.extend(customer);
-    if (driver) bounds.extend(driver);
-    map.fitBounds(bounds, {
-      top: 60,
-      right: 60,
-      bottom: isDualScreen ? 60 : 220,
-      left: 60,
-    });
-  }, [map, hub, customer, driver, recenterTrigger, isDualScreen]);
-
-  return null;
+type Snapshot = { order: Order; tracking: CustomerTracking; receivedAt: number };
+const headings: Record<FulfillmentStatus, string> = {
+  PENDIENTE_CONFIRMACION: 'Recibimos tu solicitud',
+  CONFIRMADO: 'Tu pedido está confirmado',
+  EN_ALISTAMIENTO: 'Estamos preparando tu pedido',
+  LISTO_PARA_DESPACHO: 'Tu pedido está listo para recoger',
+  REPARTIDOR_ASIGNADO: 'Ya tienes repartidor',
+  EN_CAMINO: 'Tu pedido está en camino',
+  ENTREGADO: '¡Tu pedido fue entregado!',
+  CANCELADO: 'Pedido cancelado',
+  CON_INCIDENCIA: 'Estamos revisando tu entrega',
 };
 
-export const OrderTracking: React.FC<OrderTrackingProps> = ({ orderId, onBack, guestOnly=false }) => {
-  const [loadError,setLoadError]=useState('');
-  const generation=useRef(0);
-  const [order, setOrder] = useState<Order | null>(null);
-  const [trackingData, setTrackingData] = useState<any>(null);
-  const [loading, setLoading] = useState(true);
-  const [recenterCount, setRecenterCount] = useState(0);
-  const [sheetExpanded, setSheetExpanded] = useState(false);
+const stages: { label: string; time: TrackingStage }[] = [
+  { label: 'Confirmado', time: 'confirmedAt' },
+  { label: 'En preparación', time: 'prepStartedAt' },
+  { label: 'Listo para recoger', time: 'prepCompletedAt' },
+  { label: 'Repartidor asignado', time: 'assignedAt' },
+  { label: 'En camino', time: 'pickedUpAt' },
+  { label: 'Entregado', time: 'deliveredAt' },
+];
+const stepByStatus: Partial<Record<FulfillmentStatus, number>> = {
+  CONFIRMADO: 0, EN_ALISTAMIENTO: 1, LISTO_PARA_DESPACHO: 2, REPARTIDOR_ASIGNADO: 3, EN_CAMINO: 4, ENTREGADO: 5,
+};
+const handoff = {
+  DEJAR_EN_PORTERIA: 'Dejar en portería',
+  SUBIR_A_PUERTA: 'Entregar en la puerta',
+  LLAMAR_AL_LLEGAR: 'Llamar al llegar',
+} as const;
+const formatDate = new Intl.DateTimeFormat('es-CO', { timeZone: 'America/Bogota', day: 'numeric', month: 'short' });
+
+function getClockTime(snapshot: Snapshot) {
+  const fromServer = Date.parse(snapshot.tracking.timing?.serverTime ?? '');
+  return Number.isFinite(fromServer) ? fromServer + Math.max(0, performance.now() - snapshot.receivedAt) : Date.now();
+}
+
+function clientPhone(value?: string) {
+  if (!value || !/^[+\d\s().-]+$/.test(value)) return null;
+  const digits = value.replace(/\D/g, '');
+  return /^3\d{9}$/.test(digits) ? '57' + digits : /^573\d{9}$/.test(digits) ? digits : null;
+}
+
+export function OrderTracking({ orderId, onBack, guestOnly = false, onViewSummary }: OrderTrackingProps) {
+  const [snapshot, setSnapshot] = useState<Snapshot | null>(null);
+  const [loadError, setLoadError] = useState('');
+  const [activeIndex, setActiveIndex] = useState(0);
+  const [now, setNow] = useState(0);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState<string | null>(null);
-  const foldable = useFoldable();
-  const isSplitLayout = foldable.isExpanded || foldable.isDualScreen;
+  const requestVersion = useRef(0);
+  const currentRequest = useRef<number | undefined>(undefined);
 
-  // Multi-shipment tab state for split orders
-  const [activeShipmentIndex, setActiveShipmentIndex] = useState(0);
-
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
-
-  const loadData = async () => {
-    const request=++generation.current;
+  const load = useCallback(async (replace = false) => {
+    if (!replace && currentRequest.current !== undefined) return;
+    const version = ++requestVersion.current;
+    currentRequest.current = version;
     try {
-      const ord = await api.getOrder(orderId,guestOnly);
-      const tracking = await api.getTracking(orderId, ord.isSplitOrder ? ord.childShipments?.[activeShipmentIndex]?.shipmentId : undefined,guestOnly);
-      if(request!==generation.current)return;
-      setOrder(ord);setTrackingData(tracking);setLoadError('');
-      pushService.notifyWarehouseAssignment(ord);pushService.notifyDispatchEvents(ord);
-    } catch (e:any) {
-      if(request!==generation.current)return;
-      setLoadError(e.message||'No se pudo consultar el seguimiento');setOrder(null);setTrackingData(null);
-    } finally {if(request===generation.current)setLoading(false)}
-  };
-  useEffect(() => {
-    setLoading(true);setOrder(null);setTrackingData(null);
-    void loadData();
-    const interval = setInterval(()=>void loadData(), 5000);
-    return () => {++generation.current;clearInterval(interval)};
-  }, [orderId, activeShipmentIndex,guestOnly]);
-
-  const handleCancelOrder = async () => {
-    if (!order) return;
-    try {
-      setCancelling(true);
-      setCancelError(null);
-      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE', order.isSplitOrder ? order.childShipments?.[activeShipmentIndex]?.shipmentId : undefined,guestOnly);
-      await loadData();
-    } catch (e: any) {
-      setCancelError(e.message || 'No se pudo cancelar el pedido');
+      const order = await api.getOrder(orderId, guestOnly);
+      if (version !== requestVersion.current) return;
+      const shipmentId = order.isSplitOrder ? order.childShipments?.[activeIndex]?.shipmentId : undefined;
+      const tracking = await api.getTracking(orderId, shipmentId, guestOnly);
+      if (version !== requestVersion.current) return;
+      const received = { order, tracking, receivedAt: performance.now() };
+      setSnapshot(received);
+      setNow(getClockTime(received));
+      setLoadError('');
+      pushService.notifyWarehouseAssignment(order);
+      pushService.notifyDispatchEvents(order);
+    } catch (error) {
+      if (version !== requestVersion.current) return;
+      const status = (error as { status?: number })?.status;
+      if (status === 401 || status === 403 || status === 404) setSnapshot(null);
+      setLoadError(error instanceof Error ? error.message : 'No se pudo consultar el seguimiento.');
     } finally {
-      setCancelling(false);
+      if (currentRequest.current === version) currentRequest.current = undefined;
     }
+  }, [orderId, activeIndex, guestOnly]);
+
+  useEffect(() => {
+    void load(true);
+    const refresh = window.setInterval(() => {
+      if (document.visibilityState === 'visible') void load();
+    }, 5000);
+    const visibility = () => { if (document.visibilityState === 'visible') void load(); };
+    document.addEventListener('visibilitychange', visibility);
+    return () => {
+      ++requestVersion.current;
+      currentRequest.current = undefined;
+      window.clearInterval(refresh);
+      document.removeEventListener('visibilitychange', visibility);
+    };
+  }, [load]);
+
+  useEffect(() => {
+    if (!snapshot || ['ENTREGADO', 'CANCELADO'].includes(snapshot.tracking.status)) return;
+    const tick = () => setNow(getClockTime(snapshot));
+    const timer = window.setInterval(tick, 1000);
+    document.addEventListener('visibilitychange', tick);
+    return () => {
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', tick);
+    };
+  }, [snapshot]);
+
+  const order = snapshot?.order.id === orderId ? snapshot.order : null;
+  const shipments = order?.isSplitOrder ? order.childShipments ?? [] : [];
+  const child = shipments[activeIndex];
+  const tracking = order && snapshot && snapshot.tracking.shipmentId === child?.shipmentId ? snapshot.tracking : null;
+
+  const cancel = async () => {
+    if (!order) return;
+    setCancelling(true);
+    setCancelError(null);
+    try {
+      await api.cancelOrder(order.id, 'Cancelado por el cliente desde la vista de seguimiento', 'CLIENTE', child?.shipmentId, guestOnly);
+      await load(true);
+    } catch (error) {
+      setCancelError(error instanceof Error ? error.message : 'No se pudo cancelar el pedido.');
+    } finally { setCancelling(false); }
   };
 
-  if(loadError&&!order)return <div className="min-h-screen bg-slate-50 p-8"><p role="alert">{loadError}</p><a href="/recuperar-seguimiento" className="block p-3 text-red-700 underline">Recuperar seguimiento privado</a><button className="p-3 text-red-700 underline" onClick={()=>void loadData()}>Reintentar</button><button className="p-3 underline" onClick={onBack}>Volver</button></div>;
-  if (loading || !order) {
-    return (
-      <div className="min-h-screen bg-slate-900 flex flex-col items-center justify-center p-4">
-        <div className="w-12 h-12 border-4 border-red-600 border-t-transparent rounded-full animate-spin"></div>
-        <p className="mt-4 text-xs font-bold text-slate-300">Cargando seguimiento en tiempo real...</p>
-      </div>
-    );
-  }
-
-  if(order.deliveryReview?.status==='PENDING') return <PendingDeliveryReceipt order={order} onBack={onBack} onRefresh={()=>void loadData()} onCancel={()=>void handleCancelOrder()} cancelling={cancelling} error={cancelError}/>;
-
-  // Active shipment data if split order
-  const isSplitOrder = !!order.isSplitOrder && !!order.childShipments?.length;
-  const childShipments: ChildShipment[] = order.childShipments || [];
-  const currentChild: ChildShipment | undefined = isSplitOrder ? childShipments[activeShipmentIndex] : undefined;
-
-  const deliveredCount = childShipments.filter(s => s.fulfillmentStatus === 'ENTREGADO').length;
-
-  const effectiveStatus = currentChild ? currentChild.fulfillmentStatus : order.fulfillmentStatus;
-  const effectiveDriver = currentChild?.driver || order.driver;
-  const confirmedDispatch=(order as any).dispatches?.find((d:any)=>d.shipmentId===currentChild?.shipmentId);
-  const externalOffer=confirmedDispatch?.driverConfirmed && confirmedDispatch.provider!=='Flota propia BOLT' ? {providerName:confirmedDispatch.provider}:undefined;
-  const effectiveSecretCode = currentChild?.secretDeliveryCode || order.secretDeliveryCode;
-
-  const hubCoords = trackingData?.hubCoordinates || order.deliveryAddress.coordinates;
-  const customerCoords = trackingData?.customerCoordinates || order.deliveryAddress.coordinates;
-  const telemetry = trackingData?.telemetry && (!currentChild || trackingData.telemetry.shipmentId===currentChild.shipmentId) ? trackingData.telemetry : undefined;
-  const driverCoords = telemetry ? { lat: telemetry.latitude, lng: telemetry.longitude } : undefined;
-  const secondsAgo = telemetry?.secondsAgo ?? 0;
-  const isStale = secondsAgo > 30 && secondsAgo <= 60;
-  const isLost = secondsAgo > 60;
-
-  const getStatusBadge = () => {
-    if (effectiveStatus === 'CANCELADO') {
-      return { text: '✕ Pedido Cancelado', bg: 'bg-rose-700 text-white', dot: 'bg-rose-300' };
-    }
-    if (effectiveStatus === 'CON_INCIDENCIA') {
-      return { text: '⚠️ Novedad en curso', bg: 'bg-amber-600 text-white', dot: 'bg-amber-200 animate-pulse' };
-    }
-    if (order.deliveryMode === 'PROGRAMADO' && effectiveStatus !== 'ENTREGADO') {
-      return { text: '📅 Programado', bg: 'bg-blue-600 text-white', dot: 'bg-blue-300' };
-    }
-    switch (effectiveStatus) {
-      case 'EN_CAMINO':
-        return { text: '⚡ Repartidor en camino', bg: 'bg-yellow-400 text-red-950', dot: 'bg-red-600 animate-ping' };
-      case 'REPARTIDOR_ASIGNADO':
-        return { text: '🛵 Conductor Asignado', bg: 'bg-amber-500 text-white', dot: 'bg-amber-200 animate-pulse' };
-      case 'ENTREGADO':
-        return { text: '✓ Entregado', bg: 'bg-emerald-600 text-white', dot: 'bg-white' };
-      case 'EN_ALISTAMIENTO':
-        return { text: '📦 Alistando en tienda', bg: 'bg-blue-600 text-white', dot: 'bg-blue-300 animate-pulse' };
-      case 'LISTO_PARA_DESPACHO':
-        return { text: '🛵 Listo para recogida', bg: 'bg-amber-600 text-white', dot: 'bg-amber-300' };
-      default:
-        return { text: 'Confirmado', bg: 'bg-slate-700 text-white', dot: 'bg-slate-300' };
-    }
-  };
-
-  const statusBadge = getStatusBadge();
-  const warehouse=resolveOrderWarehouse(order);
-  const warehouseLabel=warehouse?.customerName || 'Sede pendiente de confirmar';
-
-  // Vista de doble panel para iPhone Duo desplegado (951px o pantalla amplia)
-  if (isSplitLayout) {
-    return (
-      <div className="relative w-full h-screen overflow-hidden flex flex-row bg-slate-900">
-        {/* Panel izquierdo: Información, repartidor, PIN y productos */}
-        <div className="w-[45%] max-w-md xl:max-w-lg h-full flex flex-col bg-white border-r border-slate-200 z-10 shadow-2xl overflow-y-auto">
-          {/* Cabecera del panel izquierdo */}
-          <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-md z-10">
-            <button
-              onClick={onBack}
-              className="bg-slate-100 text-slate-800 p-2 rounded-full hover:bg-slate-200 transition active:scale-95"
-              title="Volver a la tienda"
-            >
-              <ArrowLeft className="w-5 h-5" />
-            </button>
-            <div className="flex items-center gap-2">
-              <span className={`w-2.5 h-2.5 rounded-full ${statusBadge.dot}`} />
-              <span className="font-black text-xs text-slate-900">{order.orderNumber}</span>
-              <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${statusBadge.bg}`}>
-                {isSplitOrder ? `Entrega ${activeShipmentIndex+1}: ` : ''}{statusBadge.text}
-              </span>
-            </div>
-            {isSplitOrder && (
-              <span className="text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full">
-                {deliveredCount}/{childShipments.length}
-              </span>
-            )}
-          </div>
-
-          <div className="p-5 space-y-4 flex-1">
-            <WarehouseSummary order={order} /><CustomerDispatches order={order} onSelect={setActiveShipmentIndex}/>
-            {/* Multi-Shipment Tabs for Split Orders */}
-            {isSplitOrder && (
-              <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-                {childShipments.map((shipment, index) => {
-                  const isSelected = activeShipmentIndex === index;
-                  const isDelivered = shipment.fulfillmentStatus === 'ENTREGADO';
-                  return (
-                    <button
-                      key={shipment.shipmentId}
-                      onClick={() => setActiveShipmentIndex(index)}
-                      className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
-                        isSelected
-                          ? 'bg-red-600 text-white shadow-xs'
-                          : isDelivered
-                          ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                          : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                      }`}
-                    >
-                      <span>Envío {index + 1} de {childShipments.length}</span>
-                      <span className="text-[10px] opacity-80">({shipment.weightKg} kg)</span>
-                      {isDelivered && <span>✓</span>}
-                    </button>
-                  );
-                })}
-              </div>
-            )}
-
-{currentChild && <section aria-label="Contenido de esta entrega" className="mx-4 my-3 rounded-xl border p-3 text-sm"><p className="font-bold">Entrega {currentChild.shipmentIndex} · {order.storeName} · {currentChild.weightKg} kg</p><p>{currentChild.driver?.name || 'Repartidor pendiente'} · {currentChild.fulfillmentStatus}</p><ul>{currentChild.items.map(i=><li key={i.productId}>{i.quantity} × {i.name}{i.presentation && !i.name.endsWith(i.presentation) ? ` · ${i.presentation}` : ''}</li>)}</ul></section>}
-            {/* Tiempo estimado y PIN secreto */}
-            <div className="flex items-center justify-between p-4 bg-slate-50 rounded-2xl border border-slate-200/80">
-              <div>
-                <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wider">
-                  {order.deliveryMode === 'PROGRAMADO'
-                    ? 'Franja de Entrega'
-                    : isSplitOrder
-                    ? `Tiempo estimado (Envío ${activeShipmentIndex + 1})`
-                    : 'Tiempo estimado'}
-                </p>
-                <h2 className="text-xl font-black text-slate-900 tracking-tight mt-0.5">
-                  {effectiveStatus === 'ENTREGADO' ? (
-                    <span className="text-emerald-600">
-                      {isSplitOrder ? `¡Envío ${activeShipmentIndex + 1} entregado!` : '¡Pedido entregado!'}
-                    </span>
-                  ) : order.deliveryMode === 'PROGRAMADO' ? (
-                    <span className="text-blue-700 text-base">
-                      {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}
-                    </span>
-                  ) : (
-                    <span>{order.dispatchStatusMessage || <>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></>}</span>
-                  )}
-                </h2>
-                <p className="text-[11px] text-slate-500 mt-1">
-                  Entrega en: <strong className="text-slate-800">{order.deliveryAddress.address}</strong>
-                </p>
-                <OrderEntrancePhoto orderId={order.id} audience={guestOnly?"customer":api.getStoredAdminToken()?"admin":"customer"}/>
-              </div>
-
-              {/* PIN Code Box */}
-              <div className="bg-red-50 border border-red-200 rounded-2xl p-2.5 text-center shadow-xs shrink-0 ml-3">
-                <span className="text-[10px] font-bold text-red-700 uppercase flex items-center justify-center gap-1">
-                  <Key className="w-3 h-3 text-red-600" />
-                  {isSplitOrder ? `PIN Envío ${activeShipmentIndex + 1}` : 'Código Entrega'}
-                </span>
-                <p className="text-xl font-black text-red-700 tracking-widest mt-0.5">
-                  {effectiveSecretCode}
-                </p>
-              </div>
-            </div>
-
-            {/* Repartidor asignado */}
-            {effectiveDriver && (
-              <div className="p-3 bg-white rounded-2xl border border-slate-200/80 flex items-center justify-between shadow-xs">
-                <div className="flex items-center gap-3">
-                  <img
-                    src={effectiveDriver.photo}
-                    alt={effectiveDriver.name}
-                    className="w-11 h-11 rounded-full object-cover border border-slate-200 shadow-xs"
-                  />
-                  <div>
-                    <p className="text-xs font-black text-slate-900">
-                      {effectiveDriver.name} {isSplitOrder && `(Envío ${activeShipmentIndex + 1})`}
-                    </p>
-                    <p className="text-[11px] text-slate-500">
-                      {effectiveDriver.vehicleType} • Placa: <strong className="text-slate-800">{effectiveDriver.vehiclePlate}</strong>
-                    </p>
-                    <div className="flex items-center gap-1 text-[11px] text-amber-600 font-bold">
-                      <span>★ {effectiveDriver.rating}</span>
-                      <span className="text-slate-400">{externalOffer ? `Red externa simulada · ${externalOffer.providerName}` : '• Flota propia Bolt Pets'}</span>
-                    </div>
-                  </div>
-                </div>
-
-                {effectiveDriver.phone && <a
-                  href={`tel:${effectiveDriver.phone}`}
-                  className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 transition shrink-0"
-                  title="Llamar al repartidor"
-                >
-                  <Phone className="w-4 h-4" />
-                </a>}
-              </div>
-            )}
-
-            {/* Cobro contra entrega */}
-            {order.payment.method === 'CASH_ON_DELIVERY' && currentChild && (
-              <div className="text-xs bg-amber-50 text-amber-950 p-2.5 rounded-xl border border-amber-200">
-                <strong>Cobro contra entrega de este envío: </strong>
-                <span className="font-extrabold">{formatCOP(currentChild.cashToCollect)}</span>
-                <span className="text-[11px] text-slate-600 ml-1">
-                  (Total pedido: {formatCOP(order.totals.total)})
-                </span>
-              </div>
-            )}
-
-            {/* Indicaciones de portería */}
-            <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-200/60">
-              <strong className="text-slate-800">Instrucciones de recepción: </strong>
-              <span>
-                {order.deliveryAddress.porteriaPolicy === 'DEJAR_EN_PORTERIA'
-                  ? 'Dejar en portería debidamente sellado.'
-                  : order.deliveryAddress.porteriaPolicy === 'SUBIR_A_PUERTA'
-                  ? 'Subir al apartamento.'
-                  : 'Llamar al teléfono celular al momento de llegar.'}
-              </span>
-              {order.deliveryAddress.details && ` (${order.deliveryAddress.details})`}
-            </div>
-
-            {/* Desglose de productos */}
-            <div className="space-y-2 pt-1 border-t border-slate-100">
-              <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-                {currentChild
-                  ? `Productos en este envío (${currentChild.items.length})`
-                  : `Productos en el paquete (${order.items.length})`}
-              </h4>
-              <div className="space-y-1.5 max-h-52 overflow-y-auto pr-1">
-                {(currentChild ? currentChild.items : order.items).map(item => (
-                  <div key={item.productId} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
-                    <div className="flex items-center gap-2">
-                      <span className="font-bold text-red-600">{item.quantity}x</span>
-                      <span className="font-medium text-slate-800">{item.name}</span>
-                    </div>
-                    <span className="font-bold text-slate-900">{formatCOP(item.price * item.quantity)}</span>
-                  </div>
-                ))}
-              </div>
-
-              <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
-                <span>Total del pedido:</span>
-                <span className="text-red-600">{formatCOP(order.totals.total)}</span>
-              </div>
-
-              {(effectiveStatus === 'PENDIENTE_CONFIRMACION' || effectiveStatus === 'CONFIRMADO') && (
-                <div className="pt-2 border-t border-slate-100">
-                  <button
-                    onClick={handleCancelOrder}
-                    disabled={cancelling}
-                    className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5"
-                  >
-                    {cancelling ? 'Cancelando…' : isSplitOrder ? `Cancelar entrega ${activeShipmentIndex+1}` : '✕ Cancelar Pedido'}
-                  </button>
-                  {cancelError && (
-                    <p className="text-[11px] text-rose-600 mt-1 text-center font-medium">{cancelError}</p>
-                  )}
-                </div>
-              )}
-            </div>
-          </div>
-        </div>
-
-        {/* Panel derecho: Mapa interactivo en tiempo real a pantalla completa */}
-        <div className="flex-1 h-full relative overflow-hidden bg-slate-900">
-          {/* Barra superior flotante sobre el mapa */}
-          <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
-            {effectiveStatus === 'EN_CAMINO' ? (
-              <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
-                <span className={`w-2 h-2 rounded-full ${!telemetry || isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-                {!telemetry ? <span className="text-slate-200">GPS pendiente de esta entrega</span> : isLost ? (
-                  <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
-                ) : isStale ? (
-                  <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
-                ) : (
-                  <span>GPS en vivo ({timeAgoSpanish(trackingData?.telemetry?.timestamp || Date.now())})</span>
-                )}
-                <button
-                  onClick={loadData}
-                  className="ml-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-800 text-slate-200 hover:bg-slate-700 flex items-center gap-1 transition"
-                  title="Sincronizar estado con el servidor"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Sincronizar</span>
-                </button>
-              </div>
-            ) : order.deliveryMode === 'PROGRAMADO' ? (
-              <div className="pointer-events-auto bg-blue-900/90 backdrop-blur-md text-white text-[11px] font-bold px-4 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-blue-700">
-                <Calendar className="w-3.5 h-3.5 text-blue-300" />
-                <span>Programado: {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}</span>
-              </div>
-            ) : (
-              <div />
-            )}
-
-            <button
-              onClick={() => setRecenterCount(c => c + 1)}
-              className="pointer-events-auto bg-white/95 backdrop-blur-md text-slate-800 p-2.5 rounded-full shadow-lg border border-slate-200/80 hover:bg-slate-50 transition active:scale-95"
-              title="Recentrar mapa"
-            >
-              <Navigation className="w-5 h-5 text-red-600" />
-            </button>
-          </div>
-
-          <APIProvider apiKey={apiKey}>
-            <Map
-              defaultCenter={hubCoords}
-              defaultZoom={14}
-              mapId="DEMO_MAP_ID_DUAL"
-              className="w-full h-full"
-              gestureHandling="greedy"
-              disableDefaultUI={true}
-              internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-            >
-              <MapController
-                hub={hubCoords}
-                customer={customerCoords}
-                driver={driverCoords}
-                recenterTrigger={recenterCount}
-                isDualScreen={true}
-              />
-
-              {/* Sede / Hub Marker */}
-              {warehouse && (<AdvancedMarker position={hubCoords} title={`Sede ${warehouseLabel}`}>
-                <div className="flex flex-col items-center">
-                  <div className="bg-[#DC2626] text-white p-2 rounded-2xl shadow-xl border-2 border-white flex items-center justify-center">
-                    <span className="text-base font-black">⚡</span>
-                  </div>
-                  <span className="bg-white text-slate-900 font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap">
-                    {warehouseLabel}
-                  </span>
-                </div>
-              </AdvancedMarker>)}
-
-              {/* Customer Destination Marker */}
-              <AdvancedMarker position={customerCoords} title="Dirección de Entrega">
-                <div className="flex flex-col items-center">
-                  <div className="bg-emerald-600 text-white p-2 rounded-2xl shadow-xl border-2 border-white flex items-center justify-center">
-                    <MapPin className="w-4 h-4" />
-                  </div>
-                  <span className="bg-white text-slate-900 font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap">
-                    Tú (Destino)
-                  </span>
-                </div>
-              </AdvancedMarker>
-
-              {/* Assigned Driver Marker with vehicle */}
-              {driverCoords && (
-                <AdvancedMarker position={driverCoords} title={effectiveDriver?.name || 'Repartidor'}>
-                  <div className="flex flex-col items-center relative">
-                    <div className="absolute -inset-1.5 bg-yellow-400 rounded-full animate-ping opacity-40"></div>
-                    <div className="relative bg-yellow-400 text-red-950 p-2 rounded-full shadow-2xl border-2 border-white flex items-center justify-center">
-                      <span className="text-base">🛵</span>
-                    </div>
-                    <span className="bg-slate-900 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap border border-slate-700">
-                      {effectiveDriver?.name?.split(' ')[0] || 'Repartidor'} • {effectiveDriver?.vehiclePlate}
-                    </span>
-                  </div>
-                </AdvancedMarker>
-              )}
-            </Map>
-          </APIProvider>
-        </div>
-      </div>
-    );
-  }
-
-  // Vista estándar para pantalla cerrada de iPhone Duo (382px, 385px) y móviles
-  return (
-    <div className="relative w-full h-screen overflow-hidden flex flex-col bg-slate-900">
-      
-      {/* Top Floating Header */}
-      <div className="absolute top-4 left-4 right-4 z-20 flex items-center justify-between pointer-events-none">
-        <button
-          onClick={onBack}
-          className="pointer-events-auto bg-white/95 backdrop-blur-md text-slate-800 p-2.5 rounded-full shadow-lg border border-slate-200/80 hover:bg-slate-50 transition active:scale-95"
-        >
-          <ArrowLeft className="w-5 h-5" />
-        </button>
-
-        <div className="pointer-events-auto bg-white/95 backdrop-blur-md px-3.5 py-1.5 rounded-full shadow-lg border border-slate-200/80 flex items-center gap-2">
-          <span className={`w-2.5 h-2.5 rounded-full ${statusBadge.dot}`} />
-          <span className="font-black text-xs text-slate-900">{order.orderNumber}</span>
-          <span className={`text-[10px] font-extrabold px-2 py-0.5 rounded-full ${statusBadge.bg}`}>
-            {isSplitOrder ? `Entrega ${activeShipmentIndex+1}: ` : ''}{statusBadge.text}
-          </span>
-          {isSplitOrder && (
-            <span className="text-[10px] font-black bg-amber-100 text-amber-900 px-2 py-0.5 rounded-full">
-              {deliveredCount} de {childShipments.length} entregados
-            </span>
-          )}
-        </div>
-
-        <button
-          onClick={() => setRecenterCount(c => c + 1)}
-          className="pointer-events-auto bg-white/95 backdrop-blur-md text-slate-800 p-2.5 rounded-full shadow-lg border border-slate-200/80 hover:bg-slate-50 transition active:scale-95"
-          title="Recentrar mapa"
-        >
-          <Navigation className="w-5 h-5 text-red-600" />
-        </button>
-      </div>
-
-      {/* GPS Telemetry Pill or Scheduled Banner */}
-      {effectiveStatus === 'EN_CAMINO' ? (
-        <div className="absolute top-16 left-4 right-4 z-20 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto bg-slate-900/90 backdrop-blur-md text-white text-[11px] font-bold px-3.5 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-slate-700">
-            <span className={`w-2 h-2 rounded-full ${!telemetry || isLost ? 'bg-red-500' : isStale ? 'bg-amber-400' : 'bg-emerald-400 animate-pulse'}`} />
-            {!telemetry ? <span className="text-slate-200">GPS pendiente de esta entrega</span> : isLost ? (
-              <span className="text-red-300">Señal GPS pendiente (hace {secondsAgo}s)</span>
-            ) : isStale ? (
-              <span className="text-amber-300">Ubicación desactualizada (hace {secondsAgo}s)</span>
-            ) : (
-              <span>Ubicación GPS en vivo ({timeAgoSpanish(trackingData?.telemetry?.timestamp || Date.now())})</span>
-            )}
-            <button
-              onClick={loadData}
-              className="ml-2 px-2 py-0.5 rounded-md text-[10px] font-black bg-slate-800 text-slate-200 hover:bg-slate-700 flex items-center gap-1 transition"
-              title="Sincronizar estado con el servidor"
-            >
-              <RefreshCw className="w-3 h-3" />
-              <span>Sincronizar</span>
-            </button>
-          </div>
-        </div>
-      ) : order.deliveryMode === 'PROGRAMADO' && (
-        <div className="absolute top-16 left-4 right-4 z-20 flex justify-center pointer-events-none">
-          <div className="pointer-events-auto bg-blue-900/90 backdrop-blur-md text-white text-[11px] font-bold px-4 py-1.5 rounded-full shadow-xl flex items-center gap-2 border border-blue-700">
-            <Calendar className="w-3.5 h-3.5 text-blue-300" />
-            <span>Entrega programada para el {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}</span>
-          </div>
-        </div>
-      )}
-
-      {/* Google Map */}
-      <div className="flex-1 w-full h-full">
-        <APIProvider apiKey={apiKey}>
-          <Map
-            defaultCenter={hubCoords}
-            defaultZoom={14}
-            mapId="DEMO_MAP_ID"
-            className="w-full h-full"
-            gestureHandling="greedy"
-            disableDefaultUI={true}
-            internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-          >
-            <MapController
-              hub={hubCoords}
-              customer={customerCoords}
-              driver={driverCoords}
-              recenterTrigger={recenterCount}
-              isDualScreen={false}
-            />
-
-            {/* Sede / Hub Marker */}
-            {warehouse && (<AdvancedMarker position={hubCoords} title={`Sede ${warehouseLabel}`}>
-              <div className="flex flex-col items-center">
-                <div className="bg-[#DC2626] text-white p-2 rounded-2xl shadow-xl border-2 border-white flex items-center justify-center">
-                  <span className="text-base font-black">⚡</span>
-                </div>
-                <span className="bg-white text-slate-900 font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap">
-                  {warehouseLabel}
-                </span>
-              </div>
-            </AdvancedMarker>)}
-
-            {/* Customer Destination Marker */}
-            <AdvancedMarker position={customerCoords} title="Dirección de Entrega">
-              <div className="flex flex-col items-center">
-                <div className="bg-emerald-600 text-white p-2 rounded-2xl shadow-xl border-2 border-white flex items-center justify-center">
-                  <MapPin className="w-4 h-4" />
-                </div>
-                <span className="bg-white text-slate-900 font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap">
-                  Tú (Destino)
-                </span>
-              </div>
-            </AdvancedMarker>
-
-            {/* Assigned Driver Marker with vehicle */}
-            {driverCoords && (
-              <AdvancedMarker position={driverCoords} title={effectiveDriver?.name || 'Repartidor'}>
-                <div className="flex flex-col items-center relative">
-                  <div className="absolute -inset-1.5 bg-yellow-400 rounded-full animate-ping opacity-40"></div>
-                  <div className="relative bg-yellow-400 text-red-950 p-2 rounded-full shadow-2xl border-2 border-white flex items-center justify-center">
-                    <span className="text-base">🛵</span>
-                  </div>
-                  <span className="bg-slate-900 text-white font-extrabold text-[10px] px-2 py-0.5 rounded-md shadow-md mt-1 whitespace-nowrap border border-slate-700">
-                    {effectiveDriver?.name?.split(' ')[0] || 'Repartidor'} • {effectiveDriver?.vehiclePlate}
-                  </span>
-                </div>
-              </AdvancedMarker>
-            )}
-          </Map>
-        </APIProvider>
-      </div>
-
-      {/* Draggable Bottom Sheet */}
-      <div
-        className={`absolute bottom-0 left-0 right-0 z-30 bg-white rounded-t-3xl shadow-2xl transition-all duration-300 border-t border-slate-200/80 ${
-          sheetExpanded ? 'max-h-[85vh]' : 'max-h-[44vh]'
-        } flex flex-col`}
-      >
-        {/* Drag handle */}
-        <div
-          onClick={() => setSheetExpanded(!sheetExpanded)}
-          className="p-2.5 flex items-center justify-center cursor-pointer hover:bg-slate-50 transition rounded-t-3xl"
-        >
-          <div className="w-12 h-1.5 bg-slate-300 rounded-full"></div>
-        </div>
-
-        {/* Multi-Shipment Tabs for Split Orders */}
-        {isSplitOrder && (
-          <div className="px-5 pb-2">
-            <div className="flex items-center gap-1.5 overflow-x-auto pb-1 no-scrollbar">
-              {childShipments.map((shipment, index) => {
-                const isSelected = activeShipmentIndex === index;
-                const isDelivered = shipment.fulfillmentStatus === 'ENTREGADO';
-                return (
-                  <button
-                    key={shipment.shipmentId}
-                    onClick={() => setActiveShipmentIndex(index)}
-                    className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 shrink-0 ${
-                      isSelected
-                        ? 'bg-red-600 text-white shadow-xs'
-                        : isDelivered
-                        ? 'bg-emerald-50 text-emerald-800 border border-emerald-200'
-                        : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-                    }`}
-                  >
-                    <span>Envío {index + 1} de {childShipments.length}</span>
-                    <span className="text-[10px] opacity-80">({shipment.weightKg} kg)</span>
-                    {isDelivered && <span>✓</span>}
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-{currentChild && <section aria-label="Contenido de esta entrega" className="mx-4 my-3 rounded-xl border p-3 text-sm"><p className="font-bold">Entrega {currentChild.shipmentIndex} · {order.storeName} · {currentChild.weightKg} kg</p><p>{currentChild.driver?.name || 'Repartidor pendiente'} · {currentChild.fulfillmentStatus}</p><ul>{currentChild.items.map(i=><li key={i.productId}>{i.quantity} × {i.name}{i.presentation && !i.name.endsWith(i.presentation) ? ` · ${i.presentation}` : ''}</li>)}</ul></section>}
-        {/* Essential Tracking Bar */}
-        <div className="px-5 pb-3">
-          <div className="flex items-center justify-between">
-            <div>
-              <p className="text-[11px] font-bold text-slate-400 uppercase tracking-wider">
-                {order.deliveryMode === 'PROGRAMADO'
-                  ? 'Franja de Entrega'
-                  : isSplitOrder
-                  ? `Tiempo estimado (Envío ${activeShipmentIndex + 1})`
-                  : 'Tiempo estimado'}
-              </p>
-              <h2 className="text-xl sm:text-2xl font-black text-slate-900 tracking-tight">
-                {effectiveStatus === 'ENTREGADO' ? (
-                  <span className="text-emerald-600">
-                    {isSplitOrder ? `¡Envío ${activeShipmentIndex + 1} entregado!` : '¡Pedido entregado!'}
-                  </span>
-                ) : order.deliveryMode === 'PROGRAMADO' ? (
-                  <span className="text-blue-700 text-lg sm:text-xl">
-                    {order.scheduledWindow?.dateLabel} {order.scheduledWindow?.displayWindow.toLowerCase()}
-                  </span>
-                ) : (
-                  <span>{order.dispatchStatusMessage || <>Llega en aprox. <span className="text-red-600">{order.estimatedDeliveryMinutes} min</span></>}</span>
-                )}
-              </h2>
-            </div>
-
-            {/* Customer Secret Delivery Code */}
-            <div className="bg-red-50 border border-red-200 rounded-2xl p-2.5 text-center shadow-xs">
-              <span className="text-[10px] font-bold text-red-700 uppercase flex items-center justify-center gap-1">
-                <Key className="w-3 h-3 text-red-600" />
-                {isSplitOrder ? `PIN Envío ${activeShipmentIndex + 1}` : 'Código Entrega'}
-              </span>
-              <p className="text-xl font-black text-red-700 tracking-widest mt-0.5">
-                {effectiveSecretCode}
-              </p>
-            </div>
-          </div>
-
-          <p className="text-xs text-slate-500 mt-1">
-            Entrega a {order.customer.name} en {order.deliveryAddress.address}
-          </p>
-        </div>
-
-        <div className="mx-5 mb-3"><WarehouseSummary order={order} /><CustomerDispatches order={order} onSelect={setActiveShipmentIndex}/></div>
-
-        {/* Assigned Driver Profile Card */}
-        {effectiveDriver && (
-          <div className="mx-5 p-3 bg-slate-50 rounded-2xl border border-slate-100 flex items-center justify-between mb-3">
-            <div className="flex items-center gap-3">
-              <img
-                src={effectiveDriver.photo}
-                alt={effectiveDriver.name}
-                className="w-11 h-11 rounded-full object-cover border border-white shadow-xs"
-              />
-              <div>
-                <p className="text-xs font-black text-slate-900">
-                  {effectiveDriver.name} {isSplitOrder && `(Repartidor Envío ${activeShipmentIndex + 1})`}
-                </p>
-                <p className="text-[11px] text-slate-500">
-                  {effectiveDriver.vehicleType} • Placa: <strong className="text-slate-800">{effectiveDriver.vehiclePlate}</strong>
-                </p>
-                <div className="flex items-center gap-1 text-[11px] text-amber-600 font-bold">
-                  <span>★ {effectiveDriver.rating}</span>
-                  <span className="text-slate-400">{externalOffer ? `Red externa simulada · ${externalOffer.providerName}` : '• Flota propia Bolt'}</span>
-                </div>
-              </div>
-            </div>
-
-            {effectiveDriver.phone && <a
-              href={`tel:${effectiveDriver.phone}`}
-              className="w-10 h-10 rounded-full bg-emerald-600 hover:bg-emerald-700 text-white flex items-center justify-center shadow-md shadow-emerald-600/30 transition"
-              title="Llamar al repartidor"
-            >
-              <Phone className="w-4 h-4" />
-            </a>}
-          </div>
-        )}
-
-        {/* Scrollable Extended Content when sheet is opened */}
-        <div className="flex-1 overflow-y-auto px-5 pb-5 space-y-3 pb-safe">
-          {/* Cash on delivery notice for split orders */}
-          {order.payment.method === 'CASH_ON_DELIVERY' && currentChild && (
-            <div className="text-xs bg-amber-50 text-amber-950 p-2.5 rounded-xl border border-amber-200">
-              <strong>Cobro contra entrega de este envío: </strong>
-              <span className="font-extrabold">{formatCOP(currentChild.cashToCollect)}</span>
-              <span className="text-[11px] text-slate-600 ml-1">
-                (Total pedido: {formatCOP(order.totals.total)})
-              </span>
-            </div>
-          )}
-
-          {/* Portería instruction */}
-          <div className="text-xs text-slate-600 bg-slate-50 p-3 rounded-xl border border-slate-100">
-            <strong className="text-slate-800">Instrucciones de recepción: </strong>
-            <span>
-              {order.deliveryAddress.porteriaPolicy === 'DEJAR_EN_PORTERIA'
-                ? 'Dejar en portería debidamente sellado.'
-                : order.deliveryAddress.porteriaPolicy === 'SUBIR_A_PUERTA'
-                ? 'Subir al apartamento.'
-                : 'Llamar al teléfono celular al momento de llegar.'}
-            </span>
-            {order.deliveryAddress.details && ` (${order.deliveryAddress.details})`}
-          </div>
-
-          {/* Items Breakdown */}
-          <div className="space-y-2">
-            <h4 className="text-xs font-bold text-slate-900 uppercase tracking-wider">
-              {currentChild
-                ? `Productos en este envío (${currentChild.items.length})`
-                : `Productos en el paquete (${order.items.length})`}
-            </h4>
-            <div className="space-y-1.5">
-              {(currentChild ? currentChild.items : order.items).map(item => (
-                <div key={item.productId} className="flex items-center justify-between text-xs py-1.5 border-b border-slate-100">
-                  <div className="flex items-center gap-2">
-                    <span className="font-bold text-red-600">{item.quantity}x</span>
-                    <span className="font-medium text-slate-800">{item.name}</span>
-                  </div>
-                  <span className="font-bold text-slate-900">{formatCOP(item.price * item.quantity)}</span>
-                </div>
-              ))}
-            </div>
-
-            <div className="flex justify-between pt-2 text-sm font-black text-slate-900">
-              <span>Total del pedido:</span>
-              <span className="text-red-600">{formatCOP(order.totals.total)}</span>
-            </div>
-
-            {(effectiveStatus === 'PENDIENTE_CONFIRMACION' || effectiveStatus === 'CONFIRMADO') && (
-              <div className="pt-2 border-t border-slate-100">
-                <button
-                  onClick={handleCancelOrder}
-                  disabled={cancelling}
-                  className="w-full bg-rose-50 hover:bg-rose-100 text-rose-700 font-bold text-xs py-2.5 rounded-xl border border-rose-200 transition flex items-center justify-center gap-1.5"
-                >
-                  {cancelling ? 'Cancelando…' : isSplitOrder ? `Cancelar entrega ${activeShipmentIndex+1}` : '✕ Cancelar Pedido'}
-                </button>
-                {cancelError && (
-                  <p className="text-[11px] text-rose-600 mt-1 text-center font-medium">{cancelError}</p>
-                )}
-              </div>
-            )}
-          </div>
-        </div>
-      </div>
+  if (!order) return <main className="min-h-screen bg-slate-50 p-6 text-slate-900">
+    <div className="mx-auto max-w-xl rounded-2xl border border-slate-200 bg-white p-5">
+      <h1 className="text-lg font-bold">Seguimiento de tu pedido</h1>
+      <p className="mt-2 text-sm text-slate-600" role={loadError ? 'alert' : 'status'}>{loadError || 'Cargando los detalles de tu entrega…'}</p>
+      {loadError && <div className="mt-3 flex flex-wrap gap-3 text-sm font-semibold text-red-700">
+        <button type="button" onClick={() => void load(true)} className="min-h-11 underline">Reintentar</button>
+        <a href="/recuperar-seguimiento" className="inline-flex min-h-11 items-center underline">Recuperar seguimiento privado</a>
+      </div>}
+      <button type="button" onClick={onBack} className="min-h-11 text-sm underline">Volver</button>
     </div>
-  );
-};
+  </main>;
+
+  if (order.deliveryReview?.status === 'PENDING') return <PendingDeliveryReceipt order={order} onBack={onBack}
+    onRefresh={() => void load(true)} onCancel={() => void cancel()} cancelling={cancelling} error={cancelError} />;
+
+  const status = tracking?.status ?? child?.fulfillmentStatus ?? order.fulfillmentStatus;
+  const done = status === 'ENTREGADO';
+  const cancelled = status === 'CANCELADO';
+  const incident = status === 'CON_INCIDENCIA';
+  const terminal = done || cancelled;
+  const timing = tracking?.timing;
+  const clock = readDeliveryClock(timing, now, terminal ? (done ? timing?.stages.deliveredAt : timing?.stages.cancelledAt) ?? null : undefined);
+  const isScheduled = (tracking?.deliveryMode ?? order.deliveryMode) === 'PROGRAMADO';
+  const scheduled = timing?.source === 'BOOKED_WINDOW' ? tracking?.scheduledWindow : undefined;
+  const countdown = !terminal && !incident && !isScheduled && clock.remainingSeconds !== null && !clock.overdue;
+  const dispatches: PublicDispatch[] = (order as Order & { dispatches?: PublicDispatch[] }).dispatches ?? [];
+  const dispatch = dispatches.find(entry => entry.shipmentId === child?.shipmentId);
+  const driver = tracking?.driver;
+  const contact = status === 'REPARTIDOR_ASIGNADO' || status === 'EN_CAMINO' ? clientPhone(driver?.phone) : null;
+  const locationAt = tracking?.lastLocationAt;
+  const telemetry = tracking?.telemetry;
+  const fresh = status === 'EN_CAMINO' && tracking?.locationStatus === 'LIVE' && telemetry &&
+    telemetry.timestamp <= now && now - telemetry.timestamp <= tracking.locationMaxAgeSeconds * 1000;
+  const stale = status === 'EN_CAMINO' && !!locationAt && !fresh;
+  const provider = dispatch?.driverConfirmed ? dispatch.provider : null;
+  const items = child?.items ?? order.items;
+  const pin = tracking?.secretDeliveryCode;
+  const focusedStep = stepByStatus[status] ?? -1;
+  const recordedStep = stages.reduce((last, stage, index) => timing?.stages[stage.time] ? index : last, -1);
+  const progress = Math.max(focusedStep, recordedStep);
+  const handoffLabel = handoff[order.deliveryAddress.porteriaPolicy];
+  const showElapsed = !isScheduled && clock.elapsedSeconds !== null;
+  const supportEmail = import.meta.env?.VITE_BOLT_SUPPORT_EMAIL || BUSINESS.email;
+  const supportHref = /^\S+@\S+\.\S+$/.test(supportEmail) ? `mailto:${supportEmail}` : null;
+
+  return <main className="min-h-dvh bg-slate-50 px-4 pb-10 pt-3 text-slate-950 sm:px-6">
+    <div className="mx-auto max-w-6xl">
+      <header className="mb-3 flex flex-wrap items-center justify-between gap-2">
+        <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-semibold hover:bg-slate-100"
+          onClick={onBack}><ArrowLeft className="size-4" aria-hidden="true" /> Volver a la tienda</button>
+        <div className="flex flex-wrap items-center gap-1.5 text-sm font-bold">
+          {onViewSummary && <button type="button" onClick={onViewSummary} className="min-h-11 rounded-full border border-slate-200 bg-white px-3">Resumen</button>}
+          {supportHref && <a className="inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3" href={supportHref}>
+            <CircleHelp className="size-4" aria-hidden="true" /> Ayuda</a>}
+        </div>
+      </header>
+
+      <div className="grid items-start gap-4 lg:grid-cols-[minmax(0,5fr)_minmax(0,6fr)]">
+        <div className="space-y-4">
+          <section className="rounded-3xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-label="Estado y tiempo de la entrega">
+            <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+              <p className="break-all text-sm font-semibold text-slate-600">Pedido {order.purchaseCode || order.orderNumber}</p>
+              {tracking?.simulation && <span className="rounded-full bg-amber-100 px-2.5 py-1 text-xs font-bold text-amber-950">Simulación</span>}
+            </div>
+            <h1 className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">{headings[status]}</h1>
+            {dispatch?.code && shipments.length > 1 && <p className="mt-1 text-sm text-slate-600">Despacho {dispatch.code}</p>}
+            {countdown ? <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-red-700 px-4 py-3 text-white">
+              <div><p className="font-black">Turbo</p><p className="text-xs">Tiempo estimado restante</p></div>
+              <time className="text-3xl font-black tabular-nums" aria-label="Tiempo estimado restante" dateTime={`PT${clock.remainingSeconds}S`}>{formatDeliveryClock(clock.remainingSeconds!)}</time>
+            </div> : scheduled && !terminal ? <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-950">
+              <p className="font-bold">Entrega programada</p>
+              <p>{scheduled.dateLabel} · {scheduled.displayWindowShort || scheduled.displayWindow}</p>
+            </div> : !terminal && !incident ? <p className="mt-3 text-sm text-slate-700">
+              {isScheduled ? 'Franja de entrega por confirmar.' : clock.overdue ? 'El tiempo estimado ya pasó. Aquí puedes seguir el estado de la entrega.' : 'Hora de llegada por confirmar.'}
+            </p> : null}
+            {showElapsed && <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
+              <Clock3 className="size-4 shrink-0" aria-hidden="true" />
+              <span>{done ? 'Tiempo de entrega' : cancelled ? 'Tiempo hasta la cancelación' : 'Tiempo desde la confirmación'}: <span className="font-bold tabular-nums text-slate-900">{formatDeliveryClock(clock.elapsedSeconds!)}</span></span>
+            </p>}
+            {loadError && <p role="status" className="mt-2 text-sm text-amber-900">No se pudo actualizar. Mostramos el último estado disponible.</p>}
+          </section>
+
+          {shipments.length > 1 && <nav className="flex flex-wrap gap-2" aria-label="Entregas de este pedido">
+            {shipments.map((shipment, index) => <button key={shipment.shipmentId} type="button" aria-pressed={index === activeIndex}
+              className={`min-h-11 rounded-xl border px-3 text-sm font-bold ${index === activeIndex ? 'border-red-700 bg-red-700 text-white' : 'border-slate-200 bg-white'}`}
+              onClick={() => { setCancelError(null); setActiveIndex(index); }}>
+              Entrega {index + 1} {shipment.fulfillmentStatus === 'ENTREGADO' && '✓'}
+            </button>)}
+          </nav>}
+
+          <section aria-label="Avance del pedido" className="rounded-2xl border border-slate-200 bg-white p-4">
+            <div aria-hidden="true" className="mb-3 grid grid-cols-6 gap-1">
+              {stages.map((stage, index) => <span key={stage.time} className={`h-1.5 rounded-full ${index <= progress ? 'bg-red-700' : 'bg-slate-200'}`} />)}
+            </div>
+            <ol className="grid grid-cols-3 gap-x-2 gap-y-3 sm:grid-cols-6 lg:grid-cols-3 xl:grid-cols-6">
+              {stages.map((stage, index) => {
+                const at = timing?.stages[stage.time];
+                const completed = Boolean(at) || (focusedStep >= index && !cancelled);
+                return <li key={stage.time} aria-current={focusedStep === index ? 'step' : undefined} className="min-w-0 text-xs">
+                  <span className={`mb-1 grid size-6 place-items-center rounded-full ${completed ? 'bg-emerald-100 text-emerald-800' : 'bg-slate-100 text-slate-700'}`}>
+                    {completed ? <Check className="size-3.5" aria-hidden="true" /> : index + 1}
+                  </span>
+                  <span className={focusedStep === index ? 'font-bold text-red-800' : 'font-semibold text-slate-700'}>{stage.label}</span>
+                  {at && <time className="block text-slate-600" dateTime={at}>{formatDate.format(new Date(at))} · {formatTimeBogota(at)}</time>}
+                </li>;
+              })}
+            </ol>
+            {incident && order.dispatchStatusMessage && <p className="mt-3 text-sm text-slate-700">{order.dispatchStatusMessage}</p>}
+          </section>
+        </div>
+
+        <div className="min-w-0 space-y-4">
+          <LiveDeliveryMap key={child?.shipmentId ?? order.id}
+            origin={tracking?.origin}
+            destination={{ name: 'Tu dirección de entrega', coordinates: tracking?.destination.coordinates }}
+            route={fresh ? tracking?.trail : undefined}
+            inTransit={status === 'EN_CAMINO'}
+            courier={fresh ? { coordinates: { lat: telemetry.latitude, lng: telemetry.longitude }, updatedAt: telemetry.timestamp, freshness: 'live' }
+              : stale ? { updatedAt: locationAt, freshness: 'stale' } : null} />
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="flex items-start gap-1.5 text-sm text-slate-600"><MapPin className="mt-0.5 size-4 shrink-0" aria-hidden="true" />{order.deliveryAddress.address}</p>
+            <button type="button" onClick={() => void load(true)} className="inline-flex min-h-11 items-center gap-2 px-1 text-sm font-bold text-red-800">
+              <RefreshCw className="size-4" aria-hidden="true" /> Actualizar</button>
+          </div>
+
+          {!terminal && (driver || provider || dispatch) && <section aria-label="Repartidor" className="flex flex-wrap items-center gap-3 rounded-2xl border border-slate-200 bg-white p-4">
+            {driver?.photo ? <img src={driver.photo} alt="" className="size-11 rounded-full object-cover" />
+              : <span className="grid size-11 shrink-0 place-items-center rounded-full bg-red-50 text-red-800"><Bike className="size-5" aria-hidden="true" /></span>}
+            <div className="min-w-0 flex-1">
+              <p className="break-words font-bold">{driver?.name || (provider ? 'Repartidor asignado' : 'Buscando repartidor')}</p>
+              {provider && <p className="text-sm text-slate-600">{provider}</p>}
+              {driver?.vehicleType && <p className="text-xs text-slate-600">{driver.vehicleType}{driver.vehiclePlate && ` · Placa ${driver.vehiclePlate}`}</p>}
+            </div>
+            {contact && <div className="flex flex-wrap gap-2">
+              <a href={`tel:+${contact}`} className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-sm font-bold">
+                <Phone className="size-4" aria-hidden="true" /> Llamar</a>
+              {import.meta.env?.VITE_BOLT_TRACKING_WHATSAPP === '1' && <a href={`https://wa.me/${contact}`}
+                target="_blank" rel="noreferrer" className="inline-flex min-h-11 items-center gap-1.5 rounded-xl border border-slate-200 px-3 text-sm font-bold">
+                <MessageCircle className="size-4" aria-hidden="true" /> WhatsApp</a>}
+            </div>}
+          </section>}
+          {pin && <div className="flex items-center justify-between gap-2 rounded-2xl border border-red-200 bg-red-50 p-4 text-red-950">
+            <span className="flex items-center gap-2 text-sm font-bold"><KeyRound className="size-4 shrink-0" aria-hidden="true" /> Código de entrega</span>
+            <strong className="text-lg tracking-widest">{pin}</strong>
+          </div>}
+        </div>
+      </div>
+
+      <section aria-label="Detalles del pedido" className="mt-4 rounded-2xl border border-slate-200 bg-white p-4 sm:p-5">
+        <WarehouseSummary order={order} />
+        <OrderEntrancePhoto orderId={order.id} audience={guestOnly ? 'customer' : api.getStoredAdminToken() ? 'admin' : 'customer'} />
+        <h2 className="mt-3 font-bold">{child ? 'Productos de esta entrega' : 'Productos del pedido'}</h2>
+        <ul className="mt-1 divide-y divide-slate-100 text-sm">
+          {items.map(item => <li key={item.productId} className="flex flex-wrap items-start justify-between gap-2 py-2">
+            <span>{item.quantity} × {item.name}{item.presentation && !item.name.endsWith(item.presentation) ? ` · ${item.presentation}` : ''}</span>
+            <strong>{formatCOP(item.quantity * item.price)}</strong>
+          </li>)}
+        </ul>
+        {tracking?.cargo && <p className="mt-1 text-sm text-slate-600">Peso con embalaje: {new Intl.NumberFormat('es-CO').format(tracking.cargo.grossWeightGrams / 1000)} kg</p>}
+        {handoffLabel && <p className="mt-2 text-sm text-slate-700">{handoffLabel}</p>}
+        {order.deliveryAddress.details && <p className="mt-2 break-words text-sm text-slate-700">Instrucciones: {order.deliveryAddress.details}</p>}
+        {order.totals.tip > 0 && <p className="mt-2 text-sm text-slate-700">Propina del pedido: {formatCOP(order.totals.tip)}</p>}
+        {(dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0) > 0 && <p className="mt-2 text-sm font-semibold">
+          Pago contra entrega: {formatCOP(dispatch?.cashToCollect ?? child?.cashToCollect ?? order.payment.cashToCollect ?? 0)}</p>}
+        <div className="mt-3 flex justify-between border-t border-slate-100 pt-3 font-bold"><span>Total del pedido</span><span>{formatCOP(order.totals.total)}</span></div>
+        {(status === 'PENDIENTE_CONFIRMACION' || status === 'CONFIRMADO') && <button type="button" disabled={cancelling}
+          onClick={() => void cancel()} className="mt-3 min-h-11 rounded-xl border border-red-200 px-3 text-sm font-bold text-red-800">
+          {cancelling ? 'Cancelando…' : child ? 'Cancelar esta entrega' : 'Cancelar pedido'}</button>}
+        {cancelError && <p role="alert" className="mt-2 text-sm text-red-800">{cancelError}</p>}
+      </section>
+    </div>
+  </main>;
+}

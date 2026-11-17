@@ -588,7 +588,7 @@ export default function App() {
   if(currentPath==='/recuperar-seguimiento')return <TrackingRecovery/>;
   if(currentPath==='/conductor')return <DriverPanel/>;
   if(currentPath==='/simulacion')return <DispatchSimulation/>;
-  if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
+  if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking key={currentPath} orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
 
   const confirmationMatch = currentPath.match(/^\/confirmacion\/([a-zA-Z0-9_-]+)\/?$/);
   if (confirmationMatch) {
@@ -608,6 +608,7 @@ export default function App() {
     return (
       <>
       <OrderTracking
+        key={trackingOrderId}
         orderId={trackingOrderId}
         guestOnly
         onBack={() => navigateTo('/')}
