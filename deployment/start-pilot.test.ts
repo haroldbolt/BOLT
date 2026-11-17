@@ -81,3 +81,21 @@ test('un volumen ya inicializado falla si falta el almacenamiento de pedidos', t
   assert.throws(() => preparePilot(source, env), /almacenamiento operativo v2/);
   assert(!fs.existsSync(storage.file));
 });
+
+test('un volumen común inicia las tres sedes, rechaza mezclas y conserva el esquema', t => {
+  const { source, volume, env } = fixture(t);
+  const unified = { ...env, BOLT_PILOT_STORE_ID: undefined, BOLT_PILOT_STORE_IDS: 'HUB_SUBA,HUB_KENNEDY,HUB_ALAMOS' };
+  assert.throws(() => preparePilot(source, { ...unified, BOLT_PILOT_STORE_IDS: 'HUB_SUBA,HUB_SUBA,HUB_ALAMOS' }), /HUB_KENNEDY/);
+  assert.throws(() => preparePilot(source, { ...unified, BOLT_PILOT_STORE_ID: 'HUB_SUBA' }), /sola variable/);
+  assert.deepEqual(fs.readdirSync(volume), []);
+  const first = preparePilot(source, unified);
+  assert.equal(first.runtime, path.join(fs.realpathSync(volume), 'bolt-operacion'));
+  const marker = JSON.parse(fs.readFileSync(path.join(first.runtime, '.bolt-private/pilot.json'), 'utf8'));
+  assert.deepEqual(marker.storeIds, ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA']);
+  assert.deepEqual(new FulfillmentStorage(first.data).read().orders, []);
+  first.release();
+  assert.throws(() => preparePilot(source, env), /alcance operativo diferente/);
+  const restarted = preparePilot(source, { ...unified, BOLT_PILOT_STORE_IDS: 'HUB_ALAMOS,HUB_SUBA,HUB_KENNEDY' });
+  assert.equal(restarted.data, first.data);
+  restarted.release();
+});
