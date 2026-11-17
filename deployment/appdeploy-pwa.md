@@ -13,6 +13,8 @@ VITE_BOLT_API_ORIGIN=https://<origen-operativo-de-bolt> \
 
 Sustituye el origen por la URL HTTPS operativa real, sin rutas ni parámetros. La compilación no se publica ni envía pedidos. El origen es público y se incorpora al código del navegador. Las credenciales se configuran en el backend.
 
+Ejecuta `node deployment/appdeploy-package.test.mjs` para comprobar los dos paquetes, los manifiestos, los iconos y las rutas estáticas usando un origen reservado sin solicitudes de red.
+
 Cada carpeta resultante contiene una PWA con un manifiesto y punto de entrada propios. Cliente comienza por el catálogo. Admin comienza por el panel protegido. El paquete incluye páginas estáticas de entrada para `/admin/nuevo/`, `/conductor`, `/cuenta`, recuperación y documentos legales. Usa los enlaces que genera Cliente para abrir una confirmación o el seguimiento en el alojamiento estático. Comprueba una recarga desde esos enlaces en el dominio publicado.
 
 El catálogo, categorías y marcas siguen usando los datos de BOLT. La compilación incluye el directorio de marcas y sus URL públicas. Las fotos cargadas en el catálogo se sirven desde la API HTTPS. AppDeploy recibe los iconos de instalación y el logotipo de BOLT como recursos.
@@ -26,3 +28,5 @@ El catálogo, categorías y marcas siguen usando los datos de BOLT. La compilaci
 5. Una vez publicado, comprueba ambos manifiestos, los iconos, el catálogo, el acceso protegido a Admin y Conductor y las rutas de seguimiento sin crear cuentas, compras ni despachos. Los escenarios de QA incluidos hacen consultas y navegación.
 
 Los servicios se pueden preparar mientras se verifica Rappi Cargo. El checkout conserva la protección del servidor hasta que el recaudo real esté habilitado.
+
+Comprueba el empaquetado local con `node deployment/appdeploy-package.test.mjs`. La comprobación compila ambas interfaces y verifica los manifiestos, recursos y rutas sin contactar al servidor operativo.
