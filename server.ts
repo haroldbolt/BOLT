@@ -18,7 +18,7 @@ import { CatalogOperations } from './src/lib/catalogOperations';
 import { boltAdminOrder, boltAdminPhotoPath, mountBoltAdmin } from './src/lib/boltAdminRoutes';
 import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltCustomerDemoCheckout, boltCustomerDemoVehicle, isBoltCustomerDemoDriver, isBoltCustomerDemoOrder, boltAdminDemoProduct, boltAdminDemoReviewContext, boltGalleryDemoProduct, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
 import { createCustomerDemoDispatch } from './src/lib/boltCustomerDemoDispatch';
-import { cashDemoEmail, cashDemoSku, cashDemoStoreId } from './src/lib/demoCashCheckout';
+import { cashDemoDriverId, cashDemoEmail, cashDemoSku, cashDemoStoreId, cashDemoVehicle, isDemoCashCheckoutOrder } from './src/lib/demoCashCheckout';
 import { matchesCatalogCategory } from './src/lib/catalogCategories';
 import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
@@ -110,19 +110,21 @@ const dispatchService = new DispatchService({
   simulation: isDispatchSimulation,
   providers: simulationProvider ? [simulationProvider] : [],
   holdDispatch: order => isBoltAdminDemoOrder(order) && !customerDemoDispatch?.isStarting(order.id),
-  simulationVehicle: boltCustomerDemoVehicle,
-  isSimulationDriver: isBoltCustomerDemoDriver,
+  simulationVehicle: order => isDemoCashCheckoutOrder(order) ? cashDemoVehicle : boltCustomerDemoVehicle(order),
+  isSimulationDriver: id => id === cashDemoDriverId || isBoltCustomerDemoDriver(id),
 });
 const customerDemoDispatch = isDispatchSimulation
   ? createCustomerDemoDispatch(ordersRepository, dispatchService, () => stores)
   : undefined;
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
-function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order) {
+function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order, cashDemo=false) {
   request={...request,destination:enrichDestination(request.destination)};
   const fixtureQuote=isBoltAdminDemoOrder(reviewingOrder);
   const capacityOrders=isDispatchSimulation ? orderList.filter(order=>isBoltAdminDemoOrder(order)===fixtureQuote) : orderList;
   const context={...transportContext(),orders:capacityOrders};
-  const scopedContext=isDispatchSimulation?boltAdminDemoReviewContext(reviewingOrder,context):context;
+  const scopedContext=isDispatchSimulation && cashDemo
+    ? {...context, config:{...context.config, vehicles:[cashDemoVehicle]}}
+    : isDispatchSimulation ? boltAdminDemoReviewContext(reviewingOrder,context) : context;
   const quote=evaluateDeliveryQuote(request,stores,catalog,capacityOrders,scopedContext);
   if (pilotStoreId && quote.territoryInfo?.isCovered &&
       quote.eligibilityStatus !== 'OUT_OF_COVERAGE' && quote.eligibilityStatus !== 'ADDRESS_NEEDS_CONFIRMATION') {
@@ -424,25 +426,46 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     app.all('/api/v1/simulation/customer-checkout', (_req, res) => res.status(404).json({ error: 'Simulación no disponible.' }));
   }
 
-  if (isDispatchSimulation) app.get('/api/v1/simulation/cash-checkout', (_req, res) => {
-    res.set('Cache-Control', 'no-store');
-    const store = activeStores().find(candidate => candidate.id === cashDemoStoreId);
-    const product = products.find(candidate => candidate.id === 'SIM-CARD' && candidate.sku === cashDemoSku && candidate.status === 'ACTIVE');
-    if (!store || !product?.transport || !Number.isSafeInteger(product.price) || product.price <= 0) {
-      return res.status(503).json({ error: 'La presentación ficticia del checkout de Suba no está disponible.' });
-    }
-    res.json({
-      store,
-      product,
-      address: {
-        address: 'Carrera 107 #143-31, Bogotá, Colombia',
-        coordinates: store.verifiedEntrance ?? store.coordinates,
-        municipality: 'Bogotá',
-        locality: 'Suba',
-        details: 'Datos ficticios para la prueba de efectivo.',
-      },
+  if (isDispatchSimulation) {
+    const cashCheckoutFixture = () => {
+      const store = activeStores().find(candidate => candidate.id === cashDemoStoreId);
+      const product = products.find(candidate => candidate.id === 'SIM-CARD' && candidate.sku === cashDemoSku && candidate.status === 'ACTIVE');
+      if (!store || !product?.transport || !Number.isSafeInteger(product.price) || product.price <= 0) return undefined;
+      return {
+        store,
+        product,
+        address: {
+          address: 'Carrera 107 #143-31, Bogotá, Colombia',
+          coordinates: { lat: 4.749154, lng: -74.096137 },
+          municipality: 'Bogotá',
+          locality: 'Suba',
+          details: 'Datos ficticios para la prueba de efectivo.',
+        },
+      };
+    };
+    const cashCheckout = (res: Response) => {
+      res.set('Cache-Control', 'no-store');
+      const fixture = cashCheckoutFixture();
+      if (!fixture) {
+        res.status(503).json({ error: 'La presentación ficticia del checkout de Suba no está disponible.' });
+      }
+      return fixture;
+    };
+    app.get('/api/v1/simulation/cash-checkout', (_req, res) => {
+      const fixture = cashCheckout(res);
+      if (fixture) res.json(fixture);
     });
-  });
+    app.post('/api/v1/simulation/cash-checkout/quote', (_req, res) => {
+      const fixture = cashCheckout(res);
+      if (!fixture) return;
+      const quote = quoteForPurchase({
+        destination: fixture.address,
+        items: [{ productId: fixture.product.id, quantity: 1 }],
+        requestedMode: 'TURBO',
+      }, products, ordersRepository.getAllOrders(), undefined, true);
+      return res.json(quote);
+    });
+  }
 
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
@@ -598,7 +621,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           items: items.map((i: any) => ({ productId: i.productId, quantity: i.quantity })),
           requestedMode: requestedDeliveryMode,
           scheduledWindow,
-        },purchaseCatalog,ordersRepository.getAllOrders().filter(o=>o.id!==reviewingOrder?.id),reviewingOrder);
+        },purchaseCatalog,ordersRepository.getAllOrders().filter(o=>o.id!==reviewingOrder?.id),reviewingOrder,cashDemo);
 
         if(req.body.requestDeliveryReview===true && !reviewingOrder) {
           if(!evaluatedQuote.reviewRequestToken || req.body.reviewRequestToken!==evaluatedQuote.reviewRequestToken) return res.status(409).json({code:'REVIEW_CHANGED',error:'Actualiza el carrito antes de enviar la solicitud.'});

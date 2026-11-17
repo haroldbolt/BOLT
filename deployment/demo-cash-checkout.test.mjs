@@ -96,7 +96,9 @@ try {
   const admin = await login('/auth/login', simulation.admin);
   const suba = await login('/bolt-admin/demo/session', { profileId: 'suba' }, 201);
   const kennedy = await login('/bolt-admin/demo/session', { profileId: 'kennedy' }, 201);
-  const driver = await login('/driver/auth/login', simulation.drivers[1]);
+  const driverFixture = simulation.drivers.find(candidate => candidate.id === 'SIM-CASH-SUBA');
+  assert.ok(driverFixture);
+  const driver = await login('/driver/auth/login', driverFixture);
   const driverAction = (route, body, status) => action('/driver' + route, body, driver, status);
   await driverAction('/shift', { action: 'START' });
   await driverAction('/simulation/location', {});
@@ -104,9 +106,9 @@ try {
   const sales = async () => (await api('/bolt-admin/sales?storeId=' + storeId + '&period=7d', { token: suba })).summary;
   const beforeSales = await sales();
   const item = { productId: product.id, quantity: 1 };
-  const quote = await action('/delivery/quote', {
-    destination: address, items: [item], requestedMode: 'TURBO',
-  });
+  const publicQuote = await action('/delivery/quote', { destination: address, items: [item], requestedMode: 'TURBO' });
+  assert.notEqual(publicQuote.recommendedMode, 'TURBO', 'El conductor dedicado no cotiza pedidos ajenos a esta prueba.');
+  const quote = await action(cashCheckoutPath + '/quote', {});
   assert.equal(quote.recommendedMode, 'TURBO', JSON.stringify({ mode: quote.effectiveMode, message: quote.message, available: quote.availableModes, locality: quote.locality, store: quote.assignedStoreId }));
   assert.equal(quote.assignedStoreId, storeId);
   assert.ok(quote.confirmationToken);

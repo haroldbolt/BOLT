@@ -1,8 +1,22 @@
+import type { TransportVehicle } from '../types/transport';
 import type { Order } from '../types';
 
 export const cashDemoEmail = 'efectivo-suba@example.invalid';
 export const cashDemoSku = 'SIM-CARD-1';
 export const cashDemoStoreId = 'HUB_SUBA';
+export const cashDemoDriverId = 'SIM-CASH-SUBA';
+export const cashDemoDriverName = 'Conductor de prueba · Efectivo Suba';
+export const cashDemoVehicle: TransportVehicle = {
+  driverId: cashDemoDriverId,
+  storeIds: [cashDemoStoreId],
+  enabled: true,
+  modes: ['TURBO'],
+  maxLoadGrams: 5000,
+  packagingGrams: 200,
+  cargoDimensionsCm: [60, 40, 35],
+  maxVolumeCm3: 84000,
+  scheduledSlots: [],
+};
 
 export function isDemoCashCheckoutOrder(order: Order) {
   return order.storeId === cashDemoStoreId &&

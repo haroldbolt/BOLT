@@ -15,6 +15,7 @@ import type { OrdersRepository } from "./ordersRepository";
 import type { TransportRepository } from "./transportRepository";
 import { planTransport } from "./transportPlanner";
 import { getCheckoutPreviewOrder } from "./checkoutPreview";
+import { cashDemoDriverId, cashDemoDriverName, cashDemoVehicle } from "./demoCashCheckout";
 const trackingPrefix = "SIM-TRACK-";
 const trackingFingerprint = "SIMULATION_TRACKING_V1";
 const trackingDriverId = "SIM-TRACK-COURIER";
@@ -171,8 +172,27 @@ export function mountDispatchSimulation(
   if (!simulationEnabled()) throw Error("Simulation disabled");
   const config = JSON.parse(fs.readFileSync(marker, "utf8")),
     store = stores().find((x) => x.id === "HUB_SUBA")!;
+  if (!config.cashCheckoutDriver) {
+    const seed = config.drivers[0].driver;
+    config.cashCheckoutDriver = {
+      driver: {
+        ...seed,
+        id: cashDemoDriverId,
+        name: cashDemoDriverName,
+        maxWeightKg: cashDemoVehicle.maxLoadGrams / 1000,
+      },
+      email: "efectivo-suba-conductor@simulation.test",
+      password: "Sim-" + crypto.randomBytes(18).toString("hex"),
+      storeIds: [store.id],
+    };
+    const temporaryMarker = marker + ".tmp";
+    fs.writeFileSync(temporaryMarker, JSON.stringify(config), { mode: 0o600 });
+    fs.renameSync(temporaryMarker, marker);
+  }
+  const availableFixtures = [...config.drivers, config.cashCheckoutDriver];
   const fixtureIds: string[] = config.drivers.map((d: any) => d.driver.id);
-  for (const d of config.drivers)
+  const allFixtureIds: string[] = availableFixtures.map((d: any) => d.driver.id);
+  for (const d of availableFixtures)
     if (!repo.dispatchState.accounts[d.driver.id])
       s.provision(d, "simulation-setup");
   if (!config.initialized) {
@@ -187,7 +207,7 @@ export function mountDispatchSimulation(
     return {
       enabled: true,
       admin: config.admin,
-      drivers: config.drivers.map((d: any) => ({
+      drivers: availableFixtures.map((d: any) => ({
         id: d.driver.id,
         name: d.driver.name,
         email: d.email,
@@ -228,7 +248,7 @@ export function mountDispatchSimulation(
       .json({
         enabled: true,
         admin: config.admin,
-        drivers: config.drivers.map((d: any) => ({
+        drivers: availableFixtures.map((d: any) => ({
           id: d.driver.id,
           name: d.driver.name,
           email: d.email,
@@ -649,7 +669,7 @@ export function mountDispatchSimulation(
     "/api/v1/driver/simulation/location",
     wrap((q) => {
       const id = (q as any).driverId;
-      if (!fixtureIds.includes(id)) throw Error("Conductor ficticio requerido");
+      if (!allFixtureIds.includes(id)) throw Error("Conductor ficticio requerido");
       const run = Object.values(repo.dispatchState.runs).find(
         (r) => r.driverId === id && r.status === "PICKED_UP",
       );

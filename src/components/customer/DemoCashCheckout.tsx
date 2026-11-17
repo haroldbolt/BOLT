@@ -3,7 +3,7 @@ import { ArrowLeft, ArrowRight, MapPin, Package } from 'lucide-react';
 import { useCustomer } from '../../customer/client';
 import { api } from '../../lib/api';
 import { hasConfirmedDeliveryQuote } from '../../lib/checkoutReadiness';
-import { cashDemoEmail, cashDemoSku, cashDemoStoreId } from '../../lib/demoCashCheckout';
+import { cashDemoDriverName, cashDemoEmail, cashDemoSku, cashDemoStoreId } from '../../lib/demoCashCheckout';
 import type { DeliveryQuote, QuoteRequest } from '../../lib/deliveryService';
 import { formatCOP } from '../../lib/formatters';
 import type { Order, Product, Store } from '../../types';
@@ -79,11 +79,9 @@ export function DemoCashCheckout() {
     setQuoteError('');
     setQuote(null);
     try {
-      const result = await api.getDeliveryQuote({
-        destination: preview.address,
-        items: [{ productId: preview.product.id, quantity: 1 }],
-        requestedMode: 'TURBO',
-      });
+      const response = await fetch(DEMO_CASH_ENDPOINT + '/quote', { method: 'POST', cache: 'no-store' });
+      if (!response.ok) throw new Error('Cotización no disponible');
+      const result: DeliveryQuote = await response.json();
       if (attempt !== quoteAttempt.current) return;
       if (result.assignedStoreId !== preview.store.id || !result.availableModes?.turbo ||
           !hasConfirmedDeliveryQuote(result) || result.destination.address !== preview.address.address) {
@@ -169,7 +167,7 @@ export function DemoCashCheckout() {
             <section className="space-y-3 rounded-2xl border border-slate-200 bg-white p-4 shadow-sm sm:p-5" aria-labelledby="demo-cash-instructions">
               <h2 id="demo-cash-instructions" className="font-extrabold">Recorrido de la prueba</h2>
               <ol className="list-decimal space-y-2 pl-5 text-sm text-slate-700">
-                <li>En <a href="/simulacion" className="font-bold underline" target="_blank" rel="noopener">Simulación</a> encontrarás el acceso de SIMULACIÓN HUB_SUBA 2. Inicia turno en BOLT Conductor y toca <strong>Enviar ubicación simulada</strong>.</li>
+                <li>En <a href="/simulacion" className="font-bold underline" target="_blank" rel="noopener">Simulación</a> encontrarás el acceso de <strong>{cashDemoDriverName}</strong>. Inicia turno en BOLT Conductor y toca <strong>Enviar ubicación simulada</strong>.</li>
                 <li>Confirma en BOLT Cliente con el método <strong>Efectivo contra entrega</strong>. Los datos de contacto ya son ficticios.</li>
                 <li>Abre BOLT Admin para consultar la reserva en Inventario de Suba y marcar ese pedido <strong>En alistamiento</strong> y <strong>Listo para despacho</strong>.</li>
                 <li>Revisa la oferta en Despachos, acéptala en Conductor y vuelve al seguimiento de ese mismo pedido en BOLT Cliente.</li>
