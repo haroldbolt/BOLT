@@ -1,11 +1,12 @@
 /** Private staging gateway. The existing BOLT simulator remains loopback-only. */
 import http from 'node:http';
 import crypto from 'node:crypto';
+import { adminEntry, adminEntryPath as adminPreviewPath } from './admin-entry.mjs';
 
 const COOKIE = '__Host-bolt_demo';
 const SESSION_MS = 12 * 60 * 60 * 1000;
 const checkoutPreviewPath = '/demo/checkout';
-const adminPreviewPath = '/admin/nuevo/';
+const customerOrderDemoPath = '/demo/pedido-suba';
 const digest = value => crypto.createHash('sha256').update(value).digest();
 const equal = (a, b) => crypto.timingSafeEqual(digest(a), digest(b));
 
@@ -29,7 +30,10 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
     try {
       const u = new URL(value, origin);
       if (u.origin !== origin) return null;
-      if (u.pathname === '/admin/nuevo' || u.pathname === adminPreviewPath) return adminPreviewPath;
+      const admin = adminEntry(u);
+      if (admin) return admin;
+      if (u.pathname === customerOrderDemoPath) return customerOrderDemoPath;
+      if (/^\/(?:confirmacion|pedido|simulacion\/cliente)\/[a-zA-Z0-9_-]{1,100}\/?$/.test(u.pathname)) return u.pathname;
       if (u.pathname === checkoutPreviewPath) {
         const state = u.searchParams.get('estado');
         return state === 'pendiente' || state === 'confirmado' ? `${checkoutPreviewPath}?estado=${state}` : checkoutPreviewPath;
@@ -135,7 +139,7 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
       if (pathname.startsWith('/api/')) return send(res, 401, '{"error":"Acceso privado de demo requerido"}', 'application/json');
       return sendGatePage(res, 200, form());
     }
-    if (pathname === '/__demo') return sendGatePage(res, 200, `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Revisión</title><style>body{font:18px system-ui;color:#122039;max-width:760px;padding:24px;margin:auto}a,button{display:inline-block;margin:8px;padding:16px;border-radius:12px;border:1px solid #ed0018;color:#b90016;background:white;font:inherit}li{margin:12px 0}strong{color:#ed0018}</style><h1>BOLT · Demo de revisión</h1><p><strong>SIMULACIÓN</strong> · No se cobran pagos ni se solicitan entregas reales.</p><p>Revisión de Marcas con imágenes de Shopify y pedido pendiente sin cobro. Cambios pendientes de integrar a main.</p><p>${customerEnabled ? '<strong>Pruebas privadas de cuentas.</strong> Mi cuenta indica los métodos habilitados. Usa únicamente tu propio correo y datos mínimos para las pruebas autorizadas; los pedidos y repartos siguen siendo simulados.' : '<strong>Registro real pendiente de configuración.</strong> Puedes revisar la bienvenida, formularios y documentos legales. Google, Apple y correo están deshabilitados hasta configurar sus servicios.'} La clave de esta demo no es una cuenta de cliente.</p><nav><a href="/cuenta">Registro y Mi cuenta</a><a href="/">Cliente</a><a href="${checkoutPreviewPath}">Checkout de prueba</a><a href="/simulacion">Preparar simulación</a><a href="${adminPreviewPath}">Nuevo BOLT Admin</a><a href="/operacion?tab=DESPACHOS">Administración actual</a><a href="/conductor">BOLT Conductor</a></nav><ol><li>En Preparar simulación, inicia sesión y habilita dos conductores ficticios.</li><li>Abre Cliente → Marcas, selecciona una marca y revisa sus presentaciones. Los productos de prueba se retiraron del catálogo; sus pedidos históricos se conservan.</li><li>Prueba Cedritos, Chía y Cajicá con entrega programada desde Suba. Cota debe bloquear la entrega.</li><li>Puedes enviar una solicitud pendiente de confirmación, sin cobro. La asignación de entregas requiere los datos y la capacidad logística correspondientes.</li><li>En administración revisa HIST-READY, HIST-WAY y HIST-CLOSED. La recuperación de HIST-CLOSED no debe reabrirlo.</li></ol><p>Las cuentas del simulador permiten intervenir todos los datos de esta demo. No uses datos personales reales. La ubicación vence: actualiza los conductores libres desde el simulador si no aparecen disponibles.</p><p>La cámara y el GPS requieren permisos del navegador. No equivalen a seguimiento en segundo plano.</p><form method="post" action="/__demo/logout"><button>Salir de la demo</button></form></html>`);
+    if (pathname === '/__demo') return sendGatePage(res, 200, `<!doctype html><html lang="es"><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>BOLT · Revisión</title><style>body{font:18px system-ui;color:#122039;max-width:760px;padding:24px;margin:auto}a,button{display:inline-block;margin:8px;padding:16px;border-radius:12px;border:1px solid #ed0018;color:#b90016;background:white;font:inherit}li{margin:12px 0}strong{color:#ed0018}</style><h1>BOLT · Demo de revisión</h1><p><strong>SIMULACIÓN</strong> · No se cobran pagos ni se solicitan entregas reales.</p><p>Prueba un pedido desde BOLT Cliente, revisa su reserva en Suba en BOLT Admin y sigue el mismo despacho.</p><p>${customerEnabled ? '<strong>Pruebas privadas de cuentas.</strong> Mi cuenta indica los métodos habilitados. Usa únicamente tu propio correo y datos mínimos para las pruebas autorizadas; los pedidos y repartos siguen siendo simulados.' : '<strong>Registro real pendiente de configuración.</strong> Puedes revisar la bienvenida, formularios y documentos legales. Google, Apple y correo están deshabilitados hasta configurar sus servicios.'} La clave de esta demo no es una cuenta de cliente.</p><nav><a href="${customerOrderDemoPath}">Probar pedido sin cobro</a><a href="/">BOLT Cliente</a><a href="/cuenta">Mi cuenta</a><a href="${adminPreviewPath}">BOLT Admin</a><a href="/conductor">BOLT Conductor</a></nav><ol><li>Envía el pedido de prueba desde BOLT Cliente y guarda su número.</li><li>En BOLT Admin, elige Suba, busca el mismo pedido y revisa la reserva en Inventario.</li><li>Gestiona el despacho de prueba y vuelve al seguimiento privado del mismo pedido en Cliente.</li></ol><p>Las cuentas del simulador permiten intervenir todos los datos de esta demo. No uses datos personales reales. La ubicación vence: actualiza los conductores libres desde el simulador si no aparecen disponibles.</p><p>La cámara y el GPS requieren permisos del navegador. No equivalen a seguimiento en segundo plano.</p><form method="post" action="/__demo/logout"><button>Salir de la demo</button></form></html>`);
     const headers = { ...req.headers, host: `127.0.0.1:${upstreamPort}` };
     if (headers.origin && !customerEnabled) headers.origin = `http://127.0.0.1:${upstreamPort}`;
     delete headers.cookie;

@@ -70,7 +70,7 @@ export function DispatchSimulation() {
               </button>
               <a
                 className={control}
-                href="/operacion?tab=DESPACHOS"
+                href="/admin/nuevo/?view=dispatch"
                 target="_blank"
                 rel="noopener"
               >

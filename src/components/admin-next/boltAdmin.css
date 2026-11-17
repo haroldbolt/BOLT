@@ -82,8 +82,7 @@
 .ba-panel-head, .ba-page-heading { display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 8px 12px; }
 .ba-panel-head { padding: 15px 16px; }
 .ba-page-heading p, .ba-panel-head p { margin-top: 4px; color: var(--ba-dim); font-size: 13px; }
-.ba-heading-actions, .ba-demo-order-actions { display: flex; align-items: flex-end; gap: 7px; flex-wrap: wrap; }
-.ba-demo-order-mode select { min-height: 41px; }
+.ba-heading-actions { display: flex; align-items: flex-end; gap: 7px; flex-wrap: wrap; }
 .ba-loading, .ba-error, .ba-info, .ba-notice { display: flex; gap: 8px; align-items: flex-start; }
 .ba-loading svg, .ba-error svg, .ba-info svg, .ba-notice svg { flex: none; margin-top: 2px; }
 .ba-loading { padding: 17px; color: var(--ba-dim); }
@@ -228,7 +227,7 @@
 @media (max-width: 720px) {
   .ba-shell { grid-template-columns: minmax(0, 1fr); }
   .ba-sidebar { position: static; min-height: auto; padding: 9px 11px 7px; gap: 7px; }
-  .ba-sidebar nav { grid-template-columns: repeat(6, minmax(0, 1fr)); gap: 2px; }
+  .ba-sidebar nav { grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 2px; }
   .ba-sidebar nav button { padding: 5px; gap: 3px; justify-content: center; flex-direction: column; text-align: center; font-size: 11px; min-height: 42px; }
   .ba-sidebar nav button svg { width: 15px; height: 15px; }
   .ba-sidebar nav button small { display: none; }
@@ -269,3 +268,5 @@
   .bolt-admin :where(.ba-field input, .ba-field select, .ba-search input) { font-size: 16px; }
 }
 @media (prefers-reduced-motion: reduce) { .bolt-admin .ba-spin { animation: none; } }
+
+.ba-operation-tool { width: fit-content; min-width: min(100%, 260px); }

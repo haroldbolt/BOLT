@@ -1,54 +1,50 @@
 import {ProductImage} from '../common/ProductImage';
-import {DispatchManager} from '../dispatch/DispatchManager';
 import { GroupedDispatches } from './GroupedDispatches';
 import { TransportManagerTab } from './TransportManagerTab';
 import React, { useState, useEffect, useRef, useCallback } from 'react';
-import { 
-  Truck, ShieldCheck, Clock, FileText, Bike, Boxes, DollarSign, BarChart3, 
-  Settings, ArrowLeft, CheckCircle2, XCircle, AlertTriangle, UserCheck, 
-  Search, RefreshCw, Key, Download, Sparkles, Phone, MapPin, Calendar,
-  Building2, ShoppingBag, Navigation, Radio, Play, Square, Battery,
-  Compass, Crosshair, Activity, Smartphone, Layers, Lock, LogOut
+import {
+  AlertTriangle, Battery, Bike, Building2, CheckCircle2, Clock, Crosshair, Download, FileText,
+  MapPin, Radio, RefreshCw, Square,
 } from 'lucide-react';
-import { Order, Product, Store, DriverProfile, OperationRole, FulfillmentStatus, GPSTelemetry, GPSTrackingPoint } from '../../types';
-import { formatCOP, formatTimeBogota, formatDateBogota } from '../../lib/formatters';
+import type { Order, Product, Store, OperationRole, FulfillmentStatus, GPSTelemetry, GPSTrackingPoint } from '../../types';
+import { formatCOP, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
-import { pushService } from '../../lib/notifications';
 import { WarehouseManagerTab } from './WarehouseManagerTab';
 import { ShopifySyncTab } from './ShopifySyncTab';
 import { CatalogManagerTab } from './CatalogManagerTab';
-import { AdminAuthModal } from './AdminAuthModal';
+
+export type OperationsTool = 'PEDIDOS' | 'BODEGAS' | 'CATALOGO' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO';
 
 interface OperationsDashboardProps {
-  onBackToCustomer: () => void;
+  activeTab: OperationsTool;
+  selectedStoreId: string;
+  onAuthenticate: () => void;
+  onOpenDispatches: (orderId?: string) => void;
   onViewOrderTracking: (orderId: string) => void;
 }
 
 export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
-  onBackToCustomer,
+  activeTab,
+  selectedStoreId,
+  onAuthenticate,
+  onOpenDispatches,
   onViewOrderTracking,
 }) => {
-  const [currentRole, setCurrentRole] = useState<OperationRole>('ADMINISTRADOR');
-  const [activeTab, setActiveTab] = useState<'PEDIDOS' | 'PROGRAMADAS' | 'BODEGAS' | 'CATALOGO' | 'SHOPIFY' | 'FARMACIA' | 'FLOTA' | 'INVENTARIO' | 'EFECTIVO' | 'INFORMES' | 'CONDUCTOR' | 'DESPACHOS'>(new URLSearchParams(window.location.search).get('tab')==='DESPACHOS'?'DESPACHOS':'PEDIDOS');
+  const currentRole: OperationRole = 'ADMINISTRADOR';
   const [deliveryModeFilter, setDeliveryModeFilter] = useState<'TODOS' | 'TURBO' | 'TURBO_DIVIDIDO' | 'PROGRAMADO'>('TODOS');
   
   // Seguridad y sesión administrativa
-  const [isAdminAuthModalOpen, setIsAdminAuthModalOpen] = useState(false);
   const [adminUser, setAdminUser] = useState<any>(null);
   
   const [orders, setOrders] = useState<Order[]>([]);
   const [products, setProducts] = useState<Product[]>([]);
   const [stores, setStores] = useState<Store[]>([]);
-  const [selectedStoreId, setSelectedStoreId] = useState<string>('ALL_ACTIVE');
   const [loading, setLoading] = useState(true);
   const [selectedOrder, setSelectedOrder] = useState<Order | null>(null);
 
   // Pharmacy review state
   const [reviewNotes, setReviewNotes] = useState('');
   const [reviewerName, setReviewerName] = useState('Dra. Sandra Peña (Q.F. Veterinaria)');
-
-  // Integrations state
-  const [integrations, setIntegrations] = useState<any>(null);
 
   // ============================================================================
   // GPS TELEMETRY & TRACKING ENGINE (BOLT CONDUCTOR)
@@ -125,16 +121,14 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
 
   const loadData = async () => {
     try {
-      const [ordList, prodList, storeList, integ] = await Promise.all([
+      const [ordList, prodList, storeList] = await Promise.all([
         api.getOrders(),
         api.getCatalog(),
         api.getStores(),
-        api.getIntegrationsStatus(),
       ]);
       setOrders(ordList);
       setProducts(prodList);
       setStores(storeList);
-      setIntegrations(integ);
 
       // Verificación de fin de ciclo para entrega rastreada
       if (gpsActiveOrderRef.current) {
@@ -217,7 +211,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const [enteredPin,setEnteredPin]=useState('');
   // Handle stage change with role authorization and PIN validation
   const handleUpdateStatus = async (orderId: string, status: FulfillmentStatus, shipmentId?: string, reason?: string, deliveryCode?: string) => {
-    if(['REPARTIDOR_ASIGNADO','EN_CAMINO','ENTREGADO'].includes(status)){setActiveTab('DESPACHOS');setErrorMessage('La asignación requiere aceptación. La recogida y entrega se confirman desde BOLT Conductor.');return;}
+    if(['REPARTIDOR_ASIGNADO','EN_CAMINO','ENTREGADO'].includes(status)){onOpenDispatches(orderId);return;}
     try {
       setErrorMessage(null);
       const targetOrder = orders.find(o => o.id === orderId);
@@ -449,16 +443,8 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   const handleAssignDriver = async (orderId: string, shipmentId?: string) => {
     try {
       setErrorMessage(null);
-      const order=orders.find(o=>o.id===orderId);
-      const target=shipmentId?order?.childShipments?.find(c=>c.shipmentId===shipmentId):order;
-      setActiveTab('DESPACHOS');
       await api.assignDriver(orderId, '', shipmentId);
-      setActiveTab('DESPACHOS');
-      await loadData();
-      if (selectedOrder && selectedOrder.id === orderId) {
-        const updated = await api.getOrder(orderId);
-        setSelectedOrder(updated);
-      }
+      onOpenDispatches(orderId);
     } catch (e: any) {
       setErrorMessage(e.message || 'Error al asignar conductor');
     }
@@ -520,123 +506,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   };
 
   // Selector visual de Bodega para las pestañas operativas (PEDIDOS e INVENTARIO)
-  const renderWarehouseSelectorBar = () => (
-    <div className="bg-white p-3 rounded-2xl border border-slate-200 shadow-xs flex flex-col md:flex-row md:items-center justify-between gap-3">
-      <div className="flex items-center gap-1.5 flex-wrap">
-        <span className="text-[11px] font-extrabold uppercase tracking-wider text-slate-400 flex items-center gap-1 mr-1">
-          <Building2 className="w-3.5 h-3.5" />
-          Bodega:
-        </span>
-
-        {/* Opción por defecto: Todas las activas (excluye Centro) */}
-        <button
-          onClick={() => setSelectedStoreId('ALL_ACTIVE')}
-          className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-            selectedStoreId === 'ALL_ACTIVE'
-              ? 'bg-slate-900 text-white shadow-xs'
-              : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-          }`}
-        >
-          <span>Todas las activas (sin Centro)</span>
-          <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-            selectedStoreId === 'ALL_ACTIVE' ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-800'
-          }`}>
-            {orders.filter(o => activeStoresExceptCentroIds.includes(o.storeId)).length}
-          </span>
-        </button>
-
-        {/* Bodegas Activas Individuales */}
-        {stores.filter(s => s.isActive && !isCentroStore(s)).map(store => {
-          const isSelected = selectedStoreId === store.id;
-          const orderCount = orders.filter(o => o.storeId === store.id).length;
-          return (
-            <button
-              key={store.id}
-              onClick={() => setSelectedStoreId(store.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 ${
-                isSelected
-                  ? 'bg-slate-900 text-white shadow-xs'
-                  : 'bg-slate-100 text-slate-700 hover:bg-slate-200'
-              }`}
-            >
-              <span>{store.name.replace('Bolt Pets ', '')}</span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                isSelected ? 'bg-slate-700 text-white' : 'bg-slate-200 text-slate-800'
-              }`}>
-                {orderCount}
-              </span>
-            </button>
-          );
-        })}
-
-        {/* Sede Centro Histórico (Excluida por defecto) */}
-        {stores.filter(s => isCentroStore(s)).map(store => {
-          const isSelected = selectedStoreId === store.id;
-          const orderCount = orders.filter(o => o.storeId === store.id).length;
-          return (
-            <button
-              key={store.id}
-              onClick={() => setSelectedStoreId(store.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
-                isSelected
-                  ? 'bg-slate-800 text-amber-300 border-slate-800 shadow-xs'
-                  : 'bg-amber-50/70 text-amber-900 border-amber-200 hover:bg-amber-100'
-              }`}
-              title="Sede administrativa excluida de la vista por defecto"
-            >
-              <span>{store.name.replace('Bolt Pets ', '')}</span>
-              <span className="text-[9px] bg-amber-200/90 text-amber-900 px-1 py-0.2 rounded font-black uppercase">
-                Excluida
-              </span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                isSelected ? 'bg-slate-950 text-amber-200' : 'bg-white/80 text-amber-950'
-              }`}>
-                {orderCount}
-              </span>
-            </button>
-          );
-        })}
-
-        {/* Bodegas Inactivas */}
-        {stores.filter(s => !s.isActive && !isCentroStore(s)).map(store => {
-          const isSelected = selectedStoreId === store.id;
-          const orderCount = orders.filter(o => o.storeId === store.id).length;
-          return (
-            <button
-              key={store.id}
-              onClick={() => setSelectedStoreId(store.id)}
-              className={`px-3 py-1.5 rounded-xl text-xs font-bold transition flex items-center gap-1.5 border ${
-                isSelected
-                  ? 'bg-slate-700 text-slate-100 border-slate-700 shadow-xs'
-                  : 'bg-slate-100 text-slate-500 border-dashed border-slate-300 hover:bg-slate-200'
-              }`}
-              title="Ubicación inactiva - seleccionable para auditoría"
-            >
-              <span>{store.name.replace('Bolt Pets ', '')}</span>
-              <span className="text-[9px] bg-slate-300 text-slate-700 px-1 py-0.2 rounded font-black uppercase">
-                Inactiva
-              </span>
-              <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-mono font-bold ${
-                isSelected ? 'bg-slate-900 text-white' : 'bg-white text-slate-600'
-              }`}>
-                {orderCount}
-              </span>
-            </button>
-          );
-        })}
-      </div>
-
-      <div className="text-[11px] text-slate-500 font-medium flex items-center gap-1.5 shrink-0">
-        <span>Filtro activo:</span>
-        <strong className="text-slate-900">
-          {selectedStoreId === 'ALL_ACTIVE'
-            ? 'Red Turbo Activa (Kennedy · Álamos · Suba)'
-            : selectedStore?.name.replace('Bolt Pets ', '')}
-        </strong>
-      </div>
-    </div>
-  );
-
   const renderAuditBanners = () => (
     <>
       {isSelectedStoreInactive && (
@@ -680,174 +549,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
   );
 
   return (
-    <div className="min-h-screen bg-[#F1F5F9] text-slate-900 flex flex-col">
-      {/* Top Operations Bar */}
-      <header className="bg-slate-900 text-white px-4 py-3 shadow-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto flex flex-wrap items-center justify-between gap-3">
-          <div className="flex items-center gap-3">
-            <button
-              onClick={onBackToCustomer}
-              className="bg-slate-800 hover:bg-slate-700 text-slate-200 px-3 py-1.5 rounded-xl text-xs font-bold flex items-center gap-1.5 transition"
-            >
-              <ArrowLeft className="w-3.5 h-3.5" />
-              <span>Volver a Bolt Pets</span>
-            </button>
-            <div className="flex items-center gap-2">
-              <span className="w-2.5 h-2.5 rounded-full bg-emerald-400 animate-pulse"></span>
-              <h1 className="font-black text-sm md:text-base tracking-tight text-white flex items-center gap-1.5">
-                <span>Bolt Pets Operaciones</span>
-                <span className="text-[10px] bg-red-600 text-white font-extrabold px-2 py-0.5 rounded-md uppercase">
-                  Staff
-                </span>
-              </h1>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-3">
-            {/* Store Hub filter */}
-            <div className="flex items-center gap-1.5 bg-slate-800 px-3 py-1.5 rounded-xl text-xs font-semibold border border-slate-700/60">
-              <Building2 className="w-3.5 h-3.5 text-slate-400 shrink-0" />
-              <span className="text-slate-400">Bodega:</span>
-              <select
-                value={selectedStoreId}
-                onChange={e => setSelectedStoreId(e.target.value)}
-                className="bg-transparent text-white font-bold focus:outline-none cursor-pointer max-w-[210px] truncate"
-              >
-                <option value="ALL_ACTIVE" className="bg-slate-900 text-white font-bold">
-                  ⭐ Todas las activas (sin Centro)
-                </option>
-                <optgroup label="── Bodegas Activas (Red Turbo) ──" className="bg-slate-900 text-slate-300 font-bold">
-                  {stores.filter(s => s.isActive && !isCentroStore(s)).map(s => (
-                    <option key={s.id} value={s.id} className="bg-slate-800 text-white">
-                      {s.name.replace('Bolt Pets ', '')}
-                    </option>
-                  ))}
-                </optgroup>
-                <optgroup label="── Excluida por Defecto ──" className="bg-slate-900 text-amber-300 font-bold">
-                  {stores.filter(s => isCentroStore(s)).map(s => (
-                    <option key={s.id} value={s.id} className="bg-slate-800 text-amber-300">
-                      {s.name.replace('Bolt Pets ', '')} (No-Turbo)
-                    </option>
-                  ))}
-                </optgroup>
-                {stores.some(s => !s.isActive && !isCentroStore(s)) && (
-                  <optgroup label="── Bodegas Inactivas ──" className="bg-slate-900 text-slate-400 font-bold">
-                    {stores.filter(s => !s.isActive && !isCentroStore(s)).map(s => (
-                      <option key={s.id} value={s.id} className="bg-slate-800 text-slate-400">
-                        {s.name.replace('Bolt Pets ', '')} [Inactiva]
-                      </option>
-                    ))}
-                  </optgroup>
-                )}
-              </select>
-            </div>
-
-            {/* Admin Session Security Indicator */}
-            {adminUser ? (
-              <div className="flex items-center gap-1.5 bg-slate-800/90 border border-emerald-500/40 px-2.5 py-1 rounded-xl text-xs font-semibold">
-                <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
-                <span className="text-emerald-300 font-mono text-[11px] truncate max-w-[130px]">{adminUser.email}</span>
-                <button
-                  onClick={async () => {
-                    await api.logoutAdmin();
-                    setAdminUser(null);
-                  }}
-                  className="text-slate-400 hover:text-white p-0.5 rounded transition"
-                  title="Cerrar sesión de administrador"
-                >
-                  <LogOut className="w-3 h-3" />
-                </button>
-              </div>
-            ) : (
-              <button
-                onClick={() => setIsAdminAuthModalOpen(true)}
-                className="flex items-center gap-1 bg-red-600/20 hover:bg-red-600/30 text-red-400 hover:text-red-300 border border-red-500/40 px-2.5 py-1 rounded-xl text-xs font-bold transition cursor-pointer"
-                title="Iniciar sesión de administrador verificada"
-              >
-                <Lock className="w-3 h-3" />
-                <span>Acceso Admin</span>
-              </button>
-            )}
-
-            {/* Role Switcher */}
-            <div className="flex items-center gap-1 bg-slate-800 px-3 py-1 rounded-xl text-xs font-semibold">
-              <span className="text-slate-400">Rol:</span>
-              <select
-                value={currentRole}
-                onChange={e => {
-                  const newRole = e.target.value as OperationRole;
-                  setCurrentRole(newRole);
-                  if (newRole === 'ADMINISTRADOR' && !adminUser) {
-                    setIsAdminAuthModalOpen(true);
-                  }
-                }}
-                className="bg-transparent text-yellow-300 font-bold focus:outline-none cursor-pointer"
-              >
-                <option value="ADMINISTRADOR" className="bg-slate-800">Administrador</option>
-                <option value="COORDINADOR" className="bg-slate-800">Coordinador Operativo</option>
-                <option value="ALISTADOR" className="bg-slate-800">Alistador / Picker</option>
-                <option value="DESPACHADOR" className="bg-slate-800">Despachador</option>
-                <option value="REVISOR_FARMACEUTICO" className="bg-slate-800">Revisor Farmacéutico</option>
-                <option value="FINANZAS" className="bg-slate-800">Finanzas & Caja</option>
-                <option value="SOPORTE" className="bg-slate-800">Soporte al Cliente</option>
-              </select>
-            </div>
-          </div>
-        </div>
-      </header>
-
-      {/* Navigation Sub-Tabs */}
-      <nav className="bg-white border-b border-slate-200 px-4 py-2 sticky top-14 z-30 shadow-xs">
-        <div className="max-w-7xl mx-auto flex items-center gap-1 overflow-x-auto no-scrollbar text-xs font-bold">
-          {[
-            { id: 'DESPACHOS', label: 'Despachos y asignación', icon: Truck },
-            { id: 'PEDIDOS', label: 'Tablero de Pedidos', count: storeOrders.length, icon: Boxes },
-            { id: 'PROGRAMADAS', label: 'Entregas Programadas', count: scheduledOrders.length, icon: Calendar },
-            { id: 'BODEGAS', label: 'Bodegas y Mapas', count: stores.filter(s => s.turboEnabled).length, icon: Building2 },
-            { id: 'CATALOGO', label: 'Gestión de Catálogo & Precios', icon: Layers, alert: false },
-            { id: 'SHOPIFY', label: 'Shopify Agrocentro', icon: ShoppingBag },
-            { id: 'FARMACIA', label: 'Fórmulas Veterinarias', count: pendingPrescriptionOrders.length, icon: FileText, alert: pendingPrescriptionOrders.length > 0 },
-            { id: 'FLOTA', label: 'Flota & Repartidores', icon: Bike },
-            { id: 'INVENTARIO', label: 'Inventario & Lotes', count: products.length, icon: Settings },
-            { id: 'EFECTIVO', label: 'Recaudo de Efectivo', icon: DollarSign },
-            { id: 'INFORMES', label: 'Métricas & SLA', icon: BarChart3 },
-            { 
-              id: 'CONDUCTOR', 
-              label: gpsTrackingActive ? 'Bolt Conductor (GPS Activo)' : 'Bolt Conductor & API', 
-              icon: gpsTrackingActive ? Radio : Download,
-              alert: gpsTrackingActive,
-              count: gpsTrackingActive ? gpsPointsSent : undefined,
-            },
-          ].map(tab => {
-            const Icon = tab.icon;
-            const isSelected = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                className={`px-3.5 py-2 rounded-xl flex items-center gap-1.5 whitespace-nowrap transition ${
-                  isSelected
-                    ? 'bg-red-600 text-white shadow-xs'
-                    : 'text-slate-600 hover:bg-slate-100 hover:text-slate-900'
-                }`}
-              >
-                <Icon className={`w-3.5 h-3.5 ${tab.alert && !isSelected ? 'text-red-600 animate-pulse' : ''}`} />
-                <span>{tab.label}</span>
-                {tab.count !== undefined && (
-                  <span className={`text-[10px] px-1.5 py-0.2 rounded-full font-black ${
-                    tab.alert
-                      ? (isSelected ? 'bg-white text-red-600' : 'bg-red-600 text-white animate-pulse')
-                      : (isSelected ? 'bg-red-800 text-white' : 'bg-slate-200 text-slate-700')
-                  }`}>
-                    {tab.count}
-                  </span>
-                )}
-              </button>
-            );
-          })}
-        </div>
-      </nav>
-
+    <div className="min-w-0 text-slate-900">
       {/* Barra Flotante / Alerta de Transmisión GPS Activa */}
       {gpsTrackingActive && (
         <div className="bg-slate-900 border-b border-emerald-500/40 text-white px-4 py-2.5 shadow-lg sticky top-24 z-20 transition">
@@ -946,7 +648,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
       {pinRequest && <div role="dialog" aria-modal="true" aria-label="Confirmar entrega con PIN" className="fixed inset-0 z-50 bg-black/50 grid place-items-center"><form className="bg-white p-6 rounded-2xl space-y-3" onSubmit={e=>{e.preventDefault();void handleUpdateStatus(pinRequest.orderId,'ENTREGADO',pinRequest.shipmentId,pinRequest.reason,enteredPin);setPinRequest(null);}}><label className="block">PIN del cliente<input aria-label="PIN del cliente" className="block border p-3 rounded-xl" value={enteredPin} onChange={e=>setEnteredPin(e.target.value)} inputMode="numeric" maxLength={4}/></label><button disabled={!/^\d{4}$/.test(enteredPin)} className="bg-red-600 text-white p-3 rounded-xl">Validar entrega</button><button type="button" className="p-3" onClick={()=>setPinRequest(null)}>Volver</button></form></div>}
 
       {/* Main Content Area */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 space-y-6">
+      <div className="space-y-6">
         {/* ============================================================== */}
         {/* TAB 1: LIVE ORDERS BOARD */}
         {/* ============================================================== */}
@@ -987,16 +689,13 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
               </div>
             )}
 
-            {/* Warehouse Selector Toolbar */}
-            {renderWarehouseSelectorBar()}
-
             {/* Inactive / Excluded Store Audit Banners */}
             {renderAuditBanners()}
             {pendingDeliveryRequests.length > 0 && (
               <section aria-label="Solicitudes pendientes de entrega" className="rounded-2xl border border-amber-200 bg-amber-50 p-4 text-sm text-amber-950">
                 <p className="font-bold">{pendingDeliveryRequests.length} solicitud(es) pendientes de confirmar entrega</p>
                 <p className="mt-1">Sin cobro ni horario confirmado. Revisa la capacidad y acuerda el costo y la entrega con el cliente.</p>
-                <button type="button" onClick={() => setActiveTab('DESPACHOS')} className="mt-2 min-h-11 font-bold underline">Revisar solicitudes</button>
+                <button type="button" onClick={() => onOpenDispatches()} className="mt-2 min-h-11 font-bold underline">Revisar solicitudes</button>
               </section>
             )}
             <GroupedDispatches orders={filteredStoreOrders} transition={handleUpdateStatus} assign={handleAssignDriver} confirmReturn={handleConfirmPhysicalReturn} track={onViewOrderTracking} />
@@ -1468,102 +1167,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         )}
 
         {/* ============================================================== */}
-        {/* TAB 1.5: SCHEDULED DELIVERIES CALENDAR & CAPACITY QUEUE */}
-        {/* ============================================================== */}
-        {activeTab === 'PROGRAMADAS' && (
-          <div className="space-y-4">
-            <div className="flex items-center justify-between">
-              <div>
-                <h2 className="text-xl font-black text-slate-900 flex items-center gap-2">
-                  <Calendar className="w-5 h-5 text-blue-600" />
-                  <span>Programación de Entregas y Capacidad por Franja</span>
-                </h2>
-                <p className="text-xs text-slate-500">
-                  Despachos programados en camioneta y furgón metropolitano de Bogotá
-                </p>
-              </div>
-              <button
-                onClick={loadData}
-                className="bg-white border border-slate-200 hover:bg-slate-50 text-slate-700 text-xs font-bold px-3 py-1.5 rounded-xl flex items-center gap-1.5 shadow-xs transition"
-              >
-                <RefreshCw className="w-3.5 h-3.5" />
-                <span>Actualizar</span>
-              </button>
-            </div>
-
-            {/* Scheduled slots grid: Tres horarios oficiales */}
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-              {[
-                { label: 'Hoy', name: 'Horario 1', window: '09:00–14:00', cutoff: '10:00 a. m.', maxCap: 10, windowId: 'HORARIO_1' },
-                { label: 'Hoy', name: 'Horario 2', window: '14:00–18:00', cutoff: '12:00 m.', maxCap: 10, windowId: 'HORARIO_2' },
-                { label: 'Hoy', name: 'Horario 3', window: '18:00–22:00', cutoff: '4:00 p. m.', maxCap: 10, windowId: 'HORARIO_3' },
-                { label: 'Mañana', name: 'Horario 1', window: '09:00–14:00', cutoff: '10:00 a. m.', maxCap: 12, windowId: 'HORARIO_1' },
-                { label: 'Mañana', name: 'Horario 2', window: '14:00–18:00', cutoff: '12:00 m.', maxCap: 12, windowId: 'HORARIO_2' },
-                { label: 'Mañana', name: 'Horario 3', window: '18:00–22:00', cutoff: '4:00 p. m.', maxCap: 12, windowId: 'HORARIO_3' },
-              ].map((slot, idx) => {
-                const assigned = orders.filter(
-                  o => o.deliveryMode === 'PROGRAMADO' && 
-                  o.scheduledWindow &&
-                  (o.scheduledWindow.dateLabel?.includes(slot.label) || o.scheduledWindow.date?.includes(slot.label === 'Hoy' ? new Date().toISOString().split('T')[0] : '')) &&
-                  (o.scheduledWindow.windowId === slot.windowId || o.scheduledWindow.displayWindow?.includes(slot.window.split('–')[0]) || o.scheduledWindow.startTime === slot.window.split('–')[0])
-                );
-
-                return (
-                  <div
-                    key={idx}
-                    className="bg-white p-4 rounded-3xl border border-slate-200 shadow-xs space-y-3"
-                  >
-                    <div className="flex items-center justify-between border-b border-slate-100 pb-2">
-                      <div>
-                        <div className="flex items-center gap-1.5">
-                          <span className="text-xs font-black text-blue-900">{slot.label}</span>
-                          <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-1.5 py-0.2 rounded">{slot.name}</span>
-                        </div>
-                        <h4 className="text-sm font-extrabold text-slate-900">{slot.window}</h4>
-                        <p className="text-[10px] text-slate-400">Corte reserva: {slot.cutoff}</p>
-                      </div>
-                      <div className="text-right">
-                        <span className="text-[10px] font-bold text-slate-400">Capacidad</span>
-                        <p className="text-xs font-black text-slate-800">
-                          {assigned.length} / {slot.maxCap} pedidos
-                        </p>
-                      </div>
-                    </div>
-
-                    {assigned.length === 0 ? (
-                      <div className="py-4 text-center text-xs text-slate-400 italic">
-                        Sin pedidos programados en esta franja
-                      </div>
-                    ) : (
-                      <div className="space-y-2">
-                        {assigned.map(ord => (
-                          <div
-                            key={ord.id}
-                            className="p-2.5 bg-slate-50 rounded-2xl border border-slate-200 text-xs space-y-1"
-                          >
-                            <div className="flex justify-between items-center">
-                              <span className="font-extrabold text-slate-900">{ord.orderNumber}</span>
-                              <span className="text-[10px] font-bold bg-blue-100 text-blue-800 px-2 py-0.5 rounded-md">
-                                {ord.fulfillmentStatus}
-                              </span>
-                            </div>
-                            <p className="text-[11px] text-slate-600 font-medium truncate">{ord.customer.name} • {ord.deliveryAddress.address}</p>
-                            <div className="flex justify-between items-center pt-1 text-[11px] text-slate-500 border-t border-slate-200/50">
-                              <span>Peso: {ord.totals.totalWeightKg===null?'Pendiente de verificar':`${ord.totals.totalWeightKg} kg`}</span>
-                              <span className="font-bold text-slate-900">{formatCOP(ord.totals.total)}</span>
-                            </div>
-                          </div>
-                        ))}
-                      </div>
-                    )}
-                  </div>
-                );
-              })}
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
         {/* TAB: BODEGAS INDEPENDIENTES Y CALIBRACIÓN DE ENTRADAS EN MAPA */}
         {/* ============================================================== */}
         {activeTab === 'BODEGAS' && (
@@ -1581,7 +1184,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         {activeTab === 'CATALOGO' && (
           <CatalogManagerTab
             currentAdminUser={adminUser}
-            onOpenAuthModal={() => setIsAdminAuthModalOpen(true)}
+            onOpenAuthModal={onAuthenticate}
             onRefreshCatalog={loadData}
           />
         )}
@@ -1707,7 +1310,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         {/* ============================================================== */}
         {/* TAB 3: FLEET & LIVE REPARTIDORES */}
         {/* ============================================================== */}
-        {activeTab === 'FLOTA' && <TransportManagerTab admin={adminUser} onAuthenticate={()=>setIsAdminAuthModalOpen(true)} />}
+        {activeTab === 'FLOTA' && <TransportManagerTab admin={adminUser} onAuthenticate={onAuthenticate} />}
 
         {/* ============================================================== */}
         {/* TAB 4: INVENTORY & EXPIRY */}
@@ -1722,9 +1325,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                 </p>
               </div>
             </div>
-
-            {/* Warehouse Selector Toolbar */}
-            {renderWarehouseSelectorBar()}
 
             {/* Inactive / Excluded Store Audit Banners */}
             {renderAuditBanners()}
@@ -1842,75 +1442,7 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
           </div>
         )}
 
-        {/* ============================================================== */}
-        {/* TAB 5: CASH SETTLEMENT (COD) */}
-        {/* ============================================================== */}
-        {activeTab === 'EFECTIVO' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xl font-black text-slate-900">Liquidación y Cuadre de Caja (Efectivo)</h2>
-              <p className="text-xs text-slate-500">
-                Conciliación entre dinero en efectivo recaudado por conductores y caja física de sede.
-              </p>
-            </div>
-
-            <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-2">
-                <span className="text-xs font-bold text-slate-500 uppercase">Efectivo en Manos de Conductores</span>
-                <p className="text-2xl font-black text-slate-900">$68.500</p>
-                <p className="text-[11px] text-slate-400">Pendiente de consignar en sede</p>
-              </div>
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-2">
-                <span className="text-xs font-bold text-slate-500 uppercase">Efectivo Liquidado Hoy</span>
-                <p className="text-2xl font-black text-emerald-600">$185.000</p>
-                <p className="text-[11px] text-slate-400">4 entregas liquidadas en caja Kennedy</p>
-              </div>
-              <div className="bg-white p-5 rounded-3xl border border-slate-200 shadow-xs space-y-2">
-                <span className="text-xs font-bold text-slate-500 uppercase">Diferencia / Novedades</span>
-                <p className="text-2xl font-black text-slate-900">$0</p>
-                <p className="text-[11px] text-emerald-600 font-bold">Cuadre exacto al 100%</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* TAB 6: METRICS & SLA */}
-        {/* ============================================================== */}
-        {activeTab === 'INFORMES' && (
-          <div className="space-y-4">
-            <div>
-              <h2 className="text-xl font-black text-slate-900">Reportes Operativos & Cumplimiento SLA</h2>
-              <p className="text-xs text-slate-500">Métricas reales calculadas en Bogotá.</p>
-            </div>
-
-            <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-xs text-slate-500 font-bold">Tiempo promedio alistamiento:</span>
-                <p className="text-xl font-black text-slate-900 mt-1">3.4 min</p>
-              </div>
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-xs text-slate-500 font-bold">Tiempo promedio viaje (Bogotá):</span>
-                <p className="text-xl font-black text-slate-900 mt-1">9.2 min</p>
-              </div>
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-xs text-slate-500 font-bold">Cumplimiento Promesa (&lt;25m):</span>
-                <p className="text-xl font-black text-emerald-600 mt-1">96.8%</p>
-              </div>
-              <div className="bg-white p-4 rounded-2xl border border-slate-200 shadow-xs">
-                <span className="text-xs text-slate-500 font-bold">Tasa de cancelación:</span>
-                <p className="text-xl font-black text-slate-900 mt-1">0.4%</p>
-              </div>
-            </div>
-          </div>
-        )}
-
-        {/* ============================================================== */}
-        {/* TAB 7: BOLT CONDUCTOR GPS EN VIVO & CONTRATOS DE INTEGRACIÓN */}
-        {/* ============================================================== */}
-        {activeTab === 'DESPACHOS' && <DispatchManager storeFilter={selectedStoreId==='ALL_ACTIVE'?activeStoresExceptCentroIds:[selectedStoreId]} authenticated={!!adminUser} onAuthenticate={()=>setIsAdminAuthModalOpen(true)}/>}
-        {activeTab === 'CONDUCTOR' && <section className="p-6 bg-white border rounded-2xl space-y-4"><h2 className="font-black text-xl">BOLT Conductor</h2><p>Cada conductor ingresa con su propia cuenta para aceptar ofertas, confirmar recogidas y entregar con el PIN del cliente.</p><a href="/conductor" target="_blank" rel="noopener" className="inline-block bg-red-600 text-white font-bold px-5 py-3 rounded-xl">Abrir BOLT Conductor</a></section>}
-      </main>
+      </div>
 
       {/* Modal de Auditoría y Trazabilidad de Estados del Servidor */}
       {historyModalOrder && (
@@ -1992,15 +1524,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
         </div>
       )}
 
-      {/* Modal de Autenticación Administrativa */}
-      <AdminAuthModal
-        isOpen={isAdminAuthModalOpen}
-        onClose={() => setIsAdminAuthModalOpen(false)}
-        onAuthenticated={(user) => {
-          setAdminUser(user);
-          setCurrentRole('ADMINISTRADOR');
-        }}
-      />
     </div>
   );
 };

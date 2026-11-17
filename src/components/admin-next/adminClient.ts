@@ -24,11 +24,11 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   deliveryReview?: Pick<NonNullable<Order['deliveryReview']>, 'status' | 'requestedAt' | 'requestedMode' | 'confirmedAt' | 'reasonCode'>;
   customer?: Pick<Order['customer'], 'name' | 'phone' | 'email'>;
   deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
-  payment?: Pick<Order['payment'], 'status' | 'method'>;
+  payment?: Pick<Order['payment'], 'status' | 'method' | 'cashToCollect'>;
+  demoCustomerCheckout?: boolean;
+  dispatch?: { id: string; code: string; providerId?: string; status: string; driverName?: string };
   demoReadOnly?: boolean;
 };
-
-export type DemoOrderMode = Extract<Order['deliveryMode'], 'TURBO' | 'PROGRAMADO'>;
 
 export type InventoryScope = 'store' | 'catalog';
 
@@ -121,11 +121,11 @@ export function storeAdminToken(token: string | null) {
   } catch { /* The current page can still hold the session in memory. */ }
 }
 
-async function request<T>(url: string, token: string | null, options: { body?: unknown; signal?: AbortSignal; method?: 'POST' | 'PUT'; idempotencyKey?: string } = {}): Promise<T> {
+async function request<T>(url: string, token: string | null, options: { body?: unknown; signal?: AbortSignal; method?: 'POST' | 'PUT'; setupToken?: string } = {}): Promise<T> {
   const headers = new Headers({ Accept: 'application/json' });
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
-  if (options.idempotencyKey) headers.set('Idempotency-Key', options.idempotencyKey);
+  if (options.setupToken) headers.set('X-Bolt-Admin-Setup-Token', options.setupToken);
   const response = await fetch(url, {
     method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), headers, credentials: 'same-origin',
     cache: 'no-store', redirect: 'error', signal: options.signal,
@@ -143,6 +143,10 @@ const orderPath = (orderId: string) => `${base}/orders/${encodeURIComponent(orde
 
 export const boltAdmin = {
   session: (token: string | null, signal?: AbortSignal) => request<AdminSession>(`${base}/session`, token, { signal }),
+  authStatus: (signal?: AbortSignal) => request<{ isSetupRequired: boolean }>('/api/v1/auth/status', null, { signal }),
+  setup: (name: string, email: string, password: string, setupToken: string) => request<{ token: string }>(
+    '/api/v1/auth/setup-admin', null, { body: { name, email, password }, setupToken },
+  ),
   login: (email: string, password: string) => request<{ token: string }>('/api/v1/auth/login', null, { body: { email, password } }),
   demoLogin: (profileId: string) => request<{ token: string; actor: AdminActor }>(`${base}/demo/session`, null, { body: { profileId } }),
   logout: (token: string | null) => request<{ ok: boolean }>(`${base}/logout`, token, { body: {} }),
@@ -170,10 +174,8 @@ export const boltAdmin = {
   adjustInventory: (token: string | null, item: InventoryItem, stock: number, reason: string) => request<{ item: InventoryItem }>(
     `${base}/inventory`, token, { method: 'PUT', body: { storeId: item.storeId, productId: item.productId, variantId: item.variantId, stock, expectedRevision: item.revision, reason } },
   ),
-  createDemoOrder: (token: string | null, idempotencyKey: string, deliveryMode: DemoOrderMode) => request<{ orderId: string; guestAccessToken: string; trackingPath: string }>(
-    `${base}/demo/orders`, token, { body: { deliveryMode }, idempotencyKey },
-  ),
   quote: (token: string | null, orderId: string, body: unknown) => request<DeliveryQuote>(`${orderPath(orderId)}/quote`, token, { body }),
   confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),
+  demoDispatch: (token: string | null, orderId: string) => request<{ order: AdminOrder }>(`${orderPath(orderId)}/demo-dispatch`, token, { body: {} }),
   startPreparation: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: {} }),
 };

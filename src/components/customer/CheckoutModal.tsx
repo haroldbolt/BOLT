@@ -702,19 +702,9 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               <span>{cartBlockReason || 'Entrega pendiente de validar'}</span>
             ) : selectedMode === 'PROGRAMADO' && !selectedSlot ? (
               <span>Selecciona una franja para continuar</span>
-            ) : selectedMode === 'PROGRAMADO' ? (
-              <>
-                <span>Confirmar y Programar Entrega ({formatCOP(total)})</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
-            ) : selectedMode === 'TURBO_DIVIDIDO' ? (
-              <>
-                <span>Pagar {formatCOP(total)} y Solicitar Turbo Dividido</span>
-                <ArrowRight className="w-4 h-4" />
-              </>
             ) : (
               <>
-                <span>Pagar {formatCOP(total)} y Solicitar Turbo</span>
+                <span>Confirmar pedido</span>
                 <ArrowRight className="w-4 h-4" />
               </>
             )}

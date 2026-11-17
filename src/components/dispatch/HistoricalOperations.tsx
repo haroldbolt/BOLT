@@ -2,7 +2,7 @@ import React,{useCallback,useState} from 'react';
 import {dispatchClient,type AdminDispatchData} from '../../lib/dispatchClient';
 import {useDispatchQuery} from './useDispatchQuery';
 import {control,primary,field} from './DispatchUi';
-export function HistoricalOperations({orders,onChanged}:{orders:AdminDispatchData['historicalOrders'];onChanged:()=>void}){
+export function HistoricalOperations({orders,onChanged,onViewOrderTracking}:{orders:AdminDispatchData['historicalOrders'];onChanged:()=>void;onViewOrderTracking?:(orderId:string)=>void}){
  const [query,setQuery]=useState(''),[forms,setForms]=useState<Record<string,any>>({}),[busy,setBusy]=useState(false),[error,setError]=useState(''),[notice,setNotice]=useState('');
  const load=useCallback(()=>dispatchClient.admin<any[]>('/recoveries'),[]),recoveries=useDispatchQuery(load,true);
  const set=(id:string,key:string,value:any)=>setForms(old=>({...old,[id]:{...old[id],[key]:value}}));
@@ -16,7 +16,9 @@ export function HistoricalOperations({orders,onChanged}:{orders:AdminDispatchDat
   {filtered.slice(0,30).map(o=><article key={o.id} className="border rounded-xl p-4 space-y-3">
    <h3 className="font-bold">{o.code} · {o.status}</h3>
    <p className="text-sm">{o.classification==='CLOSED'?'Histórico cerrado. Solo consulta y recuperación de seguimiento.':o.classification==='UNREGISTERED'?'Despachos pendientes de registrar':o.classification==='RECONCILIATION_PENDING'?'Conciliación operativa pendiente':'Registrado en despachos'}</p>
-   <a className={control} href={'/pedido/'+o.id} target="_blank" rel="noopener">Consultar histórico</a>
+   {onViewOrderTracking
+    ? <button type="button" className={control} onClick={()=>onViewOrderTracking(o.id)}>Consultar histórico</button>
+    : <a className={control} href={'/pedido/'+o.id} target="_blank" rel="noopener">Consultar histórico</a>}
    {o.canRegister&&<button disabled={busy} className={primary} onClick={()=>void act('/orders/'+o.id+'/register',{})}>Registrar despachos de {o.code}</button>}
    {o.status==='PENDIENTE_CONFIRMACION'&&<p>Primero verifica y confirma la compra en Pedidos. No se generan despachos antes de confirmarla.</p>}
    {o.dispatches.filter(d=>d.needsReconciliation).map(d=>{const f=forms[d.id]||{};return <form key={d.id} aria-label={'Conciliar '+d.code} className="grid sm:grid-cols-2 gap-3 border-t pt-3" onSubmit={e=>{e.preventDefault();void act('/'+d.id+'/reconcile-legacy',{driverId:d.driverId||undefined,cashDueCOP:Number(f.cash),note:f.note,...(d.needsPickupEvidence?{pickupEvidence:{pickedUpAt:f.pickup,sourceReference:f.source}}:{})});}}>
