@@ -93,6 +93,7 @@ export const WAREHOUSES: Store[] = ([
     vehicleMaxWeightKg: 25,
     safetyStockDefault: 2,
   },
+  // Archived IDs resolve existing warehouse assignments and inventory history.
   {
     id: 'HUB_CENTRO',
     name: 'Sede Centro Histórico',
@@ -105,9 +106,9 @@ export const WAREHOUSES: Store[] = ([
     verifiedAt: '2026-10-20 10:00 COT',
     verifiedBy: 'Administración General',
     shopifyLocationGid: 'gid://shopify/Location/115617999999',
-    turboEnabled: false, // Fuera de la red Turbo de Bolt Pets, para operaciones administrativas
-    isActive: true,
-    schedule: '08:00 - 20:00',
+    turboEnabled: false,
+    isActive: false,
+    schedule: 'Sede retirada',
     maxDeliveryRadiusKm: 5.0,
     vehicleMaxWeightKg: 15,
     safetyStockDefault: 5,
@@ -124,8 +125,8 @@ export const WAREHOUSES: Store[] = ([
     verifiedAt: undefined,
     shopifyLocationGid: 'gid://shopify/Location/115617934444',
     turboEnabled: false,
-    isActive: false, // Ubicación inactiva
-    schedule: 'Inactiva (En remodelación)',
+    isActive: false,
+    schedule: 'Sede retirada',
     maxDeliveryRadiusKm: 5.0,
     vehicleMaxWeightKg: 20,
     safetyStockDefault: 2,
@@ -134,7 +135,7 @@ export const WAREHOUSES: Store[] = ([
   ...store,
   customerName:store.customerName || store.name.replace(/^Bolt Pets /, ''),
   showAddressToCustomer:store.showAddressToCustomer ?? true,
-  enabledModes:store.enabledModes ?? (store.turboEnabled ? ['TURBO','TURBO_DIVIDIDO','PROGRAMADO'] : ['PROGRAMADO']),
+  enabledModes:store.isActive ? store.enabledModes ?? (store.turboEnabled ? ['TURBO','TURBO_DIVIDIDO','PROGRAMADO'] : ['PROGRAMADO']) : [],
   scheduledLocalities:store.scheduledLocalities ?? SCHEDULED_TERRITORIES[store.id] ?? [],
   scheduledMunicipalities:store.scheduledMunicipalities ?? SCHEDULED_MUNICIPALITIES[store.id] ?? [],
 } as Store));

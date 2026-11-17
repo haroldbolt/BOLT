@@ -338,8 +338,8 @@ async function verifyDemoInventoryInitialization({ suba, coordination, checkout 
   const afterVariant = after.presentaciones.find(variant => variant.varianteId === variantId);
   assert.deepEqual([after.image, after.gallery, afterVariant.foto, afterVariant.price], [before.image, before.gallery, beforeVariant.foto, beforeVariant.price]);
   assert.deepEqual(afterVariant.reservedStockByStore, beforeVariant.reservedStockByStore);
-  for (const store of stores.filter(store => !store.isActive)) {
-    assert.equal(afterVariant.stockByStore[store.id], beforeVariant.stockByStore[store.id]);
+  for (const retiredId of ['HUB_CENTRO', 'HUB_FONTIBON']) {
+    assert.equal(afterVariant.stockByStore[retiredId], beforeVariant.stockByStore[retiredId]);
   }
   assert.deepEqual(await photoFixture(), beforePhoto, 'El lote conserva las fotos y stock cero de Pawise');
   assert.deepEqual(await oldFixtureRow(coordination), fixtureBefore, 'El lote conserva el inventario y reservas del escenario de pedidos');
@@ -609,6 +609,29 @@ try {
   assert.equal(subaActor.canConfirm, true);
   assert.equal(subaActor.canAdjustInventory, false);
   assert.equal(coordinator.canAdjustInventory, true);
+  const activeWarehouseIds = ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA'];
+  const storeIds = stores => stores.map(store => store.id).sort();
+  const [publicStores, adminSession, shopify] = await Promise.all([
+    api('/api/v1/stores'),
+    admin('/session', { token: coordination }),
+    api('/api/v1/shopify/status'),
+  ]);
+  assert.deepEqual(storeIds(publicStores), activeWarehouseIds);
+  assert.ok(publicStores.every(store => store.isActive));
+  assert.deepEqual(storeIds(adminSession.stores), activeWarehouseIds);
+  assert.deepEqual(shopify.locations.map(location => location.storeId).sort(), activeWarehouseIds);
+  assert.ok(shopify.inventoryItems.every(item => Object.keys(item.quantitiesByLocation).every(id => activeWarehouseIds.includes(id))));
+  const simulation = await api('/api/v1/simulation');
+  const { token: adminToken } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
+  assert.deepEqual(storeIds((await api('/api/v1/admin/transport', { token: adminToken })).stores), activeWarehouseIds);
+  for (const storeId of ['HUB_CENTRO', 'HUB_FONTIBON']) {
+    await admin('/inventory?storeId=' + storeId, { token: coordination, expected: 403 });
+    assert.deepEqual(await api('/api/v1/catalog?storeId=' + storeId), []);
+    await api('/api/v1/stores/' + storeId + '/verify-entrance', {
+      method: 'POST', token: adminToken, body: { coordinates: { lat: 4.65, lng: -74.12 } }, expected: 404,
+    });
+  }
+  console.log('PASS: clientes y administración muestran únicamente Kennedy, Álamos y Suba.');
   await admin('/orders?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
   await admin('/inventory?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
   await admin('/inventory?storeId=HUB_SUBA&scope=catalog', { token: suba, expected: 403 });

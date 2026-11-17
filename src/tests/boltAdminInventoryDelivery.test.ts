@@ -16,7 +16,7 @@ try {
   const stores = INITIAL_STORES.filter(store => store.isActive);
   const suba = stores.find(store => store.id === 'HUB_SUBA');
   assert.ok(suba);
-  for (const id of ['HUB_KENNEDY', 'HUB_ALAMOS', 'HUB_CENTRO']) assert.ok(stores.some(store => store.id === id));
+  assert.deepEqual(stores.map(store => store.id).sort(), ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA']);
   fs.writeFileSync(path.join(directory, 'persisted-orders.json'), '[]');
   fs.writeFileSync(path.join(directory, 'persisted-drivers.json'), '[]');
   let repository = new OrdersRepository({ dataDir: directory });
