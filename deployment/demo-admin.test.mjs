@@ -610,6 +610,25 @@ try {
   assert.equal(subaActor.canAdjustInventory, false);
   assert.equal(coordinator.canAdjustInventory, true);
   const activeWarehouseIds = ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA'];
+  assert.deepEqual(initial.profiles.filter(profile => profile.role === 'SEDE').map(profile => profile.storeId).sort(), activeWarehouseIds);
+  assert.deepEqual(initial.profiles.find(profile => profile.id === 'alamos'), {
+    id: 'alamos', name: 'Operador de Álamos', role: 'SEDE', storeId: 'HUB_ALAMOS',
+  });
+  const { token: alamos, actor: alamosActor } = await demoLogin('alamos');
+  assert.deepEqual(alamosActor.storeIds, ['HUB_ALAMOS']);
+  assert.equal(alamosActor.role, 'SEDE');
+  assert.equal(alamosActor.canConfirm, true);
+  assert.equal(alamosActor.canAdjustInventory, false);
+  assert.equal(alamosActor.canAdjustPrices, false);
+  const alamosSession = await admin('/session', { token: alamos });
+  assert.deepEqual(alamosSession.stores.map(store => store.id), ['HUB_ALAMOS']);
+  for (const endpoint of ['/orders', '/inventory', '/sales']) {
+    await admin(endpoint + '?storeId=HUB_ALAMOS', { token: alamos });
+    for (const other of ['HUB_KENNEDY', 'HUB_SUBA']) {
+      await admin(endpoint + '?storeId=' + other, { token: alamos, expected: 403 });
+    }
+  }
+  console.log('PASS: Operador de Álamos accede únicamente a su sede.');
   const storeIds = stores => stores.map(store => store.id).sort();
   const [publicStores, adminSession, shopify] = await Promise.all([
     api('/api/v1/stores'),
