@@ -23,10 +23,13 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [name, setName] = useState('');
+  const [setupToken, setSetupToken] = useState('');
 
   useEffect(() => {
     if (isOpen) {
       checkAuthStatus();
+    } else {
+      setSetupToken('');
     }
   }, [isOpen]);
 
@@ -70,11 +73,13 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           throw new Error('Las contraseñas no coinciden.');
         }
 
+        if (!setupToken.trim()) throw new Error('Ingresa el código de instalación configurado en el servidor.');
+
         const res = await api.setupMasterAdmin({
           email: email.trim(),
           password,
           name: name.trim(),
-        });
+        }, setupToken.trim());
         onAuthenticated(res.user);
         onClose();
       } else {
@@ -113,7 +118,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               </h2>
               <p className="text-xs text-slate-400">
                 {isSetup
-                  ? 'Primer inicio: define tus credenciales maestras protegidas con PBKDF2'
+                  ? 'Ingresa el código de instalación y crea tu cuenta administrativa'
                   : 'Ingresa con tu sesión administrativa verificada por el servidor'}
               </p>
             </div>
@@ -206,6 +211,20 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                     />
                   </div>
                 </div>
+              )}
+
+              {isSetup && (
+                <label className="block text-xs font-bold text-slate-700">
+                  Código de instalación
+                  <input
+                    type="password"
+                    autoComplete="off"
+                    value={setupToken}
+                    onChange={e => setSetupToken(e.target.value)}
+                    required
+                    className="mt-1.5 w-full rounded-xl border border-slate-200 bg-slate-50 px-4 py-2.5 text-sm focus:outline-none focus:ring-2 focus:ring-red-600"
+                  />
+                </label>
               )}
 
               <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-500 space-y-1">

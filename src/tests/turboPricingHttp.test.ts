@@ -88,6 +88,8 @@ const file=path.join(root,'src/data/persisted-catalog-overrides.json');
 const data=JSON.parse(fs.readFileSync(file,'utf8'));
 const template=data.customProducts[0];
 for(const price of [59999,60000,60001]) data.customProducts.push({...structuredClone(template),id:'PRICE-'+price,sku:'PRICE-'+price,name:'SIMULACIÓN TARIFA '+price,price,weightKg:1,transport:{...template.transport,weightGrams:1000},presentaciones:undefined});
+data.customProducts.push({ ...structuredClone(data.customProducts[1]), id: 'RX-TEST', sku: 'RX-TEST',
+  name: 'Fórmula de prueba', requiresPrescription: true });
 fs.writeFileSync(file,JSON.stringify(data));
 const destination={address:'Carrera 107 #143-31, Bogotá, Colombia',coordinates:{lat:4.747154,lng:-74.098137},municipality:'Bogotá',locality:'Suba'};
 try {
@@ -97,7 +99,20 @@ try {
  for(const price of [59999,60000,60001]) {const q=await quote(price);assert.equal(q.recommendedMode,'TURBO',JSON.stringify(q));assert.ok(q.confirmationToken);assert.equal(q.charges.shipping,price<60000?10000:0);assert.equal(q.charges.serviceFee,0);assert.equal(q.charges.mode,'TURBO');}
  assert.equal((await call('/orders')).length,0);
  const q=await quote(59999);const payload={items:[{productId:'PRICE-59999',price:59999,quantity:1}],deliveryAddress:destination,deliveryMode:'TURBO',confirmationToken:q.confirmationToken,customer:{name:'SIMULACIÓN TARIFA',phone:'0000000000',email:'tarifa@example.invalid',isGuest:true},paymentMethod:'CASH_ON_DELIVERY',tip:0,shipping:0,serviceFee:1500,total:1};
+ await call('/integrations/status', 'GET', undefined, '', 401);
+ const integration = await call('/integrations/status');
+ assert.equal(integration.wompi.status, 'Pagos en línea desactivados');
+ assert.equal(integration.wompi.lastTransaction, undefined);
+ idem = 'rejected-tenders';
+ for (const paymentMethod of ['WOMPI_CARD', 'WOMPI_PSE', 'WOMPI_BANCOLOMBIA', 'UNKNOWN']) {
+   const refused = await call('/orders', 'POST', {...payload, paymentMethod}, '', 400);
+   assert.equal(refused.code, paymentMethod === 'UNKNOWN' ? 'INVALID_PAYMENT_METHOD' : 'PAYMENT_UNAVAILABLE');
+ }
+ assert.equal((await call('/orders')).length, 0);
+ assert.equal((await call('/catalog')).find((p:any) => p.id === 'PRICE-59999').reservedStockByStore.HUB_SUBA ?? 0, 0);
  idem='pricing-once';const created=await call('/orders','POST',payload,'',201);guest=created.guestAccessToken;
+ assert.equal(created.payment.status,'PENDIENTE');
+ assert.equal(created.payment.transactionId,undefined);
  assert.equal(created.totals.shipping,10000);assert.equal(created.totals.serviceFee,0);assert.equal(created.totals.total,69999);assert.equal(created.payment.cashToCollect,69999);
  const tracking=await call('/orders/'+created.id+'/tracking','GET',undefined,'');
  assert.equal(tracking.timing.source,'VERIFIED_QUOTE');
@@ -105,6 +120,31 @@ try {
  assert.ok(Date.parse(tracking.timing.dueAt)>Date.parse(tracking.timing.startedAt));
  assert.equal(tracking.telemetry,null);
  assert.equal((await call('/orders','POST',payload,'')).id,created.id);idem='';
+ const rxQuote = await call('/delivery/quote', 'POST', {destination, items:[{productId:'RX-TEST', quantity:1}], requestedMode:'TURBO'}, '');
+ const ordinaryGuest = guest;
+ idem = 'rx-review';
+ const rx = await call('/orders','POST',{...payload,paymentMethod:'EFECTIVO',confirmationToken:rxQuote.confirmationToken,
+   items:[{productId:'RX-TEST',price:59999,quantity:1,picked:true,verifiedLot:'CLIENT-SUPPLIED'}]},'',201);
+ assert.equal(rx.payment.method,'CASH_ON_DELIVERY');
+ assert.equal(rx.payment.status,'PENDIENTE');
+ assert.equal(rx.items[0].picked,undefined);
+ assert.equal(rx.items[0].verifiedLot,undefined);
+ assert.equal(rx.prescriptionReview.status,'PENDIENTE_REVISION');
+ assert.equal(rx.prescriptionReview.reviewedBy,undefined);
+ const rxOrder = '/orders/' + rx.id;
+ const rxOps = '/operations/orders/' + rx.id;
+ await call(rxOps+'/status','POST',{status:'EN_ALISTAMIENTO'},admin,409);
+ await call(rxOps+'/prescription/review','POST',{status:'APROBADA'},admin,400);
+ guest = rx.guestAccessToken;
+ await call(rxOrder+'/prescription','POST',{documentUrl:'javascript:alert(1)',documentName:'fórmula'},'',400);
+ await call(rxOrder+'/prescription','POST',{documentUrl:'https://fixture.invalid/formula.pdf',documentName:'Fórmula de prueba'},'',200);
+ const reviewed = await call(rxOps+'/prescription/review','POST',{status:'APROBADA',reviewerName:'CLIENT-SUPPLIED'});
+ assert.equal(reviewed.order.prescriptionReview.status,'APROBADA');
+ assert.notEqual(reviewed.order.prescriptionReview.reviewedBy,'CLIENT-SUPPLIED');
+ await call(rxOps+'/status','POST',{status:'EN_ALISTAMIENTO'});
+ await call(rxOrder+'/cancel','POST',{reason:'Cierre del pedido de fórmula de prueba.'});
+ guest = ordinaryGuest;
+ idem = '';
  const stale=await quote(60000);const previous=await call('/admin/transport');
  await call('/admin/transport','PUT',{config:previous.config,revision:previous.revision},'',401);
  const next=structuredClone(previous.config);next.pricing.turbo.shipping=9000;next.pricing.turbo.freeShippingFrom=61000;
@@ -114,6 +154,7 @@ try {
  assert.equal((await call('/orders/'+created.id,'GET',undefined,'')).totals.total,69999);
  await stop();await start();admin=(await call('/auth/login','POST',info.admin,'')).token;
  assert.equal((await call('/orders/'+created.id,'GET',undefined,'')).totals.total,69999);assert.equal((await call('/admin/transport')).config.pricing.turbo.shipping,9000);
+ assert.equal((await call(rxOrder)).prescriptionReview.status,'APROBADA');
  assert.equal((await call('/catalog')).find((p:any)=>p.id==='PRICE-59999').reservedStockByStore.HUB_SUBA,1);
- console.log('PASS pricing HTTP: 59999/60000/60001, server totals ignore client fees, idempotency, one reserve, old quote rejected after tariff edit, historical total unchanged, authenticated CAS update and restart.');
+ console.log('PASS pricing HTTP: 59999/60000/60001, server totals ignore client fees, idempotency, one reserve, old quote rejected after tariff edit, historical total unchanged, authenticated CAS update and restart, unavailable payment methods reserve nothing, and persistent prescription review.');
 } finally {await stop();fs.rmSync(root,{recursive:true,force:true});}

@@ -151,6 +151,14 @@ try {
       { offerId: task.offer.id },
       token,
     );
+    const wholeOrder = "/orders/" + order.id + "/cancel";
+    const visibleReference = "/orders/" + encodeURIComponent(order.orderNumber) + "/cancel";
+    const operationsOrder = "/operations/orders/" + order.id + "/status";
+    await call(wholeOrder, "POST", {}, admin, 409);
+    await call(visibleReference, "POST", {}, admin, 409);
+    await call(operationsOrder, "POST", { status:"CANCELADO" }, admin, 409);
+    await call(wholeOrder, "POST", { shipmentId:task.shipmentId }, admin, 409);
+    await call(wholeOrder, "POST", { shipmentId:"" }, admin, 400);
     await call(
       "/driver/assignments/" + task.assignmentId + "/arrived-hub",
       "POST",

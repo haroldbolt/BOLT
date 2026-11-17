@@ -61,6 +61,16 @@ export interface OrdersRepositoryOptions {
   telemetryFile?: string;
 }
 
+function itemQuantities(items: Order['items']): Map<string, number> | null {
+  const quantities = new Map<string, number>();
+  for (const { productId, quantity } of items) {
+    const total = (quantities.get(productId) ?? 0) + quantity;
+    if (!Number.isSafeInteger(quantity) || quantity < 1 || !Number.isSafeInteger(total)) return null;
+    quantities.set(productId, total);
+  }
+  return quantities;
+}
+
 export class OrdersRepository {
   private orders: Order[] = [];
   private drivers: DriverProfile[] = [];
@@ -68,6 +78,7 @@ export class OrdersRepository {
   private telemetryHistory: Record<string, GPSTelemetry[]> = {};
   private initialized = false;
   private inTransaction = false;
+  private transactionReservations: (() => void)[] = [];
   private unified = false;
   private fulfillmentFile: string;
   public dispatchState: DispatchState = newDispatchState();
@@ -82,8 +93,16 @@ export class OrdersRepository {
     if(this.inTransaction)return fn();
     const before=this.snapshot(),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
     try {const value=fn();this.persistUnified();return value}
-    catch(error){const durable=new FulfillmentStorage(this.dataDir).read();if((durable?.revision||0)>previousRevision)this.restore(durable);else if(JSON.stringify(this.snapshot())!==JSON.stringify(before))this.restore(before);throw error}
-    finally {this.inTransaction=false}
+    catch(error){
+      const durable=new FulfillmentStorage(this.dataDir).read();
+      if((durable?.revision||0)>previousRevision) this.restore(durable);
+      else {
+        for(const release of this.transactionReservations.reverse()) release();
+        if(JSON.stringify(this.snapshot())!==JSON.stringify(before)) this.restore(before);
+      }
+      throw error;
+    }
+    finally {this.transactionReservations=[];this.inTransaction=false}
   }
   public flush() {if(!this.inTransaction)this.persistUnified()}
   public addDriver(driver:DriverProfile) {if(this.drivers.some(d=>d.id===driver.id))throw Error('Conductor duplicado');this.drivers.push(driver)}
@@ -277,6 +296,18 @@ export class OrdersRepository {
 
   public getOrderByCreationRequest(id:string): Order | undefined {return this.orders.find(o=>o.creationRequestId===id)}
 
+  public updatePrescriptionReview(orderId: string, review: Order['prescriptionReview']) {
+    const order = this.getOrderById(orderId);
+    if (!order) return { success: false as const, code: 404, error: 'Pedido no encontrado.' };
+    if (order.fulfillmentStatus === 'CANCELADO' || order.fulfillmentStatus === 'ENTREGADO') {
+      return { success: false as const, code: 409, error: 'El pedido ya está cerrado.' };
+    }
+    return this.transaction(() => {
+      order.prescriptionReview = { ...order.prescriptionReview, ...review };
+      return { success: true as const, order };
+    });
+  }
+
   // No automatic reassignment and no public mutation endpoint. Authorized
   // operations must call this method explicitly, with a configured active store.
   public recordWarehouseAssignment(orderId:string, warehouse:Store, actor:OrderActor): Order {
@@ -332,34 +363,35 @@ export class OrdersRepository {
       return { success: false, error: `Pedido duplicado: ya existe un pedido con ID ${orderData.id}` };
     }
 
+    const quantities = itemQuantities(orderData.items);
+    if (!quantities?.size) return { success: false, error: 'Cantidad de unidades inválida.' };
     if(orderData.childShipments?.length) {
-      const sum=(items:typeof orderData.items)=>{const m=new Map<string,number>();for(const i of items){if(!Number.isSafeInteger(i.quantity)||i.quantity<=0)throw Error('Cantidad inválida');m.set(i.productId,(m.get(i.productId)||0)+i.quantity);}return JSON.stringify([...m].sort());};
-      if(sum(orderData.items)!==sum(orderData.childShipments.flatMap(c=>c.items)) || orderData.childShipments.some(c=>c.storeId && c.storeId!==orderData.storeId)) return {success:false,error:'Los despachos no coinciden con las unidades o sede de la compra.'};
+      const childQuantities = itemQuantities(orderData.childShipments.flatMap(child => child.items));
+      if(!childQuantities || childQuantities.size !== quantities.size ||
+        [...quantities].some(([id, quantity]) => childQuantities.get(id) !== quantity) ||
+        orderData.childShipments.some(child => child.storeId && child.storeId !== orderData.storeId)) {
+        return {success:false,error:'Los despachos no coinciden con las unidades o sede de la compra.'};
+      }
     }
-    // 2. Comprobar y reservar inventario si se proporciona catálogo
-    if (catalogProducts && orderData.items) {
-      for (const item of orderData.items) {
-        const prod = catalogProducts.find(p => p.id === item.productId);
+    // 2. Validar el total por variante antes de aplicar cualquier reserva.
+    const reservations: { product: Product; before: Product['reservedStockByStore']; quantity: number }[] = [];
+    if (catalogProducts) {
+      for (const [id, quantity] of quantities) {
+        const prod = catalogProducts.find(p => p.id === id);
         if (!prod) {
-          return { success: false, error: `Producto no encontrado en catálogo: ${item.productId}` };
+          return { success: false, error: `Producto no encontrado en catálogo: ${id}` };
         }
-        const currentStock = prod.stockByStore[orderData.storeId] || 0;
-        const currentReserved = prod.reservedStockByStore[orderData.storeId] || 0;
+        const currentStock = prod.stockByStore[orderData.storeId] ?? 0;
+        const currentReserved = prod.reservedStockByStore?.[orderData.storeId] ?? 0;
         const availableToSell = currentStock - currentReserved;
 
-        if (availableToSell - item.quantity < 0) {
+        if (!Number.isSafeInteger(availableToSell) || availableToSell < quantity) {
           return {
             success: false,
-            error: `Inventario insuficiente para ${prod.name} en la bodega seleccionada. Disponibles: ${Math.max(0, availableToSell)}`,
+            error: `Inventario insuficiente para ${prod.name} en la bodega seleccionada. Disponibles: ${Number.isSafeInteger(availableToSell) ? Math.max(0, availableToSell) : 0}`,
           };
         }
-      }
-
-      // Aplicar reserva atómica en los productos
-      for (const item of orderData.items) {
-        const prod = catalogProducts.find(p => p.id === item.productId)!;
-        if (!prod.reservedStockByStore) prod.reservedStockByStore = {};
-        prod.reservedStockByStore[orderData.storeId] = (prod.reservedStockByStore[orderData.storeId] || 0) + item.quantity;
+        reservations.push({ product: prod, before: prod.reservedStockByStore, quantity: currentReserved + quantity });
       }
     }
 
@@ -405,15 +437,19 @@ export class OrdersRepository {
     orderData.statusHistory = [historyEntry];
     this.auditHistory.push(historyEntry);
 
-    // 5. Guardar pedido en colección y persistir a disco
+    // 5. Guardar pedido y reserva. El catálogo recibido vive fuera de la instantánea de pedidos.
+    const rollbackReservations = () => {
+      for (const { product, before } of reservations) product.reservedStockByStore = before;
+    };
+    for (const { product, before, quantity } of reservations) {
+      product.reservedStockByStore = { ...before, [orderData.storeId]: quantity };
+    }
+    if (this.inTransaction && reservations.length) this.transactionReservations.push(rollbackReservations);
     this.orders.unshift(orderData);
     try {this.saveOrders()} catch(error) {
       this.orders=this.orders.filter(o=>o!==orderData);
       this.auditHistory=this.auditHistory.filter(h=>h!==historyEntry);
-      for(const item of orderData.items || []) {
-        const p=catalogProducts?.find(p=>p.id===item.productId);
-        if(p) p.reservedStockByStore[orderData.storeId]-=item.quantity;
-      }
+      rollbackReservations();
       throw error;
     }
     this.saveAudit();
@@ -444,6 +480,10 @@ export class OrdersRepository {
 
     const { shipmentId, reason, deliveryCode, catalogProducts, notes } = options || {};
     if(order.deliveryReview?.status==='PENDING' && newStatus!=='PENDIENTE_CONFIRMACION' && newStatus!=='CANCELADO') return {success:false,code:409,error:'Confirma la entrega desde la revisión de solicitudes: requiere cotización física vigente y aceptación del cliente.'};
+    if ((newStatus === 'EN_ALISTAMIENTO' || newStatus === 'LISTO_PARA_DESPACHO') &&
+      (order.prescriptionReview?.status === 'PENDIENTE_REVISION' || order.prescriptionReview?.status === 'RECHAZADA')) {
+      return { success: false, code: 409, error: 'La fórmula veterinaria requiere aprobación antes de preparar o despachar el pedido.' };
+    }
     const nowIso = new Date().toISOString();
 
     // -------------------------------------------------------------

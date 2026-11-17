@@ -83,7 +83,7 @@ function setup(
     });
     return id;
   }
-  function order(count = 1, cash = false, delivery: Partial<Pick<Order, 'deliveryAddress' | 'deliveryMode' | 'scheduledWindow'>> = {}): Order {
+  function order(count = 1, cash = false, overrides: Partial<Pick<Order, 'deliveryAddress' | 'deliveryMode' | 'scheduledWindow' | 'payment'>> = {}): Order {
     const base = structuredClone(INITIAL_ORDERS[0]);
     const id = "TEST-" + crypto.randomUUID(),
       item = {
@@ -135,7 +135,7 @@ function setup(
         status: cash ? "PENDIENTE" : "APROBADO",
         cashToCollect: cash ? count * 10000 + 10000 : 0,
       },
-      ...delivery,
+      ...overrides,
     });
     base.childShipments =
       count > 1
@@ -830,6 +830,110 @@ test("A driver can report GPS to an enabled Cajicá destination beyond the legac
   assert.equal(x.repo.recordTelemetry({ ...point, accuracy: 250 }, actor, sameEnabledGpsArea).code, 400);
   assert.equal(x.repo.recordTelemetry(point, actor, sameEnabledGpsArea).success, true);
   assert.equal(x.repo.getLatestTelemetry(order.id)?.latitude, destination.coordinates.lat);
+});
+test("An unknown status cannot undo a confirmed provider acceptance", async () => {
+  const providers: SimulatedDispatchProvider[] = [];
+  const x = setup({ providers, simulation: true });
+  const p = provider(x, "ACCEPTED");
+  providers.push(p);
+  const r = x.runs(x.order())[0];
+  await x.service.search(r.id);
+  const reference = r.external!.reference;
+  p.status = async () => ({ status: "UNKNOWN", reference: "outdated" });
+  await x.service.reconcile(r.id);
+  assert.equal(r.external!.status, "ACCEPTED");
+  assert.equal(r.external!.reference, reference);
+  assert.equal(r.reason, "EXTERNAL_ACCEPTED_AWAITING_DRIVER");
+});
+test("A late external cancellation cannot revoke the replacement driver's assignment", async () => {
+  const providers: SimulatedDispatchProvider[] = [];
+  const x = setup({ providers, simulation: true });
+  const p = provider(x);
+  providers.push(p);
+  const o = x.order(), r = x.runs(o)[0];
+  await x.service.search(r.id);
+  let finishCancellation!: (result: { status: "CANCELLED"; reference: string }) => void;
+  const pending = new Promise<{ status: "CANCELLED"; reference: string }>(resolve => { finishCancellation = resolve; });
+  let calls = 0;
+  p.cancel = async () => {
+    calls++;
+    return pending;
+  };
+  const cancellation = x.service.cancelExternal(r.id, "admin");
+  const repeated = x.service.cancelExternal(r.id, "admin");
+  try {
+    p.response = { status: "CANCELLED" };
+    await x.service.reconcile(r.id);
+    const driver = x.provision();
+    await x.service.search(r.id);
+    assert.ok(r.offerId);
+    x.service.respond(driver, r.offerId, "accept");
+    assert.equal(r.providerId, "OWN");
+  } finally {
+    finishCancellation({ status: "CANCELLED", reference: "late-cancellation" });
+    await Promise.all([cancellation, repeated]);
+  }
+  assert.equal(calls, 1);
+  assert.equal(r.status, "ASSIGNED");
+  assert.equal(r.providerId, "OWN");
+  assert.equal(o.fulfillmentStatus, "REPARTIDOR_ASIGNADO");
+  assert.equal(x.service.adminView().events.filter(e => e.type === "EXTERNAL_CANCELLED").length, 1);
+});
+test("Delivering a zero-charge cash order cannot create an outstanding collection", async () => {
+  const x = setup();
+  const driver = x.provision();
+  const o = x.order(1, true, { payment: { method: "CASH_ON_DELIVERY", status: "PENDIENTE", cashToCollect: 0 } });
+  const r = x.runs(o)[0];
+  await x.service.search(r.id);
+  x.service.respond(driver, r.offerId!, "accept");
+  x.service.pickup(driver, r.id, 1);
+  x.service.deliver(driver, r.id, o.secretDeliveryCode, 0);
+  assert.equal(o.fulfillmentStatus, "ENTREGADO");
+  assert.equal(o.payment.cashToCollect, 0);
+  assert.equal(x.repo.getDriverById(driver)?.cashBalance, 0);
+});
+test("A cancelled shipment leaves no cash to collect and releases only its own share once", async () => {
+  const x = setup();
+  const driver = x.provision();
+  const o = x.order(2, true), [active, cancelled] = x.runs(o);
+  assert.equal(x.repo.transitionStatus(o.id, "CANCELADO", { role: "ADMINISTRADOR" }, { shipmentId: cancelled.shipmentId }).success, true);
+  x.service.synchronizeOrders();
+  x.service.synchronizeOrders();
+  assert.equal(o.payment.cashToCollect, active.cashDue);
+  assert.equal(x.service.customerDispatches(o.id).find(r => r.id === cancelled.id)?.cashToCollect, 0);
+  await x.service.search(active.id);
+  x.service.respond(driver, active.offerId!, "accept");
+  x.service.pickup(driver, active.id, 1);
+  x.service.deliver(driver, active.id, o.childShipments![0].secretDeliveryCode, active.cashDue);
+  assert.equal(o.payment.cashToCollect, 0);
+  assert.equal(x.repo.getDriverById(driver)?.cashBalance, active.cashDue);
+});
+test("Only an approved prescription lets the shipment receive an offer and be picked up", async () => {
+  const providers: SimulatedDispatchProvider[] = [];
+  const x = setup({ providers, simulation: true });
+  const driver = x.provision();
+  const o = x.order(), r = x.runs(o)[0];
+  o.items[0].requiresPrescription = true;
+  o.prescriptionReview = { status: "PENDIENTE_REVISION" };
+  const p = provider(x);
+  providers.push(p);
+  await x.service.search(r.id);
+  assert.equal(r.reason, "PRESCRIPTION_REVIEW_REQUIRED");
+  assert.equal(r.searchStartedAt, undefined);
+  assert.equal(r.external, undefined);
+  assert.equal(r.offerId, undefined);
+  o.prescriptionReview = { status: "APROBADA" };
+  await x.service.search(r.id);
+  assert.ok(r.offerId);
+  o.prescriptionReview = { status: "RECHAZADA" };
+  assert.throws(() => x.service.respond(driver, r.offerId!, "accept"), { code: "PRESCRIPTION_REVIEW_REQUIRED" });
+  o.prescriptionReview = { status: "APROBADA" };
+  x.service.respond(driver, r.offerId, "accept");
+  o.prescriptionReview = { status: "PENDIENTE_REVISION" };
+  assert.throws(() => x.service.pickup(driver, r.id, 1), { code: "PRESCRIPTION_REVIEW_REQUIRED" });
+  o.prescriptionReview = { status: "APROBADA" };
+  x.service.pickup(driver, r.id, 1);
+  assert.equal(r.status, "PICKED_UP");
 });
 let failed = 0;
 for (const [name, fn] of tests) {
