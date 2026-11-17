@@ -14,6 +14,17 @@ let child: ChildProcess | undefined;
 let childOutput = "";
 try {
   execFileSync(process.execPath, ["--import", "tsx", "src/tests/createIntegrationReview.ts", root], { cwd: source });
+  const statePath = path.join(root, ".bolt-private/orders/persisted-orders.json");
+  const configPath = path.join(root, ".bolt-private/dispatch-simulation.json");
+  const seededOrders = JSON.parse(fs.readFileSync(statePath, "utf8"));
+  const seededConfig = JSON.parse(fs.readFileSync(configPath, "utf8"));
+  const custody = seededOrders.find((order: { id: string }) => order.id === "HIST-WAY");
+  const secondCustody = {
+    ...custody, id: "HIST-SECOND-WAY", orderNumber: "HIST-SECOND-WAY",
+    assignmentId: "ASG-HIST-SECOND-WAY", tripId: "TRP-HIST-SECOND-WAY",
+    driver: seededConfig.drivers[1].driver,
+  };
+  fs.writeFileSync(statePath, JSON.stringify([...seededOrders, secondCustody]));
   const listener = net.createServer();
   listener.listen(0, "127.0.0.1");
   await once(listener, "listening");
@@ -71,7 +82,13 @@ try {
   assert.equal(first.order.payment.cashToCollect, 0);
   const after = await call("/admin/simulation", { admin });
   assert.equal(after.orders.length, before.orders.length + 1);
-  assert.notEqual(first.order.driver.id, info.drivers[0].id, "the historical out-for-delivery fixture keeps its driver");
+  assert.equal(first.order.driver.id, "SIM-TRACK-COURIER");
+  assert.deepEqual(after.drivers.map((driver: { id: string }) => driver.id), info.drivers.map((driver: { id: string }) => driver.id));
+  for (const id of ["HIST-WAY", "HIST-SECOND-WAY"]) {
+    const stored = await call("/orders/" + id, { admin });
+    assert.equal(stored.fulfillmentStatus, "EN_CAMINO");
+    assert.equal(stored.driver.id, id === "HIST-WAY" ? custody.driver.id : secondCustody.driver.id);
+  }
   assert.deepEqual(after.provider.requests, before.provider.requests);
   const orderRoute = "/orders/" + first.order.id + "/tracking";
   await call(orderRoute, { status: 403 });

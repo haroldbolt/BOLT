@@ -17,6 +17,8 @@ import { planTransport } from "./transportPlanner";
 import { getCheckoutPreviewOrder } from "./checkoutPreview";
 const trackingPrefix = "SIM-TRACK-";
 const trackingFingerprint = "SIMULATION_TRACKING_V1";
+const trackingDriverId = "SIM-TRACK-COURIER";
+const trackingDriverEmail = "tracking-courier@simulation.test";
 const trackingDurationMs = 4 * 60_000;
 const trackingPulseMs = 7_000;
 
@@ -414,7 +416,7 @@ export function mountDispatchSimulation(
   function trackingDriver(order: Order) {
     const [kind, id, initialShift] = order.creationRequestFingerprint?.split(":") ?? [];
     if (!order.id.startsWith(trackingPrefix) || kind !== trackingFingerprint ||
-        !fixtureIds.includes(id) || !["OFF_DUTY", "AVAILABLE"].includes(initialShift))
+        (id !== trackingDriverId && !fixtureIds.includes(id)) || !["OFF_DUTY", "AVAILABLE"].includes(initialShift))
       return undefined;
     return { id, initialShift };
   }
@@ -456,6 +458,39 @@ export function mountDispatchSimulation(
     if (!result.success) throw Error("No se pudo actualizar la posición ficticia.");
   }
 
+  function ensureTrackingCourier() {
+    const account = repo.dispatchState.accounts[trackingDriverId];
+    if (account && account.email !== trackingDriverEmail || !account && repo.getDriverById(trackingDriverId))
+      throw Error("El identificador del repartidor de pruebas está ocupado.");
+    if (!account) {
+      s.provision({
+        driver: {
+          id: trackingDriverId, name: "Repartidor de prueba BOLT", phone: "0000000000",
+          vehiclePlate: "SIMULADO", vehicleType: "MOTO", maxWeightKg: 55,
+          rating: 0, photo: "", isOnline: false, currentStatus: "FUERA_DE_TURNO",
+          currentLocation: { lat: 0, lng: 0, updatedAt: new Date(0).toISOString() },
+          cashBalance: 0,
+        },
+        email: trackingDriverEmail,
+        password: crypto.randomBytes(32).toString("base64url"),
+        storeIds: [store.id],
+      }, "sim-tracking");
+    }
+    const current = transport.read();
+    if (!current.config.vehicles.some(vehicle => vehicle.driverId === trackingDriverId)) {
+      return transport.update({
+        ...current.config,
+        vehicles: [...current.config.vehicles, {
+          driverId: trackingDriverId, storeIds: [store.id], enabled: true, modes: ["TURBO"],
+          maxLoadGrams: 55_000, cargoDimensionsCm: [80, 60, 60], maxVolumeCm3: 288_000,
+          packagingGrams: 500, scheduledSlots: [],
+        }],
+      }, current.revision, {email: trackingDriverEmail, name: "Simulación de seguimiento"},
+      repo.getAllDrivers(), stores()).config;
+    }
+    return current.config;
+  }
+
   async function startTrackingPreview(requestId: string) {
     const orders = repo.getAllOrders();
     const previous = orders.find(order => order.creationRequestId === requestId);
@@ -472,26 +507,24 @@ export function mountDispatchSimulation(
     const catalog = products();
     const product = catalog.find(entry => entry.id === "SIM-FOOD-20KG");
     if (!product) throw Error("Catálogo de pruebas no cargado.");
-    const { config: transportConfig } = transport.read();
-    const candidate = fixtureIds.flatMap(id => {
-      const account = repo.dispatchState.accounts[id];
-      const profile = repo.getDriverById(id);
-      if (!account?.enabled || !profile || account.activeDispatchId ||
-          !["OFF_DUTY", "AVAILABLE"].includes(account.status) ||
-          orders.some(order => (order.childShipments?.length ? order.childShipments : [order]).some(shipment =>
-            shipment.driver?.id === id && (!["ENTREGADO", "CANCELADO"].includes(shipment.fulfillmentStatus) || shipment.physicalReturnPending)))) return [];
-      const plan = planTransport([{ productId: product.id, quantity: 1 }], [product], store.id, "TURBO", {
-        config: {
-          ...transportConfig,
-          vehicles: transportConfig.vehicles.filter(vehicle => vehicle.driverId === id),
-          externalProviders: [],
-        },
-        drivers: [{ ...profile, isOnline: true, currentStatus: "DISPONIBLE" }],
-        orders: [],
-      });
-      return plan.feasible && plan.shipments.length === 1 ? [{ id, initialShift: account.status, load: plan.shipments[0] }] : [];
-    })[0];
-    if (!candidate) throw Error("Los conductores de prueba están ocupados. Completa sus despachos para volver a intentar.");
+    ensureTrackingCourier();
+    const transportConfig = ensureTrackingCourier();
+    const driver = repo.dispatchState.accounts[trackingDriverId];
+    const profile = repo.getDriverById(trackingDriverId);
+    if (!driver.enabled || !profile || driver.activeDispatchId ||
+        !["OFF_DUTY", "AVAILABLE"].includes(driver.status))
+      throw Error("El repartidor exclusivo de esta prueba está ocupado.");
+    const plan = planTransport([{ productId: product.id, quantity: 1 }], [product], store.id, "TURBO", {
+      config: {
+        ...transportConfig,
+        vehicles: transportConfig.vehicles.filter(vehicle => vehicle.driverId === trackingDriverId),
+        externalProviders: [],
+      },
+      drivers: [{ ...profile, isOnline: true, currentStatus: "DISPONIBLE" }],
+      orders: [],
+    });
+    if (!plan.feasible || plan.shipments.length !== 1) throw Error("La capacidad del vehículo ficticio no permite iniciar el recorrido.");
+    const candidate = { id: trackingDriverId, initialShift: driver.status, load: plan.shipments[0] };
 
     const now = Date.now();
     const confirmedAt = new Date(now).toISOString();
