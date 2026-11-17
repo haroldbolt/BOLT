@@ -41,6 +41,7 @@ interface CheckoutModalProps {
   onSelectMode?: (mode: DeliveryMode) => void;
   selectedScheduledWindow?: ScheduledDeliveryWindow | null;
   onSelectScheduledWindow?: (window: ScheduledDeliveryWindow) => void;
+  demoCashContact?: { name: string; phone: string; email: string };
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
@@ -59,15 +60,16 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onSelectMode,
   selectedScheduledWindow: selectedScheduledWindowProp,
   onSelectScheduledWindow,
+  demoCashContact,
 }) => {
   const {user:account}=useCustomer();
-  const [customerName, setCustomerName] = useState(account?.name || '');
-  const [customerPhone, setCustomerPhone] = useState(account?.phone || '');
-  const [customerEmail, setCustomerEmail] = useState(account?.email || '');
+  const [customerName, setCustomerName] = useState(demoCashContact?.name ?? account?.name ?? '');
+  const [customerPhone, setCustomerPhone] = useState(demoCashContact?.phone ?? account?.phone ?? '');
+  const [customerEmail, setCustomerEmail] = useState(demoCashContact?.email ?? account?.email ?? '');
   const [address, setAddress] = useState(customerAddress ?? '');
   const [addressDetails, setAddressDetails] = useState(customerAddressDetails ?? '');
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
-  const [tip, setTip] = useState(2000);
+  const [tip, setTip] = useState(demoCashContact ? 0 : 2000);
   const submitPending=useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -234,7 +236,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
       }else if(referencePhotoId){pushService.triggerNotification(notificationTitle,'La foto ya no está disponible en este dispositivo. Recibimos tu pedido con la dirección ingresada.');}
 
       if(pending) pushService.triggerNotification(notificationTitle,'La sede confirmará contigo la entrega. No se ha realizado ningún cobro.');
-      else pushService.notifyWarehouseAssignment(newOrder);
+      else if (!demoCashContact) pushService.notifyWarehouseAssignment(newOrder);
 
       onOrderSuccess(newOrder);
     } catch (err: any) {
@@ -287,6 +289,11 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmitOrder} className="p-5 space-y-4">
+          {demoCashContact && (
+            <p role="status" className="rounded-xl bg-amber-50 p-3 text-sm font-semibold text-amber-950">
+              Pedido de prueba · El efectivo se simula. No habrá cobro ni entrega real.
+            </p>
+          )}
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -534,6 +541,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               placeholder="Detalles (Apto, Torre, Conjunto)"
               value={addressDetails}
               onChange={e => setAddressDetails(e.target.value)}
+              readOnly={!!demoCashContact}
               className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
             />
 
@@ -594,6 +602,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 aria-label="Nombre completo"
                 value={customerName}
                 onChange={e => setCustomerName(e.target.value)}
+                readOnly={!!demoCashContact}
                 required
                 className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
               />
@@ -603,6 +612,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 aria-label="Teléfono móvil"
                 value={customerPhone}
                 onChange={e => setCustomerPhone(e.target.value)}
+                readOnly={!!demoCashContact}
                 required
                 className="w-full text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
               />
@@ -612,6 +622,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 aria-label="Correo electrónico"
                 value={customerEmail}
                 onChange={e => setCustomerEmail(e.target.value)}
+                readOnly={!!demoCashContact}
                 required
                 className="w-full sm:col-span-2 text-xs font-medium bg-slate-50 border border-slate-200 rounded-xl px-3 py-2.5 focus:outline-none focus:ring-2 focus:ring-red-500"
               />
@@ -646,7 +657,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           </fieldset>
 
           {/* Driver Tip */}
-          <div>
+          {!demoCashContact && <div>
             <label className="text-[11px] font-bold text-slate-700 block mb-1">
               Propina voluntaria para el repartidor:
             </label>
@@ -666,7 +677,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                 </button>
               ))}
             </div>
-          </div>
+          </div>}
 
           {/* Dynamic Free Shipping Benefit relocated to Checkout */}
           <div className="pt-1">

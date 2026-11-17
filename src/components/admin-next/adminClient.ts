@@ -26,6 +26,7 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
   payment?: Pick<Order['payment'], 'status' | 'method' | 'cashToCollect'>;
   demoCustomerCheckout?: boolean;
+  demoCashCheckout?: boolean;
   dispatch?: { id: string; code: string; providerId?: string; status: string; driverName?: string };
   demoReadOnly?: boolean;
   canSimulateDelivery?: boolean;

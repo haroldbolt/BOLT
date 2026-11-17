@@ -31,6 +31,7 @@ import { CheckoutModal } from './components/customer/CheckoutModal';
 import { OrderConfirmationPage } from './components/customer/OrderConfirmationPage';
 import { OrderTracking } from './components/customer/OrderTracking';
 import { DemoCustomerCheckout } from './components/customer/DemoCustomerCheckout';
+import { DEMO_CASH_PATH, DemoCashCheckout } from './components/customer/DemoCashCheckout';
 import { OrderHistoryModal } from './components/customer/OrderHistoryModal';
 import { PushNotificationBanner } from './components/notifications/PushNotificationBanner';
 import { NotificationCenterModal } from './components/notifications/NotificationCenterModal';
@@ -601,6 +602,7 @@ export default function App() {
   if (currentPath === '/demo/pedido-suba') {
     return <DemoCustomerCheckout onOrderSuccess={order => navigateTo('/pedido/' + encodeURIComponent(order.id))} />;
   }
+  if (currentPath === DEMO_CASH_PATH) return <DemoCashCheckout />;
   if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking key={currentPath} orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
 
   const confirmationMatch = currentPath.match(/^\/confirmacion\/([a-zA-Z0-9_-]+)\/?$/);
@@ -704,9 +706,14 @@ export default function App() {
       />
       {customerDemoCheckoutEnabled && <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
         <span className="font-medium text-slate-700">Demo privada · Entrega de prueba desde Suba</span>
-        <a className="inline-flex min-h-11 items-center rounded-xl bg-red-700 px-4 font-bold text-white" href="/demo/pedido-suba">
-          Probar pedido sin cobro
-        </a>
+        <div className="flex flex-wrap gap-2">
+          <a className="inline-flex min-h-11 items-center rounded-xl border border-red-200 px-4 font-bold text-red-800" href="/demo/pedido-suba">
+            Probar pedido sin cobro
+          </a>
+          <a className="inline-flex min-h-11 items-center rounded-xl bg-red-700 px-4 font-bold text-white" href={DEMO_CASH_PATH}>
+            Probar efectivo en Suba
+          </a>
+        </div>
       </div>}
 
       {/* Main Content Container */}

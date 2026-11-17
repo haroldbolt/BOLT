@@ -5,6 +5,7 @@ import type { Order, Product, Store } from '../types';
 import type { DispatchRun } from '../types/dispatch';
 import type { AdminAuthService } from './adminAuthService';
 import { isBoltAdminDemoOrder, isBoltCustomerDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
+import { isDemoCashCheckoutOrder } from './demoCashCheckout';
 import { DispatchError } from './dispatchService';
 import { buildBoltAdminSalesReport } from './boltAdminSales';
 import type { CatalogOperations } from './catalogOperations';
@@ -195,17 +196,20 @@ function pageParam(value: unknown, fallback: number, max: number) {
 export function mountBoltAdmin(app: Express, options: Options) {
   const demoSessions = new Map<string, { actor: Actor; expiresAt: number }>();
   const activeStores = () => options.getStores().filter(store => store.isActive);
-  const isOperationalOrder = (order: Order) => !options.demo || options.demo.isOrder(order);
+  const isCashScenario = (order: Order) => !!options.demo && isDemoCashCheckoutOrder(order);
+  const isOperationalOrder = (order: Order) => !options.demo || options.demo.isOrder(order) || isCashScenario(order);
   // The checkout server generates the SHA-256 fingerprint. Seeded and standalone simulation orders use other formats.
   const isDemoCheckoutOrder = (order: Order) => !!options.demo && !!order.creationRequestId &&
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
   const presentOrder = (order: Order) => {
-    const run = order.assignmentId && (!options.demo || isBoltCustomerDemoOrder(order))
+    const cashScenario = isCashScenario(order);
+    const run = order.assignmentId && (!options.demo || isBoltCustomerDemoOrder(order) || cashScenario)
       ? options.getDispatchRun(order.assignmentId)
       : undefined;
     return {
-      ...boltAdminOrder(order, isDemoCheckoutOrder(order)),
+      ...boltAdminOrder(order, isDemoCheckoutOrder(order) && !cashScenario),
+      ...(cashScenario && { demoCashCheckout: true }),
       ...(options.demo && order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' &&
         order.deliveryReview?.status === 'PENDING' && isDemoInventoryDeliveryOrder(order) && { canSimulateDelivery: true }),
       ...(run && run.orderId === order.id && { dispatch: {
@@ -417,7 +421,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const demo = !!options.demo;
     const allOrders = options.getOrders();
-    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) && !isBoltCustomerDemoOrder(order) :
+    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) && !isBoltCustomerDemoOrder(order) && !isCashScenario(order) :
       !seedOrderIds.has(order.id) && order.creationRequestFingerprint !== 'SIMULATION' && !isBoltAdminDemoOrder(order));
     res.json(buildBoltAdminSalesReport({
       period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,

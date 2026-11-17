@@ -38,6 +38,7 @@ try {
   assert.match(reviewPage, /SIMULACIÓN/);
   assert.match(reviewPage, /href="\/cuenta"/);
   assert.match(reviewPage, /href="\/demo\/pedido-suba"/);
+  assert.match(reviewPage, /href="\/demo\/efectivo-suba"/);
   assert.match(reviewPage, /href="\/admin\/nuevo\/"/);
   assert.match(reviewPage, /Registro real pendiente de configuración/);
   assert.equal((await request('/api/v1/simulation', { headers: { Cookie: cookie } })).status, 200);
@@ -62,6 +63,7 @@ try {
     ['/operacion?tab=DESPACHOS', '/admin/nuevo/?view=dispatch'],
     ['/admin?view=scheduled&sede=HUB_SUBA&pedido=BP-000014&redirect=https://evil.example', '/admin/nuevo/?view=scheduled&sede=HUB_SUBA&pedido=BP-000014'],
     ['/demo/pedido-suba', '/demo/pedido-suba'],
+    ['/demo/efectivo-suba', '/demo/efectivo-suba'],
     ['/pedido/ORD-fixture', '/pedido/ORD-fixture'],
   ]) {
     const entry = await request(path);

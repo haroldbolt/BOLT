@@ -18,6 +18,7 @@ import { CatalogOperations } from './src/lib/catalogOperations';
 import { boltAdminOrder, boltAdminPhotoPath, mountBoltAdmin } from './src/lib/boltAdminRoutes';
 import { activateBoltAdminDemoProduct, BOLT_ADMIN_DEMO_PRODUCT_ID, BOLT_ADMIN_DEMO_STORE_ID, boltCustomerDemoCheckout, boltCustomerDemoVehicle, isBoltCustomerDemoDriver, isBoltCustomerDemoOrder, boltAdminDemoProduct, boltAdminDemoReviewContext, boltGalleryDemoProduct, createBoltAdminDemoOrder, isBoltAdminDemoOrder } from './src/lib/boltAdminDemo';
 import { createCustomerDemoDispatch } from './src/lib/boltCustomerDemoDispatch';
+import { cashDemoEmail, cashDemoSku, cashDemoStoreId } from './src/lib/demoCashCheckout';
 import { matchesCatalogCategory } from './src/lib/catalogCategories';
 import { withoutRedundantCatalogCards } from './src/lib/catalogDuplicates';
 import { acquireCatalogWriterLock } from './src/lib/catalogWriterLock';
@@ -423,6 +424,26 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     app.all('/api/v1/simulation/customer-checkout', (_req, res) => res.status(404).json({ error: 'Simulación no disponible.' }));
   }
 
+  if (isDispatchSimulation) app.get('/api/v1/simulation/cash-checkout', (_req, res) => {
+    res.set('Cache-Control', 'no-store');
+    const store = activeStores().find(candidate => candidate.id === cashDemoStoreId);
+    const product = products.find(candidate => candidate.id === 'SIM-CARD' && candidate.sku === cashDemoSku && candidate.status === 'ACTIVE');
+    if (!store || !product?.transport || !Number.isSafeInteger(product.price) || product.price <= 0) {
+      return res.status(503).json({ error: 'La presentación ficticia del checkout de Suba no está disponible.' });
+    }
+    res.json({
+      store,
+      product,
+      address: {
+        address: 'Carrera 107 #143-31, Bogotá, Colombia',
+        coordinates: store.verifiedEntrance ?? store.coordinates,
+        municipality: 'Bogotá',
+        locality: 'Suba',
+        details: 'Datos ficticios para la prueba de efectivo.',
+      },
+    });
+  });
+
   // Authoritative Delivery Quote Endpoint
   app.post('/api/v1/delivery/quote', (req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store');
@@ -548,6 +569,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         canonicalItems.set(p.id,{productId:p.id,sku:p.sku,name:p.name,brand:p.brand,presentation:p.presentation,image:p.image,price:p.price,weightKg:p.weightKg,requiresPrescription:p.requiresPrescription,quantity:(existing?.quantity||0)+item.quantity});
       }
       const items=Array.from(canonicalItems.values());
+      const cashDemo = isDispatchSimulation && customer.email === cashDemoEmail;
+      if (cashDemo && ((req as any).customerAccountId || items.length !== 1 || items[0].sku !== cashDemoSku ||
+          items[0].quantity !== 1 || submittedPaymentMethod !== 'CASH_ON_DELIVERY' || tip !== 0 ||
+          requestedDeliveryMode !== 'TURBO' || req.body.requestDeliveryReview === true)) {
+        return res.status(400).json({ error: 'Abre el checkout de prueba como invitado y conserva la presentación de Suba.' });
+      }
       const deliveryAddress = enrichDestination(rawDeliveryAddress);
       if (!deliveryAddress) {
         return res.status(400).json({ error: 'Faltan campos obligatorios para crear el pedido.' });
@@ -636,6 +663,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       if(!req.body.confirmationToken || req.body.confirmationToken!==evaluatedQuote.confirmationToken) return res.status(409).json({code:'QUOTE_CHANGED',error:'La distribución, disponibilidad o el costo cambió. Actualiza la cotización y confirma nuevamente.'});
       if(!Number.isSafeInteger(tip) || tip<0) return res.status(400).json({error:'Propina inválida.'});
       const assignedStore = stores.find(s => s.id === assignedStoreId);
+      if (cashDemo && assignedStore?.id !== cashDemoStoreId) {
+        return res.status(409).json({ error: 'La prueba de efectivo requiere una cotización correspondiente a Suba.' });
+      }
       if (!assignedStore || !assignedStore.isActive) {
         return res.status(400).json({
           error: `La bodega territorial asignada (${territoryAssignment?.assignedStoreName || assignedStoreId}) se encuentra inactiva. No es posible trasladar el pedido a otra bodega sin autorización.`,

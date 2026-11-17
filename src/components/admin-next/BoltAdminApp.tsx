@@ -743,7 +743,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
         <div><span>{isPending(order) ? 'Subtotal de productos' : 'Total del pedido'}</span><strong>{formatCOP(isPending(order) ? order.totals.subtotal : order.totals.total)}</strong></div>
       </section>
       {!order.demoCustomerCheckout && order.payment?.status === 'PENDIENTE' && cashToCollect > 0 &&
-        <p className="ba-info">Efectivo por recaudar · {formatCOP(cashToCollect)}</p>}
+      <p className="ba-info">{order.demoCashCheckout ? 'Efectivo de prueba' : 'Efectivo por recaudar'} · {formatCOP(cashToCollect)}</p>}
       {order.demoCustomerCheckout && <p className="ba-info"><FlaskConical size={16} aria-hidden="true" /> Pedido de prueba{order.payment?.cashToCollect === 0 && <> · Recaudo {formatCOP(order.payment.cashToCollect)}</>}</p>}
       {order.deliveryReview?.status === 'SIMULATED' && <p className="ba-info">Entrega simulada sin cobro.</p>}
       {isDemo && actor.role === 'COORDINACION' && order.canSimulateDelivery &&
@@ -758,7 +758,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
       {canPrepare && (startingPreparation || order.fulfillmentStatus === 'EN_ALISTAMIENTO') && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
         {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} {startingPreparation ? 'Iniciar alistamiento' : 'Marcar listo para despacho'}
       </button>}
-      {(!isDemo || order.demoCustomerCheckout) && order.items.length === 1 && !isClosed(order) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
+      {(!isDemo || order.demoCustomerCheckout || order.demoCashCheckout) && order.items.length === 1 && !isClosed(order) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
       {canOpenDispatch && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewDispatch}><Truck size={16} aria-hidden="true" /> Ver despacho</button>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
       {!!order.statusHistory?.length && <details className="ba-order-history"><summary>Historial del pedido</summary>
@@ -772,7 +772,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
 
 function trackingPathFor(order: AdminOrder) {
   if (!api.hasOrderAccess(order.id)) return undefined;
-  const base = order.demoCustomerCheckout ? '/pedido/' : '/simulacion/cliente/';
+  const base = order.demoCustomerCheckout || order.demoCashCheckout ? '/pedido/' : '/simulacion/cliente/';
   return base + encodeURIComponent(order.id);
 }
 
@@ -784,6 +784,17 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
   const [error, setError] = useState('');
   const inFlight = useRef(false);
   const dispatch = order.dispatch;
+  const dispatchStatus = ({
+    PENDING: 'Pendiente de asignación',
+    SEARCHING: 'Buscando conductor',
+    OFFER_PENDING: 'Oferta enviada al conductor',
+    ASSIGNED: 'Conductor asignado',
+    PICKED_UP: 'En camino',
+    DELIVERED: 'Entregado',
+    INCIDENT: 'Con incidencia',
+    CANCELLED: 'Cancelado',
+    SEARCH_EXHAUSTED: 'Sin conductor disponible',
+  } as Record<string, string>)[dispatch?.status ?? ''];
   const trackingPath = trackingPathFor(order);
   const canSimulate = actor.canConfirm && order.demoCustomerCheckout && !order.demoReadOnly && (
     order.fulfillmentStatus === 'CONFIRMADO' || order.fulfillmentStatus === 'EN_ALISTAMIENTO' || order.fulfillmentStatus === 'LISTO_PARA_DESPACHO'
@@ -811,9 +822,12 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
         <div><dt>Pedido</dt><dd>{orderLabel(order)}</dd></div>
         <div><dt>Sede</dt><dd>{order.storeName}</dd></div>
         <div><dt>Modalidad</dt><dd>{deliveryModeLabel(orderMode(order))}</dd></div>
+        {order.demoCashCheckout && dispatchStatus && <div><dt>Estado del despacho</dt><dd>{dispatchStatus}</dd></div>
+
         {dispatch?.driverName && <div><dt>Repartidor de prueba</dt><dd>{dispatch.driverName}</dd></div>}
         {orderMode(order) === 'PROGRAMADO' && <div><dt>Franja</dt><dd><DeliverySchedule window={order.scheduledWindow} /></dd></div>}
-        {order.payment?.cashToCollect === 0 && <div><dt>Recaudo</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
+        {order.demoCashCheckout && order.payment?.cashToCollect !== undefined && <div><dt>Efectivo de prueba</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
+        {!order.demoCashCheckout && order.payment?.cashToCollect === 0 && <div><dt>Recaudo</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
       </dl>
       {isPending(order) && <p className="ba-info">La unidad ya está reservada en Suba. Confirma la entrega en el pedido para habilitar el despacho.</p>}
       {canSimulate && <button type="button" className="ba-btn ba-btn-primary" disabled={busy} onClick={() => void simulateDispatch()}>
@@ -821,7 +835,7 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
       </button>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{error}</p>}
       <button type="button" className="ba-btn ba-btn-secondary" onClick={openOrder}>Ver pedido <ArrowRight size={16} aria-hidden="true" /></button>
-      {!isClosed(order) && order.demoCustomerCheckout && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
+      {!isClosed(order) && (order.demoCustomerCheckout || order.demoCashCheckout) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
       {trackingPath && <a href={trackingPath} target="_blank" rel="noopener" className="ba-btn ba-btn-secondary">Ver seguimiento del cliente <ArrowUpRight size={16} aria-hidden="true" /></a>}
     </div>
   </section>;
