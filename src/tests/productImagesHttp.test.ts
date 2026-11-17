@@ -16,15 +16,16 @@ fs.writeFileSync(path.join(root,'src/data/catalogo-local/bodegas.json'),'[]');
 let server!:ChildProcess;
 const url='http://127.0.0.1:3057/api/v1';
 const adminCredentials={email:'images@test.invalid',name:'Pruebas imágenes',password:'Image-test-only-39!'};
-const request=async(route:string,method='GET',body?:any,token?:string)=>{
- const r=await fetch(url+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{})},body:body?JSON.stringify(body):undefined});return {status:r.status,body:await r.json()};
+const bootstrapToken=crypto.randomUUID();
+const request=async(route:string,method='GET',body?:any,token?:string,extraHeaders:Record<string,string>={})=>{
+ const r=await fetch(url+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}),...extraHeaders},body:body?JSON.stringify(body):undefined});return {status:r.status,body:await r.json()};
 };
-async function start(){server=spawn(process.execPath,['--import',path.join(source,'node_modules/tsx/dist/loader.mjs'),path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:'3057',NODE_ENV:'production',BOLT_DATA_DIR:path.join(root,'orders')},stdio:['ignore','pipe','pipe']});server.stderr?.on('data',d=>process.stderr.write(d));for(let i=0;i<80;i++){try{if((await request('/catalog')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Servidor aislado no inició');}
+async function start(){server=spawn(process.execPath,['--import',path.join(source,'node_modules/tsx/dist/loader.mjs'),path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:'3057',NODE_ENV:'production',BOLT_DATA_DIR:path.join(root,'orders'),BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});server.stderr?.on('data',d=>process.stderr.write(d));for(let i=0;i<80;i++){try{if((await request('/catalog')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Servidor aislado no inició');}
 async function stop(){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));}
 try {
  await start();
  const denied=await request('/admin/catalog/images/apply','POST',{patches:[]});assert.equal(denied.status,401);
- const setup=await request('/auth/setup-admin','POST',adminCredentials);assert.equal(setup.status,201,JSON.stringify(setup.body));const token=setup.body.token;
+ const setup=await request('/auth/setup-admin','POST',adminCredentials,undefined,{'X-Bolt-Admin-Setup-Token':bootstrapToken});assert.equal(setup.status,201,JSON.stringify(setup.body));const token=setup.body.token;
  const before=(await request('/admin/catalog', 'GET',undefined,token)).body;
  const p=before.find((p:any)=>p.id==='prod-nexgard-spectra-m');const v=p.presentaciones[0];
  const patch={productId:p.id,image:{before:p.image,after:'https://cdn.shopify.com/test-verified.png'},variants:[{variantId:v.varianteId,before:v.foto,after:'/uploads/catalog/test-image.png'}],source:'fixture:isolated',checkedAt:new Date().toISOString(),reason:'Prueba aislada'};

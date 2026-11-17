@@ -309,17 +309,9 @@ export const api = {
   },
 
   async getIntegrationsStatus(): Promise<any> {
-    try {
-      const res = await authorizedFetch(`${BASE_URL}/integrations/status`);
-      return await res.json();
-    } catch {
-      return {
-        shopifyOlfato: { name: 'Shopify / Olfato', status: 'En pruebas', lastSync: new Date().toISOString() },
-        siigoNube: { name: 'Siigo Nube', status: 'En pruebas', lastSync: new Date().toISOString() },
-        wompi: { name: 'Wompi Colombia', status: 'Conectada (Sandbox)', lastTransaction: new Date().toISOString() },
-        whatsappBot: { name: 'WhatsApp Bot', status: 'Conectada (Simulador)', activeConversations: 2 },
-      };
-    }
+    const res = await authorizedFetch(`${BASE_URL}/integrations/status`, { cache: 'no-store' }).catch(() => null);
+    if (!res?.ok) return null;
+    return await res.json().catch(() => null);
   },
 
   async verifyStoreEntrance(storeId: string, coordinates: { lat: number; lng: number }, verifiedBy?: string): Promise<any> {
@@ -397,10 +389,10 @@ export const api = {
     return await res.json();
   },
 
-  async setupMasterAdmin(payload: { email: string; password: string; name: string }): Promise<any> {
+  async setupMasterAdmin(payload: { email: string; password: string; name: string }, setupToken: string): Promise<any> {
     const res = await authorizedFetch(`${BASE_URL}/auth/setup-admin`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', 'X-Bolt-Admin-Setup-Token': setupToken },
       body: JSON.stringify(payload),
     });
     const data = await res.json();
