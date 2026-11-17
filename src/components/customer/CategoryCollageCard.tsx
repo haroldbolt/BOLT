@@ -1,3 +1,4 @@
+import { backendCatalogImage } from '../../lib/backendRequest';
 import React, {useState} from 'react';
 import { ChevronRight, Package } from 'lucide-react';
 import { MainCategory, Product } from '../../types';
@@ -55,7 +56,7 @@ export const CategoryCollageCard: React.FC<CategoryCollageCardProps> = ({
       <div className={`grid ${collageImages.length > 1 ? 'grid-cols-2' : 'grid-cols-1'} gap-1.5 aspect-square rounded-2xl overflow-hidden bg-slate-50 p-1`}>
         {collageImages.length ? collageImages.map((img, idx) => (
           <div key={img.src} className={`min-h-0 min-w-0 rounded-xl overflow-hidden bg-white ${collageImages.length === 3 && idx === 0 ? 'row-span-2' : ''}`}>
-            <img src={img.src} alt={img.alt}
+            <img src={backendCatalogImage(img.src)} alt={img.alt}
               className="w-full h-full object-contain p-1 group-hover:scale-105 transition duration-300" loading="lazy"
               onError={() => setFailed(previous => new Set([...previous, img.src]))} />
           </div>

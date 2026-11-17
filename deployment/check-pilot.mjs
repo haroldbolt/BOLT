@@ -1,7 +1,10 @@
 import assert from 'node:assert/strict';
 
-const input = process.argv[2];
-if (!input) throw Error('Uso: node deployment/check-pilot.mjs https://<origen-del-piloto>');
+const [input, mode, ...rest] = process.argv.slice(2);
+if (!input || rest.length || (mode && mode !== '--checkout-abierto')) {
+  throw Error('Uso: node deployment/check-pilot.mjs https://<origen-del-piloto> [--checkout-abierto]');
+}
+const checkoutOpen = mode === '--checkout-abierto';
 const base = new URL(input);
 const local = base.protocol === 'http:' && base.hostname === '127.0.0.1';
 assert.ok(base.protocol === 'https:' || local, 'Usa HTTPS. Solo se permite HTTP en 127.0.0.1.');
@@ -29,7 +32,7 @@ const [health, stores, session, manifest] = await Promise.all([
 assert.equal(health.status, 'ok');
 const storeIds = ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA'];
 assert.deepEqual(health.pilot?.storeIds, storeIds, 'El servidor no inició con las tres sedes operativas.');
-assert.equal(health.pilot.checkoutHold, 'RAPPI_CASH_UNCONFIRMED');
+assert.equal(health.pilot.checkoutHold, checkoutOpen ? undefined : 'RAPPI_CASH_UNCONFIRMED');
 assert.deepEqual(stores.map(store => store.id).sort(), storeIds);
 for (const store of stores) {
   assert.ok(store.enabledModes?.includes('TURBO') && store.enabledModes?.includes('PROGRAMADO'),
@@ -79,4 +82,5 @@ for (const route of ['/api/v1/simulation/customer-checkout', '/api/v1/simulation
     route + ' está disponible en este despliegue.');
 }
 
-console.log('PWA de Álamos, Kennedy y Suba. Cliente, Admin, Despachos y Conductor accesibles. Checkout real bloqueado por recaudo pendiente.');
+console.log('PWA de Álamos, Kennedy y Suba. Cliente, Admin, Despachos y Conductor accesibles. ' +
+  (checkoutOpen ? 'Apertura del checkout configurada.' : 'Checkout real bloqueado por recaudo pendiente.'));

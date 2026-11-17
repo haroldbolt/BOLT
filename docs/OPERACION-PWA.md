@@ -24,11 +24,13 @@ Configura el arranque en los ajustes del servicio nuevo de Railway. El `railway.
 ## Publicar y verificar sin crear pedidos
 
 1. Conecta una revisión verificada al servicio operativo y arranca sin pedidos de ejemplo. Usa una cuenta real de Coordinación para administrar las tres sedes.
-2. Ejecuta `node deployment/check-pilot.mjs https://<origen-operativo>`. Solo usa GET. Comprueba las tres sedes, rutas, manifiesto y archivos de instalación, protección de las API operativas y aislamiento de la simulación.
+2. Ejecuta `node deployment/check-pilot.mjs https://<origen-operativo>`. Solo usa GET. Comprueba las tres sedes, rutas, manifiesto y archivos de instalación, protección de las API operativas y aislamiento de la simulación. Tras autorizar el recaudo y abrir el checkout, agrega `--checkout-abierto` para comprobar ese estado mediante GET.
 3. Abre el mismo origen en iPhone o Android. En Safari usa **Compartir → Añadir a pantalla de inicio**. En Chrome para Android, usa **Instalar aplicación** si está disponible. Admin abre en `/admin/nuevo/`, Despachos en `/admin/nuevo/?view=dispatch` y Conductor en `/conductor`.
 
 ## Apertura del checkout real
 
-El checkout conserva el carrito y responde con `RAPPI_CASH_UNCONFIRMED` mientras esté pendiente el recaudo. Los pagos en línea aparecen como **No disponible** hasta integrar Wompi.
+El checkout conserva el carrito y responde con `RAPPI_CASH_UNCONFIRMED` mientras esté pendiente el recaudo. Para las dos PWAs, el backend autoriza solo los orígenes HTTPS exactos en `BOLT_PWA_ORIGINS` y ambos paquetes usan el mismo `VITE_BOLT_API_ORIGIN`. Las sesiones administrativas y de conductor conservan sus permisos. El frontend separado admite compras de invitado y seguimiento privado. Los pagos en línea aparecen como **No disponible** hasta integrar Wompi.
 
 Confirma con Rappi Cargo la habilitación de efectivo de Agrocentro, credenciales de producción, puntos de recogida de las tres sedes, límites y liquidación. Conecta el adaptador de producción al mismo sistema de cotización y despachos. `POST /v3/order-validate` con `payment_method: "CASH"` valida sin solicitar un envío. La validación de envío y la liquidación bancaria se comprueban por separado. [API oficial de Rappi Cargo](https://cargo-docs.dev.rappi.com/api/)
+
+Consulta la [preparación de AppDeploy](../deployment/appdeploy-pwa.md) y la [configuración operativa de Cargo](RAPPI-CARGO-OPERACION.md).

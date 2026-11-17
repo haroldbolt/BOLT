@@ -21,6 +21,7 @@ import type {
   DispatchProvider,
   ProviderQuote,
   ProviderResult,
+  ProviderShipmentContext,
 } from "./dispatchProviders";
 import { DISABLED_LIVE_PROVIDERS } from "./dispatchProviders";
 export class DispatchError extends Error {
@@ -71,6 +72,7 @@ export interface DispatchDependencies {
   transport: () => TransportConfig;
   now?: () => number;
   providers?: DispatchProvider[];
+  externalBudgetCOP?: number;
   simulation?: boolean;
   holdDispatch?: (order: Order) => boolean;
   simulationVehicle?: (order: Order) => TransportVehicle | undefined;
@@ -83,6 +85,8 @@ export interface DispatchDependencies {
 export class DispatchService {
   private inFlight = new Set<string>();
   private externalCancellations = new Set<string>();
+  private providerPolls = new Set<string>();
+  private nextProviderPoll = new Map<string, number>();
   private async bounded<T>(promise: Promise<T>): Promise<T> {
     let timer: ReturnType<typeof setTimeout>;
     try {
@@ -691,6 +695,30 @@ export class DispatchService {
       this.windowEnd(order)
     );
   }
+  private providerShipment(order: Order, shipment: Order | ChildShipment): ProviderShipmentContext {
+    const { address, municipality, coordinates, details } = order.deliveryAddress;
+    return {
+      destination: { address, city: municipality || '', coordinates, details },
+      items: shipment.items.map(({ productId, name, quantity, price }) => ({
+        productId, name, quantity, unitPriceCOP: price,
+      })),
+      totalValueCOP: shipment.items.reduce((total, item) => total + item.price * item.quantity, 0),
+      hasRestrictedItems: shipment.items.some(item => item.requiresPrescription),
+      customer: { name: order.customer.name, email: order.customer.email, phone: order.customer.phone },
+    };
+  }
+  private providerEnabled(provider: DispatchProvider | undefined, simulation: boolean) {
+    return provider && provider.simulation === simulation && simulation === !!this.deps.simulation &&
+      (simulation || provider.id === 'rappi-cargo') ? provider : undefined;
+  }
+  private externalFitsWindow(order: Order, quote: ProviderQuote) {
+    if (!quote.simulation) {
+      return Number.isFinite(quote.deliveryEtaSeconds) && quote.deliveryEtaSeconds! > 0 &&
+        this.now() + quote.deliveryEtaSeconds! * 1000 <= this.windowEnd(order);
+    }
+    return quote.estimate.kind === 'ROUTE' && Number.isFinite(quote.estimate.seconds) &&
+      quote.estimate.seconds! >= 0 && this.windowAllows(order, quote.estimate.seconds!);
+  }
   async search(id: string, adminId = "SYSTEM") {
     if (this.inFlight.has(id)) return;
     this.inFlight.add(id);
@@ -799,9 +827,12 @@ export class DispatchService {
       const quotes: { provider: DispatchProvider; quote: ProviderQuote }[] = [];
       for (const p of this.deps.providers || []) {
         if (
-          !this.deps.simulation ||
-          this.deps.simulationVehicle?.(order) ||
-          !p.simulation ||
+          !this.providerEnabled(p, p.simulation) ||
+          (p.simulation && this.deps.simulationVehicle?.(order)) ||
+          (!p.simulation && (candidates.some(candidate => this.eligible(r, candidate.id)) ||
+            order.deliveryMode === "PROGRAMADO" ||
+            shipment.items.some(item => item.requiresPrescription) ||
+            !this.externalCostAllowed(r, 0, p))) ||
           !p.capabilities.quote ||
           !p.capabilities.request ||
           !p.capabilities.status ||
@@ -809,6 +840,10 @@ export class DispatchService {
           (r.cashDue > 0 && !p.capabilities.cashCollection)
         )
           continue;
+        if (!p.simulation) {
+          const vehicle = p.vehicleFor?.(order.storeId, order.deliveryMode || "TURBO", r.cashDue);
+          if (!vehicle || !this.fit(r, vehicle)) continue;
+        }
         try {
           const q = await this.bounded(
             p.quote({
@@ -816,32 +851,31 @@ export class DispatchService {
               storeId: order.storeId,
               mode: order.deliveryMode || "TURBO",
               cashCOP: r.cashDue,
+              ...(!p.simulation && { shipment: this.providerShipment(order, shipment) }),
             }),
           );
           if (
             q &&
-            q.simulation &&
+            q.simulation === p.simulation &&
             q.providerId === p.id &&
             q.expiresAt > this.now() &&
             Number.isSafeInteger(q.costCOP) &&
             q.costCOP >= 0 &&
-            q.estimate.kind === "ROUTE" &&
-            Number.isFinite(q.estimate.seconds) &&
-            q.estimate.seconds! >= 0 &&
             q.estimate.observedAt <= this.now() &&
             this.now() - q.estimate.observedAt <=
               this.state.config.routeMaxAgeSeconds * 1000 &&
-            this.windowAllows(order, q.estimate.seconds!) &&
+            this.externalFitsWindow(order, q) &&
             this.fit(r, q.vehicle) &&
             (!r.cashDue || q.canCollectCash) &&
-            this.externalCostAllowed(r, q.costCOP)
+            this.externalCostAllowed(r, q.costCOP, p)
           )
             quotes.push({ provider: p, quote: q });
         } catch {}
       }
       quotes.sort(
         (a, b) =>
-          a.quote.estimate.seconds! - b.quote.estimate.seconds! ||
+          (a.quote.deliveryEtaSeconds ?? a.quote.estimate.seconds ?? Infinity) -
+            (b.quote.deliveryEtaSeconds ?? b.quote.estimate.seconds ?? Infinity) ||
           a.provider.id.localeCompare(b.provider.id),
       );
       if (r !== this.state.runs[id] || r.status !== "SEARCHING") return;
@@ -864,7 +898,7 @@ export class DispatchService {
       const useExternal =
         external &&
         (!own ||
-          (own.estimate.kind === "ROUTE" &&
+          (external.provider.simulation && own.estimate.kind === "ROUTE" &&
             external.quote.estimate.seconds! +
               this.state.config.routeTieSeconds <
               own.estimate.seconds!));
@@ -910,8 +944,10 @@ export class DispatchService {
       this.inFlight.delete(id);
     }
   }
-  private externalCostAllowed(r: DispatchRun, cost: number) {
-    const { order, shipment } = this.target(r);
+  private externalCostAllowed(r: DispatchRun, cost: number, provider: DispatchProvider) {
+    const { order } = this.target(r);
+    const budget = provider.simulation ? order.totals.shipping : this.deps.externalBudgetCOP;
+    if (!Number.isSafeInteger(budget) || budget! < 0) return false;
     const contracted = Object.values(this.state.runs)
       .filter(
         (x) =>
@@ -921,7 +957,7 @@ export class DispatchService {
           !["CANCELLED", "REJECTED"].includes(x.external.status),
       )
       .reduce((sum, x) => sum + x.external!.costCOP, 0);
-    return cost + contracted <= order.totals.shipping;
+    return cost + contracted <= budget!;
   }
   private async requestExternal(
     r: DispatchRun,
@@ -935,12 +971,13 @@ export class DispatchService {
         r.status !== "SEARCHING" ||
         q.expiresAt <= this.now() ||
         !this.fit(r, q.vehicle) ||
+        !this.externalFitsWindow(this.target(r).order, q) ||
         (r.external &&
           !["REJECTED", "CANCELLED"].includes(r.external.status)) ||
-        !this.externalCostAllowed(r, q.costCOP)
+        !this.externalCostAllowed(r, q.costCOP, p)
       )
         return;
-      const key = `${r.id}:${crypto.randomUUID()}`;
+      const key = p.simulation ? `${r.id}:${crypto.randomUUID()}` : r.id;
       r.attempted.push("provider:" + p.id);
       r.external = {
         key,
@@ -952,8 +989,8 @@ export class DispatchService {
         costCOP: q.costCOP,
         startedAt: this.now(),
         updatedAt: this.now(),
-        simulation: true,
-        estimate: q.estimate,
+        simulation: p.simulation,
+        estimate: p.simulation ? q.estimate : undefined,
       };
       r.reason = "EXTERNAL_REQUEST_PENDING";
       this.event("EXTERNAL_REQUESTED", "SYSTEM", r.id, p.id);
@@ -961,11 +998,13 @@ export class DispatchService {
     });
     if (!request) return;
     const key = r.external!.key;
-    const pending = p.request({
+    const { order, shipment } = this.target(r);
+    const pending = Promise.resolve().then(() => p.request({
       idempotencyKey: key,
       quote: q,
       dispatchId: r.id,
-    });
+      ...(!p.simulation && { cashCOP: r.cashDue, shipment: this.providerShipment(order, shipment) }),
+    }));
     // A timed-out call can still complete. Apply that response only to the same durable request key.
     void pending
       .then((result) => this.applyExternal(r.id, key, result))
@@ -987,6 +1026,21 @@ export class DispatchService {
         ["DELIVERED", "CANCELLED"].includes(r.status)
       )
         return;
+      if (!e.simulation && result.stage) {
+        if (e.providerStage === "DELIVERED" || e.providerStage === "RETURNED" ||
+            (e.providerStage === "FAILED" && result.stage === "PICKED_UP")) return;
+        const narrower = e.providerStage !== result.stage;
+        e.providerStage = result.stage;
+        if (result.cashCollectionIndicated !== undefined) e.cashCollectionIndicated = result.cashCollectionIndicated;
+        e.updatedAt = this.now();
+        e.reference = result.reference || e.reference;
+        if (!narrower) return;
+        if (result.stage === "FAILED" || result.stage === "RETURNED") r.status = "INCIDENT";
+        r.reason = "EXTERNAL_PROVIDER_" + result.stage + "_REQUIRES_RECONCILIATION";
+        this.event("EXTERNAL_PROVIDER_" + result.stage, actorId, r.id);
+        return;
+      }
+      if (!e.simulation && e.providerStage) return;
       if (
         !["UNKNOWN", "ACCEPTED", "ASSIGNED", "REJECTED", "CANCELLED"].includes(
           result.status,
@@ -1076,18 +1130,16 @@ export class DispatchService {
     const r = this.run(id),
       e = r.external;
     if (!e || ["CANCELLED", "REJECTED"].includes(e.status)) return;
-    const p = this.deps.providers?.find(
-      (p) => p.id === e.providerId && p.simulation && this.deps.simulation,
-    );
-    if (!p?.capabilities.status) return;
+    const p = this.providerEnabled(this.deps.providers?.find(provider => provider.id === e.providerId), e.simulation);
+    if (!p?.capabilities.status || this.providerPolls.has(id)) return;
+    this.providerPolls.add(id);
+    if (!p.simulation) this.nextProviderPoll.set(id, this.now() + 15_000);
     try {
-      this.applyExternal(
-        id,
-        e.key,
-        await this.bounded(p.status(e.reference || e.key)),
-      );
+      this.applyExternal(id, e.key, await this.bounded(p.status(e.simulation ? e.reference || e.key : e.key)));
     } catch {
       /* Keep unknown/pending. Never book a second service on timeout. */
+    } finally {
+      this.providerPolls.delete(id);
     }
   }
   respond(id: string, offerId: string, action: "accept" | "reject") {
@@ -1196,6 +1248,7 @@ export class DispatchService {
     amount: number,
     id: string,
     external: boolean,
+    cashCollectionReference?: string,
   ) {
     const result = this.repo.transaction(() => {
       const r = this.run(dispatchId);
@@ -1239,6 +1292,10 @@ export class DispatchService {
       r.status = "DELIVERED";
       r.deliveredAt = this.now();
       r.cashCollected += amount;
+      if (cashCollectionReference && r.external) {
+        r.external.cashCollectionReference = cashCollectionReference;
+        r.reason = undefined;
+      }
       if (!external) this.repo.getDriverById(id)!.cashBalance += amount;
       this.reduceCollection(order, amount);
       // Delivered != settled at warehouse. Separate settlement ledger is explicit.
@@ -1329,14 +1386,14 @@ export class DispatchService {
   }
   async cancelExternal(id: string, adminId: string) {
     const r = this.run(id);
-    if (r.pickedUpAt)
+    if (r.pickedUpAt || r.external?.providerStage)
       fail(
         "CUSTODY_TRANSFER_REQUIRED",
-        "No se cancela automáticamente un servicio con custodia",
+        "El proveedor ya reportó custodia o una incidencia. Verifica el estado antes de cancelar.",
       );
-    const e = r.external,
-      p = this.deps.providers?.find((p) => p.id === e?.providerId);
-    if (!e || !p?.capabilities.cancel || !p.simulation || !this.deps.simulation)
+    const e = r.external;
+    const p = e && this.providerEnabled(this.deps.providers?.find(provider => provider.id === e.providerId), e.simulation);
+    if (!e || !p?.capabilities.cancel)
       fail(
         "CANCELLATION_UNAVAILABLE",
         "Cancelación no disponible; requiere reconciliación con el proveedor",
@@ -1352,13 +1409,13 @@ export class DispatchService {
       });
       let result: ProviderResult;
       try {
-        result = await this.bounded(p!.cancel(e!.reference || key));
+        result = await this.bounded(p!.cancel(e!.simulation ? e!.reference || key : key));
       } catch {
         result = { status: "UNKNOWN" };
       }
       const current = this.run(id);
       if (current.external?.key !== key || ["CANCELLED", "REJECTED"].includes(current.external.status)) return;
-      if (result.status === "CANCELLED") {
+      if (result.stage || result.status === "CANCELLED") {
         this.applyExternal(id, key, result, adminId);
       } else {
         this.repo.transaction(() => {
@@ -1384,6 +1441,109 @@ export class DispatchService {
       this.event("SEARCH_RESTARTED", adminId, id);
     });
   }
+  confirmCargoPickup(id: string, adminId: string) {
+    return this.repo.transaction(() => {
+      const r = this.run(id);
+      const e = this.requireCargo(r);
+      if (r.pickedUpAt) return { ok: true };
+      if (e.providerStage !== "PICKED_UP" && e.providerStage !== "DELIVERED") {
+        fail("CUSTODY_REQUIRED", "Cargo debe reportar la recogida antes de confirmarla.");
+      }
+      const { order, shipment } = this.target(r);
+      if (r.driverId || ["REJECTED", "CANCELLED"].includes(e.status) ||
+          !["LISTO_PARA_DESPACHO", "REPARTIDOR_ASIGNADO"].includes(shipment.fulfillmentStatus) ||
+          this.prescriptionPending(order, shipment)) {
+        fail("INVALID_STATE", "Revisa la custodia del despacho antes de confirmar la recogida.");
+      }
+      const actor = { role: "ADMINISTRADOR" as const, id: adminId };
+      if (shipment.fulfillmentStatus === "LISTO_PARA_DESPACHO") {
+        this.checkResult(this.repo.transitionStatus(order.id, "REPARTIDOR_ASIGNADO", actor, {
+          shipmentId: r.shipmentId, reason: "Coordinación verificó la recogida reportada por Rappi Cargo",
+        }));
+      }
+      if (e.confirmedLoad) shipment.transportLoad = e.confirmedLoad;
+      this.checkResult(this.repo.confirmPickup(order.id, actor, r.shipmentId));
+      e.status = "ASSIGNED";
+      r.status = "PICKED_UP";
+      r.providerId = e.providerId;
+      r.assignedAt ??= this.now();
+      r.pickedUpAt = this.now();
+      r.reason = e.providerStage === "DELIVERED" ? "EXTERNAL_PROVIDER_DELIVERED_REQUIRES_RECONCILIATION" : undefined;
+      this.event("PICKUP_CONFIRMED", adminId, id, "RAPPI_CARGO");
+      return { ok: true };
+    });
+  }
+  confirmCargoDelivery(id: string, pin: string, amountCOP: number, collectionReference: string, adminId: string) {
+    const r = this.run(id);
+    const e = this.requireCargo(r);
+    const reference = typeof collectionReference === "string" ? collectionReference.trim() : "";
+    if (e.providerStage !== "DELIVERED" || e.cashCollectionIndicated === false ||
+        (r.cashDue > 0 && (!reference || reference.length > 100))) {
+      fail("CARGO_PROOF_PENDING", "Verifica la entrega y registra la referencia del comprobante de recaudo de Cargo.");
+    }
+    if (r.status === "DELIVERED" && (e.cashCollectionReference ?? "") !== reference) {
+      fail("RECEIPT_CONFLICT", "El despacho ya tiene otro comprobante de recaudo.");
+    }
+    return this.finishDelivery(id, pin, amountCOP, adminId, true, reference);
+  }
+  recordCargoSettlement(id: string, reference: string, netCOP: number, deductionsCOP: number, adminId: string) {
+    const receipt = typeof reference === "string" ? reference.trim() : "";
+    return this.repo.transaction(() => {
+      const r = this.run(id);
+      const e = this.requireCargo(r);
+      if (r.status !== "DELIVERED" || r.cashCollected <= 0 || !receipt || receipt.length > 100 ||
+          !Number.isSafeInteger(netCOP) || netCOP <= 0 ||
+          !Number.isSafeInteger(deductionsCOP) || deductionsCOP < 0 ||
+          netCOP + deductionsCOP !== r.cashCollected) {
+        fail("INVALID_SETTLEMENT", "Registra una liquidación verificada que concilie el neto y las deducciones con el efectivo recibido.", 400);
+      }
+      if (e.bankReceipt) {
+        if (e.bankReceipt.reference !== receipt || e.bankReceipt.netCOP !== netCOP || e.bankReceipt.deductionsCOP !== deductionsCOP)
+          fail("RECEIPT_CONFLICT", "El despacho ya tiene una liquidación con otros datos.");
+        return { ok: true };
+      }
+      if (Object.values(this.state.runs).some(other => other.external?.bankReceipt?.reference === receipt)) {
+        fail("RECEIPT_CONFLICT", "La referencia de esta línea de liquidación ya se utilizó.");
+      }
+      e.bankReceipt = { reference: receipt, netCOP, deductionsCOP, recordedAt: this.now(), actorId: adminId };
+      const { order } = this.target(r);
+      if (order.payment.cashToCollect === 0 && Object.values(this.state.runs).filter(other =>
+          other.orderId === order.id && other.status !== "CANCELLED" && other.cashDue > 0)
+        .every(other => other.external?.bankReceipt)) order.payment.cashSettled = true;
+      this.event("CARGO_SETTLEMENT_RECORDED", adminId, id);
+      return { ok: true };
+    });
+  }
+  confirmCargoReturn(id: string, returnReference: string, adminId: string) {
+    const reference = typeof returnReference === "string" ? returnReference.trim() : "";
+    return this.repo.transaction(() => {
+      const r = this.run(id);
+      const e = this.requireCargo(r);
+      if (e.returnReference === reference && reference) return { ok: true };
+      if (e.providerStage !== "RETURNED" || e.returnReference || !reference || reference.length > 100 ||
+          r.cashCollected !== 0 || ["DELIVERED", "CANCELLED"].includes(r.status)) {
+        fail("RETURN_NOT_CONFIRMED", "Verifica el retorno físico y la situación del recaudo antes de liberar la mercancía.");
+      }
+      const { order, shipment } = this.target(r);
+      this.checkResult(this.repo.transitionStatus(order.id, "CANCELADO", { role: "ADMINISTRADOR", id: adminId }, {
+        shipmentId: r.shipmentId, reason: "Coordinación confirmó el retorno físico de Rappi Cargo",
+      }));
+      if (shipment.physicalReturnPending) {
+        this.checkResult(this.repo.confirmPhysicalReturn(order.id, adminId, this.deps.products(), reference, r.shipmentId));
+      }
+      e.returnReference = reference;
+      this.markCancelled(r, order);
+      this.event("EXTERNAL_RETURN_CONFIRMED", adminId, r.id);
+      return { ok: true };
+    });
+  }
+  private requireCargo(run: DispatchRun) {
+    const e = run.external;
+    if (!e || e.simulation || e.providerId !== "rappi-cargo" || this.deps.simulation)
+      return fail("INVALID_PROVIDER", "El despacho no pertenece a Rappi Cargo operativo.");
+    return e;
+  }
+
   /** Only a supervised simulator action; no public webhook impersonation. Live callbacks require provider verification. */
   externalProgress(
     id: string,
@@ -1734,22 +1894,30 @@ export class DispatchService {
         }
       });
     for (const r of Object.values(this.state.runs)) {
+      if (["DELIVERED", "CANCELLED"].includes(r.status)) {
+        this.nextProviderPoll.delete(r.id);
+        continue;
+      }
       if (
         r.external &&
         (["REQUESTING", "UNKNOWN", "ACCEPTED"].includes(r.external.status) ||
-          r.external.cancellationPending)
+          r.external.cancellationPending || (!r.external.simulation && r.external.status === "ASSIGNED"))
       ) {
+        if (r.external.providerStage === "DELIVERED" || r.external.providerStage === "RETURNED") continue;
         if (
           this.now() - r.external.startedAt >
             this.state.config.searchSeconds * 1000 &&
-          r.status !== "INCIDENT"
+          r.status !== "INCIDENT" && !r.external.providerStage &&
+          r.external.status !== "ASSIGNED"
         )
           this.repo.transaction(() => {
             r.status = "INCIDENT";
             r.reason = "EXTERNAL_PENDING_RECONCILIATION";
             this.event("INCIDENT", "SYSTEM", r.id);
           });
-        await this.reconcile(r.id);
+        if (r.external.simulation || this.now() >= (this.nextProviderPoll.get(r.id) ?? 0)) {
+          await this.reconcile(r.id);
+        }
         continue;
       }
       if (["PENDING", "SEARCHING"].includes(r.status)) await this.search(r.id);
@@ -1938,7 +2106,10 @@ export class DispatchService {
       pendingDeliveryReviews:this.repo.getAllOrders().filter(o=>o.deliveryReview?.status==='PENDING' && o.fulfillmentStatus==='PENDIENTE_CONFIRMACION').map(o=>({id:o.id,code:o.purchaseCode||o.orderNumber,storeId:o.storeId,storeName:o.storeName,items:o.items.map(({productId,name,presentation,quantity,price})=>({productId,name,presentation,quantity,price})),subtotal:o.totals.subtotal,requestedAt:o.createdAt,requestedMode:o.deliveryReview?.requestedMode})),
       historicalOrders:this.historicalOrders(),
       config: this.state.config,
-      providers: DISABLED_LIVE_PROVIDERS,
+      providers: DISABLED_LIVE_PROVIDERS.map(provider =>
+        provider.id === "rappi" && this.deps.providers?.some(candidate => this.providerEnabled(candidate, false))
+          ? { ...provider, name: "Rappi Cargo", enabled: true, reason: "Respaldo Turbo de la flota propia" }
+          : provider),
       simulation: !!this.deps.simulation,
       drivers: Object.keys(this.state.accounts).map((id) =>
         ({...this.profile(id, true),cashHeldCOP:this.repo.getDriverById(id)?.cashBalance||0}),

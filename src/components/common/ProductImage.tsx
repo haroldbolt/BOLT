@@ -1,3 +1,4 @@
+import { backendCatalogImage } from '../../lib/backendRequest';
 import React, {useState} from 'react';
 import {ImageOff} from 'lucide-react';
 import {usableProductImage} from '../../lib/productImages';
@@ -12,6 +13,6 @@ export function ProductImage({src, alt = '', className = '', onError, ...props}:
       <span className="text-[10px] leading-tight">Imagen por confirmar</span>
     </span>
   );
-  return <img {...props} src={src} alt={alt} className={className.replace(/object-cover/g,'object-contain')}
+  return <img {...props} src={backendCatalogImage(src)} alt={alt} className={className.replace(/object-cover/g,'object-contain')}
     onError={event => {setFailedSource(src);onError?.(event);}} />;
 }

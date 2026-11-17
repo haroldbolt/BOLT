@@ -2,6 +2,7 @@ import {REVIEW_MESSAGE} from './src/lib/checkoutReadiness';
 import {pendingDeliveryOrder} from './src/lib/pendingDeliveryOrder';
 import { acceptsDemoOrigin } from './src/lib/demoOrigin';
 import { pilotScope } from './src/lib/pilotScope';
+import { configureRappiCargo } from './src/lib/rappiCargoConfig';
 import { adminEntry, adminEntryPath } from './deployment/admin-entry.mjs';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
@@ -96,13 +97,21 @@ const catalogOperations = new CatalogOperations({
 });
 const transportRepository = new TransportRepository();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
+const rappiCargo = pilot && !isDispatchSimulation ? configureRappiCargo(process.env, pilot.storeIds) : undefined;
+const pilotCheckoutHeld = !!pilot && (!rappiCargo || process.env.BOLT_PILOT_CHECKOUT_ENABLED !== '1');
+const pwaOrigins = new Set((process.env.BOLT_PWA_ORIGINS || '').split(',').map(value => value.trim()).filter(Boolean).map(value => {
+  const url = new URL(value);
+  if (url.protocol !== 'https:' || url.href !== url.origin + '/') throw Error('BOLT_PWA_ORIGINS requiere orígenes HTTPS sin rutas ni credenciales.');
+  return url.origin;
+}));
 const dispatchService = new DispatchService({
   repo: ordersRepository,
   stores: deliveryStores,
   products: () => products,
   transport: () => transportRepository.read().config,
   simulation: isDispatchSimulation,
-  providers: simulationProvider ? [simulationProvider] : [],
+  providers: simulationProvider ? [simulationProvider] : rappiCargo ? [rappiCargo.provider] : [],
+  externalBudgetCOP: rappiCargo?.externalBudgetCOP,
   holdDispatch: order => isBoltAdminDemoOrder(order) && !customerDemoDispatch?.isStarting(order.id),
   simulationVehicle: boltCustomerDemoVehicle,
   isSimulationDriver: isBoltCustomerDemoDriver,
@@ -118,7 +127,7 @@ function quoteForPurchase(request: any, catalog=products, orderList=ordersReposi
   const context={...transportContext(),orders:capacityOrders};
   const scopedContext=isDispatchSimulation?boltAdminDemoReviewContext(reviewingOrder,context):context;
   const quote=evaluateDeliveryQuote(request,deliveryStores(),catalog,capacityOrders,scopedContext);
-  if (pilot && quote.territoryInfo?.isCovered &&
+  if (pilotCheckoutHeld && quote.territoryInfo?.isCovered &&
       quote.eligibilityStatus !== 'OUT_OF_COVERAGE' && quote.eligibilityStatus !== 'ADDRESS_NEEDS_CONFIRMATION') {
     return {
       ...quote,
@@ -156,7 +165,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
-  app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
+  app.use(cors(isDispatchSimulation ? { origin: `http://127.0.0.1:${PORT}` } : pilot ? {
+    origin: (origin, callback) => callback(null, !!origin && pwaOrigins.has(origin)),
+  } : {}));
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   const parseJson = express.json({ limit: '15mb' });
   app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
@@ -278,7 +289,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       status: 'ok',
       service: 'Bolt Pets Authoritative Backend',
       version: '1.0.0',
-      ...(pilot && { pilot: { storeIds: pilot.storeIds, checkoutHold: pilotCheckoutHold.code } }),
+      ...(pilot && { pilot: { storeIds: pilot.storeIds, checkoutHold: pilotCheckoutHeld ? pilotCheckoutHold.code : undefined } }),
       catalogSource: 'LOCAL_CATALOG (src/data/catalogo-local)',
       timezone: 'America/Bogota',
       locale: 'es-CO',
@@ -513,7 +524,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       }
 
       // The pilot opens orders once a production Cargo integration can validate collection on the backend.
-      if (pilot) return res.status(503).json(pilotCheckoutHold);
+      if (pilotCheckoutHeld) return res.status(503).json(pilotCheckoutHold);
 
       if (!customer || !['name', 'phone', 'email'].every(field => typeof customer[field] === 'string' && customer[field].trim())) {
         return res.status(400).json({ error: 'Completa tus datos de contacto.' });
