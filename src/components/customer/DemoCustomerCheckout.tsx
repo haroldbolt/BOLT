@@ -1,3 +1,4 @@
+import { backendFetch } from '../../lib/backendRequest';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, MapPin, Package } from 'lucide-react';
 import { api } from '../../lib/api';
@@ -58,7 +59,7 @@ export function DemoCustomerCheckout({ onOrderSuccess }: { onOrderSuccess: (orde
           }
         }
 
-        const response = await fetch(DEMO_CUSTOMER_CHECKOUT_ENDPOINT, { cache: 'no-store', signal: controller.signal });
+        const response = await backendFetch(DEMO_CUSTOMER_CHECKOUT_ENDPOINT, { cache: 'no-store', signal: controller.signal });
         if (response.status === 404 || !response.headers.get('content-type')?.includes('application/json')) {
           throw new Error('Este pedido de prueba está disponible en la demo privada de BOLT.');
         }
@@ -87,7 +88,7 @@ export function DemoCustomerCheckout({ onOrderSuccess }: { onOrderSuccess: (orde
     try {
       const current = attempt.current ??= { requestId: crypto.randomUUID() };
       saveAttempt(current);
-      const response = await fetch(DEMO_CUSTOMER_CHECKOUT_ENDPOINT, {
+      const response = await backendFetch(DEMO_CUSTOMER_CHECKOUT_ENDPOINT, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', 'Idempotency-Key': current.requestId },
         cache: 'no-store',

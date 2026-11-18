@@ -1,3 +1,4 @@
+import { backendFetch } from './backendRequest';
 import type { Product } from '../types';
 
 const endpoint = '/api/v1/catalog/photo-search';
@@ -8,14 +9,14 @@ export type PhotoSearchResponse = {
 };
 
 export async function photoSearchAvailable(signal: AbortSignal): Promise<boolean> {
-  const response = await fetch(`${endpoint}/status`, { cache: 'no-store', signal });
+  const response = await backendFetch(`${endpoint}/status`, { cache: 'no-store', signal });
   if (!response.ok) return false;
   const data = await response.json();
   return data?.enabled === true;
 }
 
 export async function searchCatalogPhoto(photo: Blob, signal: AbortSignal): Promise<PhotoSearchResponse> {
-  const response = await fetch(endpoint, {
+  const response = await backendFetch(endpoint, {
     method: 'POST',
     headers: { 'Content-Type': 'image/jpeg' },
     body: photo,

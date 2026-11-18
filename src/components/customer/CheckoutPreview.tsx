@@ -1,3 +1,4 @@
+import { backendFetch } from '../../lib/backendRequest';
 import { useEffect, useRef, useState } from 'react';
 import { OrderConfirmation, type ConfirmationOrder } from './OrderConfirmation';
 
@@ -20,7 +21,7 @@ export function CheckoutPreview() {
     const controller = new AbortController();
     async function load() {
       try {
-        const response = await fetch(`/api/v1/simulation/checkout-preview?estado=${state}`, {
+        const response = await backendFetch(`/api/v1/simulation/checkout-preview?estado=${state}`, {
           cache: 'no-store',
           signal: controller.signal,
         });

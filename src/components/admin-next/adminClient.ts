@@ -1,3 +1,4 @@
+import { backendFetch } from '../../lib/backendRequest';
 import type { DeliveryQuote } from '../../lib/deliveryService';
 import type { BoltAdminSalesReport, SalesPeriod } from '../../lib/boltAdminSales';
 import type { Order } from '../../types';
@@ -126,7 +127,7 @@ async function request<T>(url: string, token: string | null, options: { body?: u
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
   if (options.setupToken) headers.set('X-Bolt-Admin-Setup-Token', options.setupToken);
-  const response = await fetch(url, {
+  const response = await backendFetch(url, {
     method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), headers, credentials: 'same-origin',
     cache: 'no-store', redirect: 'error', signal: options.signal,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),

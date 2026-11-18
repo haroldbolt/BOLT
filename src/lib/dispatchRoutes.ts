@@ -245,6 +245,14 @@ export function mountDispatchRoutes(
       s.requestTransfer(req.params.id, req.body.toDriverId, aid(req)),
     ),
   );
+  app.post("/api/v1/admin/dispatch/:id/cargo/pickup",
+    handler(req => s.confirmCargoPickup(req.params.id, aid(req))));
+  app.post("/api/v1/admin/dispatch/:id/cargo/delivery",
+    handler(req => s.confirmCargoDelivery(req.params.id, req.body.deliveryCode, req.body.collectedCOP, req.body.collectionReference, aid(req))));
+  app.post("/api/v1/admin/dispatch/:id/cargo/return",
+    handler(req => s.confirmCargoReturn(req.params.id, req.body.reference, aid(req))));
+  app.post("/api/v1/admin/dispatch/:id/cargo/settlement",
+    handler(req => s.recordCargoSettlement(req.params.id, req.body.reference, req.body.netCOP, req.body.deductionsCOP, aid(req))));
   app.post(
     "/api/v1/admin/dispatch/:id/simulate",
     handler((req) =>

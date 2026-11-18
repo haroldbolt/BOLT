@@ -1,3 +1,4 @@
+import { isBoltSplitDeployment } from '../../lib/backendRequest';
 import {CATALOG_SECTIONS,type CatalogSection} from '../../lib/brandDirectory';
 import { COVERAGE_NOTICE } from '../../data/coverageConfig';
 import React, { useEffect, useState } from 'react';
@@ -18,7 +19,7 @@ interface HeaderProps {
   onOpenPhotoSearch?: () => void;
   activeOrdersCount: number;
   onOpenActiveOrders: () => void;
-  onNavigateToOperacion: () => void;
+  onNavigateToOperacion?: () => void;
   onOpenOrderHistory: () => void;
   onOpenProfile: () => void;
   onOpenNotifications: () => void;
@@ -194,7 +195,7 @@ export const Header: React.FC<HeaderProps> = ({
                   <div className="absolute right-0 mt-2 w-60 bg-white text-slate-800 rounded-3xl shadow-2xl border border-slate-100 py-2.5 z-50 text-sm">
                     <div className="px-4 py-2 border-b border-slate-100 flex items-center justify-between">
                       <div>
-                        <p className="font-extrabold text-slate-900 leading-tight">{customerIdentity?.name || (customerIdentity?'Mi cuenta':'Iniciar sesión')}</p>
+                        <p className="font-extrabold text-slate-900 leading-tight">{customerIdentity?.name || (customerIdentity ? 'Mi cuenta' : isBoltSplitDeployment() ? 'Invitado' : 'Iniciar sesión')}</p>
                         <p className="text-[11px] text-slate-500">{customerIdentity?.email || 'Explora BOLT como invitado'}</p>
                       </div>
 
@@ -228,13 +229,13 @@ export const Header: React.FC<HeaderProps> = ({
                       </span>
                     </button>
 
-                    <button
+                    {!isBoltSplitDeployment() && <button
                       onClick={() => { setShowAccountMenu(false); onOpenProfile(); }}
                       className="w-full text-left px-4 py-2.5 hover:bg-slate-50 flex items-center gap-2.5 text-slate-700 font-semibold transition"
                     >
                       <User className="w-4 h-4 text-red-600" />
                       <span>{customerIdentity?'Mi cuenta':'Iniciar sesión'}</span>
-                    </button>
+                    </button>}
 
                     <button
                       onClick={() => { setShowAccountMenu(false); setShowStoreModal(true); }}
@@ -281,13 +282,15 @@ export const Header: React.FC<HeaderProps> = ({
 
                     <div className="border-t border-slate-100 my-1"></div>
 
+                    {onNavigateToOperacion && (
                     <button
-                      onClick={() => { setShowAccountMenu(false); onNavigateToOperacion(); }}
+                      onClick={() => { setShowAccountMenu(false); onNavigateToOperacion?.(); }}
                       className="w-full text-left px-4 py-2.5 hover:bg-red-50 flex items-center gap-2.5 text-red-700 font-bold transition"
                     >
                       <ShieldCheck className="w-4 h-4 text-red-600" />
                       <span>BOLT Admin</span>
                     </button>
+                    )}
 
                     <button
                       onClick={() => { setShowAccountMenu(false); window.location.href = '/admin'; }}
