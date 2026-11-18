@@ -23,6 +23,22 @@ try {
     const descriptor = JSON.parse(fs.readFileSync(path.join(destination, role + '.deploy.json'), 'utf8'));
     assert.equal(descriptor.app_type, 'frontend-only');
     assert.equal(descriptor.frontend_template, 'html-static');
+    const templatePaths = ['index.html', 'package.json'];
+    for (const filename of templatePaths) {
+      const edit = descriptor.files.find(entry => entry.filename === filename);
+      assert.equal(edit.content, undefined);
+      assert.equal(edit.diffs.length, 1);
+      assert.ok(edit.diffs[0].from.length > 100);
+      assert.equal(edit.diffs[0].to, fs.readFileSync(path.join(directory, filename), 'utf8'));
+    }
+    assert.equal(new Set(descriptor.files.map(entry => entry.filename)).size, descriptor.files.length);
+    const tests = JSON.parse(descriptor.files.find(entry => entry.filename === 'tests/tests.json').content);
+    assert.ok(tests.length >= 3 && tests.length <= 5);
+    assert.equal(tests.filter(test => test.sanity).length, 1);
+    for (const test of tests) {
+      assert.ok(test.name && test.description && test.steps.length && test.covers.length && test.expected);
+      assert.ok(['mobile', 'desktop'].includes(test.viewport));
+    }
     const { resources } = JSON.parse(fs.readFileSync(path.join(destination, role + '.resources.json'), 'utf8'));
     assert.equal(resources.length, 4);
     resources.forEach(resource => assert.ok(fs.existsSync(path.join(directory, resource.target_path))));
@@ -59,6 +75,10 @@ try {
     }
     const browserCode = descriptor.files.filter(entry => entry.filename.startsWith('public/assets/'))
       .map(entry => entry.content).join('\n');
+    const modules = descriptor.files.filter(entry => /^public\/assets\/.*\.js$/.test(entry.filename));
+    assert.ok(modules.some(entry => entry.content.split('\n').length > 100));
+    assert.ok(modules.every(entry => entry.content.split('\n').every(line => line.length < 20_000)),
+      'Los módulos del paquete deben conservar formato multilínea legible.');
     assert.ok(browserCode.includes(apiOrigin));
     assert.ok(browserCode.includes('https://cultivacenter.com/cdn/shop/files/agro-logo-acana-oficial.svg'));
     assert.ok(browserCode.includes('/resources/bolt-logo.jpg'));

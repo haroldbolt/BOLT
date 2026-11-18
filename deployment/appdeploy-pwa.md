@@ -23,7 +23,7 @@ El catálogo, categorías y marcas siguen usando los datos de BOLT. La compilaci
 
 1. Consulta las instrucciones vigentes de AppDeploy para `frontend-only`, plantilla `html-static`. Comprueba que el plan permita ambos despliegues.
 2. Por cada aplicación declara los cuatro recursos binarios indicados en su archivo `*.resources.json`. Los archivos están debajo de `<rol>/public/resources/`. Obtén un ID de carga por aplicación y valida el estado.
-3. Usa el archivo `*.deploy.json` correspondiente como origen de los parámetros de despliegue, con los datos de la cuenta conectada, la versión actual del conector y el ID de la carga validada. Las fuentes de texto se envían en `files`. En actualizaciones usa el ID de la aplicación existente.
+3. Usa el archivo `*.deploy.json` correspondiente como origen de los parámetros de despliegue, con los datos de la cuenta conectada, la versión actual del conector y el ID de la carga validada. Los archivos del template se modifican con diffs exactos y los nuevos módulos se envían como fuentes de texto legibles en `files`. El payload incluye tres verificaciones de interfaz por aplicación, que evitan crear pedidos. En actualizaciones usa el ID de la aplicación existente.
 4. Configura en BOLT los orígenes HTTPS exactos de Cliente y Admin. En la publicación con orígenes separados, Cliente conserva el flujo de invitado. La cuenta de Cliente depende de la configuración de autenticación del backend; Admin y Conductor usan sus permisos operativos.
 5. Una vez publicado, comprueba ambos manifiestos, los iconos, el catálogo, el acceso protegido a Admin y Conductor y las rutas de seguimiento sin crear cuentas, compras ni despachos. Los escenarios de QA incluidos hacen consultas y navegación.
 
