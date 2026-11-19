@@ -20,6 +20,7 @@ const seedOrderIds = new Set(INITIAL_ORDERS.map(order => order.id));
 const demoProfiles = [
   { id: 'suba', name: 'Operador de Suba', role: 'SEDE', storeId: subaId },
   { id: 'kennedy', name: 'Operador de Kennedy', role: 'SEDE', storeId: 'HUB_KENNEDY' },
+  { id: 'alamos', name: 'Operador de Álamos', role: 'SEDE', storeId: 'HUB_ALAMOS' },
   { id: 'coordinacion', name: 'Coordinación', role: 'COORDINACION' },
 ] as const;
 
