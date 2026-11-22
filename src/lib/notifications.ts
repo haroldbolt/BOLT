@@ -10,6 +10,7 @@ export interface PushNotification {
     | 'WAREHOUSE_ASSIGNED'
     | 'WAREHOUSE_CHANGED'
     | 'ORDER_CONFIRMED'
+    | 'ORDER_CANCELLED'
     | 'ORDER_PREPARING'
     | 'DRIVER_ASSIGNED'
     | 'ORDER_ON_THE_WAY'
@@ -70,6 +71,31 @@ export class PushNotificationService {
     this.seenAssignments.add(event.id);
     this.assignmentRevisions[order.id]=event.revision;
     return this.send({orderId:order.id,orderNumber:order.orderNumber,title:event.kind==='CHANGED'?'Sede actualizada':'Sede de preparación y despacho',message:assignmentMessage(event),type:event.kind==='CHANGED'?'WAREHOUSE_CHANGED':'WAREHOUSE_ASSIGNED',actionUrl:'/pedido/'+order.id},event.id);
+  }
+
+  notifyFulfillmentChange(order: Order) {
+    const event = order.statusHistory?.at(-1);
+    if (!event || event.orderId !== order.id || !event.id || event.previousStatus === event.newStatus) return;
+    const shipment = event.shipmentId ? order.childShipments?.find(item => item.shipmentId === event.shipmentId) : undefined;
+    const status = event.shipmentId ? shipment?.fulfillmentStatus : order.fulfillmentStatus;
+    if (event.newStatus !== status) return;
+    const age = Date.now() - Date.parse(event.timestamp);
+    if (!Number.isFinite(age) || age < 0 || age > 60_000) return;
+    // Assignment, collection and delivery notifications use the dispatch event IDs instead.
+    const descriptions = {
+      EN_ALISTAMIENTO: ['ORDER_PREPARING', 'Preparación en curso'],
+      LISTO_PARA_DESPACHO: ['ORDER_PREPARING', 'Listo para recoger'],
+      CANCELADO: ['ORDER_CANCELLED', 'Cancelación confirmada'],
+    } as const;
+    if (!Object.hasOwn(descriptions, event.newStatus)) return;
+    const [type, title] = descriptions[event.newStatus as keyof typeof descriptions];
+    const key = 'fulfillment:' + order.id + ':' + event.id;
+    this.restore();
+    if (this.seenAssignments.has(key)) return;
+    this.seenAssignments.add(key);
+    const label = shipment ? 'Entrega ' + shipment.shipmentIndex + ' del pedido' : 'Pedido';
+    return this.send({ orderId: order.id, orderNumber: order.orderNumber, title, type,
+      message: label + ' ' + order.orderNumber + ' · ' + title, actionUrl: '/pedido/' + encodeURIComponent(order.id) }, key);
   }
 
   notifyDispatchEvents(order:Order) {

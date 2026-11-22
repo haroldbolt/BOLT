@@ -19,3 +19,11 @@ La migración de cuentas de la versión 1 a la 2 fuerza RLS en las tres tablas d
 ## 3. Ramas, publicación y etiquetas
 
 La revisión usa una rama y un PR. GitHub no tenía etiquetas al inicio. La salud pública expone únicamente el SHA completo declarado por el despliegue, si está configurado. El publicador debe ejecutar `node deployment/tag-release.mjs production <origen-HTTPS> <SHA-completo>` después de comprobar que el despliegue está saludable. Use `demo` para una versión de demostración que exponga su revisión. El script verifica el SHA en el backend, comprueba que producción pertenece al historial de main y verifica la etiqueta en GitHub. Repetirlo para la misma versión conserva la misma etiqueta. Un despliegue cancelado no se etiqueta. Use la credencial del publicador fuera del repositorio.
+
+## 4. Contrato e integraciones de la API
+
+Las rutas existentes conservan su prefijo y sus contratos. Se añadió un identificador de solicitud generado por el servidor, errores JSON para una ruta de API desconocida o un cuerpo inválido y límites de tiempo en geocodificación. Las búsquedas de dirección requieren la llave privada del servicio de geocodificación. El mapa del navegador sigue usando su llave web.
+
+Coordinación puede consultar una transacción de Wompi vinculada previamente a un pedido. El resultado requiere concordancia de comercio, referencia, identificador, método, moneda e importe. Esta operación es de lectura. El checkout sigue aceptando efectivo según sus condiciones existentes. Queda pendiente comprobar con la cuenta del comercio las respuestas que contienen evidencia suficiente y contratar/habilitar pagos en línea.
+
+Se conservan el GPS y el seguimiento privado. El centro del cliente ahora muestra los cambios de preparación y cancelación confirmados en el historial y reserva los controles de simulación para la demo. Estos avisos funcionan mientras la aplicación consulta el seguimiento. [Contrato por recurso](API-V1.md)

@@ -100,4 +100,19 @@ test('Configuration rejects duplicate IDs and territorial overlap',()=>{
  assert.throws(()=>validateWarehouseConfiguration([WAREHOUSES[0],WAREHOUSES[0]]),/duplicado/);
  assert.throws(()=>validateWarehouseConfiguration([WAREHOUSES[0],{...WAREHOUSES[0],id:'TEST_DUPLICATE_TERRITORY'}]),/más de una/);
 });
+test('Private fulfillment updates use the committed status and emit once across refreshes',()=>{
+ const storage=memory(), service=new PushNotificationService(storage);
+ const order=createFixture(WAREHOUSES[0]);
+ order.fulfillmentStatus='EN_ALISTAMIENTO';
+ const event={id:'event-prep',orderId:order.id,previousStatus:'CONFIRMADO' as const,newStatus:'EN_ALISTAMIENTO' as const,
+   timestamp:new Date().toISOString(),actor:{role:'BODEGA' as const},reason:'INTERNAL REFERENCE'};
+ order.statusHistory=[event];
+ assert.equal(service.notifyFulfillmentChange({...order,fulfillmentStatus:'ENTREGADO'}),undefined);
+ assert.equal(service.notifyFulfillmentChange({...order,statusHistory:[{...event,timestamp:new Date(Date.now()-120000).toISOString()}]}),undefined);
+ const note=service.notifyFulfillmentChange(order)!;
+ assert.equal(note.type,'ORDER_PREPARING'); assert.ok(!note.message.includes(event.reason));
+ assert.equal(new PushNotificationService(storage).notifyFulfillmentChange(order),undefined);
+ order.statusHistory=[{...event,id:'event-child',shipmentId:'unknown',newStatus:'CANCELADO'}];
+ assert.equal(service.notifyFulfillmentChange(order),undefined);
+});
 console.log(`${count} warehouse notification cases passed`);

@@ -87,8 +87,11 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
       setSnapshot(received);
       setNow(getClockTime(received));
       setLoadError('');
-      pushService.notifyWarehouseAssignment(order);
-      pushService.notifyDispatchEvents(order);
+      if (!adminView) {
+        pushService.notifyWarehouseAssignment(order);
+        pushService.notifyFulfillmentChange(order);
+        pushService.notifyDispatchEvents(order);
+      }
     } catch (error) {
       if (version !== requestVersion.current) return;
       const status = (error as { status?: number })?.status;
@@ -97,7 +100,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
     } finally {
       if (currentRequest.current === version) currentRequest.current = undefined;
     }
-  }, [orderId, activeIndex, guestOnly]);
+  }, [orderId, activeIndex, guestOnly, adminView]);
 
   useEffect(() => {
     void load(true);

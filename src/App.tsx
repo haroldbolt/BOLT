@@ -1356,6 +1356,7 @@ export default function App() {
 
       {/* Notification Center Modal */}
       <NotificationCenterModal
+        simulationEnabled={customerDemoCheckoutEnabled}
         isOpen={isNotificationCenterOpen}
         onClose={() => setIsNotificationCenterOpen(false)}
         onNavigateToOrder={(orderId) => navigateTo(`/pedido/${orderId}`)}

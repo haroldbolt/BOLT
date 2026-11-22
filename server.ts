@@ -30,7 +30,7 @@ if (process.env.DISABLE_HMR === undefined) {
   process.env.DISABLE_HMR = 'true';
 }
 
-import express, { Request, Response } from 'express';
+import express, { Request, Response, type NextFunction } from 'express';
 import cors from 'cors';
 import path from 'path';
 import fs from 'fs';
@@ -43,6 +43,7 @@ import { evaluateDeliveryQuote, DELIVERY_CONFIG, validateScheduledBooking, gener
 import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
+import { mountWompiLookup } from './src/lib/wompiLookup';
 import { ordersRepository } from './src/lib/ordersRepository';
 import { adminAuthService } from './src/lib/adminAuthService';
 import { catalogRepository } from './src/lib/catalogRepository';
@@ -150,6 +151,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
+  app.disable('x-powered-by');
+  app.use('/api', (_req, res, next) => {
+    res.locals.requestId = crypto.randomUUID();
+    res.set('X-Request-Id', res.locals.requestId);
+    next();
+  });
   const PORT = parseInt(process.env.PORT || '3000', 10);
 
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
@@ -407,15 +414,16 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
   app.get('/api/v1/geocode/reverse', async (req: Request, res: Response) => {
     const { lat, lng } = req.query;
-    if (!lat || !lng) {
+    if (typeof lat !== 'string' || typeof lng !== 'string' || !lat.trim() || !lng.trim() || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng)) || Math.abs(Number(lat)) > 90 || Math.abs(Number(lng)) > 180) {
       return res.status(400).json({ error: 'Faltan parámetros lat y lng' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
     if (!apiKey) return res.status(503).json({ error: 'La búsqueda de dirección está temporalmente fuera de servicio.' });
     try {
       const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}&language=es&region=co`
+        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${Number(lat)},${Number(lng)}&key=${encodeURIComponent(apiKey)}&language=es&region=co`,
+        { signal: AbortSignal.timeout(5000), redirect: "error" }
       );
       const data: any = await response.json();
 
@@ -445,7 +453,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
       }
     } catch (err: any) {
-      console.error('Error en geocodificación inversa:', err);
+      console.error('[Maps] reverse geocoding unavailable');
       return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
     }
   });
@@ -457,7 +465,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(400).json({ error: 'Parámetro address requerido' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
     const municipality=typeof req.query.municipality==='string' ? req.query.municipality : '';
     const result=await searchDeliveryAddress(String(address).slice(0,500),municipality.slice(0,100),apiKey);
     res.set('Cache-Control','no-store');
@@ -1140,6 +1148,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Integrations status
+  mountWompiLookup(app, requireAdminAuth, id => ordersRepository.getOrderById(id));
   app.get('/api/v1/integrations/status', requireAdminAuth, (_req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store').json({
       shopifyOlfato: { name: 'Shopify / Olfato', status: 'Lectura de catálogo; sincronización automática desactivada' },
@@ -1438,6 +1447,18 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // ==========================================
   // FRONTEND MOUNTING (VITE IN DEV / STATIC IN PROD)
   // ==========================================
+
+  app.use('/api', (_req, res) => res.status(404).json({
+    code: 'API_NOT_FOUND', error: 'Esta operación de la API no existe.', requestId: res.locals.requestId,
+  }));
+  app.use('/api', (error: any, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(error);
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+    const code = status === 413 ? 'BODY_TOO_LARGE' : status === 400 ? 'INVALID_REQUEST' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_REJECTED';
+    res.status(status).set('Cache-Control', 'no-store').json({
+      code, error: status >= 500 ? 'No se pudo completar la solicitud.' : 'Revisa los datos de la solicitud.', requestId: res.locals.requestId,
+    });
+  });
 
   // The old URLs remain entry links for the new Admin. API routes are unchanged.
   app.get(['/admin', '/operacion'], (req, res) => {

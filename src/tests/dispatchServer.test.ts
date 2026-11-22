@@ -75,6 +75,12 @@ try {
     await new Promise((r) => setTimeout(r, 100));
   }
   assert(ready, "Server startup");
+  const absent = await call("/no-such-operation");
+  assert.equal(absent.status, 404);
+  assert.equal((await absent.json()).requestId, absent.headers.get("x-request-id"));
+  const invalid = await fetch(base + "/api/v1/delivery/quote", {method:"POST", headers:{"Content-Type":"application/json"}, body:"{"});
+  assert.equal(invalid.status, 400);
+  assert.equal((await invalid.json()).code, "INVALID_REQUEST");
   const publicHealth = await (await call("/health")).json();
   assert.equal(publicHealth.privateInventory, undefined);
   assert.equal((await call("/inventory/status")).status, 401);
