@@ -178,7 +178,9 @@ test('HTTP accepts validated JPEG, uses live catalog and enforces quota without 
     assert.deepEqual(await matched.json(), { matches: [{ productId: exact.id }], confident: true });
     catalog = [{ ...exact, status: 'INACTIVE' }];
     assert.deepEqual(await (await post(image)).json(), { matches: [], confident: false });
-    assert.equal((await post(image)).status, 429);
+    const dailyExceeded = await post(image);
+    assert.equal(dailyExceeded.status, 429);
+    assert.ok(Number(dailyExceeded.headers.get('Retry-After')) > 0);
     assert.equal(calls, 2);
   } finally {
     service.close();

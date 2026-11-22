@@ -39,3 +39,9 @@ El build inspecciona la distribución y falla si detecta mapas de fuentes, archi
 Un archivo administrativo dañado impide iniciar autenticación. Un fallo de escritura invalida las sesiones afectadas y exige recuperar el almacenamiento. Las cuentas se crean y se exponen al frontend una vez confirmada la escritura. Los archivos históricos de pedidos dañados se conservan para recuperación. Los errores de compra llevan un identificador de solicitud, sin detalles internos.
 
 En producción, el acceso externo requiere el origen HTTPS configurado y TLS directo o un proxy de confianza explícita. Administra las claves en el gestor de secretos del hosting. El dominio real, sus certificados y la configuración del proxy deben comprobarse en la instalación elegida.
+
+## 7. Límites de uso
+
+La autenticación de clientes ya contaba con límites en PostgreSQL. La API ahora limita por IP resuelta desde los proxies de confianza y por identidad verificada. El acceso y la recuperación tienen cupos separados. Una solicitud rechazada recibe 429 y el plazo para reintentar. El servidor conserva cantidades acotadas de contadores.
+
+Los cupos adicionales protegen geocodificación, reconocimiento de fotos, consulta de Wompi y correo saliente. En el piloto de un escritor se reserva el consumo diario en el volumen antes de llamar al proveedor. Los contadores por minuto y la concurrencia pertenecen al proceso. Un tope de solicitudes no equivale a un presupuesto en COP; los límites monetarios y alertas de facturación deben configurarse en cada cuenta de proveedor. [Parámetros y alcance](LIMITES-API.md)

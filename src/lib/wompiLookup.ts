@@ -1,4 +1,5 @@
 import type { Express, RequestHandler } from 'express';
+import { providerRouteLimit } from './providerQuota';
 import type { Order } from '../types';
 
 const endpoints = {
@@ -26,7 +27,7 @@ class LookupError extends Error {
 }
 
 // Consult only the transaction already linked by the backend. This function has no write dependency.
-export async function lookupWompiPayment(order: LocalPayment, config: Config, request = fetch) {
+function paymentParameters(order: LocalPayment) {
   const transactionId = order.payment.transactionId;
   const amount = order.totals.total * 100;
   if (!Object.hasOwn(methods, order.payment.method) || !transactionId || !/^[a-zA-Z0-9_-]{1,160}$/.test(transactionId) ||
@@ -34,6 +35,15 @@ export async function lookupWompiPayment(order: LocalPayment, config: Config, re
     throw new LookupError(409, 'WOMPI_LINK_REQUIRED', 'El pedido requiere una transacción Wompi vinculada y un importe válido.');
   }
 
+  return { transactionId, amount };
+}
+
+export async function lookupWompiPayment(order: LocalPayment, config: Config, request = fetch) {
+  return consultWompi(order, config, paymentParameters(order), request);
+}
+
+async function consultWompi(order: LocalPayment, config: Config, params: ReturnType<typeof paymentParameters>, request = fetch) {
+  const { transactionId, amount } = params;
   let data;
   try {
     const response = await request(endpoints[config.environment] + encodeURIComponent(transactionId), {
@@ -60,6 +70,7 @@ export async function lookupWompiPayment(order: LocalPayment, config: Config, re
 }
 
 export function mountWompiLookup(app: Express, coordination: RequestHandler, getOrder: (id: string) => Order | undefined) {
+  const limitLookup = providerRouteLimit('WOMPI');
   app.get('/api/v1/admin/orders/:orderId/payments/wompi', coordination, async (req, res, next) => {
     res.set('Cache-Control', 'private, no-store');
     const config = wompiLookupConfig(process.env);
@@ -67,7 +78,8 @@ export function mountWompiLookup(app: Express, coordination: RequestHandler, get
     const order = getOrder(req.params.orderId);
     if (!order) return res.status(404).json({ code: 'ORDER_NOT_FOUND', error: 'Pedido no encontrado.' });
     try {
-      return res.json(await lookupWompiPayment(order, config));
+      const params = paymentParameters(order);
+      return await limitLookup(req, res, async () => res.json(await consultWompi(order, config, params)));
     } catch (error) {
       if (error instanceof LookupError) return res.status(error.status).json({ code: error.code, error: error.message });
       return next(error);

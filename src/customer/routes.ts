@@ -100,7 +100,8 @@ export async function mountCustomerAccounts(
           error: "Este método de acceso todavía no está configurado.",
         }),
     );
-  const getSession = async (req: Request, res?: Response) => {
+  const readSessions = new WeakMap<Request, ReturnType<typeof resolveSession>>();
+  const resolveSession = async (req: Request, res?: Response) => {
     if (!instance) return null;
     const result = await instance.auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
@@ -112,6 +113,16 @@ export async function mountCustomerAccounts(
       for (const cookie of result.headers.getSetCookie())
         res.append("Set-Cookie", cookie);
     return result.response;
+  };
+  // Reuse the verified read-only session during this request. Renewals still forward the SDK cookies.
+  const getSession = (req: Request, res?: Response) => {
+    if (res) return resolveSession(req, res);
+    let session = readSessions.get(req);
+    if (!session) {
+      session = resolveSession(req);
+      readSessions.set(req, session);
+    }
+    return session;
   };
   const guarded =
     (fn: (req: Request, res: Response, session: any) => Promise<any>) =>
@@ -474,6 +485,7 @@ export async function mountCustomerAccounts(
         (await canReadOrder(id, session.user.id))
       );
     },
+    ratePrincipal: async (req: Request) => (await getSession(req))?.user.id,
     instance,
     db,
   };

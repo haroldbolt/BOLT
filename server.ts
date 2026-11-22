@@ -31,6 +31,7 @@ if (process.env.DISABLE_HMR === undefined) {
 }
 
 import express, { Request, Response, type NextFunction } from 'express';
+import { mountApiRateLimit } from './src/lib/apiRateLimit';
 import { mountProductionHttp } from './src/lib/productionHttp';
 import path from 'path';
 import fs from 'fs';
@@ -43,6 +44,7 @@ import { evaluateDeliveryQuote, DELIVERY_CONFIG, validateScheduledBooking, gener
 import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
+import { providerRouteLimit } from './src/lib/providerQuota';
 import { mountWompiLookup } from './src/lib/wompiLookup';
 import { ordersRepository } from './src/lib/ordersRepository';
 import { adminAuthService } from './src/lib/adminAuthService';
@@ -161,6 +163,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   mountProductionHttp(app, process.env, isDispatchSimulation);
 
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
+  mountApiRateLimit(app, {
+    staff: token => adminAuthService.verifyStaffSession(token)?.userId,
+    driver: token => dispatchService.authenticate(token),
+    customer: req => customerAccounts.ratePrincipal(req),
+  });
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   const parseJson = express.json({ limit: '15mb' });
@@ -411,6 +418,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     return res.json({...quote,warehouse:describeWarehouse(stores.find(store=>store.id===quote.assignedStoreId))});
   });
 
+  const limitGeocode = providerRouteLimit('GEOCODE');
   // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
   app.get('/api/v1/geocode/reverse', async (req: Request, res: Response) => {
     const { lat, lng } = req.query;
@@ -420,42 +428,44 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
     const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
     if (!apiKey) return res.status(503).json({ error: 'La búsqueda de dirección está temporalmente fuera de servicio.' });
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${Number(lat)},${Number(lng)}&key=${encodeURIComponent(apiKey)}&language=es&region=co`,
-        { signal: AbortSignal.timeout(5000), redirect: "error" }
-      );
-      const data: any = await response.json();
+    return limitGeocode(req, res, async () => {
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${Number(lat)},${Number(lng)}&key=${encodeURIComponent(apiKey)}&language=es&region=co`,
+          { signal: AbortSignal.timeout(5000), redirect: "error" }
+        );
+        const data: any = await response.json();
 
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const first = data.results[0];
-        const raw = first.formatted_address;
-        let address = raw
-          .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-          .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-          .replace(/,\s*Cundinamarca/gi, '')
-          .trim();
+        if (data.status === 'OK' && data.results && data.results.length > 0) {
+          const first = data.results[0];
+          const raw = first.formatted_address;
+          let address = raw
+            .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+            .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+            .replace(/,\s*Cundinamarca/gi, '')
+            .trim();
 
-        const territory = parseAddressComponents(first.address_components);
-        const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
+          const territory = parseAddressComponents(first.address_components);
+          const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
 
-        return res.json({
-          address,
-          formattedAddress: address,
-          rawAddress: raw,
-          municipality: resolved.municipality || territory.municipality,
-          countryCode: resolved.countryCode || territory.countryCode,
-          locality: resolved.locality,
-          neighborhood: territory.neighborhood,
-          status: 'OK',
-        });
-      } else {
-        return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
+          return res.json({
+            address,
+            formattedAddress: address,
+            rawAddress: raw,
+            municipality: resolved.municipality || territory.municipality,
+            countryCode: resolved.countryCode || territory.countryCode,
+            locality: resolved.locality,
+            neighborhood: territory.neighborhood,
+            status: 'OK',
+          });
+        } else {
+          return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
+        }
+      } catch (err: any) {
+        console.error('[Maps] reverse geocoding unavailable');
+        return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
       }
-    } catch (err: any) {
-      console.error('[Maps] reverse geocoding unavailable');
-      return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
-    }
+    });
   });
 
   // Forward Geocoding Proxy (Google Maps Platform Geocoding API)
@@ -467,9 +477,13 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
     const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
     const municipality=typeof req.query.municipality==='string' ? req.query.municipality : '';
-    const result=await searchDeliveryAddress(String(address).slice(0,500),municipality.slice(0,100),apiKey);
-    res.set('Cache-Control','no-store');
-    return res.json(result);
+    const query = String(address).slice(0, 500), city = municipality.slice(0, 100);
+    const lookup = async () => {
+      const result = await searchDeliveryAddress(query, city, apiKey);
+      return res.set('Cache-Control', 'no-store').json(result);
+    };
+    if (!apiKey || !city.trim() || !query.trim()) return lookup();
+    return limitGeocode(req, res, lookup);
   });
 
   // Create Order with transactional stock reservation & delivery policy validation

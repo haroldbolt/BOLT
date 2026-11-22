@@ -2,6 +2,7 @@ import crypto from 'node:crypto';
 import type {Express,Request,Response,NextFunction} from 'express';
 import type {OrdersRepository} from './ordersRepository';
 import {DispatchService,DispatchError} from './dispatchService';
+import { RateWindow } from './apiRateLimit';
 export interface RecoveryCase {id:string;orderId?:string;reference:string;secretHash:string;createdAt:number;expiresAt:number;status:'PENDING'|'APPROVED'|'REJECTED';review?:{actorId:string;at:number;method:string;reference:string};}
 const hash=(s:string)=>crypto.createHash('sha256').update(s).digest('hex');
 const equal=(a:string,b:string)=>a.length===b.length&&crypto.timingSafeEqual(Buffer.from(a),Buffer.from(b));
@@ -48,13 +49,12 @@ export class TrackingRecovery {
  }
 }
 export function mountTrackingRecovery(app:Express,repo:OrdersRepository,dispatch:DispatchService,admin:(req:Request,res:Response,next:NextFunction)=>unknown){
- const service=new TrackingRecovery(repo,dispatch),limits=new Map<string,{count:number;until:number}>();
+ const service=new TrackingRecovery(repo,dispatch),limits=new RateWindow(10000,3600000);
  const handler=(fn:(req:Request)=>unknown)=>(req:Request,res:Response)=>{res.set('Cache-Control','no-store');try{res.json(fn(req));}catch(e){if(e instanceof DispatchError)res.status(e.status).json({code:e.code,error:e.message});else res.status(500).json({error:'No se pudo completar la recuperación.'});}};
  app.use('/api/v1/tracking-recovery',(req,res,next)=>{
-  const key=hash(req.ip||'unknown'),old=limits.get(key),now=Date.now();
-  const current=old&&old.until>now?old:{count:0,until:now+3600000};
-  if(++current.count>240)return res.status(429).json({error:'Demasiadas consultas. Intenta más tarde.'});
-  if(limits.size>10000)limits.clear();limits.set(key,current);next();
+  const wait=limits.take(hash(req.ip||'unknown'),240);
+  if(wait)return res.set('Retry-After',String(wait)).status(429).json({error:'Demasiadas consultas. Intenta más tarde.'});
+  next();
  });
  app.post('/api/v1/tracking-recovery',handler(req=>service.begin(req.body)));
  app.post('/api/v1/tracking-recovery/status',handler(req=>service.status(req.body)));

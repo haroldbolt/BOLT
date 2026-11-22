@@ -1,5 +1,6 @@
 import express, { type Express, type Request } from 'express';
 import sharp from 'sharp';
+import { createDailyProviderBudget, secondsUntilBogotaMidnight } from './dailyProviderBudget';
 import type { Product } from '../types';
 import { openAIProductPhotoRecognizer, rankProductPhoto, type ProductPhotoRecognizer } from './productPhotoSearch';
 import { productPhotoOcrAvailable, readProductPhotoText } from './productPhotoOcr';
@@ -10,8 +11,6 @@ const SEARCH_PATH = '/api/v1/catalog/photo-search';
 const MAX_BYTES = 1024 * 1024;
 const MAX_PIXELS = 20_000_000;
 const MINUTE = 60_000;
-const DAY = 86_400_000;
-const MAX_CONCURRENT = 4;
 const DEADLINE_MS = 8_000;
 
 function limit(value: string | undefined, fallback: number, max: number) {
@@ -57,8 +56,10 @@ export function mountProductPhotoSearch(app: Express, options: {
   const requestsPerMinute = limit(env.BOLT_PHOTO_SEARCH_REQUESTS_PER_MINUTE, 5, 60);
   const dailyLimit = limit(env.BOLT_PHOTO_SEARCH_DAILY_LIMIT, 100, 10_000);
   let minuteWindow = 0;
-  let dayWindow = 0;
-  let providerCalls = 0;
+  const globalLimit = limit(env.BOLT_PHOTO_SEARCH_TOTAL_PER_MINUTE, 60, 10000);
+  const maxConcurrent = limit(env.BOLT_PHOTO_SEARCH_MAX_CONCURRENT, 4, 32);
+  const budget = createDailyProviderBudget(env);
+  let minuteRequests = 0;
   let concurrent = 0;
   const requestCounts = new Map<string, number>();
   const receiveImage = express.raw({ type: 'image/jpeg', limit: MAX_BYTES, inflate: false });
@@ -79,19 +80,21 @@ export function mountProductPhotoSearch(app: Express, options: {
     if (minute !== minuteWindow) {
       minuteWindow = minute;
       requestCounts.clear();
+      minuteRequests = 0;
     }
-    const ip = req.ip || req.socket.remoteAddress || 'unknown';
-    const count = requestCounts.get(ip) ?? 0;
-    if (count >= requestsPerMinute || (!count && requestCounts.size >= 2048)) {
+    const identities = ['ip:' + (req.ip || req.socket.remoteAddress || 'unknown')];
+    if (res.locals.rateLimitPrincipal) identities.push(res.locals.rateLimitPrincipal);
+    if (minuteRequests >= globalLimit || identities.some(key => (requestCounts.get(key) || 0) >= requestsPerMinute ||
+        (!requestCounts.has(key) && requestCounts.size >= 2048))) {
       res.set('Retry-After', '60');
       return res.status(429).json({ error: 'Demasiadas búsquedas. Intenta en un minuto.' });
     }
-    requestCounts.set(ip, count + 1);
-
-    if (concurrent >= MAX_CONCURRENT) {
+    if (concurrent >= maxConcurrent) {
       res.set('Retry-After', '5');
       return res.status(429).json({ error: 'Hay muchas fotos en proceso. Intenta en unos segundos.' });
     }
+    ++minuteRequests;
+    for (const key of identities) requestCounts.set(key, (requestCounts.get(key) || 0) + 1);
     concurrent++;
     // Bound simultaneous reads, decodes and provider calls. Release the slot when the
     // connection closes, including failures while reading the request body.
@@ -141,16 +144,11 @@ export function mountProductPhotoSearch(app: Express, options: {
         if (fallback?.confident || (!recognizer && fallback)) return res.json(fallback);
         if (!recognizer) throw new Error('Photo text recognition unavailable');
 
-        const day = Math.floor(Date.now() / DAY);
-        if (day !== dayWindow) {
-          dayWindow = day;
-          providerCalls = 0;
-        }
-        if (providerCalls >= dailyLimit) {
+        if (!budget.take('OPENAI_PHOTO', dailyLimit)) {
           if (fallback) return res.json(fallback);
-          return res.status(429).json({ error: 'Llegamos al límite diario de búsquedas por foto. Puedes buscar por texto.' });
+          return res.status(429).set('Retry-After', String(secondsUntilBogotaMidnight(Date.now())))
+            .json({ error: 'Llegamos al límite diario de búsquedas por foto. Puedes buscar por texto.' });
         }
-        providerCalls++;
 
         const signal = AbortSignal.any([cancelled.signal, AbortSignal.timeout(DEADLINE_MS)]);
         const result = await recognizer(jpeg, signal)
