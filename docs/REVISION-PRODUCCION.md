@@ -45,3 +45,9 @@ En producción, el acceso externo requiere el origen HTTPS configurado y TLS dir
 La autenticación de clientes ya contaba con límites en PostgreSQL. La API ahora limita por IP resuelta desde los proxies de confianza y por identidad verificada. El acceso y la recuperación tienen cupos separados. Una solicitud rechazada recibe 429 y el plazo para reintentar. El servidor conserva cantidades acotadas de contadores.
 
 Los cupos adicionales protegen geocodificación, reconocimiento de fotos, consulta de Wompi y correo saliente. En el piloto de un escritor se reserva el consumo diario en el volumen antes de llamar al proveedor. Los contadores por minuto y la concurrencia pertenecen al proceso. Un tope de solicitudes no equivale a un presupuesto en COP; los límites monetarios y alertas de facturación deben configurarse en cada cuenta de proveedor. [Parámetros y alcance](LIMITES-API.md)
+
+## 8. Caché e inventario vigente
+
+El catálogo base y los cambios administrativos ya se combinaban en memoria. Ahora la caché tiene un TTL configurable y reconoce las modificaciones de sus archivos. El listado público se invalida al guardar cambios comerciales o una reserva. El carrito y la confirmación revalidan las condiciones vigentes. Salud, autenticación y telemetría dejaron de reconstruir el catálogo de ventas en cada llamada.
+
+El navegador revalida el catálogo por ETag. La prueba de inventario obtiene 304 mientras no hay cambios y 200 con una nueva versión después de editar existencias. Las respuestas privadas se marcan no-store y los archivos de build con nombre versionado pueden guardarse a largo plazo. [Políticas y pruebas](CACHE-CATALOGO.md)

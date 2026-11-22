@@ -80,6 +80,8 @@ export class OrdersRepository {
   private inTransaction = false;
   private transactionReservations: (() => void)[] = [];
   private unified = false;
+  private committedRevision = 0;
+  get inventoryCacheRevision() { return this.committedRevision; }
   private fulfillmentFile: string;
   public dispatchState: DispatchState = newDispatchState();
 
@@ -87,6 +89,7 @@ export class OrdersRepository {
   private restore(s:any) {this.orders=s.orders;this.drivers=s.drivers;this.auditHistory=s.audit;this.telemetryHistory=s.telemetry;this.dispatchState=s.dispatch}
   private persistUnified() {
     new FulfillmentStorage(this.dataDir).commit(this.snapshot());this.unified=true;
+    this.committedRevision++;
   }
   /** One synchronous writer (server lock). All dispatch/order/driver changes commit in one atomic rename. */
   public transaction<T>(fn:()=>T):T {
@@ -95,7 +98,7 @@ export class OrdersRepository {
     try {const value=fn();this.persistUnified();return value}
     catch(error){
       const durable=new FulfillmentStorage(this.dataDir).read();
-      if((durable?.revision||0)>previousRevision) this.restore(durable);
+      if((durable?.revision||0)>previousRevision) { this.restore(durable); this.committedRevision++; }
       else {
         for(const release of this.transactionReservations.reverse()) release();
         if(JSON.stringify(this.snapshot())!==JSON.stringify(before)) this.restore(before);

@@ -46,6 +46,18 @@ export function parseCOP(raw: unknown, currency: string): number | null {
 
 export class CatalogOperations {
   private state?: State;
+  private publicView?: { base: Product[]; state?: State; orderRevision: number; products: Product[] };
+
+  /** Read-only projection for the public listing. Checkout continues to build its own live projection. */
+  public publicCatalog(orderRevision: number): readonly Product[] {
+    const base = this.options.products();
+    const view = this.publicView;
+    if (view && view.base === base && view.state === this.state && view.orderRevision === orderRevision) return view.products;
+    const products = this.getProducts();
+    this.publicView = {base, state:this.state, orderRevision, products};
+    return products;
+  }
+
   constructor(private options: { file: string; products: () => Product[]; stores: () => Store[]; orders: () => Order[] }) {
     if(fs.existsSync(options.file)) this.state = JSON.parse(fs.readFileSync(options.file,'utf8'));
   }

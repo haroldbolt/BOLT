@@ -98,7 +98,7 @@ export const api = {
       if (params?.q) url.searchParams.append('q', params.q);
       if (params?.storeId) url.searchParams.append('storeId', params.storeId);
 
-      const res = await authorizedFetch(url.toString(), { cache: 'no-store' });
+      const res = await authorizedFetch(url.toString());
       if (!res.ok) throw new Error('Error al cargar catálogo');
       const catalog = await res.json();
       if (!Array.isArray(catalog)) throw new Error('Catálogo inválido');
