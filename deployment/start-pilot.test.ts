@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { preparePilot } from './start-pilot';
+import { isPersistentMount, preparePilot } from './start-pilot';
 import { FulfillmentStorage } from '../src/lib/fulfillmentStorage';
 
 function fixture(t: TestContext) {
@@ -80,4 +80,17 @@ test('un volumen ya inicializado falla si falta el almacenamiento de pedidos', t
   first.release();
   assert.throws(() => preparePilot(source, env), /almacenamiento operativo v2/);
   assert(!fs.existsSync(storage.file));
+});
+
+test('producción distingue un volumen montado de archivos efímeros, de solo lectura o un volumen histórico', t => {
+  const line = '123 99 8:1 / /var/data rw,relatime - ext4 /dev/sdb rw';
+  assert.ok(isPersistentMount('/var/data', line));
+  assert.ok(!isPersistentMount('/var', line));
+  assert.ok(!isPersistentMount('/var/data', line.replace('rw,relatime', 'ro,relatime')));
+  assert.ok(!isPersistentMount('/var/data', line.replace('ext4', 'tmpfs')));
+  assert.ok(!isPersistentMount('/var/data', line.replace('ext4', 'fuse.gcsfuse')));
+  const { source, volume, env } = fixture(t);
+  fs.mkdirSync(path.join(volume, 'previous-instance'));
+  assert.throws(() => preparePilot(source, env), /datos previos/);
+  assert.deepEqual(fs.readdirSync(volume), ['previous-instance']);
 });

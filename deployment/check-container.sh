@@ -9,13 +9,14 @@ cleanup() {
   docker image rm "$image" >/dev/null 2>&1 || true
 }
 trap cleanup EXIT
-docker build --target production -t "$image" .
+docker build --build-arg BOLT_IMAGE_STAGE=production -t "$image" .
 docker volume create "$volume" >/dev/null
 export BOLT_ADMIN_SETUP_TOKEN="$(openssl rand -hex 32)"
 docker run -d --name "$name" -p 127.0.0.1::8080 -v "$volume:/data" \
   -e BOLT_ADMIN_SETUP_TOKEN -e BOLT_PILOT_STORE_ID=HUB_SUBA -e BOLT_PILOT_VOLUME=/data "$image" >/dev/null
-port="$(docker port "$name" 8080/tcp | head -1 | awk -F: '{print $NF}')"
 check() {
+  local port
+  port="$(docker port "$name" 8080/tcp | head -1 | awk -F: '{print $NF}')"
   local origin="http://127.0.0.1:$port"
   curl -fsS --retry 35 --retry-delay 1 --retry-all-errors "$origin/api/v1/health" | jq -e '.status == "ok"'
   curl -fsS "$origin/api/v1/simulation" | jq -e '.enabled == false'

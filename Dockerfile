@@ -1,3 +1,4 @@
+ARG BOLT_IMAGE_STAGE=demo
 FROM oven/bun:1.4.4 AS installer
 WORKDIR /opt/bolt
 COPY package.json bun.lock ./
@@ -32,3 +33,6 @@ CMD ["node", "--import", "tsx", "deployment/start-pilot.ts"]
 FROM runtime AS demo
 ENV BOLT_DEMO_VOLUME=/data
 CMD ["node", "deployment/start-demo.mjs"]
+
+# Render passes BOLT_IMAGE_STAGE=production as a build argument.
+FROM ${BOLT_IMAGE_STAGE} AS release
