@@ -1,6 +1,7 @@
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
+import { atomicJson } from './fulfillmentStorage';
 
 export interface AdminUser {
   id: string;
@@ -8,7 +9,8 @@ export interface AdminUser {
   name: string;
   passwordHash: string;
   salt: string;
-  role: 'ADMINISTRADOR';
+  role: 'ADMINISTRADOR' | 'OPERADOR_SEDE';
+  storeId?: string;
   createdAt: string;
   lastLoginAt?: string;
 }
@@ -18,7 +20,8 @@ export interface AdminSession {
   userId: string;
   email: string;
   name: string;
-  role: 'ADMINISTRADOR';
+  role: 'ADMINISTRADOR' | 'OPERADOR_SEDE';
+  storeId?: string;
   createdAt: string;
   expiresAt: string;
 }
@@ -79,20 +82,36 @@ export class AdminAuthService {
     this.isLoaded = true;
   }
 
-  private saveToDisk(): void {
-    try {
-      const data: PersistedAuthData = {
-        version: '1.0.0',
-        admins: Array.from(this.admins.values()),
-      };
-      const dir = path.dirname(this.authFile);
-      if (!fs.existsSync(dir)) {
-        fs.mkdirSync(dir, { recursive: true });
-      }
-      fs.writeFileSync(this.authFile, JSON.stringify(data, null, 2), 'utf-8');
-    } catch (err) {
-      console.error('[AdminAuthService] Error saving admin auth file:', err);
+  private saveToDisk(accounts = this.admins): void {
+    const data: PersistedAuthData = { version: '1.0.0', admins: Array.from(accounts.values()) };
+    atomicJson(this.authFile, data);
+  }
+
+  public createStoreOperator(email: string, name: string, password: string, storeId: string) {
+    const key = email.trim().toLowerCase();
+    if (this.admins.has(key)) return undefined;
+    const salt = crypto.randomBytes(16).toString('hex');
+    const user: AdminUser = {
+      id: 'ops-' + crypto.randomUUID(), email: key, name: name.trim(), role: 'OPERADOR_SEDE',
+      storeId, salt, passwordHash: this.hashPassword(password.trim(), salt), createdAt: new Date().toISOString(),
+    };
+    const accounts = new Map(this.admins).set(key, user);
+    this.saveToDisk(accounts);
+    this.admins = accounts;
+    return { id: user.id, name: user.name, storeId };
+  }
+
+  public revokeStoreOperator(id: string): boolean {
+    const operator = Array.from(this.admins.values()).find(user => user.id === id && user.role === 'OPERADOR_SEDE');
+    if (!operator) return false;
+    const accounts = new Map(this.admins);
+    accounts.delete(operator.email);
+    this.saveToDisk(accounts);
+    this.admins = accounts;
+    for (const [token, session] of this.activeSessions) {
+      if (session.userId === id) this.activeSessions.delete(token);
     }
+    return true;
   }
 
   private hashPassword(password: string, salt: string): string {
@@ -207,6 +226,7 @@ export class AdminAuthService {
       email: admin.email,
       name: admin.name,
       role: admin.role,
+      storeId: admin.storeId,
       createdAt: new Date().toISOString(),
       expiresAt,
     };
@@ -215,7 +235,13 @@ export class AdminAuthService {
     return session;
   }
 
+  // Existing administrative routes only accept unrestricted coordination sessions.
   public verifySession(token: string | undefined): AdminSession | null {
+    const session = this.verifyStaffSession(token);
+    return session?.role === 'ADMINISTRADOR' ? session : null;
+  }
+
+  public verifyStaffSession(token: string | undefined): AdminSession | null {
     if (!token) return null;
     const session = this.activeSessions.get(token);
     if (!session) return null;

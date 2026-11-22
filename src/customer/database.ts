@@ -20,10 +20,14 @@ export async function assertCustomerSchema(db: CustomerDB) {
     .select("version")
     .where("id", "=", 1)
     .executeTakeFirst();
-  if (row?.version !== 1)
+  if (row?.version !== 2)
     throw Error(
       "Customer database migration required: run customer:migrate explicitly",
     );
+}
+export async function assertRestrictedCustomerRole(db: CustomerDB) {
+  const result = await sql<{ unsafe: boolean }>`select rolsuper or rolbypassrls as unsafe from pg_roles where rolname = current_user`.execute(db);
+  if (result.rows[0]?.unsafe !== false) throw Error("Customer database requires a restricted role without BYPASSRLS");
 }
 export const customerSchemaSQL = `
 CREATE TABLE IF NOT EXISTS customer_schema (id integer PRIMARY KEY CHECK(id=1), version integer NOT NULL, migrated_at timestamptz NOT NULL DEFAULT now());
@@ -62,4 +66,12 @@ INSERT INTO customer_schema(id,version) VALUES(1,1) ON CONFLICT(id) DO NOTHING;
 `;
 export async function migrateCustomerData(db: CustomerDB) {
   await sql.raw(customerSchemaSQL).execute(db);
+}
+
+/** The verified session subject applies only inside this transaction, including on pooled connections. */
+export function withCustomerScope<T>(db: CustomerDB, subject: string, run: (tx: CustomerDB) => Promise<T>) {
+  return db.transaction().execute(async tx => {
+    await sql`select set_config('bolt.customer_id', ${subject}, true)`.execute(tx);
+    return run(tx);
+  });
 }

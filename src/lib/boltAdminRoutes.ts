@@ -53,7 +53,7 @@ function validPhotoEntries(value: unknown, gallery: string[]): value is PhotoEnt
 }
 
 type Options = {
-  adminAuth: Pick<AdminAuthService, 'verifySession' | 'logout'>;
+  adminAuth: Pick<AdminAuthService, 'verifyStaffSession' | 'logout'>;
   catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog'>;
   photos: Pick<CatalogRepository, 'getProductById' | 'applyImagePatches'>;
   uploadPhoto: (dataUrl: string, filename?: string) => { url: string; discard: () => void };
@@ -241,11 +241,15 @@ export function mountBoltAdmin(app: Express, options: Options) {
       demoSessions.delete(token);
       return null;
     }
-    const admin = options.adminAuth.verifySession(token);
-    if (!admin || admin.role !== 'ADMINISTRADOR') return null;
+    const staff = options.adminAuth.verifyStaffSession(token);
+    if (!staff) return null;
+    const coordinator = staff.role === 'ADMINISTRADOR';
+    if (!coordinator && staff.role !== 'OPERADOR_SEDE') return null;
+    const stores = activeStores().filter(store => coordinator || store.id === staff.storeId);
+    if (!coordinator && !stores.length) return null;
     return {
-      id: admin.userId, name: admin.name, email: admin.email, role: 'COORDINACION',
-      storeIds: activeStores().map(store => store.id), canConfirm: true, canAdjustInventory: true, canAdjustPrices: true,
+      id: staff.userId, name: staff.name, email: staff.email, role: coordinator ? 'COORDINACION' : 'SEDE',
+      storeIds: stores.map(store => store.id), canConfirm: true, canAdjustInventory: coordinator, canAdjustPrices: coordinator,
     };
   }
 

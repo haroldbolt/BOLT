@@ -386,18 +386,18 @@ try {
   assert.equal(coordinator.canAdjustInventory, true);
   const activeWarehouseIds = ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA'];
   const storeIds = stores => stores.map(store => store.id).sort();
+  const simulation = await api('/api/v1/simulation');
+  const { token: adminToken } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
   const [publicStores, adminSession, shopify] = await Promise.all([
     api('/api/v1/stores'),
     admin('/session', { token: coordination }),
-    api('/api/v1/shopify/status'),
+    api('/api/v1/shopify/status', { token: adminToken }),
   ]);
   assert.deepEqual(storeIds(publicStores), activeWarehouseIds);
   assert.ok(publicStores.every(store => store.isActive));
   assert.deepEqual(storeIds(adminSession.stores), activeWarehouseIds);
   assert.deepEqual(shopify.locations.map(location => location.storeId).sort(), activeWarehouseIds);
   assert.ok(shopify.inventoryItems.every(item => Object.keys(item.quantitiesByLocation).every(id => activeWarehouseIds.includes(id))));
-  const simulation = await api('/api/v1/simulation');
-  const { token: adminToken } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
   assert.deepEqual(storeIds((await api('/api/v1/admin/transport', { token: adminToken })).stores), activeWarehouseIds);
   for (const storeId of ['HUB_CENTRO', 'HUB_FONTIBON']) {
     await admin('/inventory?storeId=' + storeId, { token: coordination, expected: 403 });

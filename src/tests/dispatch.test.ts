@@ -338,6 +338,10 @@ test("Grouped dispatches, independent PINs, partial completion, cash exactly onc
   }
   x.service.deliver(a.driverId!, a.id, "1234", a.cashDue);
   assert.notEqual(o.fulfillmentStatus, "ENTREGADO");
+  const completed = x.service.driverDispatch(a, a.driverId!);
+  assert.equal(completed.destination, undefined);
+  assert.equal(completed.customerPhone, undefined);
+  assert.deepEqual(x.service.driverDispatch(b, b.driverId!).destination, o.deliveryAddress);
   const balance = x.repo.getDriverById(a.driverId!)!.cashBalance;
   x.service.deliver(a.driverId!, a.id, "1234", a.cashDue);
   assert.equal(x.repo.getDriverById(a.driverId!)!.cashBalance, balance);
@@ -405,7 +409,14 @@ test("Release requires previous driver confirmation; custody transfer requires b
   x.service.requestTransfer(r.id, x.ids[0], "admin");
   assert.throws(() => x.service.acceptCustody(x.ids[0], r.id));
   x.service.releaseCustody(x.ids[1], r.id);
+  for (const driverId of x.ids.slice(0, 2)) {
+    const detail = x.service.driverDispatch(r, driverId);
+    assert.equal(detail.destination, undefined);
+    assert.equal(detail.customerPhone, undefined);
+  }
   x.service.acceptCustody(x.ids[0], r.id);
+  assert.ok(x.service.driverDispatch(r, x.ids[0]).destination);
+  assert.throws(() => x.service.driverDispatch(r, x.ids[1]));
   assert.equal(r.driverId, x.ids[0]);
   assert.equal(r.status, "PICKED_UP");
   assert.equal(x.repo.getDriverById(x.ids[1])!.activeAssignmentId, undefined);

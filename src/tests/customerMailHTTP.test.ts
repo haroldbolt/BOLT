@@ -11,7 +11,7 @@ assert.equal(config.legalApproved,false);
 assert.equal(config.smtp,undefined);
 assert.equal(customerEmailConfigured(null),false);
 const db=fixtureDatabase();
-for(const file of ['001-auth.sql','001-data.sql'])await sql.raw(fs.readFileSync(`scripts/customer/${file}`,'utf8')).execute(db);
+for(const file of ['001-auth.sql','001-data.sql','002-user-scope.sql'])await sql.raw(fs.readFileSync(`scripts/customer/${file}`,'utf8')).execute(db);
 const realFetch=globalThis.fetch; const calls:any[]=[]; let fails=true;
 globalThis.fetch=async(input,init)=>{
  assert.equal(input,'https://api.resend.com/emails');assert.equal(init?.redirect,'error');assert.ok(init?.signal);

@@ -1760,6 +1760,11 @@ export class DispatchService {
     const ageSeconds=Math.max(0,(this.now()-estimate.observedAt)/1000),stale=ageSeconds>this.state.config.routeMaxAgeSeconds;
     return {...estimate,ageSeconds,stale,seconds:stale?undefined:estimate.seconds};
   }
+  canViewDeliveryContact(run: DispatchRun | undefined, driverId: string) {
+    return !!run && run.driverId === driverId &&
+      ["ASSIGNED", "PICKED_UP", "INCIDENT"].includes(run.status) &&
+      !(run.transfer?.releasedAt && !run.transfer.acceptedAt);
+  }
   driverDispatch(r: DispatchRun, id: string) {
     const offer = r.offerId ? this.state.offers[r.offerId] : undefined;
     if (
@@ -1769,6 +1774,7 @@ export class DispatchService {
     )
       fail("FORBIDDEN", "No tienes acceso a este despacho", 403);
     const { order, shipment } = this.target(r);
+    const mayContact = this.canViewDeliveryContact(r, id);
     return {
       dispatchId: r.id,
       assignmentId: r.id,
@@ -1795,8 +1801,8 @@ export class DispatchService {
       warnings: [
         "Transportar unidades cerradas; verificar embalaje y precintos",
       ],
-      destination: r.driverId === id ? order.deliveryAddress : undefined,
-      customerPhone: r.driverId === id ? order.customer.phone : undefined,
+      destination: mayContact ? order.deliveryAddress : undefined,
+      customerPhone: mayContact ? order.customer.phone : undefined,
       pickupEstimate: this.estimateView(r.estimate),
       cashToCollect: r.status === "CANCELLED" ? 0 : r.cashDue - r.cashCollected,
       releaseRequested: r.releaseRequested,

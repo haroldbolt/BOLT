@@ -276,19 +276,13 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       status: 'ok',
       service: 'Bolt Pets Authoritative Backend',
       version: '1.0.0',
-      catalogSource: 'LOCAL_CATALOG (src/data/catalogo-local)',
+      catalogSource: 'LOCAL_CATALOG',
       timezone: 'America/Bogota',
       locale: 'es-CO',
       storesCount: activeStores().length,
       totalProductosAgrupados: products.length,
       totalVariantes: localCatalogService.getTotalVariantsCount(),
       productosActivos: products.filter(p => p.status === 'ACTIVE').length,
-      ordersCount: ordersRepository.getAllOrders().length,
-      privateInventory: {
-        targetFile: privateInventoryStatus.filePath,
-        found: privateInventoryStatus.fileFound,
-        message: privateInventoryStatus.message,
-      },
       timestamp: new Date().toISOString(),
     });
   });
@@ -299,9 +293,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Inventario privado status
-  app.get('/api/v1/inventory/status', (_req: Request, res: Response) => {
+  app.get('/api/v1/inventory/status', requireAdminAuth, (_req: Request, res: Response) => {
     res.json({
-      targetFile: privateInventoryStatus.filePath,
       found: privateInventoryStatus.fileFound,
       message: privateInventoryStatus.message,
       productsCount: products.length,
@@ -315,13 +308,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
-    const { category, species, storeId, q, all } = req.query;
+    const { category, species, storeId, q } = req.query;
     let filtered = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
 
-    // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
-    if (all !== 'true') {
-      filtered = filtered.filter(p => !p.status || p.status === 'ACTIVE');
-    }
+    // La edición y consulta de productos retirados corresponde a /admin/catalog.
+    filtered = filtered.filter(p => !p.status || p.status === 'ACTIVE');
 
     // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
     if (storeId) {
@@ -337,7 +328,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     }
 
     // Leave the unfiltered feed intact so previously saved cart IDs still resolve.
-    if (all !== 'true' && (category || species || storeId || q)) {
+    if (category || species || storeId || q) {
       const scope=stores.find(s=>s.id===storeId || s.shopifyLocationGid===storeId)?.id;
       filtered=withoutRedundantCatalogCards(filtered,scope);
     }
@@ -1184,7 +1175,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Shopify sync state & triggers
-  app.get('/api/v1/shopify/status', (_req: Request, res: Response) => {
+  app.get('/api/v1/shopify/status', requireAdminAuth, (_req: Request, res: Response) => {
     const status = shopifyService.getState();
     const ids = new Set(activeStores().map(store => store.id));
     res.json({
@@ -1251,6 +1242,25 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       token: result.token,
       user: result.user,
     });
+  });
+
+  // Provision individual staff identities through a real coordination session.
+  app.post('/api/v1/admin/store-operators', requireAdminAuth, (req, res) => {
+    const { email, name, password, storeId } = req.body ?? {};
+    if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+        typeof name !== 'string' || !name.trim() || name.length > 120 ||
+        typeof password !== 'string' || password.trim().length < 12 || password.length > 256 ||
+        !activeStores().some(store => store.id === storeId)) {
+      return res.status(400).json({ error: 'Indica correo, nombre, contraseña de al menos 12 caracteres y una sede activa.' });
+    }
+    const operator = adminAuthService.createStoreOperator(email, name, password, storeId);
+    if (!operator) return res.status(409).json({ error: 'Ya existe una cuenta con este correo.' });
+    res.status(201).json(operator);
+  });
+
+  app.delete('/api/v1/admin/store-operators/:id', requireAdminAuth, (req, res) => {
+    if (!adminAuthService.revokeStoreOperator(req.params.id)) return res.status(404).json({ error: 'Operador no encontrado.' });
+    res.status(204).end();
   });
 
   app.get('/api/v1/auth/me', requireAdminAuth, (req: Request, res: Response) => {

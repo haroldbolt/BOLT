@@ -57,9 +57,10 @@ function checkAdmin(runtime: string, env: NodeJS.ProcessEnv) {
   if (fs.existsSync(filename)) {
     const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
     if (data?.version !== '1.0.0' || !Array.isArray(data.admins) || !data.admins.length || data.admins.some((admin: {
-      email?: unknown; passwordHash?: unknown; salt?: unknown; role?: unknown;
+      email?: unknown; passwordHash?: unknown; salt?: unknown; role?: unknown; storeId?: unknown;
     } | null) =>
-      typeof admin?.email !== 'string' || typeof admin.passwordHash !== 'string' || typeof admin.salt !== 'string' || admin.role !== 'ADMINISTRADOR')) {
+      typeof admin?.email !== 'string' || typeof admin.passwordHash !== 'string' || typeof admin.salt !== 'string' ||
+      (admin.role !== 'ADMINISTRADOR' && !(admin.role === 'OPERADOR_SEDE' && typeof admin.storeId === 'string' && admin.storeId.length > 0)))) {
       throw Error('Almacenamiento de administración inválido. Recupera la copia autorizada.');
     }
   } else if ((env.BOLT_ADMIN_SETUP_TOKEN?.trim().length ?? 0) < 32) {

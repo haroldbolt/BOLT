@@ -243,13 +243,7 @@ export function mountEntrancePhotos(
         req.get("Authorization")?.replace(/^Bearer /, "") || "",
       );
       const run = orders.dispatchState.runs[req.params.dispatchId];
-      if (
-        !id ||
-        !run ||
-        run.driverId !== id ||
-        !["ASSIGNED", "PICKED_UP", "INCIDENT"].includes(run.status) ||
-        (run.transfer?.releasedAt && !run.transfer.acceptedAt)
-      )
+      if (!id || !run || !dispatch.canViewDeliveryContact(run, id))
         return unavailable(res);
       return serve(res, run.orderId);
     },

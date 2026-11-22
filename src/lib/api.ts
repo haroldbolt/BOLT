@@ -333,15 +333,9 @@ export const api = {
   },
 
   async getShopifyStatus(): Promise<any> {
-    try {
-      const res = await authorizedFetch(`${BASE_URL}/shopify/status`);
-      if (!res.ok) throw new Error('Error al consultar estado de Shopify');
-      return await res.json();
-    } catch {
-      // Fallback a servicio cliente
-      const { shopifyService } = await import('./shopifyService');
-      return shopifyService.getState();
-    }
+    const res = await authorizedFetch(`${BASE_URL}/shopify/status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('No se pudo consultar el estado de Shopify con esta sesión.');
+    return res.json();
   },
 
   async syncShopifyInventory(): Promise<any> {

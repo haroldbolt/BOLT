@@ -12,7 +12,7 @@ import { fixtureConfig, fixtureDatabase } from "./customer/fixture";
 import { mountCustomerAccounts } from "../customer/routes";
 import { LEGAL_VERSION } from "../customer/legal";
 const db = fixtureDatabase();
-for (const file of ["001-auth.sql", "001-data.sql"])
+for (const file of ["001-auth.sql", "001-data.sql", "002-user-scope.sql"])
   await sql
     .raw(fs.readFileSync(`scripts/customer/${file}`, "utf8"))
     .execute(db);
