@@ -129,7 +129,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const abortControllerRef = useRef<AbortController | null>(null);
   const reverseGeocodeReqSeqRef = useRef<number>(0);
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+  const apiKey = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY?.trim();
 
   // Request authoritative quote from backend
   const evaluateAddressQuote = useCallback(async (coords: Partial<LatLng>, addr: string, geo: AddressTerritory = {}) => {
@@ -582,7 +582,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             </div>
 
             <div className="h-56 min-[669px]:h-72 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
-              <APIProvider apiKey={apiKey}>
+              {apiKey ? <APIProvider apiKey={apiKey}>
                 <Map
                   defaultCenter={mapCenter}
                   defaultZoom={destinationPoint ? 14 : 11}
@@ -632,7 +632,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                       </AdvancedMarker>
                     ))}
                 </Map>
-              </APIProvider>
+              </APIProvider> : <p role="status" className="p-4 text-sm text-slate-600">El mapa no está disponible. Escribe y selecciona tu dirección.</p>}
 
               {/* Requisito 6: Indicadores durante la consulta */}
               {isReverseGeocoding && (
