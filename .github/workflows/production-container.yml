@@ -1,0 +1,14 @@
+name: Contenedor BOLT
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Construir la imagen y comprobar el arranque aislado
+        run: bash deployment/check-container.sh
