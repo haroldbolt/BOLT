@@ -946,6 +946,71 @@ test("Only an approved prescription lets the shipment receive an offer and be pi
   x.service.pickup(driver, r.id, 1);
   assert.equal(r.status, "PICKED_UP");
 });
+test("Rechecking a search with no capacity neither rewrites the journal nor hides newly eligible drivers", async () => {
+  const x = setup();
+  const order = x.order();
+  const run = x.runs(order)[0];
+  await x.service.tick();
+  assert.equal(run.reason, "NO_ELIGIBLE_CAPACITY");
+  const revision = x.repo.inventoryCacheRevision;
+  const started = run.searchStartedAt;
+  for (let i = 0; i < 5; i++) {
+    x.advance(1000);
+    await x.service.tick();
+  }
+  assert.equal(x.repo.inventoryCacheRevision, revision);
+  assert.equal(x.repo.dispatchState.events.filter(e => e.type === "NO_ELIGIBLE_CAPACITY").length, 1);
+  const restored = x.restart().dispatchState.runs[run.id];
+  assert.equal(restored.reason, run.reason);
+  assert.equal(restored.searchStartedAt, started);
+  x.provision();
+  await x.service.tick();
+  assert.equal(run.status, "OFFER_PENDING");
+  assert.ok(run.offerId);
+});
+
+test("Pending external cancellation does not rewrite the same custody incident every tick", async () => {
+  const providers: SimulatedDispatchProvider[] = [];
+  const x = setup({providers, simulation:true});
+  providers.push(provider(x, "UNKNOWN"));
+  const order = x.order();
+  const run = x.runs(order)[0];
+  await x.service.search(run.id);
+  x.repo.transaction(() => { order.fulfillmentStatus = "CANCELADO"; });
+  x.service.synchronizeOrders();
+  assert.equal(run.status, "INCIDENT");
+  const revision = x.repo.inventoryCacheRevision;
+  x.service.synchronizeOrders();
+  assert.equal(x.repo.inventoryCacheRevision, revision);
+  assert.equal(x.restart().dispatchState.runs[run.id].reason, "CANCELLED_ORDER_EXTERNAL_RECONCILIATION");
+  x.service.applyExternal(run.id, run.external!.key, {status:"CANCELLED"});
+  assert.equal(run.status, "CANCELLED");
+});
+
+test("A synchronization sweep resolves visible and internal codes and rereads restored split shipments", () => {
+  const x = setup();
+  const standalone = x.order();
+  const split = x.order(2);
+  const single = x.runs(standalone)[0];
+  const [first, second] = x.runs(split);
+  x.repo.transaction(() => { single.orderId = standalone.orderNumber; });
+  assert.throws(() => x.repo.transaction(() => {
+    split.childShipments![0].fulfillmentStatus = "ENTREGADO";
+    throw new Error("rollback fixture");
+  }), /rollback fixture/);
+  x.service.synchronizeOrders();
+  assert.equal(x.repo.dispatchState.runs[first.id].status, "PENDING");
+  x.repo.transaction(() => {
+    x.repo.getOrderById(standalone.id)!.fulfillmentStatus = "CANCELADO";
+    x.repo.getOrderById(split.id)!.childShipments![1].fulfillmentStatus = "ENTREGADO";
+  });
+  x.service.synchronizeOrders();
+  const restored = x.restart().dispatchState.runs;
+  assert.equal(restored[single.id].status, "CANCELLED");
+  assert.equal(restored[first.id].status, "PENDING");
+  assert.equal(restored[second.id].status, "DELIVERED");
+});
+
 let failed = 0;
 for (const [name, fn] of tests) {
   try {

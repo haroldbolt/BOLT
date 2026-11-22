@@ -85,23 +85,27 @@ export class OrdersRepository {
   private fulfillmentFile: string;
   public dispatchState: DispatchState = newDispatchState();
 
-  private snapshot() {return structuredClone({orders:this.orders,drivers:this.drivers,audit:this.auditHistory,telemetry:this.telemetryHistory,dispatch:this.dispatchState})}
+  // commit() serializa estas referencias sin ceder el hilo. Solo el punto de
+  // recuperación anterior a una mutación necesita una copia en memoria.
+  private currentState() {
+    return {orders:this.orders, drivers:this.drivers, audit:this.auditHistory, telemetry:this.telemetryHistory, dispatch:this.dispatchState};
+  }
   private restore(s:any) {this.orders=s.orders;this.drivers=s.drivers;this.auditHistory=s.audit;this.telemetryHistory=s.telemetry;this.dispatchState=s.dispatch}
   private persistUnified() {
-    new FulfillmentStorage(this.dataDir).commit(this.snapshot());this.unified=true;
+    new FulfillmentStorage(this.dataDir).commit(this.currentState());this.unified=true;
     this.committedRevision++;
   }
   /** One synchronous writer (server lock). All dispatch/order/driver changes commit in one atomic rename. */
   public transaction<T>(fn:()=>T):T {
     if(this.inTransaction)return fn();
-    const before=this.snapshot(),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
+    const before=structuredClone(this.currentState()),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
     try {const value=fn();this.persistUnified();return value}
     catch(error){
       const durable=new FulfillmentStorage(this.dataDir).read();
       if((durable?.revision||0)>previousRevision) { this.restore(durable); this.committedRevision++; }
       else {
         for(const release of this.transactionReservations.reverse()) release();
-        if(JSON.stringify(this.snapshot())!==JSON.stringify(before)) this.restore(before);
+        if(JSON.stringify(this.currentState())!==JSON.stringify(before)) this.restore(before);
       }
       throw error;
     }

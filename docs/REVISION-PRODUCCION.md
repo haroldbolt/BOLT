@@ -51,3 +51,11 @@ Los cupos adicionales protegen geocodificación, reconocimiento de fotos, consul
 El catálogo base y los cambios administrativos ya se combinaban en memoria. Ahora la caché tiene un TTL configurable y reconoce las modificaciones de sus archivos. El listado público se invalida al guardar cambios comerciales o una reserva. El carrito y la confirmación revalidan las condiciones vigentes. Salud, autenticación y telemetría dejaron de reconstruir el catálogo de ventas en cada llamada.
 
 El navegador revalida el catálogo por ETag. La prueba de inventario obtiene 304 mientras no hay cambios y 200 con una nueva versión después de editar existencias. Las respuestas privadas se marcan no-store y los archivos de build con nombre versionado pueden guardarse a largo plazo. [Políticas y pruebas](CACHE-CATALOGO.md)
+
+## 9. Capacidad y competencia por inventario
+
+El catálogo público completo y el de cada sede reutilizan sus bytes hasta que cambia la información comercial. El trabajador de despachos sigue evaluando candidatos cada segundo y registra una nueva incidencia cuando cambia la situación. Suprimimos escrituras idénticas al volumen y redujimos el trabajo para sincronizar el historial.
+
+En un proceso local con Node 22 y volumen aislado, 1.000 usuarios virtuales consultaron productos, sedes y cotizaciones durante un minuto con pausas de 8 a 16 segundos. Se validaron 4.909 respuestas, con un máximo de 27 solicitudes simultáneas. El percentil 95 fue de 114 ms en catálogo, 111 ms en sedes y 145 ms al cotizar. El estado de las reservas y el número de pedidos y despachos coincidieron al principio y al final.
+
+En otra instalación temporal, dos confirmaciones HTTP simultáneas con claves distintas compitieron por la última unidad de una referencia en Suba. Se aceptó exactamente una compra. Tras reiniciar persistió una reserva en Suba y ninguna en Kennedy o Álamos. Quedan pendientes la medición sostenida de compras y seguimiento con historial representativo en el hosting elegido y el almacenamiento transaccional compartido antes de escalar a varios escritores. [Ensayos y alcance](ESCALA-PILOTO.md)

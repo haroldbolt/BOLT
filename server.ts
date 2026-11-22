@@ -338,10 +338,28 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     res.json(activeStores());
   });
 
+  // Only the unfiltered catalog and the active store lists have a bounded key space.
+  let listedProducts: readonly Product[] | undefined;
+  const publicListings = new Map<string, {body: Buffer; etag: string}>();
+  const sendListing = (res: Response, entry: {body: Buffer; etag: string}) =>
+    res.set({'Content-Type':'application/json; charset=utf-8', ETag:entry.etag}).send(entry.body);
+
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
     const { category, species, storeId, q } = req.query;
-    let filtered = catalogOperations.publicCatalog(ordersRepository.inventoryCacheRevision).filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
+    const source = catalogOperations.publicCatalog(ordersRepository.inventoryCacheRevision);
+    if (source !== listedProducts) {
+      publicListings.clear();
+      listedProducts = source;
+    }
+    const cacheKey = !category && !species && !q && (!storeId || activeStores().some(store => store.id === storeId))
+      ? String(storeId || 'all') : undefined;
+    const saved = cacheKey && publicListings.get(cacheKey);
+    if (saved) {
+      publicCatalogHeaders(req, res);
+      return sendListing(res, saved);
+    }
+    let filtered = source.filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
 
     // La edición y consulta de productos retirados corresponde a /admin/catalog.
     filtered = filtered.filter(p => !p.status || p.status === 'ACTIVE');
@@ -386,6 +404,13 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     }
 
     publicCatalogHeaders(req, res);
+    if (cacheKey) {
+      const body = Buffer.from(JSON.stringify(filtered));
+      const etag = '"' + crypto.createHash('sha256').update(body).digest('base64url') + '"';
+      const entry = {body, etag};
+      publicListings.set(cacheKey, entry);
+      return sendListing(res, entry);
+    }
     res.json(filtered);
   });
 
@@ -1522,7 +1547,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     });
   }
 
-  return app.listen(PORT, isDispatchSimulation?'127.0.0.1':'0.0.0.0', () => {
+  return app.listen(PORT, isDispatchSimulation || process.env.BOLT_BIND_LOOPBACK_ONLY === '1' ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`Bolt Pets Authoritative Full-Stack Server running on port ${PORT}`);
   });
 }

@@ -127,11 +127,10 @@ export class DispatchService {
     if (!r) fail("NOT_FOUND", "Despacho no encontrado", 404);
     return r;
   }
-  private target(r: DispatchRun): {
+  private target(r: DispatchRun, order = this.repo.getOrderById(r.orderId)): {
     order: Order;
     shipment: Order | ChildShipment;
   } {
-    const order = this.repo.getOrderById(r.orderId);
     const shipment = r.shipmentId
       ? order?.childShipments?.find((s) => s.shipmentId === r.shipmentId)
       : order;
@@ -732,10 +731,12 @@ export class DispatchService {
         });
         return;
       }
-      this.repo.transaction(() => {
-        r.status = "SEARCHING";
-        r.searchStartedAt ??= this.now();
-      });
+      if (r.status !== "SEARCHING" || r.searchStartedAt == null) {
+        this.repo.transaction(() => {
+          r.status = "SEARCHING";
+          r.searchStartedAt ??= this.now();
+        });
+      }
       const store = this.deps
         .stores()
         .find((s) => s.id === order.storeId && s.isActive);
@@ -901,7 +902,7 @@ export class DispatchService {
           d.activeAssignmentId = id;
           this.event("OFFER_CREATED", adminId, id, offer.id);
         });
-      else
+      else if (r.reason !== "NO_ELIGIBLE_CAPACITY")
         this.repo.transaction(() => {
           r.reason = "NO_ELIGIBLE_CAPACITY";
           this.event("NO_ELIGIBLE_CAPACITY", "SYSTEM", id);
@@ -1684,20 +1685,26 @@ export class DispatchService {
     run.status = "CANCELLED";
   }
   synchronizeOrders() {
-    const changed = Object.values(this.state.runs).filter((r) => {
-      const status = this.target(r).shipment.fulfillmentStatus;
-      return (
-        terminal(status) &&
-        r.status !== (status === "ENTREGADO" ? "DELIVERED" : "CANCELLED")
-      );
+    const runs = Object.values(this.state.runs);
+    // Los históricos también se revisan. Un índice del barrido evita recorrer
+    // todos los pedidos por cada despacho y se descarta al terminar el tick.
+    const byOrder = new Map<string, Order>();
+    if (runs.length > 1) {
+      for (const order of this.repo.getAllOrders().reverse()) {
+        byOrder.set(order.id, order);
+        byOrder.set(order.orderNumber, order);
+      }
+    }
+    const awaitingExternal = (r: DispatchRun) => r.external && !["CANCELLED", "REJECTED"].includes(r.external.status);
+    const changed = runs.filter((r) => {
+      const status = this.target(r, byOrder.get(r.orderId)).shipment.fulfillmentStatus;
+      if (!terminal(status) || r.status === (status === "ENTREGADO" ? "DELIVERED" : "CANCELLED")) return false;
+      return !(awaitingExternal(r) && r.status === "INCIDENT" && r.reason === "CANCELLED_ORDER_EXTERNAL_RECONCILIATION");
     });
     if (!changed.length) return;
     this.repo.transaction(() => {
       for (const r of changed) {
-        if (
-          r.external &&
-          !["CANCELLED", "REJECTED"].includes(r.external.status)
-        ) {
+        if (awaitingExternal(r)) {
           r.status = "INCIDENT";
           r.reason = "CANCELLED_ORDER_EXTERNAL_RECONCILIATION";
           continue;
@@ -1707,7 +1714,7 @@ export class DispatchService {
           offer.status = "RELEASED";
           this.unreserveOffer(offer);
         }
-        const { order, shipment } = this.target(r);
+        const { order, shipment } = this.target(r, byOrder.get(r.orderId));
         if (shipment.fulfillmentStatus === "ENTREGADO") r.status = "DELIVERED";
         else this.markCancelled(r, order);
         this.event("ORDER_STATE_SYNCHRONIZED", "SYSTEM", r.id);
