@@ -144,9 +144,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.ordersFile, 'utf-8');
         this.orders = JSON.parse(raw);
       } catch (err) {
-        console.error('[OrdersRepository] Error leyendo pedidos persistidos, usando semillas:', err);
-        this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
-        this.saveOrders();
+        throw Error('No se pudo leer el archivo de pedidos. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
@@ -159,9 +157,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.driversFile, 'utf-8');
         this.drivers = JSON.parse(raw);
       } catch (err) {
-        console.error('[OrdersRepository] Error leyendo conductores persistidos, usando semillas:', err);
-        this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
-        this.saveDrivers();
+        throw Error('No se pudo leer el archivo de conductores. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
@@ -174,8 +170,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.auditFile, 'utf-8');
         this.auditHistory = JSON.parse(raw);
       } catch (err) {
-        this.auditHistory = [];
-        this.saveAudit();
+        throw Error('No se pudo leer el archivo de auditoría. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.auditHistory = [];
@@ -188,8 +183,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.telemetryFile, 'utf-8');
         this.telemetryHistory = JSON.parse(raw);
       } catch (err) {
-        this.telemetryHistory = {};
-        this.saveTelemetry();
+        throw Error('No se pudo leer el archivo de telemetría. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.telemetryHistory = {};

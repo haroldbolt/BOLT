@@ -107,3 +107,11 @@ test('pending and rejected prescriptions block preparation or readiness until a 
   assert.equal(closed.code, 409);
   assert.equal(restarted.getOrderById(order.id)?.prescriptionReview.status, 'RECHAZADA');
 });
+
+test('a damaged historical order file stays intact for recovery', () => {
+  const dataDir = fs.mkdtempSync(path.join(root, 'damaged-'));
+  const file = path.join(dataDir, 'persisted-orders.json');
+  fs.writeFileSync(file, 'truncated');
+  assert.throws(() => new OrdersRepository({dataDir}), /recuperar/);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'truncated');
+});

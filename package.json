@@ -6,7 +6,7 @@
   "scripts": {
     "dev": "DISABLE_HMR=true tsx server.ts",
     "start": "node --import tsx scripts/fulfillment-storage.ts run ${BOLT_DATA_DIR:-src/data} .",
-    "build": "vite build && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=server.js",
+    "build": "vite build && node scripts/assert-public-build.mjs && esbuild server.ts --bundle --platform=node --format=esm --packages=external --outfile=server.js",
     "preview": "vite preview",
     "clean": "rm -rf dist server.js",
     "lint": "tsc --noEmit",
@@ -29,7 +29,7 @@
     "test:brands": "tsx src/tests/brandDirectory.test.tsx",
     "test:photo-search": "node --import tsx --test src/tests/productPhotoSearch.test.ts src/tests/productPhotoOcrRank.test.ts src/tests/photoSearchClient.test.tsx",
     "test:bolt-admin": "npm run build && node --import tsx src/tests/boltAdminDemo.test.ts && node --import tsx src/tests/boltCustomerDemoCheckout.test.ts && node --import tsx src/tests/boltAdminSales.test.ts && node --import tsx src/tests/boltAdminPricing.test.ts && node deployment/demo-admin.test.mjs",
-    "test:production": "node --import tsx --test src/tests/wompiLookup.test.ts"
+    "test:production": "node --import tsx --test src/tests/wompiLookup.test.ts src/tests/adminAuthStorage.test.ts src/tests/productionHttp.test.ts && node --test scripts/assert-public-build.test.mjs"
   },
   "dependencies": {
     "@better-auth/core": "1.7.20",

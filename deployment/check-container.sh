@@ -19,9 +19,19 @@ check() {
   port="$(docker port "$name" 8080/tcp | head -1 | awk -F: '{print $NF}')"
   local origin="http://127.0.0.1:$port"
   curl -fsS --retry 35 --retry-delay 1 --retry-all-errors "$origin/api/v1/health" | jq -e '.status == "ok"'
-  curl -fsS "$origin/api/v1/simulation" | jq -e '.enabled == false'
-  curl -fsS "$origin/api/v1/stores" | jq -e 'map(.id) == ["HUB_SUBA"]'
-  curl -fsS "$origin/" >/dev/null
+  docker exec "$name" node --input-type=module -e '
+    import assert from "node:assert/strict";
+    const origin = "http://127.0.0.1:8080";
+    const get = async path => {
+      const response = await fetch(origin + path, {redirect: "error"});
+      assert.equal(response.status, 200);
+      return response;
+    };
+    assert.equal((await (await get("/api/v1/simulation")).json()).enabled, false);
+    assert.deepEqual((await (await get("/api/v1/stores")).json()).map(s => s.id), ["HUB_SUBA"]);
+    await get("/");
+  '
+
 }
 check
 docker restart -t 15 "$name" >/dev/null

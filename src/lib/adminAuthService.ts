@@ -16,7 +16,6 @@ export interface AdminUser {
 }
 
 export interface AdminSession {
-  token: string;
   userId: string;
   email: string;
   name: string;
@@ -34,10 +33,38 @@ interface PersistedAuthData {
 const AUTH_FILE_PATH = path.join(process.cwd(), 'src', 'data', 'persisted-admin-auth.json');
 const SESSION_DURATION_HOURS = 24;
 
+type PublicAdmin = Omit<AdminUser, 'passwordHash' | 'salt'>;
+
+function publicAdmin(user: AdminUser): PublicAdmin {
+  const { id, email, name, role, storeId, createdAt, lastLoginAt } = user;
+  return { id, email, name, role, storeId, createdAt, lastLoginAt };
+}
+
+function parseAccounts(raw: string): Map<string, AdminUser> {
+  const data = JSON.parse(raw);
+  if (data?.version !== '1.0.0' || !Array.isArray(data.admins) || !data.admins.length) throw Error('Invalid account list');
+  const accounts = new Map<string, AdminUser>();
+  const ids = new Set<string>();
+  for (const account of data.admins) {
+    if (!account || typeof account.id !== 'string' || !account.id.trim() || ids.has(account.id) ||
+        typeof account.email !== 'string' || !account.email.includes('@') || accounts.has(account.email.toLowerCase()) ||
+        typeof account.name !== 'string' || !account.name.trim() || !Number.isFinite(Date.parse(account.createdAt)) ||
+        typeof account.passwordHash !== 'string' || !/^[a-f0-9]{128}$/i.test(account.passwordHash) ||
+        typeof account.salt !== 'string' || !/^[a-f0-9]{32}$/i.test(account.salt) ||
+        !(account.role === 'ADMINISTRADOR' || (account.role === 'OPERADOR_SEDE' && typeof account.storeId === 'string' && account.storeId.trim()))) {
+      throw Error('Invalid account record');
+    }
+    ids.add(account.id);
+    accounts.set(account.email.toLowerCase(), account);
+  }
+  if (!data.admins.some((account: AdminUser) => account.role === 'ADMINISTRADOR')) throw Error('Missing coordinator');
+  return accounts;
+}
+
 export class AdminAuthService {
   private admins: Map<string, AdminUser> = new Map();
   private activeSessions: Map<string, AdminSession> = new Map();
-  private isLoaded = false;
+  private storageAvailable = true;
 
   constructor(private authFile=AUTH_FILE_PATH) {
     this.loadFromDisk();
@@ -45,24 +72,21 @@ export class AdminAuthService {
 
   private loadFromDisk(): void {
     try {
-      if (fs.existsSync(this.authFile)) {
-        const raw = fs.readFileSync(this.authFile, 'utf-8');
-        const data: PersistedAuthData = JSON.parse(raw);
-        if (Array.isArray(data.admins)) {
-          this.admins.clear();
-          data.admins.forEach(admin => {
-            this.admins.set(admin.email.toLowerCase(), admin);
-          });
-        }
+      const stat = fs.lstatSync(this.authFile, { throwIfNoEntry: false });
+      if (stat) {
+        if (!stat.isFile()) throw Error('Invalid account storage');
+        this.admins = parseAccounts(fs.readFileSync(this.authFile, 'utf8'));
+        return;
       }
-    } catch (err) {
-      console.warn('[AdminAuthService] Error reading persisted admin auth file:', err);
+    } catch {
+      throw Error('Almacenamiento de administración ilegible. Recupera la copia autorizada antes de iniciar.');
     }
 
     // Optional environment variable injection (without exposing default credentials in source code)
     const envEmail = process.env.BOLT_ADMIN_EMAIL?.trim();
     const envPassword = process.env.BOLT_ADMIN_PASSWORD?.trim();
-    if (envEmail && envPassword && !this.admins.has(envEmail.toLowerCase())) {
+    if (envEmail && envPassword) {
+      if (!envEmail.includes('@') || envPassword.length < 8) throw Error('Verifica las credenciales administrativas iniciales del entorno.');
       const salt = crypto.randomBytes(16).toString('hex');
       const passwordHash = this.hashPassword(envPassword, salt);
       const newAdmin: AdminUser = {
@@ -74,17 +98,28 @@ export class AdminAuthService {
         role: 'ADMINISTRADOR',
         createdAt: new Date().toISOString(),
       };
-      this.admins.set(envEmail.toLowerCase(), newAdmin);
-      this.saveToDisk();
-      console.log(`[AdminAuthService] Administrador inicial aprovisionado desde variables de entorno: ${envEmail}`);
+      this.saveToDisk(new Map([[newAdmin.email, newAdmin]]));
+      console.log('[AdminAuthService] Administrador inicial aprovisionado.');
     }
 
-    this.isLoaded = true;
   }
 
-  private saveToDisk(accounts = this.admins): void {
+  private requireStorage(): void {
+    if (!this.storageAvailable) throw Error('Almacenamiento de administración pendiente de recuperación.');
+  }
+
+  private saveToDisk(accounts: Map<string, AdminUser>): void {
+    this.requireStorage();
     const data: PersistedAuthData = { version: '1.0.0', admins: Array.from(accounts.values()) };
-    atomicJson(this.authFile, data);
+    try {
+      atomicJson(this.authFile, data);
+    } catch {
+      // A failure after rename can leave a committed file. Reload on restart before granting access.
+      this.storageAvailable = false;
+      this.activeSessions.clear();
+      throw Error('No se pudo confirmar la escritura de cuentas. Revisa el almacenamiento y reinicia.');
+    }
+    this.admins = accounts;
   }
 
   public createStoreOperator(email: string, name: string, password: string, storeId: string) {
@@ -97,7 +132,6 @@ export class AdminAuthService {
     };
     const accounts = new Map(this.admins).set(key, user);
     this.saveToDisk(accounts);
-    this.admins = accounts;
     return { id: user.id, name: user.name, storeId };
   }
 
@@ -107,7 +141,6 @@ export class AdminAuthService {
     const accounts = new Map(this.admins);
     accounts.delete(operator.email);
     this.saveToDisk(accounts);
-    this.admins = accounts;
     for (const [token, session] of this.activeSessions) {
       if (session.userId === id) this.activeSessions.delete(token);
     }
@@ -119,17 +152,17 @@ export class AdminAuthService {
   }
 
   public isSetupRequired(): boolean {
-    if (!this.isLoaded) this.loadFromDisk();
+    this.requireStorage();
     return this.admins.size === 0;
   }
 
   public getAdminCount(): number {
-    if (!this.isLoaded) this.loadFromDisk();
+    this.requireStorage();
     return this.admins.size;
   }
 
-  public setupMasterAdmin(params: { email: string; password: string; name: string }): { success: boolean; user?: AdminUser; token?: string; error?: string } {
-    if (!this.isLoaded) this.loadFromDisk();
+  public setupMasterAdmin(params: { email: string; password: string; name: string }): { success: boolean; user?: PublicAdmin; token?: string; error?: string } {
+    this.requireStorage();
 
     // Solo se permite configurar si no existe ningún administrador
     if (this.admins.size > 0) {
@@ -164,21 +197,20 @@ export class AdminAuthService {
       lastLoginAt: new Date().toISOString(),
     };
 
-    this.admins.set(email, newAdmin);
-    this.saveToDisk();
+    this.saveToDisk(new Map(this.admins).set(email, newAdmin));
 
     // Crear sesión de inmediato
-    const session = this.createSession(newAdmin);
+    const token = this.createSession(newAdmin);
 
     return {
       success: true,
-      user: newAdmin,
-      token: session.token,
+      user: publicAdmin(newAdmin),
+      token,
     };
   }
 
-  public login(email: string, password: string): { success: boolean; token?: string; user?: Omit<AdminUser, 'passwordHash' | 'salt'>; error?: string } {
-    if (!this.isLoaded) this.loadFromDisk();
+  public login(email: string, password: string): { success: boolean; token?: string; user?: PublicAdmin; error?: string } {
+    this.requireStorage();
 
     const normalizedEmail = email.trim().toLowerCase();
     const admin = this.admins.get(normalizedEmail);
@@ -195,33 +227,16 @@ export class AdminAuthService {
       return { success: false, error: 'Credenciales inválidas. Verifica tu correo y contraseña.' };
     }
 
-    // Actualizar último login
-    admin.lastLoginAt = new Date().toISOString();
-    this.admins.set(normalizedEmail, admin);
-    this.saveToDisk();
-
-    const session = this.createSession(admin);
-
-    return {
-      success: true,
-      token: session.token,
-      user: {
-        id: admin.id,
-        email: admin.email,
-        name: admin.name,
-        role: admin.role,
-        createdAt: admin.createdAt,
-        lastLoginAt: admin.lastLoginAt,
-      },
-    };
+    const updated = { ...admin, lastLoginAt: new Date().toISOString() };
+    this.saveToDisk(new Map(this.admins).set(normalizedEmail, updated));
+    return { success: true, token: this.createSession(updated), user: publicAdmin(updated) };
   }
 
-  private createSession(admin: AdminUser): AdminSession {
+  private createSession(admin: AdminUser): string {
     const token = `bolt_sec_${crypto.randomBytes(32).toString('hex')}`;
     const expiresAt = new Date(Date.now() + SESSION_DURATION_HOURS * 60 * 60 * 1000).toISOString();
 
     const session: AdminSession = {
-      token,
       userId: admin.id,
       email: admin.email,
       name: admin.name,
@@ -231,8 +246,9 @@ export class AdminAuthService {
       expiresAt,
     };
 
-    this.activeSessions.set(token, session);
-    return session;
+    const digest = crypto.createHash('sha256').update(token).digest('hex');
+    this.activeSessions.set(digest, session);
+    return token;
   }
 
   // Existing administrative routes only accept unrestricted coordination sessions.
@@ -242,13 +258,14 @@ export class AdminAuthService {
   }
 
   public verifyStaffSession(token: string | undefined): AdminSession | null {
-    if (!token) return null;
-    const session = this.activeSessions.get(token);
+    if (!this.storageAvailable || !token) return null;
+    const digest = crypto.createHash('sha256').update(token).digest('hex');
+    const session = this.activeSessions.get(digest);
     if (!session) return null;
 
     // Comprobar expiración
     if (new Date(session.expiresAt) < new Date()) {
-      this.activeSessions.delete(token);
+      this.activeSessions.delete(digest);
       return null;
     }
 
@@ -256,7 +273,7 @@ export class AdminAuthService {
   }
 
   public logout(token: string): boolean {
-    return this.activeSessions.delete(token);
+    return this.activeSessions.delete(crypto.createHash('sha256').update(token).digest('hex'));
   }
 
   /**

@@ -1,0 +1,28 @@
+import assert from 'node:assert/strict';
+import test from 'node:test';
+import fs from 'node:fs';
+import os from 'node:os';
+import path from 'node:path';
+import { assertPublicBuild } from './assert-public-build.mjs';
+
+test('Permite Maps público y bloquea escapes del servidor sin mostrar el secreto', t => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'bolt-assets-'));
+  t.after(() => fs.rmSync(dir, { recursive: true, force: true }));
+  fs.writeFileSync(path.join(dir, 'index.html'), '<main></main>');
+  const js = path.join(dir, 'app.js');
+  const publicKey = 'browser-maps-fixture';
+  fs.writeFileSync(js, 'const key = ' + JSON.stringify(publicKey));
+  assert.doesNotThrow(() => assertPublicBuild(dir, { VITE_GOOGLE_MAPS_API_KEY: publicKey }));
+  assert.throws(() => assertPublicBuild(dir, { VITE_BOLT_CUSTOMER_SECRET: 'fixture' }), /VITE_/);
+  const secret = 'backend-value-' + Math.random();
+  fs.writeFileSync(js, JSON.stringify(secret));
+  assert.throws(() => assertPublicBuild(dir, { BOLT_CUSTOMER_SECRET: secret }), e => /credencial/.test(e.message) && !e.message.includes(secret));
+  fs.writeFileSync(js, '//# sourceMappingURL=data:application/json;base64,abc');
+  assert.throws(() => assertPublicBuild(dir, {}), /mapa/);
+  fs.writeFileSync(js, 'export default true');
+  fs.writeFileSync(path.join(dir, 'old.js.map'), '{}');
+  assert.throws(() => assertPublicBuild(dir, {}), /mapa/);
+  fs.unlinkSync(path.join(dir, 'old.js.map'));
+  fs.writeFileSync(path.join(dir, '.env'), 'fixture');
+  assert.throws(() => assertPublicBuild(dir, {}), /interno/);
+});

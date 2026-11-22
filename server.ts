@@ -31,7 +31,7 @@ if (process.env.DISABLE_HMR === undefined) {
 }
 
 import express, { Request, Response, type NextFunction } from 'express';
-import cors from 'cors';
+import { mountProductionHttp } from './src/lib/productionHttp';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -158,10 +158,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     next();
   });
   const PORT = parseInt(process.env.PORT || '3000', 10);
+  mountProductionHttp(app, process.env, isDispatchSimulation);
 
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
   const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
-  app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   const parseJson = express.json({ limit: '15mb' });
   app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
@@ -803,8 +803,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const order=createResult.order!;
       return res.status(201).json(review?.mapOrder ? review.mapOrder(order) : {...presentOrder(order),guestAccessToken:dispatchService.guestToken(order)});
     } catch (e: any) {
-      console.error('Error creating order:', e);
-      return res.status(500).json({ error: e.message || 'Error interno del servidor' });
+      return res.status(500).json({ code: 'ORDER_OPERATION_FAILED', error: 'No se pudo completar el pedido.', requestId: res.locals.requestId });
     }
   };
   app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req,res)=>createPurchase(req,res));
@@ -882,7 +881,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const upload=saveBase64Image(dataUrl, filename);
       return {url:upload.url, discard:()=>{
         try { fs.rmSync(path.join(catalogUploadDir, upload.filename), { force: true }); }
-        catch (error) { console.error('No se pudo eliminar una foto de catálogo sin asignar.', error); }
+        catch (error) { console.error('[Catalog] unused image cleanup failed'); }
       }};
     },
     getProducts:()=>products,
@@ -1276,7 +1275,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
   app.get('/api/v1/auth/me', requireAdminAuth, (req: Request, res: Response) => {
     const session = (req as any).adminSession;
-    res.json({ user: session });
+    const { userId, name, email, role, createdAt, expiresAt } = session;
+    res.json({ user: { userId, name, email, role, createdAt, expiresAt } });
   });
 
   app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
@@ -1493,6 +1493,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
 // Node resolves module paths through symlinks; argv can retain /var vs /private/var.
 if(process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1])===fs.realpathSync(__filename))startServer().catch(err => {
-  console.error('Failed to start server:', err);
+  console.error('[Startup] initialization failed; check service configuration and storage.');
   process.exitCode=1;
 });
