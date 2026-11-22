@@ -270,12 +270,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // /api/v1 ROUTES
   // ==========================================
 
+  const releaseSha = process.env.BOLT_RELEASE_SHA || process.env.RENDER_GIT_COMMIT || process.env.RAILWAY_GIT_COMMIT_SHA;
   // Health check
   app.get('/api/v1/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
       service: 'Bolt Pets Authoritative Backend',
       version: '1.0.0',
+      revision: /^[a-f0-9]{40}$/.test(releaseSha || '') ? releaseSha : null,
       catalogSource: 'LOCAL_CATALOG',
       timezone: 'America/Bogota',
       locale: 'es-CO',
