@@ -68,7 +68,7 @@ export function mountProductionHttp(app: Express, env: NodeJS.ProcessEnv, simula
       const tls = Boolean((req.socket as TLSSocket).encrypted) || (peerTrusted && req.get('X-Forwarded-Proto') === 'https');
       const correctHost = origin && (host === origin.host || (!origin.port && host === origin.host + ':443'));
       if (tls && correctHost) res.set('Strict-Transport-Security', 'max-age=31536000');
-      if (healthProbe) return next();
+      if (healthProbe && !(tls && correctHost)) return next();
       if (!origin && !isLocalConnection(req)) {
         return res.status(503).json({ code: 'PUBLIC_ORIGIN_REQUIRED', error: 'El origen público no está configurado.' });
       }
@@ -83,7 +83,7 @@ export function mountProductionHttp(app: Express, env: NodeJS.ProcessEnv, simula
       }
       if (peerTrusted && tls) {
         req.headers['x-forwarded-proto'] = 'https';
-        if (client) req.headers['x-forwarded-for'] = client;
+        if (client && isIP(client)) req.headers['x-forwarded-for'] = client;
       }
     }
     res.vary('Origin');
