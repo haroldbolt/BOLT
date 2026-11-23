@@ -61,6 +61,14 @@ Las pruebas de protocolos firmados y correo HTTP simulado no se presentan como p
 
 Conservar el volumen de operaciones, PostgreSQL y el secreto estable. Desactivar nuevos registros y proveedores mediante configuración, manteniendo el backend que entiende propietarios de pedidos existentes. No volver a una versión que descarte cookies o `customerAccountId` para cuentas con compras sin un plan de acceso compatible. No restaurar una copia antigua sobre datos posteriores.
 
+
+### Actualización del esquema de cuentas en la demo privada del PR 40
+
+1. En Railway selecciona **BOLT demo reunión → demo → bolt-demo**. El servicio necesita su volumen habitual y la conexión privada de `bolt_customer_app` a `bolt_customers_demo`. Conserva el identificador del despliegue anterior y comprueba que el volumen disponga de espacio para la copia.
+2. Para el paso de versión 1 a 2, despliega esta rama con `BOLT_DEMO_CUSTOMER_DB_ACTION=upgrade`. Antes de cambiar las políticas, el proceso toma una copia completa, la restaura en un PostgreSQL temporal y guarda el archivo con permisos privados. El comprobante queda asociado a la transición. Un fallo detiene la actualización.
+3. Verifica el mensaje de copia restaurada, el resultado de la transición y la respuesta de `/__demo/health`. Comprueba el acceso privado de Cliente y Admin y la configuración de cuentas. Deja vacía `BOLT_DEMO_CUSTOMER_DB_ACTION` después del éxito. La copia contiene datos privados de cuentas y debe permanecer en el almacenamiento restringido.
+4. Para volver al lector de versión 1, detén la atención desde el lector de versión 2 y arranca el mantenimiento de esta rama con `BOLT_DEMO_CUSTOMER_DB_ACTION=rollback`. Verifica la reversión a versión 1 antes de volver a desplegar el código anterior y dejar vacía la variable. El proceso comprueba la copia y revierte las políticas y los metadatos de la transición sobre las filas actuales. Así se conservan altas y cambios posteriores. Si la estructura cambió o la copia falla su validación, detén la reversión y revisa el comprobante.
+
 ## Fuentes oficiales consultadas
 
 - [Railway: correo saliente](https://docs.railway.com/networking/outbound-networking#email-delivery)

@@ -39,6 +39,7 @@ if (process.env.DISABLE_HMR === undefined) {
 import express, { Request, Response, type NextFunction } from 'express';
 import { mountApiRateLimit } from './src/lib/apiRateLimit';
 import { publicCatalogHeaders, privateResponse, revalidate, staticCacheHeaders } from './src/lib/httpCache';
+import { startupProblemCode } from './src/lib/startupDiagnostics';
 import { mountProductionHttp } from './src/lib/productionHttp';
 import { createServiceMonitoring } from './src/lib/serviceMonitoring';
 import { operationalMetrics } from './src/lib/operationalMetrics';
@@ -1645,6 +1646,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
 // Node resolves module paths through symlinks; argv can retain /var vs /private/var.
 if(process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1])===fs.realpathSync(__filename))startServer().catch(err => {
-  console.error('[Startup] initialization failed; check service configuration and storage.');
+  console.error('[Startup]', startupProblemCode(err));
   process.exitCode=1;
 });

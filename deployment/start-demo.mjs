@@ -41,6 +41,27 @@ for (const name of ['server.js', 'storage-contract.json', 'dist', 'src', 'script
 const signingFile = path.join(runtime, '.bolt-private/demo-session-key');
 if (!fs.existsSync(signingFile)) fs.writeFileSync(signingFile, crypto.randomBytes(48).toString('base64url'), { mode: 0o600, flag: 'wx' });
 const customer = demoCustomerEnvironment(process.env, origin);
+const databaseAction = process.env.BOLT_DEMO_CUSTOMER_DB_ACTION;
+if (databaseAction) {
+  if (!['upgrade', 'rollback', 'status'].includes(databaseAction) || !customer.enabled) {
+    throw Error('La acción de base de datos requiere las cuentas habilitadas de esta demo y una operación reconocida.');
+  }
+  const privateBackupDir = path.join(runtime, '.bolt-private', 'backups');
+  execFileSync(process.execPath, ['--import', 'tsx', 'scripts/customer/demo-release-db.ts', databaseAction], {
+    cwd: source,
+    env: {
+      PATH: process.env.PATH, NODE_ENV: 'production', BOLT_DEMO_CUSTOMER_ACCOUNTS: '1',
+      BOLT_CUSTOMER_DATABASE_URL: customer.env.BOLT_CUSTOMER_DATABASE_URL,
+      BOLT_CUSTOMER_ORIGIN: origin, BOLT_DEMO_PUBLIC_ORIGIN: origin, BOLT_DEMO_VOLUME: root,
+      BOLT_DEMO_DB_BACKUP_DIR: privateBackupDir, BOLT_DEMO_CUSTOMER_DB_ACTION: databaseAction,
+    },
+    stdio: ['ignore', 'inherit', 'inherit'],
+  });
+  if (databaseAction === 'rollback') {
+    console.log('[Demo DB] Reversión terminada. Selecciona la versión compatible con el esquema v1.');
+    process.exit(0);
+  }
+}
 const gateway = createDemoGateway({ customerAuth: customer, origin, password, sessionKey: fs.readFileSync(signingFile, 'utf8'), upstreamPort, allowLocalHttp: localTest });
 const childEnv = Object.fromEntries(Object.entries(process.env).filter(([name]) => !/^(BOLT_|SHOPIFY_|RAILWAY_)/.test(name)));
 // Forward only the photo search settings to the private server process.

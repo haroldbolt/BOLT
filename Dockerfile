@@ -31,6 +31,15 @@ CMD ["node", "--import", "tsx", "deployment/start-pilot.ts"]
 
 # Keep the meeting demo as the default target for the existing Railway service.
 FROM runtime AS demo
+# The full pre-migration restore runs on a temporary Unix socket, without provisioning a database service.
+RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl gnupg postgresql-common \
+    && install -d /usr/share/postgresql-common/pgdg \
+    && curl -fsSLo /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc https://www.postgresql.org/media/keys/ACCC4CF8.asc \
+    && gpg --show-keys --with-colons /usr/share/postgresql-common/pgdg/apt.postgresql.org.asc | grep -q 'fpr:::::::::B97B0AFCAA1A47F044F244A07FCC7D46ACCC4CF8:' \
+    && echo 'deb [signed-by=/usr/share/postgresql-common/pgdg/apt.postgresql.org.asc] https://apt.postgresql.org/pub/repos/apt bookworm-pgdg main' > /etc/apt/sources.list.d/pgdg.list \
+    && echo 'create_main_cluster = false' >> /etc/postgresql-common/createcluster.conf \
+    && apt-get update && apt-get install -y --no-install-recommends postgresql-18 postgresql-client-18 \
+    && rm -rf /var/lib/apt/lists/*
 ENV BOLT_DEMO_VOLUME=/data
 CMD ["node", "deployment/start-demo.mjs"]
 

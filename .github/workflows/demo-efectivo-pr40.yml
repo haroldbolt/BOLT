@@ -35,3 +35,33 @@ jobs:
           name: demo-efectivo-cliente-admin
           path: ${{ runner.temp }}/bolt-capturas
           retention-days: 7
+  demo-customer-database:
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Construir las imágenes de demo y producción desde el mismo código
+        run: |
+          docker build --target demo -t bolt-demo-pg .
+          docker build --target production -t bolt-production-check .
+      - name: Verificar las herramientas PostgreSQL 18 de la demo
+        run: |
+          docker run --rm --network none bolt-demo-pg sh -ec '
+            for bin in postgres pg_ctl pg_dump pg_restore initdb psql; do
+              "/usr/lib/postgresql/18/bin/$bin" --version | grep -E " 18([. ]|$)"
+            done
+          '
+          docker run --rm --network none bolt-production-check sh -ec '
+            for bin in postgres pg_ctl pg_dump pg_restore initdb psql; do
+              test ! -e "/usr/lib/postgresql/18/bin/$bin"
+              if command -v "$bin" >/dev/null; then exit 1; fi
+            done
+          '
+      - name: Probar cuentas, migraciones y aislamiento de datos con fixtures
+        run: docker run --rm --network none -e NODE_ENV=test bolt-demo-pg npm run test:customer
+      - name: Probar actualización, reintentos y reversión conservando movimientos posteriores
+        run: docker run --rm --network none bolt-demo-pg node --import tsx src/tests/demoCustomerDBTransition.test.ts
+      - name: Crear y recuperar un respaldo comprobado en PostgreSQL 18 aislado
+        run: docker run --rm --network none bolt-demo-pg node deployment/demo-db-backup.test.mjs
+      - name: Probar la transición completa con copia real y cambios posteriores en PostgreSQL 18
+        run: docker run --rm --network none bolt-demo-pg node --import tsx deployment/demo-db-roundtrip.test.mjs
