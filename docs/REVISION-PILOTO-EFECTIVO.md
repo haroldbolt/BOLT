@@ -26,7 +26,7 @@ Cada fila parte de una instalación vacía con ocho unidades de una presentació
 
 La matriz HTTP también ejecutó los seis pedidos en una misma instalación. Al terminar quedaron dos reservas en cada sede, seis códigos de compra distintos y $0 recaudados. Los reintentos después del reinicio conservaron los seis códigos y reservas. Las seis solicitudes sin autorización de recaudo quedaron bloqueadas. Wompi y la confirmación de Programado sin franja fueron rechazados.
 
-GitHub Actions completó los doce recorridos en Chrome, con una pasada de cada caso en móvil y otra en escritorio. En cada uno se confirmó el pedido desde el formulario de Cliente, se abrió su seguimiento privado y se encontró el mismo código en el apartado Turbo o Programados de la sede en Admin. [Ejecución y capturas de la integración](https://github.com/haroldbolt/BOLT/actions/runs/45114556511)
+GitHub Actions completó los doce recorridos en Chrome, con una pasada de cada caso en móvil y otra en escritorio. En cada uno se confirmó el pedido desde el formulario de Cliente, se abrió su seguimiento privado y se encontró el mismo código en el apartado Turbo o Programados de la sede en Admin. [Ejecuciones y capturas de la rama de integración](https://github.com/haroldbolt/BOLT/pull/40/checks)
 
 En la regresión de Suba también se siguió una compra ficticia desde preparación y reserva hasta entrega con PIN, registro de efectivo y liquidación por separado. Se probaron las restricciones por sede, el acceso privado, la competencia por la última unidad, la cancelación y la entrega parcial con sus suites operativas.
 

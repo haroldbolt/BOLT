@@ -56,8 +56,17 @@ async function check(store, mode, profile) {
     assert.equal(await page.locator('input[name="paymentMethod"]:enabled').count(), 1);
     assert.equal(await page.getByRole('radio', { name: 'Efectivo contra entrega' }).isChecked(), true);
     assert.ok(await page.locator('input[name="paymentMethod"]:disabled').count() > 0);
-    await page.getByRole('button', { name: '$0', exact: true }).click();
-    if (captures) await page.screenshot({ path: path.join(captures, [store.id, mode, profile, 'checkout.png'].join('-')) });
+    const zeroTip = page.getByRole('button', { name: '$0', exact: true });
+    await zeroTip.click();
+    // Capture the settled choice and compare exactly what the customer sees to the order.
+    await zeroTip.evaluate(async button => {
+      await Promise.all(button.parentElement.getAnimations({ subtree: true }).map(animation => animation.finished));
+    });
+    const summary = page.getByText('Total final:', { exact: true }).locator('..');
+    const displayedTotal = Number((await summary.innerText()).replace(/[^0-9]/g, ''));
+    assert.ok(displayedTotal > 0);
+
+    if (captures) await page.screenshot({ animations: 'disabled', path: path.join(captures, [store.id, mode, profile, 'checkout.png'].join('-')) });
     stage = 'confirmar y abrir el seguimiento';
     const posted = page.waitForResponse(r => r.request().method() === 'POST' && new URL(r.url()).pathname === '/api/v1/orders', { timeout: 18000 });
     const [response] = await Promise.all([posted, page.getByRole('button', { name: 'Confirmar pedido', exact: true }).click()]);
@@ -67,6 +76,8 @@ async function check(store, mode, profile) {
     assert.equal(order.deliveryMode, mode);
     assert.equal(order.payment.method, 'CASH_ON_DELIVERY');
     assert.equal(order.payment.status, 'PENDIENTE');
+    assert.equal(order.payment.cashToCollect, displayedTotal);
+    assert.equal(order.totals.total, displayedTotal);
     if (mode === 'PROGRAMADO') assert.ok(order.scheduledWindow?.date && order.scheduledWindow?.slotId);
     await page.waitForURL('**/confirmacion/' + order.id);
     await page.getByRole('region', { name: 'Avance del pedido' }).waitFor();
@@ -81,7 +92,7 @@ async function check(store, mode, profile) {
     assert.equal(await page.getByRole('combobox', { name: 'Sede activa' }).inputValue(), store.id);
     await row.click();
     await page.getByRole('heading', { name: order.purchaseCode, exact: true }).waitFor();
-    if (captures) await page.screenshot({ path: path.join(captures, [store.id, mode, profile, 'admin.png'].join('-')) });
+    if (captures) await page.screenshot({ animations: 'disabled', path: path.join(captures, [store.id, mode, profile, 'admin.png'].join('-')) });
     app.verifyNoEgress();
     console.log('PASS navegador', profile, store.id, mode, 'efectivo pendiente COP', order.payment.cashToCollect);
   } catch (error) {
