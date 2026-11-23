@@ -70,7 +70,7 @@ En una instalación local con volumen vacío abrimos el panel en un navegador, i
 
 ## Publicación y decisiones
 
-Los diez puntos se trabajaron en la rama `codex/produccion-diez-puntos`. Los comandos de cada etapa son `npm run lint`, `npm run build` y `npm test`. La comprobación adicional del contenedor Linux arranca la imagen, lee la API y repite las verificaciones después del reinicio. Los ajustes conservan las reglas comerciales de transporte y los métodos de pago existentes. [PR de revisión](https://github.com/haroldbolt/BOLT/pull/39)
+Los diez puntos se trabajaron en la rama `codex/produccion-diez-puntos`. Pasaron `npm run lint`, `npm run build` y `npm test` en cada una de las diez etapas. Sobre el código final también pasaron `npm run test:bolt-admin` y `node --test deployment/production-runtime.test.mjs`, que comprobó dos arranques con el mismo volumen. En GitHub Actions, la comprobación adicional del contenedor Linux construye la imagen, lee la API y repite las verificaciones después del reinicio. Los ajustes conservan las reglas comerciales de transporte y los métodos de pago existentes. [PR de revisión](https://github.com/haroldbolt/BOLT/pull/39)
 
 | Decisión | Qué se necesita para activar |
 | --- | --- |
