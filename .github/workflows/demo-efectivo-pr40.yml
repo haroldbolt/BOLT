@@ -11,6 +11,7 @@ jobs:
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
       - name: Preparar las dependencias e interfaces compiladas del contenedor para el navegador
+        id: prepare
         run: |
           docker build --target build -t bolt-rdi-browser .
           container=$(docker create bolt-rdi-browser)
@@ -35,6 +36,9 @@ jobs:
           name: demo-efectivo-cliente-admin
           path: ${{ runner.temp }}/bolt-capturas
           retention-days: 7
+      - name: Probar cuentas, migraciones y aislamiento con la comprobación de origen activa
+        if: ${{ !cancelled() && steps.prepare.outcome == 'success' }}
+        run: docker run --rm --network none bolt-rdi-browser env -u NODE_ENV -u TEST npm run test:customer
   demo-customer-database:
     runs-on: ubuntu-latest
     timeout-minutes: 25
@@ -57,8 +61,6 @@ jobs:
               if command -v "$bin" >/dev/null; then exit 1; fi
             done
           '
-      - name: Probar cuentas, migraciones y aislamiento de datos con fixtures
-        run: docker run --rm --network none -e NODE_ENV=test bolt-demo-pg npm run test:customer
       - name: Probar actualización, reintentos y reversión conservando movimientos posteriores
         run: docker run --rm --network none bolt-demo-pg node --import tsx src/tests/demoCustomerDBTransition.test.ts
       - name: Crear y recuperar un respaldo comprobado en PostgreSQL 18 aislado
