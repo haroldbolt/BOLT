@@ -15,7 +15,7 @@ function pg(bin, tool, args, env = {}, { stdin = 'ignore', capture = false, iden
     encoding: 'utf8', maxBuffer: 4 * 1024 * 1024, ...identity,
   });
   // PostgreSQL and its child utilities can include private values in stderr/argv.
-  if (result.error || result.status !== 0) throw Error('Falló la comprobación privada con ' + tool + '.');
+  if (result.error || result.status !== 0) throw Error('DEMO_DB_BACKUP_' + tool.toUpperCase() + '_FAILED');
   return capture ? result.stdout.trim() : undefined;
 }
 
@@ -24,7 +24,7 @@ function serverIdentity() {
   const numeric = flag => {
     const value = spawnSync('/usr/bin/id', [flag, 'postgres'], { encoding: 'utf8', env: baseEnv });
     const id = Number(value.stdout?.trim());
-    if (value.status !== 0 || !Number.isSafeInteger(id) || id <= 0) throw Error('Falta la identidad local para comprobar la copia.');
+    if (value.status !== 0 || !Number.isSafeInteger(id) || id <= 0) throw Error('DEMO_DB_BACKUP_LOCAL_IDENTITY_MISSING');
     return id;
   };
   return { uid: numeric('-u'), gid: numeric('-g') };
@@ -67,17 +67,17 @@ function databaseEnv(connectionString) {
   // Preserve transport security options without giving libpq a second, conflicting host or database.
   for (const [key, value] of url.searchParams) {
     if (!['sslmode', 'sslrootcert', 'sslcert', 'sslkey', 'sslcrl', 'channel_binding', 'sslnegotiation'].includes(key)) {
-      throw Error('La URL de la copia tiene una opción de conexión no admitida.');
+      throw Error('DEMO_DB_BACKUP_CONNECTION_OPTION_UNSUPPORTED');
     }
     env['PG' + key.toUpperCase()] = value;
   }
-  if (env.PGUSER !== 'bolt_customer_app' || env.PGDATABASE !== 'bolt_customers_demo') throw Error('La copia requiere la base y el rol dedicados de la demo.');
+  if (env.PGUSER !== 'bolt_customer_app' || env.PGDATABASE !== 'bolt_customers_demo') throw Error('DEMO_DB_BACKUP_WRONG_TARGET');
   return env;
 }
 
 export async function verifyArchive(file, postgresBin = defaultBin) {
   const listing = pg(postgresBin, 'pg_restore', ['--list', file], {}, { capture: true });
-  if (!requiredArchiveEntries.every(table => listing.includes(table))) throw Error('La copia no contiene las tablas esperadas de clientes.');
+  if (!requiredArchiveEntries.every(table => listing.includes(table))) throw Error('DEMO_DB_BACKUP_TABLES_MISSING');
   await withTemporaryPostgres((local, run) => {
     run('psql', ['-X', '--no-password', '-v', 'ON_ERROR_STOP=1', '-c', 'CREATE ROLE bolt_customer_app NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS']);
     run('createdb', ['--no-password', '--owner=bolt_customer_app', 'bolt_customers_demo']);
@@ -85,14 +85,14 @@ export async function verifyArchive(file, postgresBin = defaultBin) {
     run('pg_restore', ['--no-password', '--exit-on-error', '--single-transaction', '--dbname=bolt_customers_demo', file], target);
     const version = run('psql', ['-XAt', '--no-password', '-v', 'ON_ERROR_STOP=1', '-c',
       'SELECT version FROM public.customer_schema WHERE id=1'], target, { capture: true });
-    if (version !== '1') throw Error('La base restaurada no tiene el esquema v1 esperado.');
+    if (version !== '1') throw Error('DEMO_DB_BACKUP_RESTORED_SCHEMA_MISMATCH');
   }, postgresBin);
 }
 
 export async function backupDemoDatabase({ connectionString, directory, postgresBin = defaultBin }) {
   const db = databaseEnv(connectionString);
   fs.mkdirSync(directory, { recursive: true, mode: 0o700 });
-  if (!fs.lstatSync(directory).isDirectory()) throw Error('El respaldo requiere un directorio privado.');
+  if (!fs.lstatSync(directory).isDirectory()) throw Error('DEMO_DB_BACKUP_DIRECTORY_INVALID');
   fs.chmodSync(directory, 0o700);
   const file = path.join(directory, 'customer-v1-' + randomUUID() + '.dump');
   const partial = file + '.partial';
