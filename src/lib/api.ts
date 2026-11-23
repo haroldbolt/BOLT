@@ -1,5 +1,5 @@
 import type {AddressSearchResult} from './addressSearch';
-import {backendAuthorization} from './backendRequest';
+import { backendAuthorization, backendFetch, backendUrl, isBoltSplitDeployment, splitCustomerAccountNotice } from './backendRequest';
 import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint } from '../types';
 import type { CustomerTracking } from '../types/customerTracking';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
@@ -20,11 +20,19 @@ const guestOrderKey='bolt_guest_order_access_v1';
 let guestOrderMemory:Record<string,string>={};
 function guestOrderTokens():Record<string,string>{try{return {...guestOrderMemory,...JSON.parse(localStorage.getItem(guestOrderKey)||'{}')}}catch{return guestOrderMemory}}
 function saveOrderAccess(id:string,token:string){guestOrderMemory={...guestOrderTokens(),[id]:token};try{localStorage.setItem(guestOrderKey,JSON.stringify(guestOrderMemory))}catch{}}
-function authorizedFetch(url:RequestInfo|URL,init:RequestInit={},guestOnly=false){
-  const headers=new Headers(init.headers),path=String(url),match=path.match(/\/orders\/([^/?]+)/);
-  if(!guestOnly){const origin=typeof window==='undefined'?'http://localhost':window.location.origin;const auth=backendAuthorization(url,api.getStoredAdminToken(),origin);if(auth.has('Authorization')&&!headers.has('Authorization'))headers.set('Authorization',auth.get('Authorization')!);}
-  if(match && new URL(path,typeof window==='undefined'?'http://localhost':window.location.origin).origin===(typeof window==='undefined'?'http://localhost':window.location.origin) && new URL(path,'http://localhost').pathname.startsWith('/api/v1/orders/')){const token=guestOrderTokens()[decodeURIComponent(match[1])];if(token)headers.set('X-Order-Token',token);}
-  return fetch(url,{...init,headers});
+function authorizedFetch(url: string | URL, init: RequestInit = {}, guestOnly = false) {
+  const target = backendUrl(url);
+  const headers = new Headers(init.headers);
+  if (!guestOnly && !headers.has('Authorization')) {
+    backendAuthorization(target, api.getStoredAdminToken(), target.origin)
+      .forEach((value, name) => headers.set(name, value));
+  }
+  const orderPath = /^\/api\/v1\/orders\/([^/]+)(?:\/|$)/.exec(target.pathname);
+  if (orderPath) {
+    const token = guestOrderTokens()[decodeURIComponent(orderPath[1])];
+    if (token) headers.set('X-Order-Token', token);
+  }
+  return backendFetch(url, { ...init, headers });
 }
 
 export const api = {
@@ -40,7 +48,7 @@ export const api = {
   },
   async getEntrancePhoto(orderId:string,audience:'customer'|'admin'|'driver',dispatchId?:string,driverToken?:string):Promise<Blob|null> {
     const res=audience==='driver'
-      ?await fetch(`${BASE_URL}/driver/dispatches/${encodeURIComponent(dispatchId||'')}/entrance-photo`,{cache:'no-store',headers:{Authorization:`Bearer ${driverToken||''}`}})
+      ?await backendFetch(`${BASE_URL}/driver/dispatches/${encodeURIComponent(dispatchId||'')}/entrance-photo`,{cache:'no-store',headers:{Authorization:`Bearer ${driverToken||''}`}})
       :await authorizedFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}/entrance-photo`,{cache:'no-store'},audience==='customer');
     if(res.status===404)return null;if(!res.ok)throw Error('No pudimos cargar la foto.');return res.blob();
   },
@@ -86,25 +94,25 @@ export const api = {
       if (!res.ok) throw new Error('Error al consultar sedes');
       return await res.json();
     } catch {
-      return INITIAL_STORES.filter(store => store.isActive);
+      return isBoltSplitDeployment() ? [] : INITIAL_STORES.filter(store => store.isActive);
     }
   },
 
   async getCatalog(params?: { category?: string; species?: string; q?: string; storeId?: string }, options?: { requireServer?: boolean }): Promise<Product[]> {
     try {
-      const url = new URL(`${window.location.origin}${BASE_URL}/catalog`);
+      const url = backendUrl(`${BASE_URL}/catalog`);
       if (params?.category) url.searchParams.append('category', params.category);
       if (params?.species) url.searchParams.append('species', params.species);
       if (params?.q) url.searchParams.append('q', params.q);
       if (params?.storeId) url.searchParams.append('storeId', params.storeId);
 
-      const res = await authorizedFetch(url.toString(), { cache: 'no-store' });
+      const res = await authorizedFetch(url.toString());
       if (!res.ok) throw new Error('Error al cargar catálogo');
       const catalog = await res.json();
       if (!Array.isArray(catalog)) throw new Error('Catálogo inválido');
       return catalog;
     } catch (error) {
-      if (options?.requireServer) throw error;
+      if (options?.requireServer || isBoltSplitDeployment()) throw error;
       return INITIAL_PRODUCTS;
     }
   },
@@ -146,10 +154,12 @@ export const api = {
   },
   async getCustomerOrders(authenticated:boolean):Promise<Order[]> {
     if(!authenticated)return api.getGuestOrders();
+    if (isBoltSplitDeployment()) throw Error(splitCustomerAccountNotice);
     const response=await fetch('/api/customer/orders',{credentials:'same-origin',cache:'no-store'});
     if(!response.ok)throw Error('No se pudieron consultar tus pedidos');return response.json();
   },
   async linkGuestOrder(id:string) {
+    if (isBoltSplitDeployment()) throw Error(splitCustomerAccountNotice);
     const token=guestOrderTokens()[id];if(!token)throw Error('Recupera primero el acceso privado a esta compra.');
     const me=await fetch('/api/customer/me',{credentials:'same-origin',cache:'no-store'}).then(r=>r.json());
     if(!me.user?.id)throw Error('Inicia sesión antes de vincular la compra.');
@@ -160,7 +170,7 @@ export const api = {
   async getOrders(params?: { storeId?: string; status?: string }): Promise<Order[]> {
     if(!api.getStoredAdminToken()){const results=await Promise.allSettled(Object.keys(guestOrderTokens()).map(id=>api.getOrder(id)));return results.filter((r):r is PromiseFulfilledResult<Order>=>r.status==='fulfilled').map(r=>r.value).filter(o=>(!params?.storeId||o.storeId===params.storeId)&&(!params?.status||o.fulfillmentStatus===params.status));}
     try {
-      const url = new URL(`${window.location.origin}${BASE_URL}/orders`);
+      const url = backendUrl(`${BASE_URL}/orders`);
       if (params?.storeId) url.searchParams.append('storeId', params.storeId);
       if (params?.status) url.searchParams.append('status', params.status);
       const res = await authorizedFetch(url.toString());
@@ -333,15 +343,9 @@ export const api = {
   },
 
   async getShopifyStatus(): Promise<any> {
-    try {
-      const res = await authorizedFetch(`${BASE_URL}/shopify/status`);
-      if (!res.ok) throw new Error('Error al consultar estado de Shopify');
-      return await res.json();
-    } catch {
-      // Fallback a servicio cliente
-      const { shopifyService } = await import('./shopifyService');
-      return shopifyService.getState();
-    }
+    const res = await authorizedFetch(`${BASE_URL}/shopify/status`, { cache: 'no-store' });
+    if (!res.ok) throw new Error('No se pudo consultar el estado de Shopify con esta sesión.');
+    return res.json();
   },
 
   async syncShopifyInventory(): Promise<any> {
@@ -456,7 +460,7 @@ export const api = {
 
   async getAdminCatalog(params?: { q?: string; category?: string; status?: string }): Promise<Product[]> {
     const token = this.getStoredAdminToken();
-    const url = new URL(`${window.location.origin}${BASE_URL}/admin/catalog`);
+    const url = backendUrl(`${BASE_URL}/admin/catalog`);
     if (params?.q) url.searchParams.append('q', params.q);
     if (params?.category) url.searchParams.append('category', params.category);
     if (params?.status) url.searchParams.append('status', params.status);
@@ -553,7 +557,7 @@ export const api = {
 
   async getCatalogAuditLog(productId?: string): Promise<any[]> {
     const token = this.getStoredAdminToken();
-    const url = new URL(`${window.location.origin}${BASE_URL}/admin/catalog/audit`);
+    const url = backendUrl(`${BASE_URL}/admin/catalog/audit`);
     if (productId) url.searchParams.append('productId', productId);
 
     const headers: Record<string, string> = {};

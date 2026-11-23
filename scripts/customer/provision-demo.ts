@@ -1,6 +1,6 @@
 /** One-time, explicit provisioning of the newly authorized private demo database. */
 import { Pool } from 'pg';
-import { connectCustomerDatabase } from '../../src/customer/database';
+import { assertRestrictedCustomerRole, connectCustomerDatabase } from '../../src/customer/database';
 import { applyCustomerMigration } from '../../src/customer/migration';
 const env=process.env;
 if (env.BOLT_CUSTOMER_PROVISION_DEMO !== '1') {
@@ -31,7 +31,7 @@ if (env.BOLT_CUSTOMER_PROVISION_DEMO !== '1') {
   } catch { await client.query('ROLLBACK'); throw Error('Private demo role provisioning failed; inspect configuration without logging credentials'); }
   finally {client.release();await pool.end();}
   const db=connectCustomerDatabase(target);
-  try {console.log('Dedicated demo customer role ready; schema v1:',await applyCustomerMigration(db));}
+  try {await assertRestrictedCustomerRole(db); console.log('Dedicated demo customer role ready; schema v2:',await applyCustomerMigration(db));}
   catch {throw Error('Customer schema provisioning failed; operational order storage was not modified');}
   finally {await db.destroy();}
 }

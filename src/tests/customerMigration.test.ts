@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { sql } from "kysely";
+import { readFileSync } from "node:fs";
 import { fixtureDatabase } from "./customer/fixture";
 import { applyCustomerMigration } from "../customer/migration";
 const db = fixtureDatabase();
@@ -61,4 +62,35 @@ try {
   console.log("PASS unsupported schema detected before modification");
 } finally {
   await db.destroy();
+}
+
+
+// Exercise the actual restricted owner. A superuser bypasses even FORCE RLS.
+const restricted = fixtureDatabase();
+try {
+  await sql.raw("CREATE ROLE bolt_scope_fixture NOSUPERUSER NOBYPASSRLS; GRANT CREATE ON SCHEMA public TO bolt_scope_fixture; SET ROLE bolt_scope_fixture").execute(restricted);
+  for (const file of ["001-auth.sql", "001-data.sql"]) {
+    await sql.raw(readFileSync(new URL("../../scripts/customer/" + file, import.meta.url), "utf8")).execute(restricted);
+  }
+  await restricted.insertInto("customer_user").values({id:"legacy", name:"Legacy", email:"legacy@example.invalid", emailVerified:true, createdAt:new Date(), updatedAt:new Date(), legalReceipt:"{}", deletionPending:false}).execute();
+  await restricted.insertInto("customer_data").values({user_id:"legacy", revision:7}).execute();
+  assert.equal(await applyCustomerMigration(restricted), "applied");
+  assert.equal(await applyCustomerMigration(restricted), "already-applied");
+  const { withCustomerScope, assertRestrictedCustomerRole } = await import("../customer/database");
+  await assertRestrictedCustomerRole(restricted);
+  assert.equal((await withCustomerScope(restricted, "legacy", tx => tx.selectFrom("customer_data").select("revision").executeTakeFirstOrThrow())).revision, 7);
+  for (const id of ["one", "two"]) {
+    await restricted.insertInto("customer_user").values({id, name:id, email:id+"@example.invalid", emailVerified:true, createdAt:new Date(), updatedAt:new Date(), legalReceipt:"{}", deletionPending:false}).execute();
+    await withCustomerScope(restricted, id, tx => tx.insertInto("customer_data").values({user_id:id}).execute());
+  }
+  assert.equal((await restricted.selectFrom("customer_data").selectAll().execute()).length, 0);
+  await withCustomerScope(restricted, "two", async tx => {
+    assert.deepEqual(await tx.selectFrom("customer_data").select("user_id").execute(), [{user_id:"two"}]);
+    assert.equal((await tx.updateTable("customer_data").set({revision:9}).where("user_id", "=", "one").returning("user_id").execute()).length, 0);
+  });
+  await assert.rejects(withCustomerScope(restricted, "one", tx => tx.insertInto("customer_imports").values({user_id:"two",import_id:"wrong-owner"}).execute()), /row.level security/i);
+  assert.equal((await restricted.selectFrom("customer_data").selectAll().execute()).length, 0);
+  console.log("PASS restricted owner enforces per-session RLS and clears pooled transaction context");
+} finally {
+  await restricted.destroy();
 }

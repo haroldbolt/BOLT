@@ -270,3 +270,8 @@
 @media (prefers-reduced-motion: reduce) { .bolt-admin .ba-spin { animation: none; } }
 
 .ba-operation-tool { width: fit-content; min-width: min(100%, 260px); }
+
+.ba-service-facts { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 205px), 1fr)); gap: 14px 20px; padding: 0 16px 16px; }
+.ba-service-facts > div { padding-top: 9px; border-top: 1px solid var(--ba-border); }
+.ba-service-facts dt, .ba-service-facts small { display: block; color: var(--ba-dim); font-size: 12px; }
+.ba-service-facts dd { margin: 3px 0; color: var(--ba-text); font-size: 15px; font-weight: 680; font-variant-numeric: tabular-nums; }

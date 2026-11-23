@@ -4,18 +4,29 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { atomicJson, checkStorageRelease, FulfillmentStorage } from '../src/lib/fulfillmentStorage';
 import { newDispatchState } from '../src/types/dispatch';
+import { pilotScope } from '../src/lib/pilotScope';
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const marker = { version: 1, kind: 'BOLT_PILOT', storeId: 'HUB_SUBA' };
-const pilotDirectory = 'bolt-piloto-suba';
 const dataRelative = '.bolt-private/orders';
 
 function isWithin(root: string, candidate: string) {
   return candidate === root || candidate.startsWith(root + path.sep);
 }
 
-function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv): string {
-  if (env.BOLT_PILOT_STORE_ID !== marker.storeId) throw Error('El arranque del piloto requiere BOLT_PILOT_STORE_ID=HUB_SUBA.');
+/** Linux mountinfo uses octal escapes for whitespace and backslashes in paths. */
+export function isPersistentMount(volume: string, mountInfo: string) {
+  return mountInfo.split('\n').some(line => {
+    const [mount, device] = line.split(' - ');
+    if (!device) return false;
+    const fields = mount.split(' ');
+    const mountPoint = fields[4]?.replace(/\\([0-7]{3})/g, (_, digits: string) => String.fromCharCode(parseInt(digits, 8)));
+    const filesystem = device.split(' ')[0];
+    return mountPoint === volume && fields[5]?.split(',').includes('rw') &&
+      !['tmpfs', 'ramfs', 'overlay', 'aufs', 'fuse.gcsfuse', 'fuse.s3fs'].includes(filesystem);
+  });
+}
+
+function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv, directory: string): string {
   if (env.BOLT_DISPATCH_SIMULATION === '1' || env.BOLT_DEMO_PASSWORD || env.RAILWAY_ENVIRONMENT_NAME?.toLowerCase() === 'demo') {
     throw Error('Selecciona el servicio independiente del piloto.');
   }
@@ -29,11 +40,24 @@ function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv): string {
       (!env.RAILWAY_VOLUME_MOUNT_PATH || fs.realpathSync(env.RAILWAY_VOLUME_MOUNT_PATH) !== volume)) {
     throw Error('BOLT_PILOT_VOLUME debe coincidir con el volumen montado por Railway.');
   }
+  if (env.BOLT_REQUIRE_VOLUME_MOUNT === '1') {
+    const mountFile = '/proc/self/mountinfo';
+    if (!fs.existsSync(mountFile) || !isPersistentMount(volume, fs.readFileSync(mountFile, 'utf8'))) {
+      throw Error('Monta un disco persistente de lectura y escritura en BOLT_PILOT_VOLUME.');
+    }
+  }
   const simulationMarkers = ['.bolt-private/hosted-demo.json', '.bolt-private/dispatch-simulation.json'];
   if (fs.readdirSync(volume).some(name => name.startsWith('bolt-dispatch-simulation-')) ||
-      [volume, path.join(volume, pilotDirectory)].some(directory =>
+      [volume, path.join(volume, directory)].some(directory =>
         simulationMarkers.some(name => fs.existsSync(path.join(directory, name))))) {
     throw Error('El volumen contiene una instalación de simulación.');
+  }
+  const otherDirectory = directory === 'bolt-operacion' ? 'bolt-piloto-suba' : 'bolt-operacion';
+  if (fs.existsSync(path.join(volume, otherDirectory))) {
+    throw Error('El volumen pertenece a un alcance operativo diferente. Conserva sus datos antes de migrar.');
+  }
+  if (!fs.existsSync(path.join(volume, directory)) && fs.readdirSync(volume).some(name => name !== 'lost+found' && !name.startsWith('.bolt-pilot-initializing-'))) {
+    throw Error('El volumen contiene datos previos. Verifica la instalación antes de inicializar otra operación.');
   }
   return volume;
 }
@@ -57,9 +81,10 @@ function checkAdmin(runtime: string, env: NodeJS.ProcessEnv) {
   if (fs.existsSync(filename)) {
     const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
     if (data?.version !== '1.0.0' || !Array.isArray(data.admins) || !data.admins.length || data.admins.some((admin: {
-      email?: unknown; passwordHash?: unknown; salt?: unknown; role?: unknown;
+      email?: unknown; passwordHash?: unknown; salt?: unknown; role?: unknown; storeId?: unknown;
     } | null) =>
-      typeof admin?.email !== 'string' || typeof admin.passwordHash !== 'string' || typeof admin.salt !== 'string' || admin.role !== 'ADMINISTRADOR')) {
+      typeof admin?.email !== 'string' || typeof admin.passwordHash !== 'string' || typeof admin.salt !== 'string' ||
+      (admin.role !== 'ADMINISTRADOR' && !(admin.role === 'OPERADOR_SEDE' && typeof admin.storeId === 'string' && admin.storeId.length > 0)))) {
       throw Error('Almacenamiento de administración inválido. Recupera la copia autorizada.');
     }
   } else if ((env.BOLT_ADMIN_SETUP_TOKEN?.trim().length ?? 0) < 32) {
@@ -68,8 +93,11 @@ function checkAdmin(runtime: string, env: NodeJS.ProcessEnv) {
 }
 
 export function preparePilot(sourceDir: string, env: NodeJS.ProcessEnv) {
-  const volume = dedicatedVolume(sourceDir, env);
-  const runtime = path.join(volume, pilotDirectory);
+  const scope = pilotScope(env);
+  if (!scope) throw Error('Configura BOLT_PILOT_STORE_IDS o BOLT_PILOT_STORE_ID=HUB_SUBA.');
+  const { directory, marker } = scope;
+  const volume = dedicatedVolume(sourceDir, env, directory);
+  const runtime = path.join(volume, directory);
   const data = path.join(runtime, dataRelative);
   const entry = path.join(sourceDir, 'server.js');
   if (!fs.existsSync(entry) || !fs.existsSync(path.join(sourceDir, 'dist/index.html'))) throw Error('Compila la versión del piloto antes de iniciar.');
@@ -104,7 +132,12 @@ export function preparePilot(sourceDir: string, env: NodeJS.ProcessEnv) {
       throw Error('El directorio del piloto debe estar dentro de su volumen.');
     }
     const actual = JSON.parse(fs.readFileSync(path.join(runtime, '.bolt-private/pilot.json'), 'utf8'));
-    if (actual?.version !== marker.version || actual.kind !== marker.kind || actual.storeId !== marker.storeId) throw Error('Volumen incompatible con el piloto de Suba.');
+    if (actual?.version !== marker.version || actual.kind !== marker.kind ||
+        ('storeId' in marker
+          ? actual.storeId !== marker.storeId
+          : !Array.isArray(actual.storeIds) || JSON.stringify([...actual.storeIds].sort()) !== JSON.stringify(marker.storeIds))) {
+      throw Error('Volumen incompatible con el alcance operativo de BOLT.');
+    }
     if (checkStorageRelease(data, sourceDir).sourceVersion !== 2) throw Error('No se encontró el almacenamiento operativo v2.');
     checkAdmin(runtime, env);
     linkReleaseData(sourceDir, runtime);

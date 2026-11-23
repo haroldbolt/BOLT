@@ -36,7 +36,7 @@ const exists = await sql<{
   name: string | null;
 }>`select to_regclass('customer_schema') as name`.execute(db);
 if (!exists.rows[0].name)
-  for (const file of ["001-auth.sql", "001-data.sql"])
+  for (const file of ["001-auth.sql", "001-data.sql", "002-user-scope.sql"])
     await sql
       .raw(fs.readFileSync(`scripts/customer/${file}`, "utf8"))
       .execute(db);

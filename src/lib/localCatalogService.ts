@@ -1,4 +1,5 @@
 import fs from 'fs';
+import { catalogCacheTtlMs, catalogFileVersion } from './catalogCache';
 import path from 'path';
 import { Product, Store, MainCategory, Species, PharmacySubcategory, ProductPresentation } from '../types';
 import { INITIAL_STORES, INITIAL_PRODUCTS } from '../data/seedData';
@@ -106,53 +107,59 @@ function addVerifiedHillSizes(product: RawLocalProduct, variants: ProductPresent
   return sizes;
 }
 
-class LocalCatalogService {
+export class LocalCatalogService {
   private rawProducts: RawLocalProduct[] = [];
-  private rawBodegas: RawLocalBodega[] = [];
   private summary: LocalCatalogSummary | null = null;
   private productsCache: Product[] = [];
   private storesCache: Store[] = [];
-  private isLoaded: boolean = false;
+  private sourceVersion?: string;
+  private checkAfter = 0;
 
-  constructor() {
+  constructor(
+    private readonly basePath = path.join(process.cwd(), 'src', 'data', 'catalogo-local'),
+    private readonly ttlMs = catalogCacheTtlMs(),
+    private readonly now = Date.now,
+  ) {
     this.loadCatalog();
   }
 
-  public loadCatalog(): void {
-    const basePath = path.join(process.cwd(), 'src', 'data', 'catalogo-local');
-    const productosPath = path.join(basePath, 'productos.json');
-    const bodegasPath = path.join(basePath, 'bodegas.json');
-    const resumenPath = path.join(basePath, 'resumen.json');
+  private ensureFresh(): void {
+    if (this.now() >= this.checkAfter) this.loadCatalog();
+  }
 
-    if (!fs.existsSync(productosPath) || !fs.existsSync(bodegasPath)) {
-      console.warn('[Catálogo Local] Archivos de catálogo local no encontrados en:', basePath);
-      return;
-    }
+  // Revalidar por archivo evita reconstruir miles de presentaciones si la fuente no cambió.
+  public loadCatalog(): void {
+    const productosPath = path.join(this.basePath, 'productos.json');
+    const bodegasPath = path.join(this.basePath, 'bodegas.json');
+    const resumenPath = path.join(this.basePath, 'resumen.json');
+    this.checkAfter = this.now() + this.ttlMs;
 
     try {
-      this.rawProducts = JSON.parse(fs.readFileSync(productosPath, 'utf8'));
-      this.rawBodegas = JSON.parse(fs.readFileSync(bodegasPath, 'utf8'));
-      if (fs.existsSync(resumenPath)) {
-        this.summary = JSON.parse(fs.readFileSync(resumenPath, 'utf8'));
-      }
+      const version = [productosPath, bodegasPath, resumenPath].map(catalogFileVersion).join('|');
+      if (version === this.sourceVersion) return;
 
-      this.buildStoresCache();
-      this.buildProductsCache();
-      this.isLoaded = true;
+      const rawProducts: RawLocalProduct[] = JSON.parse(fs.readFileSync(productosPath, 'utf8'));
+      const rawBodegas: RawLocalBodega[] = JSON.parse(fs.readFileSync(bodegasPath, 'utf8'));
+      if (!Array.isArray(rawProducts) || !Array.isArray(rawBodegas)) throw new Error('Formato de catálogo inválido');
+      const summary = fs.existsSync(resumenPath) ? JSON.parse(fs.readFileSync(resumenPath, 'utf8')) : null;
+      const stores = this.buildStoresCache(rawBodegas);
+      const products = this.buildProductsCache(rawProducts);
 
-      console.log(
-        `[Catálogo Local] Cargado exitosamente: ${this.rawProducts.length} productos agrupados, ` +
-        `${this.getTotalVariantsCount()} variantes y ${this.storesCache.length} ubicaciones.`
-      );
-    } catch (e: any) {
-      console.error('[Catálogo Local] Error al cargar catálogo local:', e.message);
+      // Publicar catálogo, sedes y resumen juntos tras completar toda la lectura.
+      this.rawProducts = rawProducts;
+      this.summary = summary;
+      this.storesCache = stores;
+      this.productsCache = products;
+      this.sourceVersion = version;
+    } catch (error) {
+      console.error('[Catálogo Local] Error al cargar catálogo local:', (error as Error).message);
     }
   }
 
-  private buildStoresCache(): void {
+  private buildStoresCache(rawBodegas: RawLocalBodega[]): Store[] {
     // Mantener las coordenadas, direcciones y reglas existentes al asociar las bodegas por ID
-    this.storesCache = INITIAL_STORES.map(baseStore => {
-      const match = this.rawBodegas.find(
+    return INITIAL_STORES.map(baseStore => {
+      const match = rawBodegas.find(
         b => b.boltId === baseStore.id || b.id === baseStore.shopifyLocationGid
       );
 
@@ -166,7 +173,7 @@ class LocalCatalogService {
     });
   }
 
-  private buildProductsCache(): void {
+  private buildProductsCache(rawProducts: RawLocalProduct[]): Product[] {
     // 1. Productos operacionales semilla con inventario real, precios verificados en COP y fichas técnicas
     const storeGids = [
       'HUB_KENNEDY',
@@ -195,7 +202,7 @@ class LocalCatalogService {
     }));
 
     // 2. Mapeo de los productos del catálogo local estructurado (3.830 agrupados)
-    const rawCatalogProducts: Product[] = this.rawProducts.map(p => {
+    const rawCatalogProducts: Product[] = rawProducts.map(p => {
       const tags = p.tags || [];
       const tagsLower = tags.map(t => t.toLowerCase());
       const typeLower = (p.productType || '').toLowerCase();
@@ -312,10 +319,11 @@ class LocalCatalogService {
     });
 
     // Combinar: productos operacionales primero para posibilitar compras reales en sedes habilitadas
-    this.productsCache = [...operationalProducts, ...rawCatalogProducts];
+    return [...operationalProducts, ...rawCatalogProducts];
   }
 
   public getProductById(id: string): Product | undefined {
+    this.ensureFresh();
     if (!id) return undefined;
     return this.productsCache.find(p =>
       p.id === id ||
@@ -326,6 +334,7 @@ class LocalCatalogService {
   }
 
   public getSummary(): LocalCatalogSummary {
+    this.ensureFresh();
     if (this.summary) return this.summary;
     return {
       totalProductosAgrupados: this.rawProducts.length,
@@ -342,10 +351,12 @@ class LocalCatalogService {
   }
 
   public getTotalVariantsCount(): number {
+    this.ensureFresh();
     return this.rawProducts.reduce((acc, p) => acc + (p.presentaciones?.length || 0), 0);
   }
 
   public getStores(): Store[] {
+    this.ensureFresh();
     return this.storesCache;
   }
 
@@ -364,6 +375,7 @@ class LocalCatalogService {
     page?: number;
     limit?: number;
   }): { products: Product[]; totalCount: number; activeCount: number } {
+    this.ensureFresh();
     const {
       storeId,
       category,
@@ -423,6 +435,7 @@ class LocalCatalogService {
   }
 
   public getAllGroupedProducts(): Product[] {
+    this.ensureFresh();
     return this.productsCache;
   }
 }

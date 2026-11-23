@@ -107,3 +107,26 @@ test('pending and rejected prescriptions block preparation or readiness until a 
   assert.equal(closed.code, 409);
   assert.equal(restarted.getOrderById(order.id)?.prescriptionReview.status, 'RECHAZADA');
 });
+
+test('a damaged historical order file stays intact for recovery', () => {
+  const dataDir = fs.mkdtempSync(path.join(root, 'damaged-'));
+  const file = path.join(dataDir, 'persisted-orders.json');
+  fs.writeFileSync(file, 'truncated');
+  assert.throws(() => new OrdersRepository({dataDir}), /recuperar/);
+  assert.equal(fs.readFileSync(file, 'utf8'), 'truncated');
+});
+
+test('the public listing revalidates its cached stock after a committed reservation', async () => {
+  const { CatalogOperations } = await import('../lib/catalogOperations');
+  const { repo, product, storeId, dataDir, order } = fixture();
+  const base = [product];
+  const catalog = new CatalogOperations({file:path.join(dataDir, 'commerce.json'), products:() => base, stores:() => [], orders:() => repo.getAllOrders()});
+  catalog.initializeOrderTracking();
+  const before = catalog.publicCatalog(repo.inventoryCacheRevision);
+  assert.equal(catalog.publicCatalog(repo.inventoryCacheRevision), before);
+  const purchase = catalog.getSalesProducts();
+  assert.ok(repo.transaction(() => repo.createOrder(order, purchase)).success);
+  const after = catalog.publicCatalog(repo.inventoryCacheRevision);
+  assert.notEqual(after, before);
+  assert.equal(after[0].reservedStockByStore[storeId], before[0].reservedStockByStore[storeId] + 1);
+});

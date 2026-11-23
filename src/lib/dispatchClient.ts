@@ -1,3 +1,4 @@
+import { backendFetch } from './backendRequest';
 import { api } from "./api";
 import type { DispatchService } from "./dispatchService";
 export type AdminDispatchData = ReturnType<DispatchService["adminView"]>;
@@ -30,7 +31,7 @@ async function request<T>(
   method = "GET",
   body?: unknown,
 ): Promise<T> {
-  const res = await fetch("/api/v1/" + path, {
+  const res = await backendFetch("/api/v1/" + path, {
     method,
     cache: "no-store",
     headers: {

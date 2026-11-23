@@ -12,7 +12,7 @@ import { GUEST_ADDRESSES_KEY } from "../lib/guestAddresses";
 import { FAVORITES_KEY } from "../customer/data";
 const directory = fs.mkdtempSync(path.join(os.tmpdir(), "bolt-customer-auth-"));
 let db = fixtureDatabase(path.join(directory, "postgres"));
-for (const file of ["001-auth.sql", "001-data.sql"])
+for (const file of ["001-auth.sql", "001-data.sql", "002-user-scope.sql"])
   await sql
     .raw(fs.readFileSync(`scripts/customer/${file}`, "utf8"))
     .execute(db);

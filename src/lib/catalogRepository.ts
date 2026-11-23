@@ -3,6 +3,7 @@ import path from 'path';
 import { Product, ProductPresentation, Store, MainCategory, Species, StorageCondition } from '../types';
 import {imageMetadataPatch, type CatalogImagePatch} from './catalogImagePatch';
 import { localCatalogService } from './localCatalogService';
+import { catalogCacheTtlMs, catalogFileVersion } from './catalogCache';
 
 export interface CatalogAuditEntry {
   id: string;
@@ -33,48 +34,53 @@ export class CatalogRepository {
   private overrides: Map<string, Partial<Product>> = new Map();
   private auditLog: CatalogAuditEntry[] = [];
   private mergedProductsCache: Product[] = [];
-  private isLoaded = false;
+  private registeredBaseline = new Map<string, Product>();
+  private overrideVersion?: string;
+  private checkAfter = 0;
 
-  constructor() {
+  constructor(
+    private readonly source = localCatalogService,
+    private readonly overridePath = CATALOG_OVERRIDE_PATH,
+    private readonly ttlMs = catalogCacheTtlMs(),
+    private readonly now = Date.now,
+  ) {
     this.init();
   }
 
   public init(): void {
-    // 1. Cargar catálogo base local estructurado
-    this.baselineProducts = localCatalogService.getAllGroupedProducts();
-
-    // 2. Cargar modificaciones persistidas
-    this.loadOverridesFromDisk();
-
-    // 3. Reconstruir caché fusionada
-    this.rebuildMergedCache();
-    this.isLoaded = true;
+    this.checkAfter = 0;
+    this.ensureFresh();
   }
 
-  private loadOverridesFromDisk(): void {
+  private ensureFresh(): void {
+    const base = this.source.getAllGroupedProducts();
+    const baseChanged = base !== this.baselineProducts;
+    let overridesChanged = false;
+    if (this.now() >= this.checkAfter) {
+      this.checkAfter = this.now() + this.ttlMs;
+      overridesChanged = this.loadOverridesFromDisk();
+    }
+    if (baseChanged || overridesChanged) {
+      this.baselineProducts = base;
+      this.rebuildMergedCache();
+    }
+  }
+
+  private loadOverridesFromDisk(): boolean {
     try {
-      if (fs.existsSync(CATALOG_OVERRIDE_PATH)) {
-        const raw = fs.readFileSync(CATALOG_OVERRIDE_PATH, 'utf-8');
-        const data: PersistedCatalogData = JSON.parse(raw);
-
-        this.customProducts.clear();
-        if (Array.isArray(data.customProducts)) {
-          data.customProducts.forEach(p => {
-            this.customProducts.set(p.id, p);
-          });
-        }
-
-        this.overrides.clear();
-        if (data.overrides && typeof data.overrides === 'object') {
-          Object.entries(data.overrides).forEach(([id, ovr]) => {
-            this.overrides.set(id, ovr);
-          });
-        }
-
-        this.auditLog = Array.isArray(data.auditLog) ? data.auditLog : [];
-      }
+      const version = catalogFileVersion(this.overridePath);
+      if (version === this.overrideVersion || version === 'missing') return false;
+      const data: PersistedCatalogData = JSON.parse(fs.readFileSync(this.overridePath, 'utf-8'));
+      const customProducts = new Map((data.customProducts || []).map(product => [product.id, product]));
+      const overrides = new Map(Object.entries(data.overrides || {}));
+      this.customProducts = customProducts;
+      this.overrides = overrides;
+      this.auditLog = Array.isArray(data.auditLog) ? data.auditLog : [];
+      this.overrideVersion = version;
+      return true;
     } catch (err) {
       console.warn('[CatalogRepository] Error reading catalog overrides file:', err);
+      return false;
     }
   }
 
@@ -88,14 +94,15 @@ export class CatalogRepository {
         auditLog: this.auditLog.slice(-500), // conservar los últimos 500 registros de auditoría
       };
 
-      const dir = path.dirname(CATALOG_OVERRIDE_PATH);
+      const dir = path.dirname(this.overridePath);
       if (!fs.existsSync(dir)) {
         fs.mkdirSync(dir, { recursive: true });
       }
 
-      const temp = `${CATALOG_OVERRIDE_PATH}.${process.pid}.tmp`;
+      const temp = `${this.overridePath}.${process.pid}.tmp`;
       fs.writeFileSync(temp, JSON.stringify(data, null, 2), {encoding:'utf-8',mode:0o600});
-      fs.renameSync(temp,CATALOG_OVERRIDE_PATH);
+      fs.renameSync(temp,this.overridePath);
+      this.overrideVersion = catalogFileVersion(this.overridePath);
     } catch (err) {
       console.error('[CatalogRepository] Error saving catalog overrides file:', err);
       throw err;
@@ -105,9 +112,9 @@ export class CatalogRepository {
   private rebuildMergedCache(): void {
     // Clonar base para aplicar overrides
     const baseMap = new Map<string, Product>();
-    this.baselineProducts.forEach(p => {
+    for (const p of [...this.baselineProducts, ...this.registeredBaseline.values()]) {
       baseMap.set(p.id, JSON.parse(JSON.stringify(p)));
-    });
+    }
 
     // Aplicar overrides sobre los existentes
     for (const [id, ovr] of this.overrides.entries()) {
@@ -143,7 +150,7 @@ export class CatalogRepository {
   }
 
   public getAllProducts(includeInactive = true): Product[] {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
     if (includeInactive) {
       return this.mergedProductsCache;
     }
@@ -151,12 +158,13 @@ export class CatalogRepository {
   }
 
   public registerBaselineProduct(product: Product): void {
-    this.baselineProducts = [...this.baselineProducts.filter(item => item.id !== product.id), product];
+    this.ensureFresh();
+    this.registeredBaseline.set(product.id, product);
     this.rebuildMergedCache();
   }
 
   public getProductById(id: string): Product | undefined {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
     return this.mergedProductsCache.find(p => p.id === id || p.productoId === id || p.sku === id);
   }
 
@@ -164,7 +172,7 @@ export class CatalogRepository {
     productData: Partial<Product>,
     actor: { email: string; name: string }
   ): { success: boolean; product?: Product; error?: string } {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
 
     if (!productData.name || !productData.name.trim()) {
       return { success: false, error: 'El nombre del producto es obligatorio.' };
@@ -263,7 +271,7 @@ export class CatalogRepository {
     updates: Partial<Product>,
     actor: { email: string; name: string }
   ): { success: boolean; product?: Product; error?: string } {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
 
     const product = this.getProductById(id);
     if (!product) {
@@ -352,7 +360,7 @@ export class CatalogRepository {
     id: string,
     actor: { email: string; name: string }
   ): { success: boolean; product?: Product; newStatus?: string; error?: string } {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
 
     const product = this.getProductById(id);
     if (!product) {
@@ -401,7 +409,7 @@ export class CatalogRepository {
     },
     actor: { email: string; name: string }
   ): { success: boolean; product?: Product; error?: string } {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
 
     const product = this.getProductById(productId);
     if (!product) {
@@ -450,7 +458,7 @@ export class CatalogRepository {
     isPrimary: boolean,
     actor: { email: string; name: string }
   ): { success: boolean; product?: Product; error?: string } {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
 
     const product = this.getProductById(productId);
     if (!product) {
@@ -488,7 +496,7 @@ export class CatalogRepository {
   }
 
   public getAuditLog(productId?: string): CatalogAuditEntry[] {
-    if (!this.isLoaded) this.init();
+    this.ensureFresh();
     if (productId) {
       return this.auditLog.filter(a => a.productId === productId);
     }
@@ -499,12 +507,13 @@ export class CatalogRepository {
    * Resetea el repositorio para pruebas unitarias limpias
    */
   public resetForTesting(): void {
+    this.overrideVersion = undefined;
     this.customProducts.clear();
     this.overrides.clear();
     this.auditLog = [];
-    if (fs.existsSync(CATALOG_OVERRIDE_PATH)) {
+    if (fs.existsSync(this.overridePath)) {
       try {
-        fs.unlinkSync(CATALOG_OVERRIDE_PATH);
+        fs.unlinkSync(this.overridePath);
       } catch {}
     }
     this.rebuildMergedCache();

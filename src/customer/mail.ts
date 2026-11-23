@@ -1,4 +1,5 @@
 import crypto from "node:crypto";
+import { providerQuota } from "../lib/providerQuota";
 import nodemailer from "nodemailer";
 import { symmetricEncrypt, symmetricDecrypt } from "better-auth/crypto";
 import { customerEmailConfigured, type CustomerConfig } from "./config";
@@ -19,7 +20,8 @@ export async function sendCustomerMailHTTP(
   const data = await response.json().catch(() => null);
   if (!data || typeof data.id !== "string" || !data.id) throw Error("Transactional email acceptance missing");
 }
-export function customerMailer(config: CustomerConfig, db: CustomerDB) {
+export function customerMailer(config: CustomerConfig, db: CustomerDB, env = process.env, reportSendFailure?: () => void) {
+  const quota = providerQuota("MAIL", env);
   const transport = config.smtp
     ? nodemailer.createTransport({
         host: config.smtp.host,
@@ -74,6 +76,13 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB) {
               .execute();
             continue;
           }
+          const slot = quota.take([row.recipient_hash]);
+          if ("retryAfter" in slot) {
+            await tx.updateTable("customer_mail")
+              .set({ next_attempt: new Date(Date.now() + 1000 * slot.retryAfter) })
+              .where("id", "=", row.id).execute();
+            continue;
+          }
           try {
             const mail = JSON.parse(
               await symmetricDecrypt({
@@ -93,6 +102,7 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB) {
               .where("id", "=", row.id)
               .execute();
           } catch {
+            reportSendFailure?.();
             await tx
               .updateTable("customer_mail")
               .set({
@@ -103,6 +113,8 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB) {
               })
               .where("id", "=", row.id)
               .execute();
+          } finally {
+            slot.release();
           }
         }
         await tx

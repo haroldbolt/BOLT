@@ -3,8 +3,8 @@ info:
   title: Bolt Pets API & Bolt Conductor Shared Backend
   version: 1.0.0
   description: >
-    API unificada de comercio electrónico para mascotas, operaciones de despacho,
-    farmacia veterinaria y contrato para la app nativa Android Bolt Conductor en Bogotá, Colombia.
+    Selección de rutas de comercio, monitoreo y reparto de BOLT Pets en Bogotá, Colombia.
+    La guía docs/API-V1.md describe otros recursos y los flujos de autenticación.
 servers:
   - url: /api/v1
     description: Servidor de Aplicación Bolt Pets
@@ -12,19 +12,28 @@ servers:
 paths:
   /health:
     get:
-      summary: Verificación de estado del servidor y base de datos
+      summary: Consultar la disponibilidad del backend y el resumen del catálogo local
+      description: Devuelve la hora del proceso, las sedes activas y los contadores del catálogo. La disponibilidad de PostgreSQL se comprueba por separado.
       responses:
         '200':
-          description: Servicio saludable
+          description: El proceso atendió la consulta
           content:
             application/json:
               schema:
                 type: object
                 properties:
-                  status: { type: string, example: "ok" }
-                  timestamp: { type: string }
+                  status: { type: string, enum: [ok] }
+                  service: { type: string, example: Bolt Pets Authoritative Backend }
+                  timestamp: { type: string, format: date-time }
                   version: { type: string, example: "1.0.0" }
+                  revision: { type: string, nullable: true, pattern: '^[a-f0-9]{40}$', description: SHA del despliegue cuando está configurado. }
+                  catalogSource: { type: string, enum: [LOCAL_CATALOG] }
                   timezone: { type: string, example: "America/Bogota" }
+                  locale: { type: string, example: es-CO }
+                  storesCount: { type: integer }
+                  totalProductosAgrupados: { type: integer }
+                  totalVariantes: { type: integer }
+                  productosActivos: { type: integer }
 
   /stores:
     get:
@@ -62,6 +71,11 @@ paths:
   /orders:
     post:
       summary: Crear pedido con reserva transaccional de inventario
+      parameters:
+        - name: Idempotency-Key
+          in: header
+          required: true
+          schema: { type: string, minLength: 1, maxLength: 150 }
       requestBody:
         required: true
         content:
@@ -69,10 +83,16 @@ paths:
             schema:
               $ref: '#/components/schemas/CreateOrderRequest'
       responses:
+        '200':
+          description: Se devuelve la confirmación existente al repetir la misma clave, cuerpo y titular.
         '201':
           description: Pedido creado exitosamente
         '400':
-          description: Inventario insuficiente o validación fallida
+          description: Inventario insuficiente o validación fallida. Los métodos Wompi devuelven PAYMENT_UNAVAILABLE y un método desconocido devuelve INVALID_PAYMENT_METHOD.
+        '409':
+          description: Cambió la cotización, el precio o la solicitud de revisión, o la clave ya se utilizó con otros datos o titular.
+        '503':
+          description: RAPPI_CASH_UNCONFIRMED mientras el piloto de Suba espera la confirmación del recaudo.
 
   /orders/{orderId}:
     get:
@@ -121,6 +141,139 @@ paths:
         '200':
           description: Telemetría segura para cliente
 
+  /admin/observability:
+    get:
+      summary: Consultar el estado del servicio y los indicadores operativos
+      description: >
+        Lectura global de Coordinación. Los contadores del servicio comienzan de nuevo al
+        reiniciar el proceso. Los indicadores operativos se calculan sobre los pedidos y
+        despachos persistidos. Las operaciones de prueba se contabilizan por separado.
+      security:
+        - SesionCoordinacion: []
+      responses:
+        '200':
+          description: Indicadores agregados de todas las sedes
+          headers:
+            Cache-Control:
+              schema: { type: string, example: 'private, no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [service, operations]
+                properties:
+                  service:
+                    type: object
+                    required: [startedAt, asOf, http, httpByArea, workerFailures, dispatchSignals, recentMinutes, alerts]
+                    properties:
+                      startedAt: { type: string, format: date-time }
+                      asOf: { type: string, format: date-time }
+                      latencyBinsUpperMs:
+                        type: array
+                        description: Límites superiores de latencia en milisegundos. El último intervalo queda abierto.
+                        items: { type: integer, nullable: true }
+                      http: { $ref: '#/components/schemas/ContadoresHttp' }
+                      httpByArea:
+                        type: object
+                        additionalProperties: { $ref: '#/components/schemas/ContadoresHttp' }
+                      workerFailures: { $ref: '#/components/schemas/Conteos' }
+                      dispatchSignals: { $ref: '#/components/schemas/Conteos' }
+                      recentMinutes:
+                        type: array
+                        description: Minutos registrados en la ventana reciente de cinco minutos.
+                        items:
+                          type: object
+                          properties:
+                            start: { type: string, format: date-time }
+                            http: { $ref: '#/components/schemas/ContadoresHttp' }
+                            workers: { $ref: '#/components/schemas/Conteos' }
+                      alerts:
+                        type: object
+                        properties:
+                          configured: { type: boolean }
+                          cooldownSeconds: { type: integer }
+                          maxAttemptsPerHour: { type: integer }
+                          attempted: { type: integer }
+                          sent: { type: integer }
+                          failed: { type: integer }
+                          suppressed: { type: integer }
+                      suppressedLogs: { type: integer }
+                  operations:
+                    type: object
+                    required: [asOf, confirmedSalesToday, orders, payments, cash, dispatches, tests]
+                    properties:
+                      asOf: { type: string, format: date-time }
+                      confirmedSalesToday:
+                        type: object
+                        properties:
+                          date: { type: string, format: date }
+                          timezone: { type: string, enum: [America/Bogota] }
+                          orders: { type: integer }
+                          knownConfirmedCOP: { type: integer, nullable: true, description: Suma conocida en COP. Es nula si faltan todos los importes de las ventas del día. }
+                          unknownAmounts: { type: integer }
+                      orders: { $ref: '#/components/schemas/Conteos' }
+                      payments: { $ref: '#/components/schemas/Conteos' }
+                      dispatches: { $ref: '#/components/schemas/Conteos' }
+                      tests: { $ref: '#/components/schemas/Conteos' }
+                      cash:
+                        type: object
+                        properties:
+                          verifiedCollectedCOP: { type: integer, nullable: true, description: Suma en COP con evidencia de recaudo. Es nula cuando falta evidencia y puede ser cero con evidencia. }
+                          verifiedShipments: { type: integer }
+                          unverifiedDeliveredShipments: { type: integer }
+                          pendingShipments: { type: integer }
+                          awaitingConfirmationOrders: { type: integer }
+        '401': { $ref: '#/components/responses/SesionRequerida' }
+        '403': { $ref: '#/components/responses/CoordinacionRequerida' }
+        '429': { $ref: '#/components/responses/LimiteConsultas' }
+
+  /admin/orders/{orderId}/payments/wompi:
+    get:
+      summary: Verificar el estado de una transacción Wompi vinculada al pedido
+      description: >
+        Coordinación consulta el identificador de transacción guardado en el pedido.
+        El servidor coteja comercio, identificador, referencia del pedido, método,
+        moneda e importe. La consulta conserva el estado del pedido y del pago.
+      security:
+        - SesionCoordinacion: []
+      parameters:
+        - name: orderId
+          in: path
+          required: true
+          schema: { type: string }
+      responses:
+        '200':
+          description: Estado de la transacción informada por el proveedor y verificada por el servidor
+          headers:
+            Cache-Control:
+              schema: { type: string, example: 'private, no-store' }
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [provider, environment, providerStatus, amountInCents, currency]
+                properties:
+                  provider: { type: string, enum: [WOMPI] }
+                  environment: { type: string, enum: [sandbox, production] }
+                  providerStatus: { type: string, enum: [PENDING, APPROVED, DECLINED, VOIDED, ERROR] }
+                  amountInCents: { type: integer, minimum: 1, description: Importe del pedido en centavos de COP. }
+                  currency: { type: string, enum: [COP] }
+        '401': { $ref: '#/components/responses/SesionRequerida' }
+        '403': { $ref: '#/components/responses/CoordinacionRequerida' }
+        '404':
+          description: ORDER_NOT_FOUND. El pedido no existe.
+        '409':
+          description: >
+            WOMPI_LINK_REQUIRED indica que falta una vinculación, un método o un importe válido.
+            WOMPI_NOT_VERIFIED indica que el proveedor no encontró la transacción o la respuesta requiere conciliación.
+        '429': { $ref: '#/components/responses/LimiteConsultas' }
+        '502':
+          description: WOMPI_UNAVAILABLE. No se pudo obtener la respuesta del proveedor.
+        '503':
+          description: >
+            WOMPI_NOT_CONFIGURED indica que falta la configuración de consulta.
+            PROVIDER_BUDGET_UNAVAILABLE indica que el servidor no pudo reservar la cuota.
+
   /driver/gps:
     post:
       summary: Recepción de coordenadas en tiempo real desde Bolt Conductor Android
@@ -159,7 +312,41 @@ paths:
           description: Código de seguridad incorrecto
 
 components:
+  securitySchemes:
+    SesionCoordinacion:
+      type: http
+      scheme: bearer
+      description: Token de sesión administrativa vigente del rol ADMINISTRADOR (Coordinación).
+  responses:
+    SesionRequerida:
+      description: UNAUTHORIZED. Se requiere una cabecera de autorización Bearer.
+    CoordinacionRequerida:
+      description: FORBIDDEN. El token es inválido, expiró o pertenece a un rol sin acceso global.
+    LimiteConsultas:
+      description: RATE_LIMITED al alcanzar la cuota de la API. La consulta Wompi también puede devolver PROVIDER_RATE_LIMIT.
+      headers:
+        Retry-After:
+          description: Segundos de espera antes del reintento.
+          schema: { type: integer, minimum: 1 }
   schemas:
+    Conteos:
+      type: object
+      additionalProperties: { type: integer, minimum: 0 }
+
+    ContadoresHttp:
+      type: object
+      properties:
+        completed: { type: integer }
+        aborted: { type: integer }
+        http2xx: { type: integer }
+        http3xx: { type: integer }
+        http4xx: { type: integer }
+        http5xx: { type: integer }
+        http429: { type: integer }
+        sumMs: { type: integer }
+        maxMs: { type: integer }
+        latencyBins: { type: array, items: { type: integer } }
+
     Store:
       type: object
       properties:
@@ -176,26 +363,47 @@ components:
 
     CreateOrderRequest:
       type: object
-      required: [storeId, items, customer, deliveryAddress, paymentMethod]
+      required: [items, customer, deliveryAddress, paymentMethod]
       properties:
-        storeId: { type: string }
+        confirmationToken: { type: string, description: Token de la cotización vigente para confirmar la compra. }
+        requestDeliveryReview: { type: boolean, description: Solicita la revisión ofrecida por la cotización. }
+        reviewRequestToken: { type: string, description: Token de la cotización requerido al solicitar revisión. }
+        deliveryMode: { type: string, enum: [TURBO, TURBO_DIVIDIDO, PROGRAMADO] }
+        scheduledWindow: { type: object, description: Franja vigente ofrecida por la cotización para una confirmación programada. }
         items:
           type: array
+          minItems: 1
           items:
             type: object
+            required: [productId, quantity, price]
             properties:
               productId: { type: string }
-              quantity: { type: integer }
+              quantity: { type: integer, minimum: 1 }
+              price: { type: number, description: Precio unitario en COP mostrado al cliente. }
+        customer:
+          type: object
+          required: [name, phone, email]
+          properties:
+            name: { type: string }
+            phone: { type: string }
+            email: { type: string }
         deliveryAddress:
           type: object
           properties:
             address: { type: string }
             details: { type: string }
-            lat: { type: number }
-            lng: { type: number }
+            municipality: { type: string }
+            locality: { type: string }
+            coordinates:
+              type: object
+              required: [lat, lng]
+              properties:
+                lat: { type: number }
+                lng: { type: number }
         paymentMethod:
           type: string
-          enum: [WOMPI_CARD, WOMPI_PSE, WOMPI_BANCOLOMBIA, CASH_ON_DELIVERY]
+          description: Efectivo contra entrega. El servidor acepta también el alias EFECTIVO.
+          enum: [CASH_ON_DELIVERY, EFECTIVO]
 
     GPSTelemetry:
       type: object

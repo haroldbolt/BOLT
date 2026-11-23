@@ -8,6 +8,8 @@ import { readCustomerConfig, customerEmailConfigured, type CustomerConfig } from
 import {
   connectCustomerDatabase,
   assertCustomerSchema,
+  withCustomerScope,
+  assertRestrictedCustomerRole,
   type CustomerDB,
 } from "./database";
 import { customerMailer } from "./mail";
@@ -23,6 +25,7 @@ export async function mountCustomerAccounts(
   app: Express,
   orders: OrderIdentityBridge,
   override?: { config: CustomerConfig; db: CustomerDB; sendMail: any },
+  reportMailFailure = () => console.error("[Customer] mail worker unavailable"),
 ) {
   const config = override?.config || readCustomerConfig();
   const db =
@@ -30,10 +33,13 @@ export async function mountCustomerAccounts(
     (config ? connectCustomerDatabase(config.databaseURL!) : null);
   let instance: ReturnType<typeof createCustomerAuth> | null = null;
   if (config && db) {
+    if (!override) await assertRestrictedCustomerRole(db);
     await assertCustomerSchema(db); // Never silently create or migrate operational storage at boot.
     const mail = customerMailer(
       config,
       override ? db : connectCustomerDatabase(config.databaseURL!),
+      process.env,
+      reportMailFailure,
     );
     instance = createCustomerAuth(
       config,
@@ -42,9 +48,7 @@ export async function mountCustomerAccounts(
     );
     if (!override) {
       const worker = setInterval(() => {
-        mail
-          .drain()
-          .catch(() => console.error("[Customer] mail worker unavailable"));
+        mail.drain().catch(reportMailFailure);
       }, 10000);
       worker.unref();
     }
@@ -97,7 +101,8 @@ export async function mountCustomerAccounts(
           error: "Este método de acceso todavía no está configurado.",
         }),
     );
-  const getSession = async (req: Request, res?: Response) => {
+  const readSessions = new WeakMap<Request, ReturnType<typeof resolveSession>>();
+  const resolveSession = async (req: Request, res?: Response) => {
     if (!instance) return null;
     const result = await instance.auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
@@ -109,6 +114,16 @@ export async function mountCustomerAccounts(
       for (const cookie of result.headers.getSetCookie())
         res.append("Set-Cookie", cookie);
     return result.response;
+  };
+  // Reuse the verified read-only session during this request. Renewals still forward the SDK cookies.
+  const getSession = (req: Request, res?: Response) => {
+    if (res) return resolveSession(req, res);
+    let session = readSessions.get(req);
+    if (!session) {
+      session = resolveSession(req);
+      readSessions.set(req, session);
+    }
+    return session;
   };
   const guarded =
     (fn: (req: Request, res: Response, session: any) => Promise<any>) =>
@@ -269,13 +284,13 @@ export async function mountCustomerAccounts(
       res.json({ ok: true });
     }),
   );
-  const data = async (id: string) => {
-    await db!
+  const data = async (tx: CustomerDB, id: string) => {
+    await tx
       .insertInto("customer_data")
       .values({ user_id: id, payload: "{}" })
       .onConflict((oc) => oc.column("user_id").doNothing())
       .execute();
-    return db!
+    return tx
       .selectFrom("customer_data")
       .select(["payload", "revision"])
       .where("user_id", "=", id)
@@ -284,7 +299,7 @@ export async function mountCustomerAccounts(
   app.get(
     "/api/customer/data",
     guarded(async (_req, res, session) =>
-      res.json(await data(session.user.id)),
+      res.json(await withCustomerScope(db!, session.user.id, tx => data(tx, session.user.id))),
     ),
   );
   app.put(
@@ -298,7 +313,7 @@ export async function mountCustomerAccounts(
       }
       if (!Number.isInteger(req.body.revision))
         return res.status(400).json({ error: "Versión requerida" });
-      const updated = await db!
+      const updated = await withCustomerScope(db!, session.user.id, tx => tx
         .updateTable("customer_data")
         .set({
           payload: JSON.stringify(payload),
@@ -308,7 +323,7 @@ export async function mountCustomerAccounts(
         .where("user_id", "=", session.user.id)
         .where("revision", "=", req.body.revision)
         .returning(["payload", "revision"])
-        .executeTakeFirst();
+        .executeTakeFirst());
       return updated
         ? res.json(updated)
         : res
@@ -336,8 +351,8 @@ export async function mountCustomerAccounts(
       } catch (e: any) {
         return res.status(400).json({ error: e.message });
       }
-      await data(session.user.id);
-      const result = await db!.transaction().execute(async (tx) => {
+      const result = await withCustomerScope(db!, session.user.id, async tx => {
+        await data(tx, session.user.id);
         const current = await tx
           .selectFrom("customer_data")
           .selectAll()
@@ -376,21 +391,21 @@ export async function mountCustomerAccounts(
     const order = orders.list().find((o) => o.id === id);
     if (!order) return false;
     if ((order as any).customerAccountId === userId) return true;
-    return !!(await db!
+    return !!(await withCustomerScope(db!, userId, tx => tx
       .selectFrom("customer_order_links")
       .select("order_id")
       .where("order_id", "=", id)
       .where("user_id", "=", userId)
-      .executeTakeFirst());
+      .executeTakeFirst()));
   };
   app.get(
     "/api/customer/orders",
     guarded(async (_req, res, session) => {
-      const links = await db!
+      const links = await withCustomerScope(db!, session.user.id, tx => tx
         .selectFrom("customer_order_links")
         .select("order_id")
         .where("user_id", "=", session.user.id)
-        .execute();
+        .execute());
       const ids = new Set(links.map((x) => x.order_id));
       res.json(
         orders
@@ -419,7 +434,7 @@ export async function mountCustomerAccounts(
             error:
               "Se requiere verificar la titularidad mediante el acceso privado de la compra.",
           });
-      await db!
+      await withCustomerScope(db!, session.user.id, tx => tx
         .insertInto("customer_order_links")
         .values({
           order_id: order.id,
@@ -427,7 +442,7 @@ export async function mountCustomerAccounts(
           evidence: "guest-capability",
         })
         .onConflict((oc) => oc.column("order_id").doNothing())
-        .execute();
+        .execute());
       if (!(await canReadOrder(order.id, session.user.id)))
         return res
           .status(409)
@@ -471,6 +486,7 @@ export async function mountCustomerAccounts(
         (await canReadOrder(id, session.user.id))
       );
     },
+    ratePrincipal: async (req: Request) => (await getSession(req))?.user.id,
     instance,
     db,
   };

@@ -5,12 +5,14 @@ import { timeAgoSpanish } from '../../lib/formatters';
 
 interface NotificationCenterModalProps {
   isOpen: boolean;
+  simulationEnabled?: boolean;
   onClose: () => void;
   onNavigateToOrder: (orderId: string) => void;
 }
 
 export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = ({
   isOpen,
+  simulationEnabled = false,
   onClose,
   onNavigateToOrder,
 }) => {
@@ -18,8 +20,12 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
 
   useEffect(() => {
     if (isOpen) {
-      setNotifications(pushService.getNotifications());
-      pushService.markAllAsRead();
+      const refresh = () => {
+        pushService.markAllAsRead();
+        setNotifications(pushService.getNotifications());
+      };
+      refresh();
+      return pushService.subscribe(refresh);
     }
   }, [isOpen]);
 
@@ -69,8 +75,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
           </button>
         </div>
 
-        {/* Quick Simulator Bar for testing */}
-        <div className="p-3 bg-red-50/70 border-b border-red-100 space-y-1.5">
+        {simulationEnabled && <div className="p-3 bg-red-50/70 border-b border-red-100 space-y-1.5">
           <span className="text-[11px] font-black text-red-950 flex items-center gap-1">
             <Sparkles className="w-3.5 h-3.5 text-red-600" />
             Simulador de Estados Push (Probar Alertas):
@@ -95,7 +100,7 @@ export const NotificationCenterModal: React.FC<NotificationCenterModalProps> = (
               3. Entregado ✓
             </button>
           </div>
-        </div>
+        </div>}
 
         {/* Notifications List */}
         <div className="flex-1 overflow-y-auto p-4 space-y-3">

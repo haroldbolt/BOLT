@@ -80,25 +80,32 @@ export class OrdersRepository {
   private inTransaction = false;
   private transactionReservations: (() => void)[] = [];
   private unified = false;
+  private committedRevision = 0;
+  get inventoryCacheRevision() { return this.committedRevision; }
   private fulfillmentFile: string;
   public dispatchState: DispatchState = newDispatchState();
 
-  private snapshot() {return structuredClone({orders:this.orders,drivers:this.drivers,audit:this.auditHistory,telemetry:this.telemetryHistory,dispatch:this.dispatchState})}
+  // commit() serializa estas referencias sin ceder el hilo. Solo el punto de
+  // recuperación anterior a una mutación necesita una copia en memoria.
+  private currentState() {
+    return {orders:this.orders, drivers:this.drivers, audit:this.auditHistory, telemetry:this.telemetryHistory, dispatch:this.dispatchState};
+  }
   private restore(s:any) {this.orders=s.orders;this.drivers=s.drivers;this.auditHistory=s.audit;this.telemetryHistory=s.telemetry;this.dispatchState=s.dispatch}
   private persistUnified() {
-    new FulfillmentStorage(this.dataDir).commit(this.snapshot());this.unified=true;
+    new FulfillmentStorage(this.dataDir).commit(this.currentState());this.unified=true;
+    this.committedRevision++;
   }
   /** One synchronous writer (server lock). All dispatch/order/driver changes commit in one atomic rename. */
   public transaction<T>(fn:()=>T):T {
     if(this.inTransaction)return fn();
-    const before=this.snapshot(),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
+    const before=structuredClone(this.currentState()),previousRevision=new FulfillmentStorage(this.dataDir).read()?.revision||0;this.inTransaction=true;
     try {const value=fn();this.persistUnified();return value}
     catch(error){
       const durable=new FulfillmentStorage(this.dataDir).read();
-      if((durable?.revision||0)>previousRevision) this.restore(durable);
+      if((durable?.revision||0)>previousRevision) { this.restore(durable); this.committedRevision++; }
       else {
         for(const release of this.transactionReservations.reverse()) release();
-        if(JSON.stringify(this.snapshot())!==JSON.stringify(before)) this.restore(before);
+        if(JSON.stringify(this.currentState())!==JSON.stringify(before)) this.restore(before);
       }
       throw error;
     }
@@ -144,9 +151,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.ordersFile, 'utf-8');
         this.orders = JSON.parse(raw);
       } catch (err) {
-        console.error('[OrdersRepository] Error leyendo pedidos persistidos, usando semillas:', err);
-        this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
-        this.saveOrders();
+        throw Error('No se pudo leer el archivo de pedidos. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.orders = JSON.parse(JSON.stringify(INITIAL_ORDERS));
@@ -159,9 +164,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.driversFile, 'utf-8');
         this.drivers = JSON.parse(raw);
       } catch (err) {
-        console.error('[OrdersRepository] Error leyendo conductores persistidos, usando semillas:', err);
-        this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
-        this.saveDrivers();
+        throw Error('No se pudo leer el archivo de conductores. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.drivers = JSON.parse(JSON.stringify(INITIAL_DRIVERS));
@@ -174,8 +177,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.auditFile, 'utf-8');
         this.auditHistory = JSON.parse(raw);
       } catch (err) {
-        this.auditHistory = [];
-        this.saveAudit();
+        throw Error('No se pudo leer el archivo de auditoría. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.auditHistory = [];
@@ -188,8 +190,7 @@ export class OrdersRepository {
         const raw = fs.readFileSync(this.telemetryFile, 'utf-8');
         this.telemetryHistory = JSON.parse(raw);
       } catch (err) {
-        this.telemetryHistory = {};
-        this.saveTelemetry();
+        throw Error('No se pudo leer el archivo de telemetría. Se requiere recuperar la fuente existente.');
       }
     } else {
       this.telemetryHistory = {};

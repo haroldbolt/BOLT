@@ -1,3 +1,4 @@
+import { isBoltSplitDeployment } from '../../lib/backendRequest';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
@@ -14,6 +15,7 @@ import { InventoryAdjustments } from './InventoryAdjustments';
 import { InventoryPhotoEditor } from './InventoryPhotoEditor';
 import { formatAdminPrice, PriceEditor } from './PriceManagement';
 import { SalesDashboard } from './SalesDashboard';
+import { ServiceStatus } from './ServiceStatus';
 import { LiveAdminTools, liveOperationTools, type LiveOperationTool } from './LiveAdminTools';
 import './boltAdmin.css';
 
@@ -180,7 +182,7 @@ export function BoltAdminApp() {
       </form>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
       {!session && error && <button className="ba-btn ba-btn-secondary" type="button" onClick={() => setAttempt(n => n + 1)}>Reintentar</button>}
-      <a className="ba-text-link" href="/"><ArrowLeft size={15} /> BOLT Cliente</a>
+      {!isBoltSplitDeployment() && <a className="ba-text-link" href="/"><ArrowLeft size={15} /> BOLT Cliente</a>}
     </div>
   </main>;
 }
@@ -422,7 +424,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
           </button>;
         })}
       </nav>
-      <div className="ba-sidebar-foot"><a href="/"><ArrowLeft size={16} /> BOLT Cliente</a></div>
+      {!isBoltSplitDeployment() && <div className="ba-sidebar-foot"><a href="/"><ArrowLeft size={16} /> BOLT Cliente</a></div>}
     </aside>
 
     <div className="ba-main">
@@ -467,6 +469,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
               : orders ? <Empty icon={<ClipboardList size={23} />} title="Sin solicitudes pendientes" text="Cuando lleguen solicitudes a esta sede, aparecerán aquí." />
               : <Loading text="Consultando pedidos…" />}
           </section>
+          {!isDemo && actor.role === 'COORDINACION' && token && <ServiceStatus key={actor.id} token={token} />}
         </>}
 
         {orderView && <>

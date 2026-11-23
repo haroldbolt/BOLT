@@ -17,7 +17,11 @@ export async function applyCustomerMigration(
         .select("version")
         .where("id", "=", 1)
         .executeTakeFirst();
-      if (row?.version === 1) return "already-applied";
+      if (row?.version === 2) return "already-applied";
+      if (row?.version === 1) {
+        await applyUserScope(tx);
+        return "applied";
+      }
       throw Error("Unsupported customer schema; stop and review migration.");
     }
     await sql
@@ -37,6 +41,11 @@ export async function applyCustomerMigration(
         ),
       )
       .execute(tx);
+    await applyUserScope(tx);
     return "applied";
   });
+}
+
+function applyUserScope(db: CustomerDB) {
+  return sql.raw(fs.readFileSync(new URL("../../scripts/customer/002-user-scope.sql", import.meta.url), "utf8")).execute(db);
 }

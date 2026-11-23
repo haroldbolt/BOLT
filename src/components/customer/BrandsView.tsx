@@ -1,3 +1,4 @@
+import { backendCatalogImage } from '../../lib/backendRequest';
 import React,{useState} from 'react';
 import {ChevronRight,Search} from 'lucide-react';
 import {normalizeBrand,type BrandEntry} from '../../lib/brandDirectory';
@@ -7,7 +8,7 @@ export function BrandButton({entry,onSelect}:{entry:BrandEntry;onSelect:(entry:B
   return <button type="button" aria-label={`Ver productos de ${entry.name}, ${entry.count} productos`} onClick={()=>onSelect(entry)}
     className="group flex min-h-32 min-w-0 flex-col items-center justify-between gap-2 rounded-2xl border border-slate-200 bg-white p-3 text-center transition hover:border-red-400 hover:shadow-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-red-600">
     <span className="flex h-16 w-full items-center justify-center overflow-hidden rounded-xl bg-white">
-      {entry.image&&!failed?<img src={entry.image} alt={`Logo de ${entry.name}`} width="180" height="86" loading="lazy" decoding="async" onError={()=>setFailed(true)} className="max-h-full max-w-full object-contain"/>:<span className="break-words text-lg font-black text-slate-800">{entry.name}</span>}
+      {entry.image&&!failed?<img src={backendCatalogImage(entry.image)} alt={`Logo de ${entry.name}`} width="180" height="86" loading="lazy" decoding="async" onError={()=>setFailed(true)} className="max-h-full max-w-full object-contain"/>:<span className="break-words text-lg font-black text-slate-800">{entry.name}</span>}
     </span>
     <span className="text-sm font-bold text-slate-900">{entry.name}</span>
     <span className="flex items-center gap-1 text-xs font-semibold text-red-600">Ver productos <ChevronRight className="h-3 w-3" aria-hidden="true"/></span>

@@ -1,6 +1,6 @@
 import { applyCustomerMigration } from "../../src/customer/migration";
 import { readCustomerConfig } from "../../src/customer/config";
-import { connectCustomerDatabase } from "../../src/customer/database";
+import { assertRestrictedCustomerRole, connectCustomerDatabase } from "../../src/customer/database";
 if (!process.argv.includes("--apply"))
   throw Error(
     "Explicit --apply required. Back up the selected customer database first. No order files are migrated.",
@@ -12,8 +12,9 @@ if (!config)
   );
 const db = connectCustomerDatabase(config.databaseURL!);
 try {
+  await assertRestrictedCustomerRole(db);
   console.log(
-    "Customer schema v1:",
+    "Customer schema v2:",
     await applyCustomerMigration(db),
     "; operational files unchanged.",
   );

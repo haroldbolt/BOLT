@@ -90,6 +90,10 @@ const template=data.customProducts[0];
 for(const price of [59999,60000,60001]) data.customProducts.push({...structuredClone(template),id:'PRICE-'+price,sku:'PRICE-'+price,name:'SIMULACIÓN TARIFA '+price,price,weightKg:1,transport:{...template.transport,weightGrams:1000},presentaciones:undefined});
 data.customProducts.push({ ...structuredClone(data.customProducts[1]), id: 'RX-TEST', sku: 'RX-TEST',
   name: 'Fórmula de prueba', requiresPrescription: true });
+const lastUnit = data.customProducts.find((p:any) => p.id === 'PRICE-59999');
+lastUnit.bodegaIds = ['HUB_SUBA', 'HUB_KENNEDY', 'HUB_ALAMOS'];
+lastUnit.stockByStore = {HUB_SUBA:1, HUB_KENNEDY:7, HUB_ALAMOS:9};
+lastUnit.reservedStockByStore = {HUB_SUBA:0, HUB_KENNEDY:0, HUB_ALAMOS:0};
 fs.writeFileSync(file,JSON.stringify(data));
 const destination={address:'Carrera 107 #143-31, Bogotá, Colombia',coordinates:{lat:4.747154,lng:-74.098137},municipality:'Bogotá',locality:'Suba'};
 try {
@@ -110,7 +114,36 @@ try {
  }
  assert.equal((await call('/orders')).length, 0);
  assert.equal((await call('/catalog')).find((p:any) => p.id === 'PRICE-59999').reservedStockByStore.HUB_SUBA ?? 0, 0);
- idem='pricing-once';const created=await call('/orders','POST',payload,'',201);guest=created.guestAccessToken;
+ const race = async (key:string) => {
+   const response = await fetch(base+'/orders', {method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key':key}, body:JSON.stringify(payload)});
+   return {status:response.status, result:await response.json(), key};
+ };
+ // Distinct checkout attempts deliberately compete for one sellable unit.
+ const attempts = await Promise.all([race('last-unit-a'), race('last-unit-b')]);
+ const winners = attempts.filter(attempt => attempt.status === 201);
+ assert.equal(winners.length, 1, JSON.stringify(attempts.map(a=>({status:a.status, code:a.result.code}))));
+ const loser = attempts.find(a => a !== winners[0])!;
+ assert.equal(loser.status, 400);
+ assert.ok(['INSUFFICIENT_STOCK','OUT_OF_STOCK_AUTO_SCHEDULED'].includes(loser.result.code) || /inventario insuficiente/i.test(loser.result.error), 'El rechazo debe deberse a existencias.');
+ const created = winners[0].result;
+ assert.equal(created.storeId, 'HUB_SUBA');
+ assert.equal(created.fulfillmentStatus, 'CONFIRMADO');
+ const assertOnlyOneReserve = async () => {
+   const rows = await call('/orders');
+   const purchases = rows.filter((o:any) => o.items.some((item:any) => item.productId === lastUnit.id));
+   assert.deepEqual(purchases.map((o:any)=>o.id), [created.id]);
+   assert.deepEqual(purchases[0].items.map((item:any)=>[item.productId,item.quantity]), [[lastUnit.id,1]]);
+   const row = (await call('/catalog')).find((p:any)=>p.id === lastUnit.id);
+   const variant = row.presentaciones.find((v:any)=>v.sku === lastUnit.sku);
+   assert.ok(variant);
+   for (const [store, stock] of Object.entries(lastUnit.stockByStore)) {
+     assert.equal(variant.stockByStore[store], stock);
+     assert.equal(variant.reservedStockByStore[store], store === 'HUB_SUBA' ? 1 : 0);
+   }
+ };
+ await assertOnlyOneReserve();
+ idem = winners[0].key;
+ guest = created.guestAccessToken;
  assert.equal(created.payment.status,'PENDIENTE');
  assert.equal(created.payment.transactionId,undefined);
  assert.equal(created.totals.shipping,10000);assert.equal(created.totals.serviceFee,0);assert.equal(created.totals.total,69999);assert.equal(created.payment.cashToCollect,69999);
@@ -154,6 +187,8 @@ try {
  assert.equal((await call('/orders/'+created.id,'GET',undefined,'')).totals.total,69999);
  await stop();await start();admin=(await call('/auth/login','POST',info.admin,'')).token;
  assert.equal((await call('/orders/'+created.id,'GET',undefined,'')).totals.total,69999);assert.equal((await call('/admin/transport')).config.pricing.turbo.shipping,9000);
+ await assertOnlyOneReserve();
+ console.log('PASS concurrencia HTTP con dos claves distintas: una sola compra de la última unidad, una reserva en Suba y saldos de Kennedy/Álamos conservados tras reinicio.');
  assert.equal((await call(rxOrder)).prescriptionReview.status,'APROBADA');
  assert.equal((await call('/catalog')).find((p:any)=>p.id==='PRICE-59999').reservedStockByStore.HUB_SUBA,1);
  console.log('PASS pricing HTTP: 59999/60000/60001, server totals ignore client fees, idempotency, one reserve, old quote rejected after tariff edit, historical total unchanged, authenticated CAS update and restart, unavailable payment methods reserve nothing, and persistent prescription review.');

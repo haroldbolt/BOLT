@@ -11,7 +11,7 @@ assert.equal(config.legalApproved,false);
 assert.equal(config.smtp,undefined);
 assert.equal(customerEmailConfigured(null),false);
 const db=fixtureDatabase();
-for(const file of ['001-auth.sql','001-data.sql'])await sql.raw(fs.readFileSync(`scripts/customer/${file}`,'utf8')).execute(db);
+for(const file of ['001-auth.sql','001-data.sql','002-user-scope.sql'])await sql.raw(fs.readFileSync(`scripts/customer/${file}`,'utf8')).execute(db);
 const realFetch=globalThis.fetch; const calls:any[]=[]; let fails=true;
 globalThis.fetch=async(input,init)=>{
  assert.equal(input,'https://api.resend.com/emails');assert.equal(init?.redirect,'error');assert.ok(init?.signal);
@@ -32,5 +32,12 @@ try{
  assert.equal((await db.selectFrom('customer_mail').selectAll().execute()).length,0);
  await mailer.enqueue({to:'test@example.invalid',subject:'Expired',url:'https://demo.example/cuenta'});
  await db.updateTable('customer_mail').set({created_at:new Date(Date.now()-86400001)}).execute();await mailer.drain();assert.equal(calls.length,2);
+ const constrained=customerMailer(config,db,{BOLT_MAIL_DAILY_LIMIT:'1'});
+ for(const to of ['first@example.invalid','second@example.invalid']) await constrained.enqueue({to,subject:'Isolated',url:'https://demo.example/cuenta'});
+ await constrained.drain();
+ assert.equal(calls.length,3,'only one further provider call is admitted');
+ const deferred=await db.selectFrom('customer_mail').selectAll().executeTakeFirstOrThrow();
+ assert.equal(deferred.attempts,0,'budget denial is not a failed attempt');
+ assert.ok(new Date(deferred.next_attempt).getTime()>Date.now());
  console.log('PASS HTTPS mail: configuration, encrypted queue, fixed endpoint, retry/restart idempotency, expiration and no invented legal approval.');
 }finally{globalThis.fetch=realFetch;await db.destroy();}

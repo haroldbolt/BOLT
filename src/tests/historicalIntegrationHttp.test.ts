@@ -40,7 +40,9 @@ async function request(p:string,method='GET',body?:any,auth=admin,extra:any={}){
  const response=await res.json();return {status:res.status,data:response};
 }
 async function start(){
- child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
+ // The isolated audit recovers every historical state from one loopback address.
+ // Rate-limit behavior itself is asserted in apiRateLimit.test.ts.
+ child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_API_RATE_RECOVERY_PER_MINUTE:String(fixtures.length + 2),BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
  child.stdout.on('data',(b:any)=>output+=b);child.stderr.on('data',(b:any)=>output+=b);
  for(let i=0;i<100;i++){if(child.exitCode!==null)throw Error('Isolated server exited');try{if((await request('/health','GET',undefined,'')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Isolated server failed readiness');
 }

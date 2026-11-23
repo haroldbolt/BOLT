@@ -1,6 +1,9 @@
+import { AsyncLocalStorage } from 'node:async_hooks';
 import {REVIEW_MESSAGE} from './src/lib/checkoutReadiness';
 import {pendingDeliveryOrder} from './src/lib/pendingDeliveryOrder';
 import { acceptsDemoOrigin } from './src/lib/demoOrigin';
+import { pilotScope } from './src/lib/pilotScope';
+import { configureRappiCargo } from './src/lib/rappiCargoConfig';
 import { adminEntry, adminEntryPath } from './deployment/admin-entry.mjs';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
@@ -30,8 +33,12 @@ if (process.env.DISABLE_HMR === undefined) {
   process.env.DISABLE_HMR = 'true';
 }
 
-import express, { Request, Response } from 'express';
-import cors from 'cors';
+import express, { Request, Response, type NextFunction } from 'express';
+import { mountApiRateLimit } from './src/lib/apiRateLimit';
+import { publicCatalogHeaders, privateResponse, revalidate, staticCacheHeaders } from './src/lib/httpCache';
+import { mountProductionHttp } from './src/lib/productionHttp';
+import { createServiceMonitoring } from './src/lib/serviceMonitoring';
+import { operationalMetrics } from './src/lib/operationalMetrics';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -43,6 +50,8 @@ import { evaluateDeliveryQuote, DELIVERY_CONFIG, validateScheduledBooking, gener
 import { shopifyService } from './src/lib/shopifyService';
 import { loadPrivateInventorySnapshot, PrivateInventoryResult } from './src/lib/privateInventoryLoader';
 import { localCatalogService } from './src/lib/localCatalogService';
+import { providerRouteLimit } from './src/lib/providerQuota';
+import { mountWompiLookup } from './src/lib/wompiLookup';
 import { ordersRepository } from './src/lib/ordersRepository';
 import { adminAuthService } from './src/lib/adminAuthService';
 import { catalogRepository } from './src/lib/catalogRepository';
@@ -64,12 +73,13 @@ function extractActor(req:Request, _defaultRole?:ActorRole):OrderActor {
 
 // Authoritative in-memory state initialized from local catalog repository (persisted overrides + 3.830 productos agrupados)
 let stores: Store[] = localCatalogService.getStores().length > 0 ? localCatalogService.getStores() : JSON.parse(JSON.stringify(INITIAL_STORES));
-const pilotStoreId = process.env.BOLT_PILOT_STORE_ID;
-const activeStores = () => stores.filter(store => store.isActive && (!pilotStoreId || store.id === pilotStoreId));
-let products: Product[] = catalogRepository.getAllProducts(true);
+const pilot = pilotScope(process.env);
+const activeStores = () => stores.filter(store => store.isActive && (!pilot || pilot.storeIds.includes(store.id)));
+const deliveryStores = () => pilot ? activeStores() : stores;
+const initialProducts = catalogRepository.getAllProducts(true);
 
 // Registro de carga de catálogo local
-console.log(`[Catálogo Local] Iniciado con ${products.length} productos agrupados (${products.filter(p => p.status === 'ACTIVE').length} activos), ${localCatalogService.getTotalVariantsCount()} variantes y ${stores.length} bodegas.`);
+console.log(`[Catálogo Local] Iniciado con ${initialProducts.length} productos agrupados (${initialProducts.filter(p => p.status === 'ACTIVE').length} activos), ${localCatalogService.getTotalVariantsCount()} variantes y ${stores.length} bodegas.`);
 
 // Comprobación de inventario privado (.bolt-private/shopify/snapshot.json no bloqueante)
 const privateInventoryStatus: PrivateInventoryResult = loadPrivateInventorySnapshot();
@@ -78,12 +88,12 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
 const isDispatchSimulation=simulationEnabled();
-if (pilotStoreId && (pilotStoreId !== 'HUB_SUBA' || isDispatchSimulation || !activeStores().length)) {
-  throw Error('El piloto requiere una instalación operativa separada con Suba activa.');
+if (pilot && (isDispatchSimulation || activeStores().length !== pilot.storeIds.length)) {
+  throw Error('La operación requiere una instalación separada y todas las sedes configuradas activas.');
 }
 const pilotCheckoutHold = {
   code: 'RAPPI_CASH_UNCONFIRMED',
-  error: 'Estamos preparando el recaudo en efectivo para las entregas de Suba. Aún no puedes confirmar tu pedido.',
+  error: 'Estamos preparando el recaudo en efectivo para las entregas de BOLT. Aún no puedes confirmar tu pedido.',
 };
 if (isDispatchSimulation) catalogRepository.registerBaselineProduct(boltAdminDemoProduct());
 const catalogOperations = new CatalogOperations({
@@ -92,15 +102,25 @@ const catalogOperations = new CatalogOperations({
   stores:()=>stores,
   orders:()=>ordersRepository.getAllOrders(),
 });
+// Share a commercial snapshot only within the request that actually needs one.
+const catalogRequest = new AsyncLocalStorage<{ products?: Product[] }>();
+function currentSalesProducts(): Product[] {
+  const request = catalogRequest.getStore();
+  if (!request) return catalogOperations.getSalesProducts();
+  return request.products ??= catalogOperations.getSalesProducts();
+}
 const transportRepository = new TransportRepository();
 const simulationProvider=isDispatchSimulation?new LocalSimulationProvider(()=>transportRepository.read().config.vehicles[0]):undefined;
+const rappiCargo = pilot && !isDispatchSimulation ? configureRappiCargo(process.env, pilot.storeIds) : undefined;
+const pilotCheckoutHeld = !!pilot && (!rappiCargo || process.env.BOLT_PILOT_CHECKOUT_ENABLED !== '1');
 const dispatchService = new DispatchService({
   repo: ordersRepository,
-  stores: () => stores,
-  products: () => products,
+  stores: deliveryStores,
+  products: currentSalesProducts,
   transport: () => transportRepository.read().config,
   simulation: isDispatchSimulation,
-  providers: simulationProvider ? [simulationProvider] : [],
+  providers: simulationProvider ? [simulationProvider] : rappiCargo ? [rappiCargo.provider] : [],
+  externalBudgetCOP: rappiCargo?.externalBudgetCOP,
   holdDispatch: order => isBoltAdminDemoOrder(order) && !customerDemoDispatch?.isStarting(order.id),
   simulationVehicle: boltCustomerDemoVehicle,
   isSimulationDriver: isBoltCustomerDemoDriver,
@@ -109,14 +129,14 @@ const customerDemoDispatch = isDispatchSimulation
   ? createCustomerDemoDispatch(ordersRepository, dispatchService, () => stores)
   : undefined;
 function transportContext() { const config=transportRepository.read().config; return {config:{...config,externalProviders:[]},drivers:dispatchService.quoteDrivers(),orders:ordersRepository.getAllOrders()}; }
-function quoteForPurchase(request: any, catalog=products, orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order) {
+function quoteForPurchase(request: any, catalog=currentSalesProducts(), orderList=ordersRepository.getAllOrders(), reviewingOrder?:Order) {
   request={...request,destination:enrichDestination(request.destination)};
   const fixtureQuote=isBoltAdminDemoOrder(reviewingOrder);
   const capacityOrders=isDispatchSimulation ? orderList.filter(order=>isBoltAdminDemoOrder(order)===fixtureQuote) : orderList;
   const context={...transportContext(),orders:capacityOrders};
   const scopedContext=isDispatchSimulation?boltAdminDemoReviewContext(reviewingOrder,context):context;
-  const quote=evaluateDeliveryQuote(request,stores,catalog,capacityOrders,scopedContext);
-  if (pilotStoreId && quote.territoryInfo?.isCovered &&
+  const quote=evaluateDeliveryQuote(request,deliveryStores(),catalog,capacityOrders,scopedContext);
+  if (pilotCheckoutHeld && quote.territoryInfo?.isCovered &&
       quote.eligibilityStatus !== 'OUT_OF_COVERAGE' && quote.eligibilityStatus !== 'ADDRESS_NEEDS_CONFIRMATION') {
     return {
       ...quote,
@@ -150,20 +170,41 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
+  const monitoring = createServiceMonitoring({
+    env: isDispatchSimulation ? { ...process.env, BOLT_ALERT_WEBHOOK_URL: undefined } : process.env,
+  });
+  monitoring.observeDispatchEvents(ordersRepository.dispatchState.events);
+  app.disable('x-powered-by');
+  app.use(['/admin', '/operacion', '/conductor', '/pedido', '/confirmacion', '/cuenta', '/recuperar-seguimiento', '/simulacion'], (_req, res, next) => {
+    res.set('Cache-Control', privateResponse);
+    next();
+  });
+  app.use('/api', (_req, res, next) => {
+    res.set('Cache-Control', privateResponse);
+    res.locals.requestId = crypto.randomUUID();
+    res.set('X-Request-Id', res.locals.requestId);
+    next();
+  });
   const PORT = parseInt(process.env.PORT || '3000', 10);
+  app.use('/api', monitoring.middleware);
+  mountProductionHttp(app, process.env, isDispatchSimulation);
 
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
-  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
-  app.use(cors(isDispatchSimulation?{origin:`http://127.0.0.1:${PORT}`} : {}));
+  mountApiRateLimit(app, {
+    staff: token => adminAuthService.verifyStaffSession(token)?.userId,
+    driver: token => dispatchService.authenticate(token),
+    customer: req => customerAccounts.ratePrincipal(req),
+  });
+  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride, () => monitoring.workerFailure('customer_mail'));
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   const parseJson = express.json({ limit: '15mb' });
   app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
     ? next()
     : parseJson(req, res, next));
-  app.use('/api/v1', (_req,_res,next)=>{products=catalogOperations.getSalesProducts();next();});
+  app.use('/api/v1', (_req,_res,next) => catalogRequest.run({}, next));
   const uploadsRoot = path.join(process.cwd(), 'public', 'uploads');
   const catalogUploadDir = path.join(uploadsRoot, 'catalog');
-  app.use('/uploads', express.static(uploadsRoot));
+  app.use('/uploads/catalog', express.static(catalogUploadDir, { setHeaders: res => res.setHeader('Cache-Control', revalidate) }));
 
   // Función para validar encabezados binarios y guardar imagen en public/uploads/catalog
   function saveBase64Image(dataUrl: string, originalFilename?: string): { url: string; filename: string; size: number } {
@@ -254,57 +295,77 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     next();
   }
 
+  app.get('/api/v1/admin/observability', requireAdminAuth, (_req, res) => {
+    res.json({
+      service: monitoring.snapshot(),
+      operations: operationalMetrics({
+        orders: ordersRepository.getAllOrders(),
+        runs: Object.values(ordersRepository.dispatchState.runs),
+        demo: isDispatchSimulation,
+      }),
+    });
+  });
   mountDispatchRoutes(app,dispatchService,ordersRepository,requireAdminAuth);
   mountTrackingRecovery(app,ordersRepository,dispatchService,requireAdminAuth);
-  if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,()=>products,()=>stores,simulationProvider,requireAdminAuth);
+  if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,currentSalesProducts,()=>stores,simulationProvider,requireAdminAuth);
   else app.get('/api/v1/simulation',(_q,res)=>res.json({enabled:false}));
   app.use('/api/v1/operations',requireAdminAuth);
   mountOrderAccess(app,dispatchService,token=>adminAuthService.verifySession(token),customerAccounts.authorizeOrder);
   mountEntrancePhotos(app,ordersRepository,dispatchService,path.join(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'),'private-entrance-photos'));
-  // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
+  // Checkout uses own-fleet capacity. Dispatch polls existing bookings and can seek an authorized Cargo fallback.
   let dispatchTickRunning=false;
-  const dispatchTimer=setInterval(async()=>{if(dispatchTickRunning||!Object.keys(ordersRepository.dispatchState.runs).length)return;dispatchTickRunning=true;try{await dispatchService.tick(); customerDemoDispatch?.tick()}catch{console.error('[Dispatch] worker failed; durable state retained')}finally{dispatchTickRunning=false}},1000);
+  const dispatchTimer = setInterval(async () => {
+    if (dispatchTickRunning || !Object.keys(ordersRepository.dispatchState.runs).length) return;
+    dispatchTickRunning = true;
+    try {
+      await dispatchService.tick();
+      customerDemoDispatch?.tick();
+    } catch {
+      monitoring.workerFailure('dispatch');
+    } finally {
+      dispatchTickRunning = false;
+      monitoring.observeDispatchEvents(ordersRepository.dispatchState.events);
+    }
+  }, 1000);
   dispatchTimer.unref();
 
   // ==========================================
   // /api/v1 ROUTES
   // ==========================================
 
+  const releaseSha = process.env.BOLT_RELEASE_SHA || process.env.RENDER_GIT_COMMIT || process.env.RAILWAY_GIT_COMMIT_SHA;
   // Health check
   app.get('/api/v1/health', (_req: Request, res: Response) => {
     res.json({
       status: 'ok',
       service: 'Bolt Pets Authoritative Backend',
       version: '1.0.0',
-      catalogSource: 'LOCAL_CATALOG (src/data/catalogo-local)',
+      revision: /^[a-f0-9]{40}$/.test(releaseSha || '') ? releaseSha : null,
+      ...(pilot && { pilot: { storeIds: pilot.storeIds, checkoutHold: pilotCheckoutHeld ? pilotCheckoutHold.code : undefined } }),
+      catalogSource: 'LOCAL_CATALOG',
       timezone: 'America/Bogota',
       locale: 'es-CO',
       storesCount: activeStores().length,
-      totalProductosAgrupados: products.length,
+      totalProductosAgrupados: catalogRepository.getAllProducts(true).length,
       totalVariantes: localCatalogService.getTotalVariantsCount(),
-      productosActivos: products.filter(p => p.status === 'ACTIVE').length,
-      ordersCount: ordersRepository.getAllOrders().length,
-      privateInventory: {
-        targetFile: privateInventoryStatus.filePath,
-        found: privateInventoryStatus.fileFound,
-        message: privateInventoryStatus.message,
-      },
+      productosActivos: catalogRepository.getAllProducts(false).length,
       timestamp: new Date().toISOString(),
     });
   });
 
   // Resumen del catálogo local estructurado
-  app.get('/api/v1/catalog/summary', (_req: Request, res: Response) => {
-    res.json(localCatalogService.getSummary());
+  app.get('/api/v1/catalog/summary', (req: Request, res: Response) => {
+    const summary = localCatalogService.getSummary();
+    publicCatalogHeaders(req, res);
+    res.json(summary);
   });
 
   // Inventario privado status
-  app.get('/api/v1/inventory/status', (_req: Request, res: Response) => {
+  app.get('/api/v1/inventory/status', requireAdminAuth, (_req: Request, res: Response) => {
     res.json({
-      targetFile: privateInventoryStatus.filePath,
       found: privateInventoryStatus.fileFound,
       message: privateInventoryStatus.message,
-      productsCount: products.length,
+      productsCount: currentSalesProducts().length,
     });
   });
 
@@ -313,21 +374,40 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     res.json(activeStores());
   });
 
+  // Only the unfiltered catalog and the active store lists have a bounded key space.
+  let listedProducts: readonly Product[] | undefined;
+  const publicListings = new Map<string, {body: Buffer; etag: string}>();
+  const sendListing = (res: Response, entry: {body: Buffer; etag: string}) =>
+    res.set({'Content-Type':'application/json; charset=utf-8', ETag:entry.etag}).send(entry.body);
+
   // Catalog
   app.get('/api/v1/catalog', (req: Request, res: Response) => {
-    const { category, species, storeId, q, all } = req.query;
-    let filtered = catalogOperations.getProducts().filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
-
-    // 4. Para clientes muestra productos ACTIVE (salvo que se solicite all=true)
-    if (all !== 'true') {
-      filtered = filtered.filter(p => !p.status || p.status === 'ACTIVE');
+    const { category, species, storeId, q } = req.query;
+    const source = catalogOperations.publicCatalog(ordersRepository.inventoryCacheRevision);
+    if (source !== listedProducts) {
+      publicListings.clear();
+      listedProducts = source;
     }
+    const cacheKey = !category && !species && !q && (!storeId || activeStores().some(store => store.id === storeId))
+      ? String(storeId || 'all') : undefined;
+    const saved = cacheKey && publicListings.get(cacheKey);
+    if (saved) {
+      publicCatalogHeaders(req, res);
+      return sendListing(res, saved);
+    }
+    let filtered = source.filter(p=>!isDispatchSimulation || p.id!==BOLT_ADMIN_DEMO_PRODUCT_ID);
+
+    // La edición y consulta de productos retirados corresponde a /admin/catalog.
+    filtered = filtered.filter(p => !p.status || p.status === 'ACTIVE');
 
     // 3. Organiza los productos según bodegaIds. Una lista vacía no significa disponibilidad en todas las bodegas.
     if (storeId) {
       const storeIdStr = String(storeId);
       const storeObj = activeStores().find(s => s.id === storeIdStr || s.shopifyLocationGid === storeIdStr);
-      if (!storeObj) return res.json([]);
+      if (!storeObj) {
+        publicCatalogHeaders(req, res);
+        return res.json([]);
+      }
 
       filtered = filtered.filter(p => {
         if (!p.bodegaIds) return true;
@@ -337,7 +417,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     }
 
     // Leave the unfiltered feed intact so previously saved cart IDs still resolve.
-    if (all !== 'true' && (category || species || storeId || q)) {
+    if (category || species || storeId || q) {
       const scope=stores.find(s=>s.id===storeId || s.shopifyLocationGid===storeId)?.id;
       filtered=withoutRedundantCatalogCards(filtered,scope);
     }
@@ -359,6 +439,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       );
     }
 
+    publicCatalogHeaders(req, res);
+    if (cacheKey) {
+      const body = Buffer.from(JSON.stringify(filtered));
+      const etag = '"' + crypto.createHash('sha256').update(body).digest('base64url') + '"';
+      const entry = {body, etag};
+      publicListings.set(cacheKey, entry);
+      return sendListing(res, entry);
+    }
     res.json(filtered);
   });
 
@@ -382,14 +470,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       }
     };
     app.get('/api/v1/simulation/customer-checkout', (_req, res) => {
-      handleScenario(res, () => boltCustomerDemoCheckout(products, scenarioStore()));
+      handleScenario(res, () => boltCustomerDemoCheckout(currentSalesProducts(), scenarioStore()));
     });
     app.post('/api/v1/simulation/customer-checkout', (req, res) => {
       handleScenario(res, () => {
         const order = createBoltAdminDemoOrder({
           requestId: req.get('Idempotency-Key'),
           origin: 'customer',
-          catalog: products,
+          catalog: currentSalesProducts(),
           store: scenarioStore(),
           dispatch: dispatchService,
         });
@@ -411,50 +499,54 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     return res.json({...quote,warehouse:describeWarehouse(stores.find(store=>store.id===quote.assignedStoreId))});
   });
 
+  const limitGeocode = providerRouteLimit('GEOCODE');
   // Reverse Geocoding Proxy (Google Maps Platform Geocoding API)
   app.get('/api/v1/geocode/reverse', async (req: Request, res: Response) => {
     const { lat, lng } = req.query;
-    if (!lat || !lng) {
+    if (typeof lat !== 'string' || typeof lng !== 'string' || !lat.trim() || !lng.trim() || !Number.isFinite(Number(lat)) || !Number.isFinite(Number(lng)) || Math.abs(Number(lat)) > 90 || Math.abs(Number(lng)) > 180) {
       return res.status(400).json({ error: 'Faltan parámetros lat y lng' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
     if (!apiKey) return res.status(503).json({ error: 'La búsqueda de dirección está temporalmente fuera de servicio.' });
-    try {
-      const response = await fetch(
-        `https://maps.googleapis.com/maps/api/geocode/json?latlng=${lat},${lng}&key=${apiKey}&language=es&region=co`
-      );
-      const data: any = await response.json();
+    return limitGeocode(req, res, async () => {
+      try {
+        const response = await fetch(
+          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${Number(lat)},${Number(lng)}&key=${encodeURIComponent(apiKey)}&language=es&region=co`,
+          { signal: AbortSignal.timeout(5000), redirect: "error" }
+        );
+        const data: any = await response.json();
 
-      if (data.status === 'OK' && data.results && data.results.length > 0) {
-        const first = data.results[0];
-        const raw = first.formatted_address;
-        let address = raw
-          .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-          .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-          .replace(/,\s*Cundinamarca/gi, '')
-          .trim();
+        if (data.status === 'OK' && data.results && data.results.length > 0) {
+          const first = data.results[0];
+          const raw = first.formatted_address;
+          let address = raw
+            .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+            .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+            .replace(/,\s*Cundinamarca/gi, '')
+            .trim();
 
-        const territory = parseAddressComponents(first.address_components);
-        const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
+          const territory = parseAddressComponents(first.address_components);
+          const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
 
-        return res.json({
-          address,
-          formattedAddress: address,
-          rawAddress: raw,
-          municipality: resolved.municipality || territory.municipality,
-          countryCode: resolved.countryCode || territory.countryCode,
-          locality: resolved.locality,
-          neighborhood: territory.neighborhood,
-          status: 'OK',
-        });
-      } else {
-        return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
+          return res.json({
+            address,
+            formattedAddress: address,
+            rawAddress: raw,
+            municipality: resolved.municipality || territory.municipality,
+            countryCode: resolved.countryCode || territory.countryCode,
+            locality: resolved.locality,
+            neighborhood: territory.neighborhood,
+            status: 'OK',
+          });
+        } else {
+          return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
+        }
+      } catch (err: any) {
+        console.error('[Maps] reverse geocoding unavailable');
+        return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
       }
-    } catch (err: any) {
-      console.error('Error en geocodificación inversa:', err);
-      return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
-    }
+    });
   });
 
   // Forward Geocoding Proxy (Google Maps Platform Geocoding API)
@@ -464,11 +556,15 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(400).json({ error: 'Parámetro address requerido' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || process.env.VITE_GOOGLE_MAPS_API_KEY || '';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
     const municipality=typeof req.query.municipality==='string' ? req.query.municipality : '';
-    const result=await searchDeliveryAddress(String(address).slice(0,500),municipality.slice(0,100),apiKey);
-    res.set('Cache-Control','no-store');
-    return res.json(result);
+    const query = String(address).slice(0, 500), city = municipality.slice(0, 100);
+    const lookup = async () => {
+      const result = await searchDeliveryAddress(query, city, apiKey);
+      return res.set('Cache-Control', 'no-store').json(result);
+    };
+    if (!apiKey || !city.trim() || !query.trim()) return lookup();
+    return limitGeocode(req, res, lookup);
   });
 
   // Create Order with transactional stock reservation & delivery policy validation
@@ -476,7 +572,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   type PurchaseReview = {order:Order; actor:ReviewActor; catalog:Product[]; mapOrder?:(order:Order)=>unknown};
   const createPurchase = (req: Request, res: Response, review?:PurchaseReview) => {
     const reviewingOrder=review?.order;
-    const purchaseCatalog=review?.catalog ?? products;
+    const purchaseCatalog=review?.catalog ?? currentSalesProducts();
     try {
       if (!req.body || typeof req.body !== 'object' || Array.isArray(req.body)) {
         return res.status(400).json({ code: 'INVALID_ORDER', error: 'Envía los datos del pedido.' });
@@ -510,7 +606,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       }
 
       // The pilot opens orders once a production Cargo integration can validate collection on the backend.
-      if (pilotStoreId) return res.status(503).json(pilotCheckoutHold);
+      if (pilotCheckoutHeld) return res.status(503).json(pilotCheckoutHold);
 
       if (!customer || !['name', 'phone', 'email'].every(field => typeof customer[field] === 'string' && customer[field].trim())) {
         return res.status(400).json({ error: 'Completa tus datos de contacto.' });
@@ -802,8 +898,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const order=createResult.order!;
       return res.status(201).json(review?.mapOrder ? review.mapOrder(order) : {...presentOrder(order),guestAccessToken:dispatchService.guestToken(order)});
     } catch (e: any) {
-      console.error('Error creating order:', e);
-      return res.status(500).json({ error: e.message || 'Error interno del servidor' });
+      return res.status(500).json({ code: 'ORDER_OPERATION_FAILED', error: 'No se pudo completar el pedido.', requestId: res.locals.requestId });
     }
   };
   app.post('/api/v1/orders', customerAccounts.attachOrderOwner, (req,res)=>createPurchase(req,res));
@@ -814,7 +909,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const previous = reservedItems.get(item.productId);
       reservedItems.set(item.productId, { quantity: (previous?.quantity ?? 0) + item.quantity, price: previous?.price ?? item.price });
     }
-    return products.map(product => {
+    return currentSalesProducts().map(product => {
       const item = reservedItems.get(product.id);
       if (!item) return product;
       const sale = isDispatchSimulation ? activateBoltAdminDemoProduct(order, product) : product;
@@ -881,10 +976,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const upload=saveBase64Image(dataUrl, filename);
       return {url:upload.url, discard:()=>{
         try { fs.rmSync(path.join(catalogUploadDir, upload.filename), { force: true }); }
-        catch (error) { console.error('No se pudo eliminar una foto de catálogo sin asignar.', error); }
+        catch (error) { console.error('[Catalog] unused image cleanup failed'); }
       }};
     },
-    getProducts:()=>products,
+    getProducts:currentSalesProducts,
     getStores:activeStores,
     getOrders:()=>ordersRepository.getAllOrders(),
     getDispatchRuns:()=>Object.values(ordersRepository.dispatchState.runs),
@@ -904,7 +999,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       productId:BOLT_ADMIN_DEMO_PRODUCT_ID,
       editCatalog:process.env.BOLT_DEMO_EDIT_CATALOG === '1',
       isOrder:isBoltAdminDemoOrder,
-      createOrder:(requestId,requestedMode)=>createBoltAdminDemoOrder({requestId,requestedMode,catalog:products,store:stores.find(store=>store.id===BOLT_ADMIN_DEMO_STORE_ID),dispatch:dispatchService}),
+      createOrder:(requestId,requestedMode)=>createBoltAdminDemoOrder({requestId,requestedMode,catalog:currentSalesProducts(),store:stores.find(store=>store.id===BOLT_ADMIN_DEMO_STORE_ID),dispatch:dispatchService}),
       guestToken:order=>dispatchService.guestToken(order),
       startCustomerDispatch: (order, actor) => customerDemoDispatch!.start(order, {
         id: actor.id,
@@ -1080,7 +1175,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const result = status === 'CANCELADO'
       ? cancelOrderOrShipment(req.params.orderId, actor, shipmentId, reason)
       : ordersRepository.transitionStatus(req.params.orderId, status, actor, {
-        shipmentId, reason, deliveryCode, catalogProducts: products, notes,
+        shipmentId, reason, deliveryCode, catalogProducts: currentSalesProducts(), notes,
       });
 
     if (!result.success) {
@@ -1131,7 +1226,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const result = ordersRepository.confirmPhysicalReturn(
       req.params.orderId,
       inspectorName || 'Supervisor de Bodega Kennedy',
-      products,
+      currentSalesProducts(),
       notes,
       req.body.shipmentId
     );
@@ -1147,6 +1242,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Integrations status
+  mountWompiLookup(app, requireAdminAuth, id => ordersRepository.getOrderById(id));
   app.get('/api/v1/integrations/status', requireAdminAuth, (_req: Request, res: Response) => {
     res.set('Cache-Control', 'no-store').json({
       shopifyOlfato: { name: 'Shopify / Olfato', status: 'Lectura de catálogo; sincronización automática desactivada' },
@@ -1184,7 +1280,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   });
 
   // Shopify sync state & triggers
-  app.get('/api/v1/shopify/status', (_req: Request, res: Response) => {
+  app.get('/api/v1/shopify/status', requireAdminAuth, (_req: Request, res: Response) => {
     const status = shopifyService.getState();
     const ids = new Set(activeStores().map(store => store.id));
     res.json({
@@ -1253,9 +1349,29 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     });
   });
 
+  // Provision individual staff identities through a real coordination session.
+  app.post('/api/v1/admin/store-operators', requireAdminAuth, (req, res) => {
+    const { email, name, password, storeId } = req.body ?? {};
+    if (typeof email !== 'string' || email.length > 254 || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email.trim()) ||
+        typeof name !== 'string' || !name.trim() || name.length > 120 ||
+        typeof password !== 'string' || password.trim().length < 12 || password.length > 256 ||
+        !activeStores().some(store => store.id === storeId)) {
+      return res.status(400).json({ error: 'Indica correo, nombre, contraseña de al menos 12 caracteres y una sede activa.' });
+    }
+    const operator = adminAuthService.createStoreOperator(email, name, password, storeId);
+    if (!operator) return res.status(409).json({ error: 'Ya existe una cuenta con este correo.' });
+    res.status(201).json(operator);
+  });
+
+  app.delete('/api/v1/admin/store-operators/:id', requireAdminAuth, (req, res) => {
+    if (!adminAuthService.revokeStoreOperator(req.params.id)) return res.status(404).json({ error: 'Operador no encontrado.' });
+    res.status(204).end();
+  });
+
   app.get('/api/v1/auth/me', requireAdminAuth, (req: Request, res: Response) => {
     const session = (req as any).adminSession;
-    res.json({ user: session });
+    const { userId, name, email, role, createdAt, expiresAt } = session;
+    res.json({ user: { userId, name, email, role, createdAt, expiresAt } });
   });
 
   app.post('/api/v1/auth/logout', (req: Request, res: Response) => {
@@ -1327,7 +1443,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    products = catalogOperations.getSalesProducts();
     res.status(201).json({
       message: 'Producto creado exitosamente.',
       product: result.product,
@@ -1349,7 +1464,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    products = catalogOperations.getSalesProducts();
     res.json({
       message: 'Producto actualizado exitosamente.',
       product: result.product,
@@ -1365,7 +1479,6 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     if (!result.success) {
       return res.status(400).json({ error: result.error });
     }
-    products = catalogOperations.getSalesProducts();
     res.json({
       message: `Estado del producto actualizado a ${result.newStatus}.`,
       product: result.product,
@@ -1397,7 +1510,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   app.post('/api/v1/admin/catalog/images/apply', requireAdminAuth, (req,res)=>{
     try {
       const result=catalogRepository.applyImagePatches(req.body.patches,(req as any).adminSession);
-      products=catalogOperations.getSalesProducts();res.json(result);
+      res.json(result);
     }catch(error:any){res.status(409).json({error:error.message});}
   });
 
@@ -1427,6 +1540,18 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   // FRONTEND MOUNTING (VITE IN DEV / STATIC IN PROD)
   // ==========================================
 
+  app.use('/api', (_req, res) => res.status(404).json({
+    code: 'API_NOT_FOUND', error: 'Esta operación de la API no existe.', requestId: res.locals.requestId,
+  }));
+  app.use('/api', (error: any, _req: Request, res: Response, next: NextFunction) => {
+    if (res.headersSent) return next(error);
+    const status = Number.isInteger(error?.status) && error.status >= 400 && error.status < 500 ? error.status : 500;
+    const code = status === 413 ? 'BODY_TOO_LARGE' : status === 400 ? 'INVALID_REQUEST' : status >= 500 ? 'INTERNAL_ERROR' : 'REQUEST_REJECTED';
+    res.status(status).set('Cache-Control', 'no-store').json({
+      code, error: status >= 500 ? 'No se pudo completar la solicitud.' : 'Revisa los datos de la solicitud.', requestId: res.locals.requestId,
+    });
+  });
+
   // The old URLs remain entry links for the new Admin. API routes are unchanged.
   app.get(['/admin', '/operacion'], (req, res) => {
     res.redirect(302, adminEntry(new URL(req.originalUrl, 'http://localhost')) ?? adminEntryPath);
@@ -1447,19 +1572,24 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     });
     app.use(vite.middlewares);
   } else {
-    app.use(express.static(path.join(__dirname, 'dist')));
+    const dist = path.join(__dirname, 'dist');
+    const unavailableAsset = (_req: Request, res: Response) => res.status(404).set('Cache-Control', privateResponse).end();
+    app.use('/.vite', unavailableAsset);
+    app.use(express.static(dist, { setHeaders: staticCacheHeaders(dist) }));
+    app.use(['/assets', '/uploads', '/icons'], unavailableAsset);
     app.get('*', (_req: Request, res: Response) => {
-      res.sendFile(path.join(__dirname, 'dist', 'index.html'));
+      if (!res.hasHeader('Cache-Control')) res.set('Cache-Control', revalidate);
+      res.sendFile(path.join(dist, 'index.html'));
     });
   }
 
-  return app.listen(PORT, isDispatchSimulation?'127.0.0.1':'0.0.0.0', () => {
+  return app.listen(PORT, isDispatchSimulation || process.env.BOLT_BIND_LOOPBACK_ONLY === '1' ? '127.0.0.1' : '0.0.0.0', () => {
     console.log(`Bolt Pets Authoritative Full-Stack Server running on port ${PORT}`);
   });
 }
 
 // Node resolves module paths through symlinks; argv can retain /var vs /private/var.
 if(process.argv[1] && fs.existsSync(process.argv[1]) && fs.realpathSync(process.argv[1])===fs.realpathSync(__filename))startServer().catch(err => {
-  console.error('Failed to start server:', err);
+  console.error('[Startup] initialization failed; check service configuration and storage.');
   process.exitCode=1;
 });

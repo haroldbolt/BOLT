@@ -9,11 +9,23 @@ export interface ProviderQuote {
   vehicle: TransportVehicle;
   canCollectCash: boolean;
   simulation: boolean;
+  /** Store-to-customer estimate, distinct from pickup ETA. */
+  deliveryEtaSeconds?: number;
 }
 export interface ProviderResult {
   status: "UNKNOWN" | "ACCEPTED" | "ASSIGNED" | "REJECTED" | "CANCELLED";
   reference?: string;
   driver?: { id: string; name: string };
+  stage?: 'PICKED_UP' | 'DELIVERED' | 'FAILED' | 'RETURNED';
+  cashCollectionIndicated?: boolean;
+}
+
+export interface ProviderShipmentContext {
+  destination: { address: string; city: string; coordinates: { lat: number; lng: number }; details?: string };
+  items: { productId: string; name: string; quantity: number; unitPriceCOP: number }[];
+  totalValueCOP: number;
+  hasRestrictedItems: boolean;
+  customer?: { name: string; email: string; phone: string };
 }
 export interface DispatchProvider {
   id: string;
@@ -26,16 +38,20 @@ export interface DispatchProvider {
     cancel: boolean;
     cashCollection: boolean;
   };
+  vehicleFor?(storeId: string, mode: string, cashCOP: number): TransportVehicle | undefined;
   quote(input: {
     dispatchId: string;
     storeId: string;
     mode: string;
     cashCOP: number;
+    shipment?: ProviderShipmentContext;
   }): Promise<ProviderQuote | null>;
   request(input: {
     idempotencyKey: string;
     quote: ProviderQuote;
     dispatchId: string;
+    cashCOP?: number;
+    shipment?: ProviderShipmentContext;
   }): Promise<ProviderResult>;
   status(referenceOrKey: string): Promise<ProviderResult>;
   cancel(referenceOrKey: string): Promise<ProviderResult>;

@@ -1,3 +1,4 @@
+import { isBoltSplitDeployment, splitCustomerAccountNotice } from '../lib/backendRequest';
 import React, { useEffect, useState } from "react";
 import {
   ArrowLeft,
@@ -125,6 +126,13 @@ export function AccountPage() {
     }
   };
   const consent = { version: LEGAL_VERSION, terms, privacy, marketing };
+  if (isBoltSplitDeployment()) return (
+    <Frame>
+      <h1 className="text-3xl font-black">Compra como invitado</h1>
+      <p className="mt-3 text-slate-600">{splitCustomerAccountNotice}</p>
+      <a className={`${button} mt-6 inline-block bg-red-600 text-white`} href="/">Volver a BOLT</a>
+    </Frame>
+  );
   if (user && mode !== "reset") return <AccountHome />;
   const registering = mode === "register",
     canRegister = !!config?.registrationEnabled;

@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import { test, type TestContext } from 'node:test';
-import { preparePilot } from './start-pilot';
+import { isPersistentMount, preparePilot } from './start-pilot';
 import { FulfillmentStorage } from '../src/lib/fulfillmentStorage';
 
 function fixture(t: TestContext) {
@@ -80,4 +80,57 @@ test('un volumen ya inicializado falla si falta el almacenamiento de pedidos', t
   first.release();
   assert.throws(() => preparePilot(source, env), /almacenamiento operativo v2/);
   assert(!fs.existsSync(storage.file));
+});
+
+test('producción distingue un volumen montado de archivos efímeros, de solo lectura o un volumen histórico', t => {
+  const line = '123 99 8:1 / /var/data rw,relatime - ext4 /dev/sdb rw';
+  assert.ok(isPersistentMount('/var/data', line));
+  assert.ok(!isPersistentMount('/var', line));
+  assert.ok(!isPersistentMount('/var/data', line.replace('rw,relatime', 'ro,relatime')));
+  assert.ok(!isPersistentMount('/var/data', line.replace('ext4', 'tmpfs')));
+  assert.ok(!isPersistentMount('/var/data', line.replace('ext4', 'fuse.gcsfuse')));
+  const { source, volume, env } = fixture(t);
+  fs.mkdirSync(path.join(volume, 'previous-instance'));
+  assert.throws(() => preparePilot(source, env), /datos previos/);
+  assert.deepEqual(fs.readdirSync(volume), ['previous-instance']);
+});
+
+test('un volumen común inicia las tres sedes, rechaza mezclas y conserva el esquema', t => {
+  const { source, volume, env } = fixture(t);
+  const unified = { ...env, BOLT_PILOT_STORE_ID: undefined, BOLT_PILOT_STORE_IDS: 'HUB_SUBA,HUB_KENNEDY,HUB_ALAMOS' };
+  assert.throws(() => preparePilot(source, { ...unified, BOLT_PILOT_STORE_IDS: 'HUB_SUBA,HUB_SUBA,HUB_ALAMOS' }), /HUB_KENNEDY/);
+  assert.throws(() => preparePilot(source, { ...unified, BOLT_PILOT_STORE_ID: 'HUB_SUBA' }), /sola variable/);
+  assert.deepEqual(fs.readdirSync(volume), []);
+  const first = preparePilot(source, unified);
+  assert.equal(first.runtime, path.join(fs.realpathSync(volume), 'bolt-operacion'));
+  const marker = JSON.parse(fs.readFileSync(path.join(first.runtime, '.bolt-private/pilot.json'), 'utf8'));
+  assert.deepEqual(marker.storeIds, ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA']);
+  const storage = new FulfillmentStorage(first.data);
+  assert.deepEqual(storage.read().orders, []);
+  assert.throws(() => preparePilot(source, unified), /bloqueo de escritura/);
+  const adminFile = path.join(first.runtime, 'src/data/persisted-admin-auth.json');
+  const admin = { email: 'coord@example.invalid', passwordHash: 'fixture', salt: 'fixture', role: 'ADMINISTRADOR' };
+  const operators = marker.storeIds.map((storeId: string) => ({
+    email: storeId.toLowerCase() + '@example.invalid', passwordHash: 'fixture', salt: 'fixture', role: 'OPERADOR_SEDE', storeId,
+  }));
+  fs.writeFileSync(adminFile, JSON.stringify({ version: '1.0.0', admins: [admin, ...operators] }));
+  first.release();
+  assert.throws(() => preparePilot(source, env), /alcance operativo diferente/);
+  const restarted = preparePilot(source, { ...unified, BOLT_ADMIN_SETUP_TOKEN: undefined, BOLT_PILOT_STORE_IDS: 'HUB_ALAMOS,HUB_SUBA,HUB_KENNEDY' });
+  assert.equal(restarted.data, first.data);
+  assert.deepEqual(JSON.parse(fs.readFileSync(adminFile, 'utf8')).admins, [admin, ...operators]);
+  restarted.release();
+});
+
+test('un volumen histórico de Suba se preserva al intentar arrancar las tres sedes', t => {
+  const { source, env, volume } = fixture(t);
+  const legacy = preparePilot(source, env);
+  legacy.release();
+  const storageFile = new FulfillmentStorage(legacy.data).file;
+  const before = fs.readFileSync(storageFile);
+  assert.throws(() => preparePilot(source, {
+    ...env, BOLT_PILOT_STORE_ID: undefined, BOLT_PILOT_STORE_IDS: 'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA',
+  }), /alcance operativo diferente/);
+  assert.deepEqual(fs.readFileSync(storageFile), before);
+  assert.deepEqual(fs.readdirSync(volume), ['bolt-piloto-suba']);
 });

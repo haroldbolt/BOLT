@@ -1,0 +1,39 @@
+name: Contenedor BOLT
+on:
+  pull_request:
+    branches: [main]
+permissions:
+  contents: read
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+      - name: Construir la imagen y comprobar el arranque aislado
+        run: bash deployment/check-container.sh
+      - name: Preparar las dependencias e interfaces compiladas del contenedor para el navegador
+        run: |
+          docker build --target build -t bolt-rdi-browser .
+          container=$(docker create bolt-rdi-browser)
+          trap 'docker rm "$container" >/dev/null' EXIT
+          docker cp "$container:/opt/bolt/node_modules" ./node_modules
+          docker cp "$container:/opt/bolt/dist" ./dist
+          mkdir -p "$RUNNER_TEMP/bolt-node"
+          docker cp "$container:/usr/local/bin/node" "$RUNNER_TEMP/bolt-node/node"
+          echo "$RUNNER_TEMP/bolt-node" >> "$GITHUB_PATH"
+          npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/bolt-browser" playwright-core@1.65.1
+      - name: Confirmación HTTP, reservas, reinicio y respaldo de Cargo en instalación aislada
+        run: npm run test:pilot
+      - name: Checkout en móvil y escritorio con una instalación temporal por caso
+        run: |
+          export BOLT_BROWSER_MODULE="$RUNNER_TEMP/bolt-browser/node_modules/playwright-core"
+          export BOLT_TEST_CHROME="$(command -v google-chrome)"
+          export BOLT_TEST_SCREENSHOTS="$RUNNER_TEMP/bolt-capturas"
+          node --import tsx src/tests/threeStoreCashBrowser.mjs
+      - name: Capturas de checkout y Admin con datos ficticios
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: bolt-checkout-tres-sedes
+          path: ${{ runner.temp }}/bolt-capturas
+          retention-days: 7

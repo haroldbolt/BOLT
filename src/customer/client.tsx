@@ -1,3 +1,4 @@
+import { isBoltSplitDeployment, splitCustomerAccountNotice } from '../lib/backendRequest';
 import { pushService } from "../lib/notifications";
 import React, {
   createContext,
@@ -41,6 +42,7 @@ export async function customerRequest(
     !path.startsWith("/api/customer-auth/")
   )
     throw Error("Ruta de cuenta inválida");
+  if (isBoltSplitDeployment()) throw Error(splitCustomerAccountNotice);
   const response = await fetch(path, {
     method,
     credentials: "same-origin",
@@ -166,6 +168,10 @@ export function CustomerProvider({ children }: { children: React.ReactNode }) {
     [error, setError] = useState(""),
     [accountStorage, setStorage] = useState<AccountStorage | null>(null);
   const refresh = async () => {
+    if (isBoltSplitDeployment()) {
+      setLoading(false);
+      return;
+    }
     try {
       const [configuration, session] = await Promise.all([
         customerRequest("/api/customer/config"),

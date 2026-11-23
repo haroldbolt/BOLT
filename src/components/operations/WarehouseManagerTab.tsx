@@ -95,7 +95,7 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
     return p.sku.toLowerCase().includes(q) || p.name.toLowerCase().includes(q);
   });
 
-  const apiKey = import.meta.env.VITE_GOOGLE_MAPS_API_KEY || 'AIzaSyBeZD10ABWRpSpwChGlSzPR-6wxdD9oJcE';
+  const apiKey = import.meta.env?.VITE_GOOGLE_MAPS_API_KEY?.trim();
 
   return (
     <div className="space-y-6">
@@ -328,7 +328,7 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
           {/* Mapa Interactivo con Google Maps Platform */}
           <div className="lg:col-span-2 bg-white rounded-2xl p-2 shadow-sm border border-slate-200 flex flex-col min-h-[460px] relative overflow-hidden">
             <div className="w-full h-full min-h-[440px] rounded-xl overflow-hidden relative">
-              <APIProvider apiKey={apiKey}>
+              {apiKey ? <APIProvider apiKey={apiKey}>
                 <Map
                   mapId="DEMO_MAP_ID"
                   defaultCenter={entrancePin}
@@ -368,7 +368,7 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
                       </AdvancedMarker>
                     ))}
                 </Map>
-              </APIProvider>
+              </APIProvider> : <p role="status" className="p-4 text-sm text-slate-600">El mapa no está disponible. Puedes revisar las coordenadas de la sede.</p>}
 
               {/* Tag superpuesto sobre el mapa */}
               <div className="absolute top-3 left-3 bg-white/90 backdrop-blur-md px-3 py-1.5 rounded-xl shadow-md border border-slate-100 text-xs font-bold text-slate-800 pointer-events-none">

@@ -12,6 +12,7 @@ export default defineConfig(() => {
       },
     },
     build: {
+      manifest: true,
       rolldownOptions: {
         input: {
           index: path.resolve(__dirname, 'index.html'),

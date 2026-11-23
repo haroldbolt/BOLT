@@ -15,7 +15,7 @@ export async function searchDeliveryAddress(address:string, municipality:string,
   const url=new URL('https://maps.googleapis.com/maps/api/geocode/json');
   url.search=new URLSearchParams({address:address.trim(),components:`country:CO|locality:${name==='Bogotá D.C.'?'Bogotá':name}`,language:'es',region:'co',key:apiKey}).toString();
   try {
-    const response=await fetcher(url,{signal:AbortSignal.timeout(10000)});
+    const response=await fetcher(url,{signal:AbortSignal.timeout(10000),redirect:"error"});
     if(!response.ok) throw Error('Provider unavailable');
     const data:any=await response.json();
     if(!['OK','ZERO_RESULTS'].includes(data.status)) throw Error('Provider unavailable');
