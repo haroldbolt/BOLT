@@ -23,6 +23,8 @@ jobs:
           docker cp "$container:/usr/local/bin/node" "$RUNNER_TEMP/bolt-node/node"
           echo "$RUNNER_TEMP/bolt-node" >> "$GITHUB_PATH"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/bolt-browser" playwright-core@1.65.1
+      - name: Confirmación HTTP, reservas, reinicio y respaldo de Cargo en instalación aislada
+        run: npm run test:pilot
       - name: Checkout en móvil y escritorio con una instalación temporal por caso
         run: |
           export BOLT_BROWSER_MODULE="$RUNNER_TEMP/bolt-browser/node_modules/playwright-core"
