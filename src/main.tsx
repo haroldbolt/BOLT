@@ -1,5 +1,6 @@
 import { createRoot } from 'react-dom/client';
 import App from './App.tsx';
+import { DemoCashReview } from './components/customer/DemoCashReview';
 import { CHECKOUT_PREVIEW_PATH, CheckoutPreview } from './components/customer/CheckoutPreview';
 import {CustomerProvider} from './customer/client';
 import {AccountPage,LegalPage} from './customer/AccountPages';
@@ -22,7 +23,10 @@ console.error = (...args: unknown[]) => {
 const path=window.location.pathname;
 const legalKind=path==='/eliminar-cuenta'?'eliminacion':path.startsWith('/legal/')?path.split('/')[2]:null;
 const validLegal=['terminos','privacidad','eliminacion'].includes(legalKind||'');
-const page = path === CHECKOUT_PREVIEW_PATH
+const cashReviewPath = path.replace(/\/$/, '');
+const page = cashReviewPath === '/demo/efectivo' || cashReviewPath === '/demo/efectivo-suba'
+  ? <DemoCashReview startInSuba={cashReviewPath === '/demo/efectivo-suba'} />
+  : path === CHECKOUT_PREVIEW_PATH
   ? <CheckoutPreview />
   : <CustomerProvider>{validLegal?<LegalPage kind={legalKind as LegalKind}/>:path==='/cuenta'?<AccountPage/>:<App/>}</CustomerProvider>;
 createRoot(document.getElementById('root')!).render(page);

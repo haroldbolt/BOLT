@@ -179,6 +179,36 @@ try {
   console.log(
     "PASS account can track its purchase; guest and changed-session retry denied",
   );
+  const demoSku = "RDI-EFECTIVO-1KG";
+  const review = (await request("/api/v1/simulation/cash-review")).data;
+  const reviewDestination = review.stores.find((store: any) => store.id === "HUB_SUBA").destination;
+  const reviewItems = [{ productId: demoSku, quantity: 1, price: 59_000 }];
+  const reviewQuote = (await request("/api/v1/delivery/quote", {
+    items: reviewItems, destination: reviewDestination, requestedMode: "TURBO",
+  })).data;
+  assert.ok(reviewQuote.confirmationToken, reviewQuote.reasonCode);
+  const reviewPayload = { ...payload, customerAccountId: accountId, items: reviewItems, deliveryAddress: reviewDestination,
+    confirmationToken: reviewQuote.confirmationToken };
+  const reviewKey = { "Idempotency-Key": crypto.randomUUID() };
+  const created = await request("/api/v1/orders", reviewPayload, reviewKey);
+  assert.equal(created.status, 201, created.data?.code || created.data?.error);
+  assert.equal(created.data.demoCustomerCheckout, true);
+  assert.equal(created.data.payment.cashToCollect, 0);
+  assert.equal(created.data.customerAccountId, undefined);
+  assert.equal((await request("/api/v1/orders", reviewPayload, reviewKey)).data.id, created.data.id);
+  assert.equal((await request("/api/customer/orders")).data.some((o: any) => o.id === created.data.id), false);
+  assert.equal((await request("/api/v1/orders/" + created.data.id + "/tracking")).status, 403);
+  const privateAccess = {"X-Order-Token": created.data.guestAccessToken};
+  const linkUrl = "/api/customer/orders/" + created.data.id + "/link";
+  const missingAccount = await request(linkUrl, {}, privateAccess);
+  assert.equal(missingAccount.status, 409);
+  assert.equal(missingAccount.data.code, "CUSTOMER_CHANGED");
+  const refused = await request(linkUrl, {}, {...privateAccess, "X-Customer-Id": accountId});
+  assert.equal(refused.status, 403, refused.data?.error);
+  assert.equal((await request("/api/customer/orders")).data.some((o: any) => o.id === created.data.id), false);
+  assert.equal((await request("/api/v1/orders/" + created.data.id + "/tracking", undefined, privateAccess, false)).status, 200);
+  console.log("PASS authenticated demo checkout and its retry stay private to the test receipt, outside the customer account");
+
   const catalog = (await request("/api/v1/catalog")).data;
   const p = catalog.find((x: any) => x.id === "SIM-FOOD-20KG");
   assert.equal(p.reservedStockByStore.HUB_SUBA, 1);

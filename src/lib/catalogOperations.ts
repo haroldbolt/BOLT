@@ -11,12 +11,22 @@ export type PriceSource = {
   shop: string; currency: string; complete: boolean; completedAt: string;
   variants: Array<{ id: string; sku?: string | null; title: string; price: string | null; compareAtPrice?: string | null; product: { id: string; title: string; handle: string } }>;
 };
-type Value = { productId: string; variantId: string; price: number; originalPrice?: number | null; stock: Numbers; reserved: Numbers; delta: Numbers; revision: number };
+type Value = { productId: string; variantId: string; price: number; originalPrice?: number | null; stock: Numbers; reserved: Numbers; delta: Numbers; revision: number; demoInventory?: true };
 type PricePlan = { status: string; reason?: string; before: number; rawConsulted?: string | null; consulted?: number; applied?: number; source?: string; sourceId?: string; method?: string; revision?: number; previousPromotion?: { originalPrice?: number | null } };
 type StockPlan = { storeId: string; storeName: string; status: string; before?: number; after?: number; reserved?: number; reason?: string; reversed?: boolean };
 type Row = { key: string; productId: string; product: string; variantId: string; variant: string; sku: string; price: PricePlan; stocks: StockPlan[]; done: boolean };
 export type CatalogBatch = { id: string; kind?: 'INVENTORY_ONLY'; inventoryDelta?: number; createdAt: string; actor: Actor; reason: string; source: { shop: string; currency: string; consultedAt: string; sha256: string }; backupPath: string; rows: Row[]; status: string; audit: Array<{ at: string; actor: Actor; action: string; count: number }> };
-type State = { version: 1; values: Record<string, Value>; baselineEffects: Record<string, Effect>; batches: Record<string, CatalogBatch>; audit: any[] };
+type DemoInventory = {
+  batchId: string;
+  stockPerStore: number;
+  storeIds: string[];
+  products: number;
+  variants: number;
+  rows: number;
+  changedRows: number;
+  appliedAt: string;
+};
+type State = { version: 1; values: Record<string, Value>; baselineEffects: Record<string, Effect>; batches: Record<string, CatalogBatch>; audit: any[]; demoInventory?: DemoInventory };
 const copy = <T>(v:T):T => structuredClone(v);
 const hash = (v: unknown) => crypto.createHash('sha256').update(JSON.stringify(v)).digest('hex');
 const keyFor = (p: string, v: string) => JSON.stringify([p,v]);
@@ -58,7 +68,7 @@ export class CatalogOperations {
     return products;
   }
 
-  constructor(private options: { file: string; products: () => Product[]; stores: () => Store[]; orders: () => Order[] }) {
+  constructor(private options: { file: string; products: () => Product[]; stores: () => Store[]; orders: () => Order[]; demo?: boolean }) {
     if(fs.existsSync(options.file)) this.state = JSON.parse(fs.readFileSync(options.file,'utf8'));
   }
   private persist(next: State) {
@@ -102,6 +112,9 @@ export class CatalogOperations {
     }
     this.persist(state); // Establish a durable baseline, no stock adjustment or price import.
   }
+  public hasDemoInventory() {
+    return !!this.options.demo && !!this.state?.demoInventory;
+  }
   public getProducts(): Product[] {
     const effects=orderEffects(this.options.orders());
     const baseProducts=this.options.products();
@@ -124,12 +137,20 @@ export class CatalogOperations {
     return baseProducts.map(p=>{
       const variants=p.presentaciones?.length ? p.presentaciones : [{varianteId:p.id,nombre:p.presentation,sku:p.sku,foto:p.image,bodegaIds:p.bodegaIds||Object.keys(p.stockByStore),transport:p.transport}];
       const projections = variants.map(v => ({ variant: v, current: this.current(p, v.varianteId, this.state, effects) }));
-      const presentaciones = projections.map(({variant, current}) => ({
-        ...variant, price:current.price, originalPrice:current.originalPrice, discountPercent:current.discountPercent,
-        stockByStore:current.stockByStore, reservedStockByStore:current.reservedStockByStore, commerceRevision:current.commerceRevision,
-      }));
+      const demoStores = this.options.demo && this.state?.demoInventory?.storeIds;
+      const assignedDemoStores = new Set<string>();
+      const presentaciones = projections.map(({variant, current}) => {
+        const applied = demoStores && this.state?.values[keyFor(p.id, variant.varianteId)]?.demoInventory;
+        if (applied) demoStores.forEach(id => assignedDemoStores.add(id));
+        return {
+          ...variant, price:current.price, originalPrice:current.originalPrice, discountPercent:current.discountPercent,
+          stockByStore:current.stockByStore, reservedStockByStore:current.reservedStockByStore, commerceRevision:current.commerceRevision,
+          ...(applied && { bodegaIds: [...new Set([...(variant.bodegaIds ?? []), ...demoStores])] }),
+        };
+      });
       const first = projections[0].current;
-      return {...p,price:first.price,originalPrice:first.originalPrice,discountPercent:first.discountPercent,stockByStore:first.stockByStore,reservedStockByStore:first.reservedStockByStore,commerceRevision:first.commerceRevision,presentaciones};
+      return {...p,price:first.price,originalPrice:first.originalPrice,discountPercent:first.discountPercent,stockByStore:first.stockByStore,reservedStockByStore:first.reservedStockByStore,commerceRevision:first.commerceRevision,presentaciones,
+        ...(assignedDemoStores.size > 0 && { bodegaIds: [...new Set([...(p.bodegaIds ?? []), ...assignedDemoStores])] })};
     });
   }
   public getSalesProducts() {return salesCatalog(this.getProducts());}

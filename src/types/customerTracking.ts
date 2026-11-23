@@ -10,7 +10,7 @@ export interface CustomerTrackingTiming {
   serverTime: string;
   startedAt: string | null;
   dueAt: string | null;
-  source: 'BOOKED_WINDOW' | 'VERIFIED_QUOTE' | null;
+  source: 'BOOKED_WINDOW' | 'VERIFIED_QUOTE' | 'SIMULATION' | null;
   stages: Record<TrackingStage, string | null>;
 }
 

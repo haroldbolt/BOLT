@@ -71,7 +71,7 @@ export default function App() {
   useEffect(() => {
     if (currentPath !== '/' || isBoltSplitDeployment()) return;
     const controller = new AbortController();
-    backendFetch('/api/v1/simulation/customer-checkout', { signal: controller.signal, cache: 'no-store' })
+    backendFetch('/api/v1/simulation/cash-review', { signal: controller.signal, cache: 'no-store' })
       .then(response => response.ok && response.headers.get('content-type')?.includes('application/json') ? response.json() : null)
       .then(data => { if (!controller.signal.aborted) setCustomerDemoCheckoutEnabled(data?.enabled === true); })
       .catch(() => { if (!controller.signal.aborted) setCustomerDemoCheckoutEnabled(false); });
@@ -704,8 +704,8 @@ export default function App() {
         wishlistCollectionsCount={wishlistCollections.length}
       />
       {customerDemoCheckoutEnabled && <div className="mx-auto flex max-w-7xl flex-wrap items-center justify-between gap-2 px-4 py-3 text-sm">
-        <span className="font-medium text-slate-700">Demo privada · Entrega de prueba desde Suba</span>
-        <a className="inline-flex min-h-11 items-center rounded-xl bg-red-700 px-4 font-bold text-white" href="/demo/pedido-suba">
+        <span className="font-medium text-slate-700">Demo privada · Checkout en efectivo por sede</span>
+        <a className="inline-flex min-h-11 items-center rounded-xl bg-red-700 px-4 font-bold text-white" href="/demo/efectivo">
           Probar pedido sin cobro
         </a>
       </div>}

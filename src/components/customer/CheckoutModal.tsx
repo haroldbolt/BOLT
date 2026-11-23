@@ -25,6 +25,7 @@ const unavailablePayments = [
 
 interface CheckoutModalProps {
   isOpen: boolean;
+  demoCashReview?: boolean;
   onClose: () => void;
   cartItems: CartItem[];
   cartBlockReason?: string;
@@ -44,7 +45,7 @@ interface CheckoutModalProps {
 }
 
 export const CheckoutModal: React.FC<CheckoutModalProps> = ({
-  isOpen,
+  isOpen, demoCashReview = false,
   onClose,
   cartItems,
   cartBlockReason, onRefreshCatalog,
@@ -61,13 +62,13 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   onSelectScheduledWindow,
 }) => {
   const {user:account}=useCustomer();
-  const [customerName, setCustomerName] = useState(account?.name || '');
-  const [customerPhone, setCustomerPhone] = useState(account?.phone || '');
-  const [customerEmail, setCustomerEmail] = useState(account?.email || '');
+  const [customerName, setCustomerName] = useState(demoCashReview ? 'Cliente de prueba' : account?.name || '');
+  const [customerPhone, setCustomerPhone] = useState(demoCashReview ? '3000000000' : account?.phone || '');
+  const [customerEmail, setCustomerEmail] = useState(demoCashReview ? 'checkout@rdi.invalid' : account?.email || '');
   const [address, setAddress] = useState(customerAddress ?? '');
   const [addressDetails, setAddressDetails] = useState(customerAddressDetails ?? '');
   const [porteriaPolicy, setPorteriaPolicy] = useState<PorteriaPolicy>('DEJAR_EN_PORTERIA');
-  const [tip, setTip] = useState(2000);
+  const [tip, setTip] = useState(demoCashReview ? 0 : 2000);
   const submitPending=useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
@@ -225,7 +226,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       // Capture this address's image before submitting; later address edits cannot change it.
       const photo=referencePhotoId?await getEntrancePhoto(referencePhotoId):undefined;
-      const newOrder = await api.createOrder(payload);
+      const newOrder = await api.createOrder(payload, demoCashReview ? 'cash-review' : undefined);
       const pending = newOrder.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || newOrder.deliveryReview?.status === 'PENDING';
       const notificationTitle = pending ? 'Solicitud recibida' : 'Pedido confirmado';
       if(photo){
@@ -258,6 +259,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         {/* Header */}
         <div className="p-4 border-b border-slate-100 flex items-center justify-between sticky top-0 bg-white/95 backdrop-blur-xs z-10">
           <div>
+            {demoCashReview && <p className="mb-1 text-xs font-bold text-red-700">Demo · Pedido de prueba · Recaudo $0</p>}
             <div className="flex items-center gap-2">
               <h3 className="font-black text-slate-900 text-lg">
                 {requestReview ? 'Solicitar pedido' : selectedMode === 'PROGRAMADO'
@@ -279,6 +281,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
             {deliveryQuote?.warehouse?.address && <p className="text-[11px] text-slate-500 mt-1">{deliveryQuote.warehouse.address}</p>}
           </div>
           <button
+            aria-label={demoCashReview ? "Cambiar de sede" : "Cerrar checkout"}
             onClick={onClose}
             className="w-8 h-8 rounded-full bg-slate-100 hover:bg-slate-200 flex items-center justify-center text-slate-500 transition"
           >
@@ -695,12 +698,12 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
               </div>
             )}
             <div className="border-t border-slate-200 pt-2 flex justify-between text-base font-black text-slate-900">
-              <span>{requestReview?'Total estimado:':'Total final:'}</span>
+              <span>{demoCashReview ? 'Total de prueba:' : requestReview?'Total estimado:':'Total final:'}</span>
               <span className="text-red-600">{visibleCharges?formatCOP(total):'Por confirmar'}</span>
             </div>
           </div>
 
-          {cartBlockReason && <p role="status" className="text-sm text-amber-800">{cartBlockReason}</p>}
+          {cartBlockReason && <p role="status" className="text-sm text-amber-800">{cartBlockReason} {demoCashReview && <button type="button" className="font-bold underline" onClick={onRefreshCatalog}>Actualizar cotización</button>}</p>}
           {errorMessage && <button type="button" className="text-sm font-bold text-red-600 underline" onClick={onRefreshCatalog}>Actualizar carrito y volver a confirmar</button>}
           <button
             type="submit"

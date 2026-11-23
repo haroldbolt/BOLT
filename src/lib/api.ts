@@ -117,20 +117,21 @@ export const api = {
     }
   },
 
-  async createOrder(payload: any): Promise<Order> {
+  async createOrder(payload: any, demoScope?: 'cash-review'): Promise<Order> {
+    const retryKey = demoScope ? 'bolt_demo_cash_review_request' : 'bolt_checkout_request';
     const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(payload))))).map(b=>b.toString(16).padStart(2,'0')).join('');
     let requestId=pendingCheckoutRequest?.fingerprint===fingerprint ? pendingCheckoutRequest.requestId : crypto.randomUUID();
     try {
-      const previous=JSON.parse(sessionStorage.getItem('bolt_checkout_request') || 'null');
+      const previous=JSON.parse(sessionStorage.getItem(retryKey) || 'null');
       if(previous?.fingerprint===fingerprint) requestId=previous.requestId;
-      sessionStorage.setItem('bolt_checkout_request',JSON.stringify({fingerprint,requestId}));
+      sessionStorage.setItem(retryKey,JSON.stringify({fingerprint,requestId}));
     } catch {}
     pendingCheckoutRequest={fingerprint,requestId};
     const res = await authorizedFetch(`${BASE_URL}/orders`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json', 'Idempotency-Key':requestId },
       body: JSON.stringify(payload),
-    });
+    }, demoScope === 'cash-review');
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
       throw new Error(err.error || 'No se pudo crear el pedido');
@@ -138,7 +139,7 @@ export const api = {
     const created:Order=await res.json();
     if(created.guestAccessToken && !(created as any).customerAccountId)saveOrderAccess(created.id,created.guestAccessToken);
     pendingCheckoutRequest=undefined;
-    try {sessionStorage.removeItem('bolt_checkout_request')} catch {}
+    try {sessionStorage.removeItem(retryKey)} catch {}
     return created;
   },
 
@@ -191,11 +192,12 @@ export const api = {
     return await res.json();
   },
 
-  async getTracking(orderId: string, shipmentId?: string, guestOnly=false): Promise<CustomerTracking> {
+  async getTracking(orderId: string, shipmentId?: string, guestOnly=false, simulationStartedAt?: number): Promise<CustomerTracking> {
     const orderPath = `${BASE_URL}/orders/${encodeURIComponent(orderId)}/tracking`;
-    const url = shipmentId
-      ? `${orderPath}?shipmentId=${encodeURIComponent(shipmentId)}`
-      : orderPath;
+    const params = new URLSearchParams();
+    if (shipmentId) params.set('shipmentId', shipmentId);
+    if (simulationStartedAt !== undefined) params.set('simulationStartedAt', String(simulationStartedAt));
+    const url = params.size > 0 ? `${orderPath}?${params}` : orderPath;
     const res = await authorizedFetch(url,{cache:'no-store'},guestOnly);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));

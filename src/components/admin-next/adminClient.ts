@@ -33,9 +33,11 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   customer?: Pick<Order['customer'], 'name' | 'phone' | 'email'>;
   deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
   payment?: Pick<Order['payment'], 'status' | 'method' | 'cashToCollect'>;
+  demoCashCheckout?: boolean;
   demoCustomerCheckout?: boolean;
   dispatch?: { id: string; code: string; providerId?: string; status: string; driverName?: string };
   demoReadOnly?: boolean;
+  canSimulateDelivery?: boolean;
 };
 
 export type InventoryScope = 'store' | 'catalog';
@@ -49,6 +51,7 @@ export interface InventoryItem extends PriceItem {
   available: number;
   countedAt: string | null;
   demoReadOnly?: boolean;
+  canSimulateDelivery?: boolean;
   canEditStock: boolean;
   canEditPrice: boolean;
   canEditPhoto: boolean;
@@ -189,5 +192,8 @@ export const boltAdmin = {
   confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),
   demoDispatch: (token: string | null, orderId: string) => request<{ order: AdminOrder }>(`${orderPath(orderId)}/demo-dispatch`, token, { body: {} }),
   startPreparation: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: {} }),
+  simulateInventoryDelivery: (token: string | null, orderId: string) => request<AdminOrder>(
+    `${orderPath(orderId)}/simulate-inventory-delivery`, token, { body: {} },
+  ),
   readyForDispatch: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/ready-for-dispatch`, token, { body: {} }),
 };

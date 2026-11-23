@@ -62,6 +62,8 @@ try {
     ['/operacion?tab=DESPACHOS', '/admin/nuevo/?view=dispatch'],
     ['/admin?view=scheduled&sede=HUB_SUBA&pedido=BP-000014&redirect=https://evil.example', '/admin/nuevo/?view=scheduled&sede=HUB_SUBA&pedido=BP-000014'],
     ['/demo/pedido-suba', '/demo/pedido-suba'],
+    ['/demo/efectivo', '/demo/efectivo'],
+    ['/demo/efectivo-suba', '/demo/efectivo-suba'],
     ['/pedido/ORD-fixture', '/pedido/ORD-fixture'],
   ]) {
     const entry = await request(path);

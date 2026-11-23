@@ -4,6 +4,10 @@ import { INITIAL_ORDERS } from '../data/seedData';
 import type { Order, Product, Store } from '../types';
 import type { DispatchRun } from '../types/dispatch';
 import type { AdminAuthService } from './adminAuthService';
+import { isDemoCashCheckoutOrder } from './demoCashCheckout';
+import { isDemoInventoryDeliveryOrder } from './demoInventoryDelivery';
+import type { OrdersRepository } from './ordersRepository';
+import { CASH_REVIEW_SKU, isCashReviewOrder } from './demoCashReview';
 import { isBoltAdminDemoOrder, isBoltCustomerDemoOrder, type BoltAdminDemoMode } from './boltAdminDemo';
 import { DispatchError } from './dispatchService';
 import { buildBoltAdminSalesReport } from './boltAdminSales';
@@ -20,6 +24,7 @@ const seedOrderIds = new Set(INITIAL_ORDERS.map(order => order.id));
 const demoProfiles = [
   { id: 'suba', name: 'Operador de Suba', role: 'SEDE', storeId: subaId },
   { id: 'kennedy', name: 'Operador de Kennedy', role: 'SEDE', storeId: 'HUB_KENNEDY' },
+  { id: 'alamos', name: 'Operador de Álamos', role: 'SEDE', storeId: 'HUB_ALAMOS' },
   { id: 'coordinacion', name: 'Coordinación', role: 'COORDINACION' },
 ] as const;
 
@@ -70,6 +75,8 @@ type Options = {
   demo?: {
     productId: string;
     editCatalog?: boolean;
+    galleryProductId?: string;
+    completeInventoryDelivery: OrdersRepository['completeDemoInventoryDelivery'];
     isOrder: (order: Order) => boolean;
     createOrder: (requestId: string | undefined, requestedMode: BoltAdminDemoMode) => Order;
     guestToken: (order: Order) => string;
@@ -83,7 +90,7 @@ function sessionActor({ email: _email, ...actor }: Actor) {
 
 export function boltAdminOrder(order: Order, demoReadOnly = false) {
   const review = order.deliveryReview;
-  const customerDemo = isBoltCustomerDemoOrder(order);
+  const customerDemo = isBoltCustomerDemoOrder(order) || isCashReviewOrder(order);
   return {
     id: order.id,
     orderNumber: order.orderNumber,
@@ -117,7 +124,7 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
     payment: {
       method: order.payment.method,
       status: order.payment.status,
-      ...(!demoReadOnly && { cashToCollect: order.payment.cashToCollect }),
+      ...((!demoReadOnly || isCashReviewOrder(order)) && { cashToCollect: order.payment.cashToCollect }),
     },
     ...(customerDemo && { demoCustomerCheckout: true }),
     timestamps: order.timestamps,
@@ -190,17 +197,22 @@ function pageParam(value: unknown, fallback: number, max: number) {
 export function mountBoltAdmin(app: Express, options: Options) {
   const demoSessions = new Map<string, { actor: Actor; expiresAt: number }>();
   const activeStores = () => options.getStores().filter(store => store.isActive);
-  const isOperationalOrder = (order: Order) => !options.demo || options.demo.isOrder(order);
+  const isCashScenario = (order: Order) => !!options.demo && isDemoCashCheckoutOrder(order);
+  const isOperationalOrder = (order: Order) => !options.demo || options.demo.isOrder(order) || isCashScenario(order);
   // The checkout server generates the SHA-256 fingerprint. Seeded and standalone simulation orders use other formats.
   const isDemoCheckoutOrder = (order: Order) => !!options.demo && !!order.creationRequestId &&
     /^[a-f0-9]{64}$/.test(order.creationRequestFingerprint ?? '');
   const isVisibleOrder = (order: Order) => isOperationalOrder(order) || isDemoCheckoutOrder(order);
   const presentOrder = (order: Order) => {
-    const run = order.assignmentId && (!options.demo || isBoltCustomerDemoOrder(order))
+    const cashScenario = isCashScenario(order);
+    const run = order.assignmentId && (!options.demo || isBoltCustomerDemoOrder(order) || cashScenario || isCashReviewOrder(order))
       ? options.getDispatchRun(order.assignmentId)
       : undefined;
     return {
-      ...boltAdminOrder(order, isDemoCheckoutOrder(order)),
+      ...boltAdminOrder(order, isDemoCheckoutOrder(order) && !cashScenario),
+      ...(cashScenario && { demoCashCheckout: true }),
+      ...(options.demo && order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' &&
+        order.deliveryReview?.status === 'PENDING' && isDemoInventoryDeliveryOrder(order) && { canSimulateDelivery: true }),
       ...(run && run.orderId === order.id && { dispatch: {
         id: run.id, code: run.code, status: run.status, providerId: run.providerId,
         driverName: run.driverId && order.driver?.id === run.driverId ? order.driver.name : undefined,
@@ -209,21 +221,23 @@ export function mountBoltAdmin(app: Express, options: Options) {
   };
   const isActiveProduct = (product: Product) => !product.status || product.status === 'ACTIVE';
   const isDemoFixture = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.productId;
+  const isDemoGalleryProduct = (product: Product) => (product.parentProductId ?? product.id) === options.demo?.galleryProductId;
   const canEditDemoProduct = (product: Product) =>
     options.demo?.editCatalog === true && !(product.parentProductId ?? product.id).startsWith('SIM-');
   const isStockProduct = (product: Product) =>
-    isDemoFixture(product) || ((!options.demo || canEditDemoProduct(product)) && isActiveProduct(product));
+    isDemoFixture(product) || (!!options.demo && product.id === CASH_REVIEW_SKU) || ((!options.demo || canEditDemoProduct(product)) && isActiveProduct(product));
   const isCatalogEditProduct = (product: Product) =>
     !options.demo || isDemoFixture(product) || canEditDemoProduct(product);
 
   function inventoryRow(product: Product, actor: Actor, store?: Store) {
     const canEditCatalog = actor.canAdjustPrices && isCatalogEditProduct(product);
+    const canEditPhoto = actor.canAdjustPrices && (canEditCatalog || isDemoGalleryProduct(product));
     const canEditStock = actor.canAdjustInventory && !!store && belongsToStore(product, store) && isStockProduct(product);
     return inventoryItem(product, store, {
-      demoReadOnly: !!options.demo && !canEditCatalog && !canEditStock,
+      demoReadOnly: !!options.demo && !canEditCatalog && !canEditStock && !canEditPhoto,
       canEditStock,
       canEditPrice: canEditCatalog,
-      canEditPhoto: canEditCatalog,
+      canEditPhoto,
     });
   }
 
@@ -304,7 +318,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const product = options.photos.getProductById(productId);
     const variant = product?.presentaciones?.find(item => item.varianteId === variantId);
-    if (!product || product.id !== productId || !isCatalogEditProduct(product) ||
+    if (!product || product.id !== productId || (!isCatalogEditProduct(product) && !isDemoGalleryProduct(product)) ||
         (!variant && (product.presentaciones?.length || variantId !== product.id))) {
       res.status(404).json({ error: 'La presentación no está disponible para editar fotos.' });
       return;
@@ -412,7 +426,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     }
     const demo = !!options.demo;
     const allOrders = options.getOrders();
-    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) && !isBoltCustomerDemoOrder(order) :
+    const orders = allOrders.filter(order => demo ? isOperationalOrder(order) && !isBoltCustomerDemoOrder(order) && !isCashScenario(order) :
       !seedOrderIds.has(order.id) && order.creationRequestFingerprint !== 'SIMULATION' && !isBoltAdminDemoOrder(order));
     res.json(buildBoltAdminSalesReport({
       period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,
@@ -426,6 +440,20 @@ export function mountBoltAdmin(app: Express, options: Options) {
     const order = selectOrder(req, res, actor);
     if (order) res.json({ order: presentOrder(order) });
   });
+
+  if (options.demo) {
+    const demo = options.demo;
+    app.post(base + '/orders/:orderId/simulate-inventory-delivery', (req, res) => {
+      const actor = authorize(req, res);
+      if (!actor) return;
+      if (actor.role !== 'COORDINACION') return res.status(403).json({ error: 'Solo Coordinación puede simular esta entrega.' });
+      const order = selectOrder(req, res, actor);
+      if (!order) return;
+      const result = demo.completeInventoryDelivery(order.id, { id: actor.id, name: actor.name, role: 'ADMINISTRADOR' });
+      if (!result.success || !result.order) return res.status(result.code ?? 409).json({ error: result.error });
+      res.json(presentOrder(result.order));
+    });
+  }
 
   app.post(base + '/orders/:orderId/quote', (req, res) => {
     const actor = authorize(req, res);
@@ -497,8 +525,8 @@ export function mountBoltAdmin(app: Express, options: Options) {
       .filter(order => order.storeId === store.id && isDemoCheckoutOrder(order))
       .flatMap(order => order.items.map(item => item.productId)) : []);
     const products = options.getProducts().filter(product => {
-      const visible = scope === 'catalog' ? isCatalogEditProduct(product) : !!store && belongsToStore(product, store) &&
-        (isStockProduct(product) || checkoutProductIds.has(product.id));
+      const visible = scope === 'catalog' ? isCatalogEditProduct(product) || isDemoGalleryProduct(product) : !!store && belongsToStore(product, store) &&
+        (isStockProduct(product) || isDemoGalleryProduct(product) || checkoutProductIds.has(product.id));
       return visible && (!query || normalizeQuery([product.name, product.brand, product.sku, product.presentation].join(' ')).includes(query));
     });
     res.json({ items: products.slice(offset, offset + limit).map(product => inventoryRow(product, actor, store)),

@@ -6,7 +6,7 @@ import { ProductImage } from '../common/ProductImage';
 export type ConfirmationOrder = Pick<Order,
   'id' | 'orderNumber' | 'purchaseCode' | 'fulfillmentStatus' | 'deliveryReview' |
   'deliveryMode' | 'scheduledWindow' | 'estimatedDeliveryMinutes' | 'deliveryAddress' |
-  'items' | 'totals' | 'payment' | 'demoCustomerCheckout'>;
+  'items' | 'totals' | 'payment' | 'demoCustomerCheckout'> & Partial<Pick<Order, 'storeName'>>;
 
 interface Props {
   order: ConfirmationOrder;
@@ -30,7 +30,7 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
   const unconfirmedTotal = pending || order.deliveryReview?.status === 'PENDING';
   const title = cancelled ? 'Pedido cancelado' : pending ? 'Recibimos tu pedido' : delivered ? 'Pedido entregado' : '¡Pedido confirmado!';
   const description = cancelled ? 'Consulta los detalles de la cancelación en tu pedido.'
-    : order.demoCustomerCheckout ? 'Consulta la reserva en Suba y el despacho simulado con este mismo número de pedido.'
+    : order.demoCustomerCheckout ? `Consulta la reserva en ${order.storeName || 'la sede asignada'} con este mismo número de pedido.`
     : pending ? 'La sede confirmará la entrega contigo.'
     : delivered ? 'Gracias por comprar en Bolt Pets.' : 'Consulta el avance de tu entrega desde el seguimiento.';
   const StatusIcon = cancelled ? X : pending ? Clock3 : Check;

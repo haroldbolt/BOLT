@@ -26,14 +26,14 @@ const source = fileURLToPath(new URL('../../', import.meta.url));
 type RequestOptions = { method?: string; body?: unknown; token?: string; key?: string; guest?: string; status?: number };
 
 /** Empty temporary installation using the Express checkout and real auth, without demo orders or dispatch shortcuts. */
-export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean } = {}) {
+export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean; simulation?: boolean } = {}) {
   const socket = net.createServer();
   socket.listen(0, '127.0.0.1');
   await once(socket, 'listening');
   const port = (socket.address() as net.AddressInfo).port;
   await new Promise<void>(resolve => socket.close(() => resolve()));
   const origin = 'http://127.0.0.1:' + port;
-  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), 'bolt-rdi-checkout-'));
+  const runtime = fs.mkdtempSync(path.join(os.tmpdir(), options.simulation ? 'bolt-dispatch-simulation-rdi-' : 'bolt-rdi-checkout-'));
   const privateDir = path.join(runtime, '.bolt-private');
   const dataDir = path.join(privateDir, 'orders');
   const localData = path.join(runtime, 'src/data');
@@ -81,10 +81,11 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
       cwd: runtime,
       env: {
         PATH: process.env.PATH, NODE_ENV: 'production', BOLT_BIND_LOOPBACK_ONLY: '1', PORT: String(port),
-        BOLT_DATA_DIR: dataDir, BOLT_TEST_EGRESS_LOG: egressLog, BOLT_PILOT_STORE_IDS: storeIds.join(','),
+        BOLT_DATA_DIR: dataDir, BOLT_TEST_EGRESS_LOG: egressLog,
+        ...(options.simulation ? { BOLT_DISPATCH_SIMULATION: '1' } : { BOLT_PILOT_STORE_IDS: storeIds.join(',') }),
         ...(options.respondAsCargo && { BOLT_TEST_CARGO_LOG: cargoLog }),
         BOLT_ADMIN_EMAIL: adminCredentials.email, BOLT_ADMIN_PASSWORD: adminCredentials.password,
-        ...(checkoutEnabled ? {
+        ...(checkoutEnabled && !options.simulation ? {
           BOLT_PILOT_CHECKOUT_ENABLED: '1', BOLT_RAPPI_CARGO_ENABLED: '1', BOLT_RAPPI_CARGO_USER_TOKEN: randomUUID(),
           BOLT_RAPPI_CARGO_SETTINGS: JSON.stringify({ cashCollectionApproved: true,
             cashApprovalReference: 'FICTICIO-SOLO-PRUEBA-LOCAL', maxCashCOP: 200_000, externalBudgetCOP: 20_000, sites: fakeSites }),
@@ -129,6 +130,9 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     for (const folder of ['catalogo-local', 'geography']) fs.symlinkSync(path.join(source, 'src/data', folder), path.join(localData, folder), 'dir');
     fs.symlinkSync(fs.realpathSync(path.join(source, 'node_modules')), path.join(runtime, 'node_modules'), 'dir');
     new FulfillmentStorage(dataDir).commit({ orders: [], drivers: [], audit: [], telemetry: {}, dispatch: newDispatchState() });
+    if (options.simulation) fs.writeFileSync(path.join(privateDir, 'dispatch-simulation.json'), JSON.stringify({
+      kind: 'DISPATCH_SIMULATION', version: 1, initialized: true, admin: adminCredentials, drivers: [],
+    }));
     const config = fixtureConfig();
     config.vehicles = config.vehicles.filter(v => storeIds.some(id => v.driverId === 'SIM-' + id + '-1'));
     fs.writeFileSync(path.join(privateDir, 'transport-config.json'), JSON.stringify({ config, revision: 'rdi-fixture-only', audit: [] }));
@@ -136,7 +140,7 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
       ...fixtureProduct(testSku, 1_000), name: 'Alimento de prueba RDI', price: testPrice, bodegaIds: storeIds,
       stockByStore: Object.fromEntries(storeIds.map(id => [id, testStock])),
     };
-    fs.writeFileSync(path.join(localData, 'persisted-catalog-overrides.json'), JSON.stringify({ version: 1, overrides: {}, customProducts: [product] }));
+    fs.writeFileSync(path.join(localData, 'persisted-catalog-overrides.json'), JSON.stringify({ version: 1, overrides: {}, customProducts: options.simulation ? [] : [product] }));
     return { origin, adminCredentials, start, stop, request, login, registerFleet, cargoCalls, verifyNoEgress, dispose };
   } catch (error) { await dispose(); throw error; }
 }
