@@ -31,6 +31,7 @@ Las rutas de la tabla son relativas a `/api/v1`. Los nombres de campos y método
 | Función | Rutas principales | Comportamiento |
 | --- | --- | --- |
 | Estado público | `GET /health`, `GET /catalog/summary` | Estado del proceso, versión, resumen del catálogo y revisión del despliegue cuando está configurada. La disponibilidad de cada proveedor se verifica por separado. |
+| Monitoreo de Coordinación | `GET /admin/observability` | Requiere sesión administrativa global. Devuelve contadores de la API y agregados de pedidos, pagos y entregas. El resultado es privado. [Operación del monitoreo](./MONITOREO.md) |
 | Ubicación | `GET /geocode/forward?address=…&municipality=…`, `GET /geocode/reverse?lat=…&lng=…` | Identifica el destino. La decisión sobre cobertura o modalidad pertenece a la cotización. |
 | Búsqueda por foto | `GET /catalog/photo-search/status`, `POST /catalog/photo-search` | Consultar primero si está habilitada. El POST recibe JPEG binario de hasta 1 MiB. Devuelve sugerencias del catálogo y deja al cliente elegir su presentación. |
 | Compra y privacidad | `POST /orders/:orderId/cancel`, `POST /orders/:orderId/prescription`, `GET/PUT /orders/:orderId/entrance-photo` | La operación depende de titularidad, producto y estado. La foto de la entrada se guarda como material privado de entrega. |

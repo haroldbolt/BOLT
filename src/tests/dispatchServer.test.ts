@@ -83,6 +83,8 @@ try {
   assert.equal((await invalid.json()).code, "INVALID_REQUEST");
   const publicHealth = await (await call("/health")).json();
   assert.equal(publicHealth.privateInventory, undefined);
+  assert.equal(publicHealth.operations, undefined);
+  assert.equal((await call("/admin/observability")).status, 401);
   assert.equal((await call("/inventory/status")).status, 401);
   assert.equal((await call("/shopify/status")).status, 401);
   const publicCatalog = await (await call("/catalog?all=true")).json();
@@ -131,6 +133,14 @@ try {
   const { id } = await created.json();
   const signedIn = await call("/auth/login", "POST", credentials);
   const operator = { Authorization: "Bearer " + (await signedIn.json()).token };
+  assert.equal((await call("/admin/observability", "GET", undefined, operator)).status, 403);
+  const metrics = await call("/admin/observability", "GET", undefined, coordinator);
+  assert.equal(metrics.status, 200);
+  assert.match(metrics.headers.get("cache-control") || "", /no-store/);
+  const view = await metrics.json();
+  assert.ok(view.service.http.completed > 0);
+  assert.ok(view.operations);
+  assert.ok(!JSON.stringify(view).includes(credentials.email));
   const profile = await (await call("/bolt-admin/session", "GET", undefined, operator)).json();
   assert.deepEqual(profile.actor.storeIds, ["HUB_SUBA"]);
   assert.equal(profile.actor.canAdjustPrices, false);

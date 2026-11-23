@@ -25,6 +25,7 @@ export async function mountCustomerAccounts(
   app: Express,
   orders: OrderIdentityBridge,
   override?: { config: CustomerConfig; db: CustomerDB; sendMail: any },
+  reportMailFailure = () => console.error("[Customer] mail worker unavailable"),
 ) {
   const config = override?.config || readCustomerConfig();
   const db =
@@ -37,6 +38,8 @@ export async function mountCustomerAccounts(
     const mail = customerMailer(
       config,
       override ? db : connectCustomerDatabase(config.databaseURL!),
+      process.env,
+      reportMailFailure,
     );
     instance = createCustomerAuth(
       config,
@@ -45,9 +48,7 @@ export async function mountCustomerAccounts(
     );
     if (!override) {
       const worker = setInterval(() => {
-        mail
-          .drain()
-          .catch(() => console.error("[Customer] mail worker unavailable"));
+        mail.drain().catch(reportMailFailure);
       }, 10000);
       worker.unref();
     }

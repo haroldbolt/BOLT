@@ -35,6 +35,8 @@ import express, { Request, Response, type NextFunction } from 'express';
 import { mountApiRateLimit } from './src/lib/apiRateLimit';
 import { publicCatalogHeaders, privateResponse, revalidate, staticCacheHeaders } from './src/lib/httpCache';
 import { mountProductionHttp } from './src/lib/productionHttp';
+import { createServiceMonitoring } from './src/lib/serviceMonitoring';
+import { operationalMetrics } from './src/lib/operationalMetrics';
 import path from 'path';
 import fs from 'fs';
 import crypto from 'crypto';
@@ -162,6 +164,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
+  const monitoring = createServiceMonitoring({
+    env: isDispatchSimulation ? { ...process.env, BOLT_ALERT_WEBHOOK_URL: undefined } : process.env,
+  });
+  monitoring.observeDispatchEvents(ordersRepository.dispatchState.events);
   app.disable('x-powered-by');
   app.use(['/admin', '/operacion', '/conductor', '/pedido', '/confirmacion', '/cuenta', '/recuperar-seguimiento', '/simulacion'], (_req, res, next) => {
     res.set('Cache-Control', privateResponse);
@@ -174,6 +180,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     next();
   });
   const PORT = parseInt(process.env.PORT || '3000', 10);
+  app.use('/api', monitoring.middleware);
   mountProductionHttp(app, process.env, isDispatchSimulation);
 
   if(isDispatchSimulation)app.use((req,res,next)=>{if(!acceptsDemoOrigin({host:req.get('Host'),origin:req.get('Origin'),path:req.path,method:req.method,remoteAddress:req.socket.remoteAddress},PORT))return res.status(403).json({error:'Simulación disponible únicamente en su origen autorizado'});next()});
@@ -182,7 +189,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     driver: token => dispatchService.authenticate(token),
     customer: req => customerAccounts.ratePrincipal(req),
   });
-  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride);
+  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride, () => monitoring.workerFailure('customer_mail'));
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   const parseJson = express.json({ limit: '15mb' });
   app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
@@ -282,6 +289,16 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     next();
   }
 
+  app.get('/api/v1/admin/observability', requireAdminAuth, (_req, res) => {
+    res.json({
+      service: monitoring.snapshot(),
+      operations: operationalMetrics({
+        orders: ordersRepository.getAllOrders(),
+        runs: Object.values(ordersRepository.dispatchState.runs),
+        demo: isDispatchSimulation,
+      }),
+    });
+  });
   mountDispatchRoutes(app,dispatchService,ordersRepository,requireAdminAuth);
   mountTrackingRecovery(app,ordersRepository,dispatchService,requireAdminAuth);
   if(simulationProvider)mountDispatchSimulation(app,dispatchService,ordersRepository,transportRepository,currentSalesProducts,()=>stores,simulationProvider,requireAdminAuth);
@@ -291,7 +308,19 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   mountEntrancePhotos(app,ordersRepository,dispatchService,path.join(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'),'private-entrance-photos'));
   // Real provider adapters are intentionally absent. Polling is durable and has no booking side effects on quotes.
   let dispatchTickRunning=false;
-  const dispatchTimer=setInterval(async()=>{if(dispatchTickRunning||!Object.keys(ordersRepository.dispatchState.runs).length)return;dispatchTickRunning=true;try{await dispatchService.tick(); customerDemoDispatch?.tick()}catch{console.error('[Dispatch] worker failed; durable state retained')}finally{dispatchTickRunning=false}},1000);
+  const dispatchTimer = setInterval(async () => {
+    if (dispatchTickRunning || !Object.keys(ordersRepository.dispatchState.runs).length) return;
+    dispatchTickRunning = true;
+    try {
+      await dispatchService.tick();
+      customerDemoDispatch?.tick();
+    } catch {
+      monitoring.workerFailure('dispatch');
+    } finally {
+      dispatchTickRunning = false;
+      monitoring.observeDispatchEvents(ordersRepository.dispatchState.events);
+    }
+  }, 1000);
   dispatchTimer.unref();
 
   // ==========================================

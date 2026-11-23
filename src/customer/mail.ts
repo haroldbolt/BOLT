@@ -20,7 +20,7 @@ export async function sendCustomerMailHTTP(
   const data = await response.json().catch(() => null);
   if (!data || typeof data.id !== "string" || !data.id) throw Error("Transactional email acceptance missing");
 }
-export function customerMailer(config: CustomerConfig, db: CustomerDB, env = process.env) {
+export function customerMailer(config: CustomerConfig, db: CustomerDB, env = process.env, reportSendFailure?: () => void) {
   const quota = providerQuota("MAIL", env);
   const transport = config.smtp
     ? nodemailer.createTransport({
@@ -102,6 +102,7 @@ export function customerMailer(config: CustomerConfig, db: CustomerDB, env = pro
               .where("id", "=", row.id)
               .execute();
           } catch {
+            reportSendFailure?.();
             await tx
               .updateTable("customer_mail")
               .set({

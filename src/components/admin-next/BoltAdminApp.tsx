@@ -14,6 +14,7 @@ import { InventoryAdjustments } from './InventoryAdjustments';
 import { InventoryPhotoEditor } from './InventoryPhotoEditor';
 import { formatAdminPrice, PriceEditor } from './PriceManagement';
 import { SalesDashboard } from './SalesDashboard';
+import { ServiceStatus } from './ServiceStatus';
 import { LiveAdminTools, liveOperationTools, type LiveOperationTool } from './LiveAdminTools';
 import './boltAdmin.css';
 
@@ -467,6 +468,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
               : orders ? <Empty icon={<ClipboardList size={23} />} title="Sin solicitudes pendientes" text="Cuando lleguen solicitudes a esta sede, aparecerán aquí." />
               : <Loading text="Consultando pedidos…" />}
           </section>
+          {!isDemo && actor.role === 'COORDINACION' && token && <ServiceStatus key={actor.id} token={token} />}
         </>}
 
         {orderView && <>

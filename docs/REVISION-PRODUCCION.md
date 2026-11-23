@@ -59,3 +59,22 @@ El catálogo público completo y el de cada sede reutilizan sus bytes hasta que 
 En un proceso local con Node 22 y volumen aislado, 1.000 usuarios virtuales consultaron productos, sedes y cotizaciones durante un minuto con pausas de 8 a 16 segundos. Se validaron 4.909 respuestas, con un máximo de 27 solicitudes simultáneas. El percentil 95 fue de 114 ms en catálogo, 111 ms en sedes y 145 ms al cotizar. El estado de las reservas y el número de pedidos y despachos coincidieron al principio y al final.
 
 En otra instalación temporal, dos confirmaciones HTTP simultáneas con claves distintas compitieron por la última unidad de una referencia en Suba. Se aceptó exactamente una compra. Tras reiniciar persistió una reserva en Suba y ninguna en Kennedy o Álamos. Quedan pendientes la medición sostenida de compras y seguimiento con historial representativo en el hosting elegido y el almacenamiento transaccional compartido antes de escalar a varios escritores. [Ensayos y alcance](ESCALA-PILOTO.md)
+
+## 10. Errores, alertas y métricas
+
+La instalación ya tenía una ruta pública de salud, el informe de Ventas y estadísticas de Despachos. Coordinación ahora puede abrir **Inicio → Estado del servicio → Consultar** para ver los errores recientes, el estado del canal de alertas, los pedidos, los despachos y el efectivo con evidencia de entrega. Los agregados excluyen el dinero de pruebas y distinguen el recaudo desconocido del cero acreditado. El mismo contrato de lectura exige una sesión global de administración y devuelve datos sin caché.
+
+El backend emite registros estructurados de fallos HTTP, ráfagas de peticiones limitadas, fallos del trabajador y nuevas incidencias de despacho. Puede enviarlos a un receptor HTTPS configurado. El envío tiene un plazo y límites de frecuencia y concurrencia. Un comprobador independiente consulta salud y sedes para detectar también la caída del proceso. Hay pruebas de agrupación, fallos de notificación, permisos y resultados de pago sin evidencia suficiente. [Guía del monitor y de guardia](MONITOREO.md)
+
+En una instalación local con volumen vacío abrimos el panel en un navegador, iniciamos sesión como Coordinación y consultamos el resultado. Mostró cero pedidos, «Sin recaudo verificado» y «Pendiente de configurar» para el canal externo. La revisión del panel solo consultó datos. Falta registrar el canal de guardia, programar la sonda fuera del proceso y verificar la recepción en el destino elegido.
+
+## Publicación y decisiones
+
+Los diez puntos se trabajaron en la rama `codex/produccion-diez-puntos`. Los comandos de cada etapa son `npm run lint`, `npm run build` y `npm test`. La comprobación adicional del contenedor Linux arranca la imagen, lee la API y repite las verificaciones después del reinicio. Los ajustes conservan las reglas comerciales de transporte y los métodos de pago existentes. [PR de revisión](https://github.com/haroldbolt/BOLT/pull/39)
+
+| Decisión | Qué se necesita para activar |
+| --- | --- |
+| Dónde poner BOLT en Internet | Harold aprueba el proveedor y el coste mensual. Para el piloto de un escritor, la configuración preparada es un servicio de Render con disco persistente. La ingeniera configura el volumen, HTTPS, el proxy, los respaldos y los dominios. |
+| Dominio y mapas | Elegir la dirección web de Cliente y Admin, identificar la llave que usa esa instalación y restringirla en Google Cloud al sitio y a la API necesarios. |
+| Quién recibe incidentes | Nombrar al responsable, conectar el canal de alertas y acordar con la ingeniera cómo comprobar disponibilidad, guardar registros y ensayar recuperación. |
+| Crecimiento y cobros | Antes de abrir ventas, comprobar el convenio de recaudo y la operación por sede. Para más de un escritor, aprobar la migración transaccional, la restauración y la prueba de carga representativa. Las ampliaciones a tres sedes y a Rappi Cargo tienen una revisión separada. [PR #38](https://github.com/haroldbolt/BOLT/pull/38) |
