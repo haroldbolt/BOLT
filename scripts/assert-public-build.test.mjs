@@ -18,6 +18,8 @@ test('Permite Maps público y bloquea escapes del servidor sin mostrar el secret
   fs.writeFileSync(js, JSON.stringify(secret));
   assert.throws(() => assertPublicBuild(dir, { BOLT_CUSTOMER_SECRET: secret }), e => /credencial/.test(e.message) && !e.message.includes(secret));
   assert.throws(() => assertPublicBuild(dir, { BOLT_ALERT_WEBHOOK_URL: secret }), /credencial/);
+  assert.throws(() => assertPublicBuild(dir, { BOLT_RAPPI_CARGO_USER_TOKEN: secret }), /credencial/);
+  assert.throws(() => assertPublicBuild(dir, { VITE_BOLT_RAPPI_CARGO_USER_TOKEN: secret }), /VITE_/);
   fs.writeFileSync(js, '//# sourceMappingURL=data:application/json;base64,abc');
   assert.throws(() => assertPublicBuild(dir, {}), /mapa/);
   fs.writeFileSync(js, 'export default true');

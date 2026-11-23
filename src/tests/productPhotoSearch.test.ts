@@ -11,6 +11,7 @@ import {
   type ProductPhotoEvidence,
 } from '../lib/productPhotoSearch';
 import { mountProductPhotoSearch } from '../lib/productPhotoSearchRoutes';
+import { mountProductionHttp } from '../lib/productionHttp';
 import type { Product } from '../types';
 
 const evidence: ProductPhotoEvidence = {
@@ -101,6 +102,7 @@ test('sends a bounded request to the provider and disables response storage', as
 
 async function serve(options: Parameters<typeof mountProductPhotoSearch>[1]) {
   const app = express();
+  mountProductionHttp(app, options.env ?? {}, false);
   mountProductPhotoSearch(app, options);
   const server = app.listen(0, '127.0.0.1');
   await once(server, 'listening');
@@ -152,7 +154,7 @@ test('HTTP accepts validated JPEG, uses live catalog and enforces quota without 
   let calls = 0;
   const service = await serve({
     catalog: () => catalog,
-    env: { BOLT_PHOTO_SEARCH_DAILY_LIMIT: '2', BOLT_PHOTO_SEARCH_REQUESTS_PER_MINUTE: '10' },
+    env: { BOLT_PHOTO_SEARCH_DAILY_LIMIT: '2', BOLT_PHOTO_SEARCH_REQUESTS_PER_MINUTE: '10', BOLT_PWA_ORIGINS:'https://cliente.example.test' },
     recognizer: async jpeg => {
       calls++;
       const metadata = await sharp(jpeg).metadata();
@@ -173,7 +175,8 @@ test('HTTP accepts validated JPEG, uses live catalog and enforces quota without 
     assert.equal((await post(Buffer.from('not a jpeg'))).status, 400);
     assert.equal(calls, 0);
 
-    const matched = await post(image);
+    const matched = await post(image, { Origin: 'https://cliente.example.test', 'Sec-Fetch-Site': 'cross-site' });
+    assert.equal(matched.headers.get('Access-Control-Allow-Origin'), 'https://cliente.example.test');
     assert.equal(matched.headers.get('Cache-Control'), 'no-store');
     assert.deepEqual(await matched.json(), { matches: [{ productId: exact.id }], confident: true });
     catalog = [{ ...exact, status: 'INACTIVE' }];

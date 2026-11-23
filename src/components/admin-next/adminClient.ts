@@ -1,3 +1,4 @@
+import { backendFetch, isBoltSplitDeployment } from '../../lib/backendRequest';
 import type { operationalMetrics } from '../../lib/operationalMetrics';
 import type { createServiceMonitoring } from '../../lib/serviceMonitoring';
 import type { DeliveryQuote } from '../../lib/deliveryService';
@@ -128,13 +129,14 @@ export function storeAdminToken(token: string | null) {
   } catch { /* The current page can still hold the session in memory. */ }
 }
 
-async function request<T>(url: string, token: string | null, options: { body?: unknown; signal?: AbortSignal; method?: 'POST' | 'PUT'; setupToken?: string; mode?: RequestMode } = {}): Promise<T> {
+async function request<T>(url: string, token: string | null, options: { body?: unknown; signal?: AbortSignal; method?: 'POST' | 'PUT'; setupToken?: string } = {}): Promise<T> {
   const headers = new Headers({ Accept: 'application/json' });
   if (token) headers.set('Authorization', `Bearer ${token}`);
   if (options.body !== undefined) headers.set('Content-Type', 'application/json');
   if (options.setupToken) headers.set('X-Bolt-Admin-Setup-Token', options.setupToken);
-  const response = await fetch(url, {
-    method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), headers, mode: options.mode, credentials: 'same-origin',
+  const response = await backendFetch(url, {
+    method: options.method ?? (options.body === undefined ? 'GET' : 'POST'), headers,
+    mode: isBoltSplitDeployment() ? 'cors' : 'same-origin', credentials: 'same-origin',
     cache: 'no-store', redirect: 'error', signal: options.signal,
     body: options.body === undefined ? undefined : JSON.stringify(options.body),
   });
@@ -150,7 +152,7 @@ const base = `${apiBase}/bolt-admin`;
 const orderPath = (orderId: string) => `${base}/orders/${encodeURIComponent(orderId)}`;
 
 export const boltAdmin = {
-  observability: (token: string, signal: AbortSignal) => request<ServiceReport>(`${apiBase}/admin/observability`, token, { signal, mode: 'same-origin' }),
+  observability: (token: string, signal: AbortSignal) => request<ServiceReport>(`${apiBase}/admin/observability`, token, { signal }),
   session: (token: string | null, signal?: AbortSignal) => request<AdminSession>(`${base}/session`, token, { signal }),
   authStatus: (signal?: AbortSignal) => request<{ isSetupRequired: boolean }>('/api/v1/auth/status', null, { signal }),
   setup: (name: string, email: string, password: string, setupToken: string) => request<{ token: string }>(

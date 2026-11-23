@@ -13,11 +13,11 @@ El objetivo es atender a 1.000 usuarios activos de forma sostenida. Para dimensi
 
 ## Ensayo local reproducible
 
-`node deployment/load-pilot.mjs` inicia el piloto en loopback sobre un volumen temporal, con un único escritor. La carga programa 1.000 usuarios virtuales, 10 segundos de incorporación, 60 segundos de observación y pausas de 8 a 16 segundos entre solicitudes. El itinerario reparte consultas de catálogo por SKU, sedes y cotizaciones para Suba. Exige una respuesta coherente con el bloqueo vigente de recaudo. Compara antes y después la revisión, cantidad de pedidos y despachos y un resumen verificable de reservas por referencia y sede. Ajusta sólo en el proceso aislado la cuota por IP, porque todo el tráfico proviene de loopback. [Script del ensayo](../deployment/load-pilot.mjs)
+`node deployment/load-pilot.mjs` inicia el piloto en loopback sobre un volumen temporal, con un único escritor. La carga programa 1.000 usuarios virtuales, 10 segundos de incorporación, 60 segundos de observación y pausas de 8 a 16 segundos entre solicitudes. El itinerario reparte consultas de catálogo por SKU, sedes y cotizaciones para Álamos, Kennedy y Suba. Exige una respuesta coherente con el bloqueo vigente de recaudo. Compara antes y después la revisión, cantidad de pedidos y despachos y un resumen verificable de reservas por referencia y sede. Ajusta sólo en el proceso aislado la cuota por IP, porque todo el tráfico proviene de loopback. [Script del ensayo](../deployment/load-pilot.mjs)
 
 La salida expresa cuántos usuarios llegaron a actuar más de una vez y el máximo de solicitudes simultáneas. Permite distinguir un ensayo completo de uno que acabó con clientes en espera o con timeouts. Este recorrido omite pedidos reales, sesiones de clientes, pagos y servicios externos.
 
-### Resultado medido en el equipo local
+### Medición anterior del PR #39, con cotizaciones para Suba
 
 Con Node 22.22.0, macOS ARM64 y 10 CPU lógicas, los **1.000 usuarios virtuales completaron al menos dos interacciones**. De las 4.909 solicitudes iniciadas en el minuto medido, 4.902 terminaron dentro de esa ventana, para **81,7 respuestas por segundo**. Las siete restantes terminaron durante el drenaje. Todas devolvieron HTTP 200 y pasaron la comprobación de contenido. El pico observado fue de 27 solicitudes en vuelo.
 

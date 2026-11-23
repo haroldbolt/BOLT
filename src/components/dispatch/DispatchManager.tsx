@@ -1,3 +1,4 @@
+import type { ExternalRequest } from '../../types/dispatch';
 import {PendingDeliveryReviews} from './PendingDeliveryReviews';
 import {OrderEntrancePhoto} from '../customer/OrderEntrancePhoto';
 import {HistoricalOperations} from './HistoricalOperations';
@@ -15,6 +16,82 @@ import {
   Feedback,
   SimulationBanner,
 } from "./DispatchUi";
+type CargoDispatch = {
+  id: string;
+  status: string;
+  pickedUpAt?: number;
+  cashDue: number;
+  cashCollected: number;
+  external?: ExternalRequest;
+};
+
+function CargoReconciliation({ dispatch, busy, action }: {
+  dispatch: CargoDispatch;
+  busy: boolean;
+  action: (id: string, name: string, body?: unknown) => unknown;
+}) {
+  const external = dispatch.external;
+  if (!external || external.simulation || external.providerId !== 'rappi-cargo') return null;
+  const labels = {
+    PICKED_UP: 'Recogida reportada por Cargo',
+    DELIVERED: 'Entrega reportada por Cargo',
+    FAILED: 'Incidencia reportada por Cargo',
+    RETURNED: 'Retorno reportado por Cargo',
+  };
+  const stage = external.providerStage;
+  return <section aria-label="Conciliación de Rappi Cargo" className="space-y-3 rounded-xl border p-3">
+    <p className="text-sm font-semibold">{stage ? labels[stage] : 'Seguimiento de Rappi Cargo'}</p>
+    {(stage === 'PICKED_UP' || stage === 'DELIVERED') && !dispatch.pickedUpAt &&
+      <button className={control} disabled={busy} type="button" onClick={() => void action(dispatch.id, 'cargo/pickup')}>
+        Confirmar recogida verificada
+      </button>}
+    {stage === 'DELIVERED' && dispatch.status === 'PICKED_UP' &&
+      <form className="grid gap-2 sm:grid-cols-3" onSubmit={event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        const deliveryCode = String(form.get('deliveryCode') || '');
+        event.currentTarget.reset();
+        void action(dispatch.id, 'cargo/delivery', {
+          deliveryCode,
+          collectedCOP: dispatch.cashDue ? Number(form.get('collectedCOP')) : 0,
+          collectionReference: String(form.get('collectionReference') || ''),
+        });
+      }}>
+        <label className="text-sm">PIN del cliente<input className={field} name="deliveryCode" inputMode="numeric" pattern="[0-9]{4}" autoComplete="off" required /></label>
+        {dispatch.cashDue > 0 && <>
+          <label className="text-sm">Efectivo verificado en COP<input className={field} name="collectedCOP" type="number" inputMode="numeric" min="0" step="1" required /></label>
+          <label className="text-sm">Comprobante de recaudo<input className={field} name="collectionReference" maxLength={100} required /></label>
+        </>}
+        <button className={control} disabled={busy} type="submit">Confirmar entrega</button>
+      </form>}
+    {stage === 'RETURNED' && dispatch.status !== 'CANCELLED' &&
+      <form className="flex flex-wrap items-end gap-2" onSubmit={event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        void action(dispatch.id, 'cargo/return', { reference: String(form.get('reference') || '') });
+      }}>
+        <label className="text-sm">Constancia de retorno físico a la sede<input className={field} name="reference" maxLength={100} required /></label>
+        <button className={control} disabled={busy} type="submit">Confirmar retorno sin recaudo</button>
+      </form>}
+    {dispatch.status === 'DELIVERED' && dispatch.cashCollected > 0 && (external.bankReceipt
+      ? <p className="text-sm">Liquidación bancaria registrada por {formatCOP(external.bankReceipt.netCOP)}</p>
+      : <form className="grid gap-2 sm:grid-cols-3" onSubmit={event => {
+        event.preventDefault();
+        const form = new FormData(event.currentTarget);
+        void action(dispatch.id, 'cargo/settlement', {
+          reference: String(form.get('reference') || ''),
+          netCOP: Number(form.get('netCOP')),
+          deductionsCOP: Number(form.get('deductionsCOP')),
+        });
+      }}>
+        <label className="text-sm">Referencia de la línea de liquidación<input className={field} name="reference" maxLength={100} required /></label>
+        <label className="text-sm">Neto recibido en COP<input className={field} name="netCOP" type="number" inputMode="numeric" min="1" step="1" required /></label>
+        <label className="text-sm">Deducciones en COP<input className={field} name="deductionsCOP" type="number" inputMode="numeric" min="0" step="1" required /></label>
+        <button className={control} disabled={busy} type="submit">Registrar liquidación bancaria</button>
+      </form>)}
+  </section>;
+}
+
 export function DispatchManager({
   authenticated,
   onAuthenticate,
@@ -253,9 +330,8 @@ export function DispatchManager({
                         </button>
                       )}
                       {d.external &&
-                        ["UNKNOWN", "REQUESTING", "ACCEPTED"].includes(
-                          d.external.status,
-                        ) && (
+                        (["UNKNOWN", "REQUESTING", "ACCEPTED"].includes(d.external.status) ||
+                          (!d.external.simulation && d.external.status === "ASSIGNED" && d.status !== "DELIVERED")) && (
                           <>
                             <button
                               className={control}
@@ -264,6 +340,7 @@ export function DispatchManager({
                             >
                               Consultar servicio externo
                             </button>
+                            {!d.pickedUpAt && !d.external.providerStage && (
                             <button
                               className={control}
                               disabled={a.busy}
@@ -273,9 +350,11 @@ export function DispatchManager({
                             >
                               Cancelar servicio externo
                             </button>
+                            )}
                           </>
                         )}
                     </div>
+                    <CargoReconciliation dispatch={d} busy={a.busy} action={action} />
                     {["PICKED_UP","INCIDENT"].includes(d.status) && !!d.pickedUpAt && d.driverId && (
                       <div className="flex flex-wrap gap-2">
                         <label className="text-sm flex-1">

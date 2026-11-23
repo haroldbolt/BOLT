@@ -1,5 +1,5 @@
 import assert from 'node:assert/strict';
-import { spawn } from 'node:child_process';
+import { execFile, spawn } from 'node:child_process';
 import { randomBytes } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
@@ -7,6 +7,7 @@ import net from 'node:net';
 import os from 'node:os';
 import path from 'node:path';
 import { test } from 'node:test';
+import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
 
 const source = path.resolve(import.meta.dirname, '..');
@@ -24,7 +25,8 @@ test('built server starts twice with the pilot launcher, durable files and no si
   const get = name => fetch(origin + name, { signal: AbortSignal.timeout(3000) });
   const env = {
     PATH: process.env.PATH, NODE_ENV: 'production', PORT: String(port),
-    BOLT_PILOT_VOLUME: volume, BOLT_PILOT_STORE_ID: 'HUB_SUBA',
+    BOLT_PILOT_VOLUME: volume, BOLT_PILOT_STORE_IDS: 'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA',
+    BOLT_BIND_LOOPBACK_ONLY: '1',
     BOLT_ADMIN_SETUP_TOKEN: randomBytes(32).toString('hex'),
   };
   let child;
@@ -38,7 +40,7 @@ test('built server starts twice with the pilot launcher, durable files and no si
   t.after(async () => {
     try { await stop(); } finally { await fs.rm(volume, { recursive: true, force: true }); }
   });
-  const runtime = path.join(volume, 'bolt-piloto-suba');
+  const runtime = path.join(volume, 'bolt-operacion');
   const fixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jksQAAAAASUVORK5CYII=', 'base64');
   let persisted;
   for (let run = 0; run < 2; run++) {
@@ -51,9 +53,8 @@ test('built server starts twice with the pilot launcher, durable files and no si
       await delay(100);
     }
     assert.ok(ready);
-    assert.deepEqual(await (await get('/api/v1/simulation')).json(), { enabled: false });
+    await promisify(execFile)(process.execPath, ['deployment/check-pilot.mjs', origin], {cwd: source, env});
     assert.equal((await (await get('/api/customer/config')).json()).configured, false);
-    assert.deepEqual((await (await get('/api/v1/stores')).json()).map(s => s.id), ['HUB_SUBA']);
     assert.ok((await (await get('/api/v1/catalog')).json()).length > 0);
     assert.equal((await get('/api/v1/orders')).status, 401);
     assert.match(await (await get('/')).text(), /<html/);

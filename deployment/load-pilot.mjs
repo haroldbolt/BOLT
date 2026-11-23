@@ -16,7 +16,7 @@ assert.ok(fs.existsSync(path.join(source, 'server.js')), 'Ejecuta npm run build.
 const users = 1000, rampMs = 10000, holdMs = 60000, timeoutMs = 12000;
 const resources = ['catalog', 'catalog', 'stores', 'catalog', 'quote', 'catalog', 'stores', 'catalog', 'quote', 'stores'];
 const volume = fs.mkdtempSync(path.join(os.tmpdir(), 'bolt-load-pilot-'));
-const stateFile = path.join(volume, 'bolt-piloto-suba', '.bolt-private', 'orders', 'persisted-fulfillment.json');
+const stateFile = path.join(volume, 'bolt-operacion', '.bolt-private', 'orders', 'persisted-fulfillment.json');
 const probe = net.createServer();
 await new Promise((resolve, reject) => probe.once('error', reject).listen(0, '127.0.0.1', resolve));
 const port = probe.address().port;
@@ -24,7 +24,7 @@ await new Promise(resolve => probe.close(resolve));
 const origin = 'http://127.0.0.1:' + port;
 const environment = {
   PATH: process.env.PATH, NODE_ENV:'production', PORT:String(port), BOLT_BIND_LOOPBACK_ONLY:'1',
-  BOLT_PILOT_STORE_ID:'HUB_SUBA', BOLT_PILOT_VOLUME:volume, BOLT_ADMIN_SETUP_TOKEN:randomBytes(32).toString('hex'),
+  BOLT_PILOT_STORE_IDS:'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA', BOLT_PILOT_VOLUME:volume, BOLT_ADMIN_SETUP_TOKEN:randomBytes(32).toString('hex'),
   // All virtual shoppers share one loopback IP; testing that IP's default cap is a separate regression.
   BOLT_API_RATE_IP_PER_MINUTE:'100000',
 };
@@ -93,7 +93,12 @@ try {
   assert.ok(availableSearches.length,'Faltan resultados de búsqueda visibles.');
   let active=0,peakConcurrent=0,measuredStarted=0,measuredComplete=0;
   const started=performance.now(), begin=started+rampMs, end=begin+holdMs;
-  const address={address:'Carrera 107 #143-31',coordinates:{lat:4.747154,lng:-74.098137},municipality:'Bogotá',locality:'Suba'};
+  const destinations = [
+    {storeId:'HUB_ALAMOS', address:'Transversal 93 #65-10', coordinates:{lat:4.7001,lng:-74.1135}, locality:'Engativá'},
+    {storeId:'HUB_KENNEDY', address:'Calle 3 #78-20', coordinates:{lat:4.6365,lng:-74.1448}, locality:'Kennedy'},
+    {storeId:'HUB_SUBA', address:'Carrera 107 #143-31', coordinates:{lat:4.747154,lng:-74.098137}, locality:'Suba'},
+  ];
+  const stores = destinations.map(destination => destination.storeId);
   function percentile(values,p) {return values.length?Math.round(values[Math.max(0,Math.ceil(values.length*p)-1)]):null;}
   ticker=setInterval(()=>console.error(JSON.stringify({seconds:Math.round((performance.now()-begin)/1000),
     measuredStarted,measuredComplete,active,usersWithCompletedAttempt:perUser.filter(n=>n>0).length})),10000);
@@ -103,8 +108,9 @@ try {
       const key=resources[(id+sequence)%resources.length];
       const product=availableSearches[(id+sequence)%availableSearches.length];
       const route=key==='catalog'?'/catalog?q='+encodeURIComponent(product.query):key==='stores'?'/stores':'/delivery/quote';
+      const {storeId, ...destination} = destinations[(id + sequence) % destinations.length];
       const init=key==='quote'?{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({
-        destination:address,requestedMode:sequence%2?'PROGRAMADO':'TURBO',items:[{productId:product.sellable,quantity:1}],
+        destination:{...destination,municipality:'Bogotá'},requestedMode:sequence%2?'PROGRAMADO':'TURBO',items:[{productId:product.sellable,quantity:1}],
       })}:{};
       const t=performance.now(), measured=t>=begin;
       const slot=stats.get(key);
@@ -122,9 +128,9 @@ try {
           chunks.push(chunk);
         }
         const data=JSON.parse(Buffer.concat(chunks,size).toString());
-        valid=res.ok && (key==='stores'?Array.isArray(data)&&data.some(row=>row.id==='HUB_SUBA'):
+        valid=res.ok && (key==='stores'?Array.isArray(data)&&data.length===stores.length&&stores.every(store=>data.some(row=>row.id===store)):
           key==='catalog'?Array.isArray(data)&&data.some(row=>row.sku===product.query):
-          data?.territoryInfo?.isCovered===true && (data.assignedStoreId || data.territoryInfo.assignedStoreId)==='HUB_SUBA' && data.reasonCode==='RAPPI_CASH_UNCONFIRMED');
+          data?.territoryInfo?.isCovered===true && (data.assignedStoreId || data.territoryInfo.assignedStoreId)===storeId && data.reasonCode==='RAPPI_CASH_UNCONFIRMED');
       } catch(error) {
         status=error.name==='TimeoutError'||error.name==='AbortError'?'TIMEOUT':error.message==='BODY_LIMIT'?'BODY_LIMIT':'NETWORK_OR_PARSE_ERROR';
       } finally {

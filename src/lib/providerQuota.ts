@@ -1,12 +1,15 @@
 import type { Request, Response } from 'express';
 import { createDailyProviderBudget, secondsUntilBogotaMidnight } from './dailyProviderBudget';
 
-type Provider = 'GEOCODE' | 'WOMPI' | 'MAIL';
 const defaults = {
   GEOCODE: { perIdentity: 30, total: 300, concurrency: 8, daily: 2000 },
   WOMPI: { perIdentity: 12, total: 60, concurrency: 4, daily: 500 },
   MAIL: { perIdentity: 5, total: 30, concurrency: 1, daily: 500 },
+  CARGO_QUOTE: { perIdentity: 2, total: 60, concurrency: 4, daily: 2000 },
+  CARGO_BOOKING: { perIdentity: 2, total: 60, concurrency: 4, daily: 2000 },
+  CARGO_TRACKING: { perIdentity: 12, total: 120, concurrency: 8, daily: 10000 },
 } as const;
+type Provider = keyof typeof defaults;
 
 export function providerQuota(provider: Provider, env = process.env, clock = Date.now) {
   const numbers = defaults[provider];
@@ -44,7 +47,7 @@ export function providerQuota(provider: Provider, env = process.env, clock = Dat
   };
 }
 
-export function providerRouteLimit(provider: Exclude<Provider, 'MAIL'>, env = process.env) {
+export function providerRouteLimit(provider: 'GEOCODE' | 'WOMPI', env = process.env) {
   const quota = providerQuota(provider, env);
   return async (req: Request, res: Response, operation: () => Promise<unknown>) => {
     const identities = ['ip:' + (req.ip || req.socket.remoteAddress || 'unknown')];

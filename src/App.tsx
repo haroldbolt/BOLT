@@ -1,3 +1,4 @@
+import { backendFetch, isBoltSplitDeployment, customerNavigationPath, customerNavigationUrl } from './lib/backendRequest';
 import {BrandsView,BrandsShortcut} from './components/customer/BrandsView';
 import {activeCatalog,catalogBrands,customerCatalog,matchesBrand,type CatalogSection,type BrandEntry} from './lib/brandDirectory';
 import {matchesCatalogCategory} from './lib/catalogCategories';
@@ -52,9 +53,9 @@ export default function App() {
   const customerSession=useCustomer();
   const customerStorage=customerSession.storage;
   // Navigation / Routing
-  const [currentPath, setCurrentPath] = useState<string>(() => window.location.pathname);
+  const [currentPath, setCurrentPath] = useState<string>(() => customerNavigationPath(window.location));
   const [trackingOrderId, setTrackingOrderId] = useState<string | null>(() => {
-    const match = window.location.pathname.match(/\/pedido\/([a-zA-Z0-9_-]+)/);
+    const match = customerNavigationPath(window.location).match(/\/pedido\/([a-zA-Z0-9_-]+)/);
     return match ? match[1] : null;
   });
 
@@ -62,15 +63,15 @@ export default function App() {
   const [quotaExceeded, setQuotaExceeded] = useState(false);
 
   // App data state
-  const [stores, setStores] = useState<Store[]>(() => INITIAL_STORES.filter(store => store.isActive));
-  const [products, setProducts] = useState<Product[]>(INITIAL_PRODUCTS);
+  const [stores, setStores] = useState<Store[]>(() => isBoltSplitDeployment() ? [] : INITIAL_STORES.filter(store => store.isActive));
+  const [products, setProducts] = useState<Product[]>(() => isBoltSplitDeployment() ? [] : INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>([]);
   const [recentOrder, setRecentOrder] = useState<Order | null>(null);
   const [customerDemoCheckoutEnabled, setCustomerDemoCheckoutEnabled] = useState(false);
   useEffect(() => {
-    if (currentPath !== '/') return;
+    if (currentPath !== '/' || isBoltSplitDeployment()) return;
     const controller = new AbortController();
-    fetch('/api/v1/simulation/customer-checkout', { signal: controller.signal, cache: 'no-store' })
+    backendFetch('/api/v1/simulation/customer-checkout', { signal: controller.signal, cache: 'no-store' })
       .then(response => response.ok && response.headers.get('content-type')?.includes('application/json') ? response.json() : null)
       .then(data => { if (!controller.signal.aborted) setCustomerDemoCheckoutEnabled(data?.enabled === true); })
       .catch(() => { if (!controller.signal.aborted) setCustomerDemoCheckoutEnabled(false); });
@@ -333,7 +334,7 @@ export default function App() {
 
   // Sync path changes
   const navigateTo = (path: string) => {
-    window.history.pushState({}, '', path);
+    window.history.pushState({}, '', customerNavigationUrl(path));
     setCurrentPath(path);
     const match = path.match(/\/pedido\/([a-zA-Z0-9_-]+)/);
     setTrackingOrderId(match ? match[1] : null);
@@ -342,8 +343,8 @@ export default function App() {
 
   useEffect(() => {
     const onPopState = () => {
-      setCurrentPath(window.location.pathname);
-      const match = window.location.pathname.match(/\/pedido\/([a-zA-Z0-9_-]+)/);
+      setCurrentPath(customerNavigationPath(window.location));
+      const match = customerNavigationPath(window.location).match(/\/pedido\/([a-zA-Z0-9_-]+)/);
       setTrackingOrderId(match ? match[1] : null);
     };
     window.addEventListener('popstate', onPopState);
@@ -675,7 +676,7 @@ export default function App() {
             navigateTo(`/pedido/${activeOrders[0].id}`);
           }
         }}
-        onNavigateToOperacion={() => window.location.assign('/admin/nuevo/')}
+        onNavigateToOperacion={isBoltSplitDeployment() ? undefined : () => window.location.assign('/admin/nuevo/')}
         onOpenOrderHistory={() => {
           setOrderHistoryInitialTab('history');
           setIsOrderHistoryOpen(true);

@@ -19,8 +19,8 @@ services:
         value: /data
       - key: BOLT_REQUIRE_VOLUME_MOUNT
         value: '1'
-      - key: BOLT_PILOT_STORE_ID
-        value: HUB_SUBA
+      - key: BOLT_PILOT_STORE_IDS
+        value: HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA
       - key: BOLT_ADMIN_SETUP_TOKEN
         sync: false
       - key: BOLT_TRUSTED_PROXY_CIDRS

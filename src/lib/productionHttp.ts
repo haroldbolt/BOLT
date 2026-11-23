@@ -46,7 +46,7 @@ export function mountProductionHttp(app: Express, env: NodeJS.ProcessEnv, simula
   const trusted = app.get('trust proxy fn') as (ip: string, hop: number) => boolean;
   const allowCors = cors({
     origin: allowed,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Order-Token', 'X-Photo-Id', 'X-Photo-Destination'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Order-Token', 'X-Photo-Id', 'X-Photo-Destination', 'X-Bolt-Admin-Setup-Token'],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 300,
@@ -93,7 +93,10 @@ export function mountProductionHttp(app: Express, env: NodeJS.ProcessEnv, simula
     // Apple sends form_post from its web origin. Better Auth still validates state and the identity token.
     if (requestOrigin === 'https://appleid.apple.com' && req.method === 'POST' &&
         req.path === '/api/customer-auth/callback/apple' && env.BOLT_APPLE_SERVICE_ID && env.BOLT_APPLE_CLIENT_SECRET) return next();
-    if (/^\/api\/v1(?:\/|$)/i.test(req.path) && allowed.includes(requestOrigin)) return allowCors(req, res, next);
+    if (/^\/api\/v1(?:\/|$)/i.test(req.path) && allowed.includes(requestOrigin)) {
+      res.locals.authorizedPwaOrigin = requestOrigin;
+      return allowCors(req, res, next);
+    }
     return res.status(403).json({ code: 'ORIGIN_NOT_ALLOWED', error: 'Origen de solicitud no autorizado.' });
   });
 }

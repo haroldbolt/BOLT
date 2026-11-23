@@ -76,6 +76,11 @@ export interface ExternalRequest {
   simulation: boolean;
   collected?: number;
   cancellationPending?: boolean;
+  providerStage?: 'PICKED_UP' | 'DELIVERED' | 'FAILED' | 'RETURNED';
+  cashCollectionIndicated?: boolean;
+  cashCollectionReference?: string;
+  returnReference?: string;
+  bankReceipt?: { reference: string; netCOP: number; deductionsCOP: number; recordedAt: number; actorId: string };
 }
 export interface DispatchRun {
   id: string;

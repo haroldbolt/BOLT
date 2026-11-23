@@ -7,11 +7,11 @@ const serverVariables = [
   'BOLT_ADMIN_PASSWORD', 'BOLT_ADMIN_SETUP_TOKEN', 'BOLT_ALERT_WEBHOOK_URL', 'BOLT_APPLE_CLIENT_SECRET',
   'BOLT_CUSTOMER_BOOTSTRAP_DATABASE_URL', 'BOLT_CUSTOMER_DATABASE_URL', 'BOLT_CUSTOMER_SECRET',
   'BOLT_DEMO_PASSWORD', 'BOLT_GOOGLE_CLIENT_SECRET', 'BOLT_PHOTO_SEARCH_OPENAI_API_KEY',
-  'BOLT_RESEND_API_KEY', 'BOLT_SMTP_PASSWORD', 'BOLT_WOMPI_PRIVATE_KEY',
+  'BOLT_RAPPI_CARGO_USER_TOKEN', 'BOLT_RAPPI_CARGO_SETTINGS', 'BOLT_RESEND_API_KEY', 'BOLT_SMTP_PASSWORD', 'BOLT_WOMPI_PRIVATE_KEY',
   'GOOGLE_MAPS_SERVER_API_KEY', 'OPENAI_API_KEY', 'SHOPIFY_ADMIN_ACCESS_TOKEN', 'SHOPIFY_CLIENT_SECRET',
 ];
 const privateArtifact = /^(?:\.env(?:\..*)?|\.git|\.bolt-private|\.bolt-storage|private-entrance-photos|persisted-.*\.json|server\.(?:ts|js)|.*\.(?:map|p8|p12|pfx|key))$/i;
-const publicSecretName = /(?:^|_)(?:PASSWORD|SECRET|PRIVATE_KEY|ACCESS_TOKEN|SETUP_TOKEN|API_KEY|DATABASE_URL)(?:_|$)/;
+const publicSecretName = /(?:^|_)(?:PASSWORD|SECRET|PRIVATE_KEY|ACCESS_TOKEN|USER_TOKEN|CARGO_SETTINGS|SETUP_TOKEN|API_KEY|DATABASE_URL)(?:_|$)/;
 const privateMaterial = /-----BEGIN (?:RSA |EC |OPENSSH |ENCRYPTED )?PRIVATE KEY-----[\s\\nr]+[a-zA-Z0-9+/=]{32,}|\b(?:shpat_[a-f0-9]{32,}|sk-(?:proj-|svcacct-)[a-zA-Z0-9_-]{30,}|re_[a-zA-Z0-9]{8}_[a-zA-Z0-9]{24,})\b/;
 const sourceMapDirective = /(?:\/\/[#@]|\/\*[#@])\s*sourceMappingURL\s*=/;
 

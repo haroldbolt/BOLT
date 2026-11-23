@@ -60,6 +60,10 @@ test('only explicit origins use CORS on v1; Apple callback retains provider auth
     assert.equal(cors.headers['access-control-allow-origin'],allowed);
     assert.equal(cors.headers['access-control-allow-credentials'],undefined);
     assert.match(String(cors.headers['access-control-allow-headers']), /Idempotency-Key/);
+    const setupRequest = await call('/api/v1/auth/setup-admin', {...secure, Origin:allowed,
+      'Access-Control-Request-Method':'POST', 'Access-Control-Request-Headers':'content-type,x-bolt-admin-setup-token'}, 'OPTIONS');
+    assert.equal(setupRequest.status,204);
+    assert.match(String(setupRequest.headers['access-control-allow-headers']), /X-Bolt-Admin-Setup-Token/i);
     assert.equal((await call('/api/v1/stores',{...secure,Origin:canonical})).status,200);
     for (const origin of ['null','https://cliente.example.test.attacker.test']) {
       const blocked=await call('/api/v1/stores',{...secure,Origin:origin});

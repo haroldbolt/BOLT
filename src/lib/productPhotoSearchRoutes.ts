@@ -71,7 +71,7 @@ export function mountProductPhotoSearch(app: Express, options: {
   app.post(SEARCH_PATH, (req, res) => {
     res.set('Cache-Control', 'no-store');
     if (!recognizer && !readText) return res.status(503).json({ error: 'La búsqueda por foto no está habilitada.' });
-    if (!sameSiteRequest(req, env.BOLT_CUSTOMER_ORIGIN)) {
+    if (!res.locals.authorizedPwaOrigin && !sameSiteRequest(req, env.BOLT_CUSTOMER_ORIGIN)) {
       return res.status(403).json({ error: 'Origen de la solicitud no autorizado.' });
     }
     if (!req.is('image/jpeg')) return res.status(415).json({ error: 'Envía una foto JPEG.' });
