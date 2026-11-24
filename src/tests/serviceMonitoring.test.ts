@@ -141,3 +141,18 @@ test('Solo se anuncian incidencias y búsquedas agotadas añadidas tras el arran
   restarted.observeDispatchEvents(rotated);
   assert.deepEqual(restarted.snapshot().dispatchSignals,{incidents:0,searchesExhausted:0});
 });
+
+test('el diagnóstico de direcciones parte sin consultas y separa ambos sentidos sin datos privados', async () => {
+  const env = {GOOGLE_MAPS_SERVER_API_KEY:'fixture-key-not-for-logs'};
+  let now = start;
+  const monitor = createServiceMonitoring({env,clock:()=>now});
+  assert.deepEqual(monitor.snapshot().geocoding, {configured:true,forward:null,reverse:null});
+  monitor.recordGeocoding('forward', 'DENIED');
+  now += 1000;
+  monitor.recordGeocoding('reverse', 'NO_RESULTS');
+  assert.deepEqual(monitor.snapshot().geocoding, {configured:true,
+    forward:{outcome:'DENIED',at:new Date(start).toISOString()},
+    reverse:{outcome:'NO_RESULTS',at:new Date(now).toISOString()}});
+  assert.doesNotMatch(JSON.stringify(monitor.snapshot()), /fixture-key-not-for-logs/);
+  assert.equal(createServiceMonitoring({env:{}}).snapshot().geocoding.configured,false);
+});

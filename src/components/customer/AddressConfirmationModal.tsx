@@ -1,17 +1,17 @@
 import {useCustomer} from '../../customer/client';
-import {COVERAGE_MUNICIPALITIES, coverageMunicipality} from '../../data/coverageConfig';
+import {COVERAGE_MUNICIPALITIES, coverageMunicipality, normalizeTerritoryString} from '../../data/coverageConfig';
 import type {AddressSearchCandidate} from '../../lib/addressSearch';
 import {EntrancePhotoPicker} from './EntrancePhotoPicker';
 import { TERRITORY_OPTIONS } from '../../lib/territoryConfig';
 import { AddressTerritory, validDestinationCoordinates } from '../../lib/addressGeography';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { APIProvider, Map, AdvancedMarker, useMap } from '@vis.gl/react-google-maps';
+import { APIProvider, APILoadingStatus, Map, AdvancedMarker, useApiLoadingStatus, useMap } from '@vis.gl/react-google-maps';
 import { 
   MapPin, X, CheckCircle2, AlertTriangle, Clock, 
   Search, ChevronRight, Calendar, Info, Compass, Sparkles, Navigation, Loader2
 } from 'lucide-react';
 import { DeliveryQuote, LatLng, DELIVERY_CONFIG, TURBO_ALLOWED_LOCALITIES } from '../../lib/deliveryService';
-import { api } from '../../lib/api';
+import { api, ReverseGeocodeError } from '../../lib/api';
 import { Store, CartItem, Product } from '../../types';
 import { DeviceLocationRequest, DeviceLocationError, beginDeviceLocation, type DeviceLocationAttempt, type DeviceLocationFailure } from '../../lib/deviceLocation';
 import { CurrentLocationAction } from './CurrentLocationAction';
@@ -32,8 +32,22 @@ const MapRecenter: React.FC<MapRecenterProps> = ({ center }) => {
   return null;
 };
 
+type WebMapIssue = 'authorization' | 'quota' | 'unavailable';
+function DeliveryMapAvailability({issue, children}: {issue?:WebMapIssue | null; children:React.ReactNode}) {
+  const status = useApiLoadingStatus();
+  let message: string;
+  if (issue === 'authorization' || status === APILoadingStatus.AUTH_FAILURE) message = 'Google rechazó el acceso al mapa de esta página.';
+  else if (issue === 'quota') message = 'Se alcanzó el límite de uso del mapa.';
+  else if (issue || status === APILoadingStatus.FAILED) message = 'No se pudo cargar el mapa en este navegador.';
+  else if (status === APILoadingStatus.LOADED) return <>{children}</>;
+  else return <p role="status" className="p-4 text-sm text-slate-600">Cargando el mapa…</p>;
+  return <p role="status" className="p-4 text-sm text-slate-600">{message} Puedes escribir y seleccionar tu dirección.</p>;
+}
+type PointSource = 'gps' | 'pin';
+
 interface AddressConfirmationModalProps {
   isOpen: boolean;
+  webMapIssue?: WebMapIssue | null;
   initialLocationAttempt?: DeviceLocationAttempt | null;
   onClose: () => void;
   onConfirmed?: () => void;
@@ -65,7 +79,7 @@ function formatCleanBogotaAddress(raw: string): string {
 
 export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> = ({
   isOpen,
-  initialLocationAttempt = null,
+  initialLocationAttempt = null, webMapIssue,
   onClose, onConfirmed, currentPhotoId,
   currentAddress,
   currentDetails,
@@ -102,12 +116,20 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const [isEvaluating, setIsEvaluating] = useState(false);
   const [isGeocoding, setIsGeocoding] = useState(false);
   const [isReverseGeocoding, setIsReverseGeocoding] = useState(false);
-  const [isAddressSynced, setIsAddressSynced] = useState(!!currentAddress?.trim() && validDestinationCoordinates(currentCoordinates));
+  // A visible marker from the previous address may guide editing, but cannot authorize this draft.
+  const [pointState, setPointState] = useState<'reference' | 'selected' | 'verified'>(
+    currentAddress?.trim() && validDestinationCoordinates(currentCoordinates) ? 'verified' : 'reference'
+  );
+  const isAddressSynced = pointState === 'verified';
+  const isPreviousPoint = !!destinationPoint && pointState === 'reference';
+  const [reverseFailure, setReverseFailure] = useState<{source:PointSource; error:ReverseGeocodeError} | null>(null);
   const [geocodeError, setGeocodeError] = useState<string | null>(null);
   const [showBreakdown, setShowBreakdown] = useState(false);
   const [isLocating, setIsLocating] = useState(false);
   const [locationError, setLocationError] = useState<string | null>(null);
   const [locationErrorKind, setLocationErrorKind] = useState<DeviceLocationFailure | null>(null);
+  const canValidatePoint = !!addressInput.trim() && !!destinationPoint && pointState !== 'reference'
+    && !isGeocoding && !isReverseGeocoding && !isLocating;
   const addressInputRef = useRef<HTMLInputElement>(null);
   const activeLocationAttempt = useRef<DeviceLocationAttempt | null>(null);
   const [locationAccuracy, setLocationAccuracy] = useState<number | null>(null);
@@ -186,12 +208,12 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
       setAddressCandidates([]);setSearchMessage('');setLocatedAddress('');
       setDetailsInput(initialDetails);
       setPinCoordinates(initialCoords);
-      setIsAddressSynced(!!initialAddr.trim() && validDestinationCoordinates(initialCoords));
+      setPointState(initialAddr.trim() && validDestinationCoordinates(initialCoords) ? 'verified' : 'reference');
       setQuote(null);
       setTerritory(currentTerritory ?? {});
       setIsGeocoding(false);
       setIsEvaluating(false);
-      setGeocodeError(null);
+      setGeocodeError(null); setReverseFailure(null);
       setIsReverseGeocoding(false);
       cancelDeviceLocation(true);
 
@@ -211,25 +233,40 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
    * Soporta múltiples movimientos descartando resultados obsoletos (reqId).
    * Mantiene en sincronía el pin, la dirección y la cotización.
    */
-  const triggerReverseGeocode = useCallback((newCoords: LatLng) => {
-    detachPhoto();
+  const triggerReverseGeocode = async (newCoords: LatLng, source: PointSource, retry = false) => {
+    if (!retry) {
+      detachPhoto();
+      // A previously resolved street belongs to its own point. Keep genuinely typed drafts for manual review.
+      if (isAddressSynced && (destinationPoint?.lat !== newCoords.lat || destinationPoint?.lng !== newCoords.lng)) setAddressInput('');
+      setPinCoordinates(newCoords);
+    }
     const reqId = ++reverseGeocodeReqSeqRef.current;
     ++requestSeq.current; setQuote(null); setTerritory({});
     setAddressCandidates([]);setSearchMessage('');setLocatedAddress('');
-    setMunicipalityInput('');setOtherMunicipality(false);
-    setIsReverseGeocoding(true); setIsAddressSynced(false); setGeocodeError(null);
+    setReverseFailure(null);setIsReverseGeocoding(true);setIsGeocoding(false);setIsEvaluating(false);setPointState('selected');setGeocodeError(null);
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    api.reverseGeocode(newCoords.lat,newCoords.lng).then(result=>{
-      if(reqId!==reverseGeocodeReqSeqRef.current) return;
-      if(result?.address) {
-        setMunicipalityInput(result.municipality || '');setOtherMunicipality(!!result.municipality && !coverageMunicipality(result.municipality));
-        setLocatedAddress(result.address);
-        setAddressInput(result.address); setTerritory(result); setIsAddressSynced(true);
-        evaluateAddressQuote(newCoords,result.address,result);
-      } else setGeocodeError('No se pudo identificar la dirección del pin. Conservamos tu dirección; confirma sus datos o intenta de nuevo.');
-    }).catch(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setGeocodeError('No se pudo consultar la dirección. Intenta de nuevo o escribe y valida el destino.');})
-      .finally(()=>{if(reqId===reverseGeocodeReqSeqRef.current) setIsReverseGeocoding(false)});
-  },[evaluateAddressQuote,photoId]);
+    try {
+      const result = await api.reverseGeocode(newCoords.lat,newCoords.lng);
+      if(reqId !== reverseGeocodeReqSeqRef.current) return;
+      const city = result.municipality?.trim();
+      if (city) {
+        const cityKey = (value:string) => coverageMunicipality(value)?.code || normalizeTerritoryString(value);
+        if (municipalityInput.trim() && cityKey(city) !== cityKey(municipalityInput)) {
+          setSearchMessage(`El punto está en ${city}. Habías elegido ${municipalityInput}. Revisa la dirección antes de confirmar.`);
+        }
+        setMunicipalityInput(city);setOtherMunicipality(!coverageMunicipality(city));
+      }
+      setLocatedAddress(result.address);
+      setAddressInput(result.address);setTerritory(result);setPointState('verified');
+      void evaluateAddressQuote(newCoords,result.address,result);
+    } catch (error) {
+      if (reqId === reverseGeocodeReqSeqRef.current) {
+        setReverseFailure({source,error:error instanceof ReverseGeocodeError ? error : new ReverseGeocodeError('unavailable')});
+      }
+    } finally {
+      if (reqId === reverseGeocodeReqSeqRef.current) setIsReverseGeocoding(false);
+    }
+  };
 
   const consumeDeviceLocation = async (attempt: DeviceLocationAttempt) => {
     activeLocationAttempt.current = attempt;
@@ -244,10 +281,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     try {
       const location = await attempt.result;
       if (!location || seq !== locationSeq.current) return;
-      setPinCoordinates(location.coordinates);
       setLocationAccuracy(location.accuracyMeters);
       setLocationAge(location.ageSeconds);
-      triggerReverseGeocode(location.coordinates);
+      void triggerReverseGeocode(location.coordinates, 'gps');
     } catch (error) {
       if (seq === locationSeq.current) {
         setLocationError(error instanceof Error ? error.message : 'No pudimos obtener tu ubicación. Escribe tu dirección o intenta de nuevo.');
@@ -295,8 +331,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         lng: Number(lng.toFixed(6)),
       };
       cancelDeviceLocation();
-      setPinCoordinates(newCoords);
-      triggerReverseGeocode(newCoords);
+      void triggerReverseGeocode(newCoords, 'pin');
     }
   };
 
@@ -319,16 +354,15 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
         lng: Number(lng.toFixed(6)),
       };
       cancelDeviceLocation();
-      setPinCoordinates(newCoords);
-      triggerReverseGeocode(newCoords);
+      void triggerReverseGeocode(newCoords, 'pin');
     }
   };
 
   // Never infer the city from street numbers or automatically select the provider's first hit.
   const searchAddress = (val: string, municipality: string) => {
-    cancelDeviceLocation();detachPhoto();
+    cancelDeviceLocation();detachPhoto();setReverseFailure(null);
     setAddressInput(val);setMunicipalityInput(municipality);
-    setPinCoordinates({});setQuote(null);setTerritory({});setGeocodeError(null);setIsAddressSynced(false);
+    setPointState('reference');setQuote(null);setTerritory({});setGeocodeError(null);
     setAddressCandidates([]);setLocatedAddress('');setSearchMessage('');setIsEvaluating(false);
     ++requestSeq.current;
     const seq=++reverseGeocodeReqSeqRef.current;
@@ -345,29 +379,31 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   };
   const handleAddressInputChange = (val: string) => searchAddress(val,municipalityInput);
   const selectAddressCandidate = (candidate:AddressSearchCandidate) => {
-    cancelDeviceLocation();detachPhoto();++reverseGeocodeReqSeqRef.current;
+    cancelDeviceLocation();detachPhoto();setReverseFailure(null);++reverseGeocodeReqSeqRef.current;
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    setAddressCandidates([]);setSearchMessage('');setLocatedAddress(candidate.formattedAddress);
-    setPinCoordinates(candidate.coordinates);setTerritory(candidate);setIsAddressSynced(true);setGeocodeError(null);
+    setAddressCandidates([]);setSearchMessage('');setLocatedAddress(candidate.source === 'BOGOTA_CADASTRE'
+      ? candidate.formattedAddress + ' · Catastro de Bogotá' : candidate.formattedAddress);
+    setPinCoordinates(candidate.coordinates);setTerritory(candidate);setPointState('verified');setGeocodeError(null);
     setIsGeocoding(false);setIsReverseGeocoding(false);
     // Keep the customer's street text; display the verified provider address alongside it.
     evaluateAddressQuote(candidate.coordinates,addressInput,candidate);
   };
   const confirmDestinationPoint = () => {
-    if (!addressInput.trim() || !destinationPoint) return;
-    cancelDeviceLocation();
+    if (!canValidatePoint || !destinationPoint) return;
+    setReverseFailure(null);cancelDeviceLocation();
     ++reverseGeocodeReqSeqRef.current;
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    setIsGeocoding(false); setIsReverseGeocoding(false); setIsAddressSynced(true); setGeocodeError(null);
+    setIsGeocoding(false); setIsReverseGeocoding(false); setPointState('verified'); setGeocodeError(null);
     evaluateAddressQuote(destinationPoint,addressInput,territory);
   };
 
   const handleCoordinateChange = (axis: 'lat' | 'lng', value: string) => {
-    detachPhoto();
+    detachPhoto();setReverseFailure(null);
     cancelDeviceLocation();
     ++requestSeq.current; ++reverseGeocodeReqSeqRef.current;
     if (debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    setQuote(null); setIsAddressSynced(false); setIsGeocoding(false); setIsReverseGeocoding(false); setIsEvaluating(false);
+    setTerritory({}); setLocatedAddress(''); setAddressCandidates([]); setGeocodeError(null); setSearchMessage('');
+    setQuote(null); setPointState('selected'); setIsGeocoding(false); setIsReverseGeocoding(false); setIsEvaluating(false);
     setPinCoordinates(previous => ({...previous,[axis]:value.trim() ? Number(value) : undefined}));
   };
 
@@ -434,8 +470,14 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
         {/* Content Body */}
         <div className="flex-1 overflow-y-auto p-4 space-y-4">
-          <CurrentLocationAction onClick={handleUseCurrentLocation} busy={isLocating} error={locationError} errorKind={locationErrorKind} onManualAddress={enterAddressManually} accuracyMeters={locationAccuracy} ageSeconds={locationAge}/>
+          <CurrentLocationAction onClick={handleUseCurrentLocation} busy={isLocating} readingAddress={isReverseGeocoding} error={locationError} errorKind={locationErrorKind} onManualAddress={enterAddressManually} accuracyMeters={locationAccuracy} ageSeconds={locationAge}/>
           
+          {reverseFailure && destinationPoint && !isLocating && <div role="alert" className="rounded-xl bg-amber-50 p-3 text-xs leading-relaxed text-amber-900">
+            <p>{reverseFailure.source === 'gps' ? 'Encontramos tu ubicación y conservamos el pin.' : 'Conservamos el punto que marcaste.'} {reverseFailure.error.message}</p>
+            <button type="button" onClick={() => void triggerReverseGeocode(destinationPoint, reverseFailure.source, true)} className="min-h-11 px-2 font-semibold underline">Reintentar dirección</button>
+            <button type="button" onClick={enterAddressManually} className="min-h-11 px-2 font-semibold underline">Escribir dirección</button>
+          </div>}
+
           {!savedAddressOptions && <label className="flex items-center gap-2 text-xs text-slate-700"><input type="checkbox" checked={saveAddress} onChange={e=>setSaveAddress(e.target.checked)}/>{accountCustomer?'Guardar esta dirección en mi cuenta':'Guardar esta dirección en este dispositivo'}</label>}
           {(savedAddressOptions || saveAddress) && <div className="p-3 rounded-2xl bg-slate-50 space-y-2">
             <label className="block text-xs font-bold text-slate-700">Nombre de la dirección<input aria-label="Nombre de la dirección guardada" value={savedName} maxLength={60} onChange={e=>setSavedName(e.target.value)} className="block w-full mt-1 p-3 rounded-xl border border-slate-200 bg-white text-sm"/></label>
@@ -470,7 +512,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                 {isReverseGeocoding ? (
                   <span className="text-red-600 text-[10px] animate-pulse flex items-center gap-1 font-bold">
                     <Loader2 className="w-3 h-3 animate-spin" />
-                    Obteniendo dirección del pin...
+                    Buscando la dirección de este punto…
                   </span>
                 ) : isGeocoding ? (
                   <span className="text-red-600 text-[10px] animate-pulse flex items-center gap-1 font-bold">
@@ -518,7 +560,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             {addressCandidates.map(candidate=><button type="button" key={candidate.placeId} onClick={()=>selectAddressCandidate(candidate)} className="min-h-11 w-full text-left rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm hover:border-red-500 focus-visible:ring-2 focus-visible:ring-red-500">
               <span className="block font-semibold">{candidate.formattedAddress}</span><span className="block text-xs text-slate-500">{candidate.municipality}{candidate.locality?` · ${candidate.locality}`:''} · Elegir esta dirección</span>
             </button>)}
+            {addressCandidates.some(candidate => candidate.source === 'BOGOTA_CADASTRE') &&
+              <a href="https://datosabiertos.bogota.gov.co/dataset/placa-domiciliaria" target="_blank" rel="noreferrer" className="inline-block py-2 text-xs underline">Fuente de la placa · Catastro de Bogotá</a>}
           </div>}
+          {isPreviousPoint && <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">Punto anterior · pendiente de validar. Elige una dirección o vuelve a marcar el destino en el mapa.</p>}
           {locatedAddress && <p role="status" className="rounded-xl bg-blue-50 p-3 text-xs text-blue-950">Punto ubicado: {locatedAddress}. Revisa el mapa antes de confirmar.</p>}
           <details className="p-3 rounded-xl border border-slate-200 space-y-2">
             <summary className="text-xs font-bold cursor-pointer">Completar o confirmar el punto de entrega</summary>
@@ -526,7 +571,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
               <select aria-label="Localidad de entrega" value={territory.locality || ''} onChange={e=>{
                 cancelDeviceLocation();
                 const next={...territory, municipality:'Bogotá D.C.',locality:e.target.value};
-                setTerritory(next); evaluateAddressQuote(pinCoordinates,addressInput,next);
+                setTerritory(next);
+                if (isAddressSynced) void evaluateAddressQuote(pinCoordinates,addressInput,next);
               }} className="block w-full p-2 border rounded-lg">
                 <option value="">Identificar por el punto de entrega</option>
                 {TERRITORY_OPTIONS.flatMap(g=>g.items).filter(i=>i.locality).map(i=><option key={i.locality} value={i.locality}>{i.label}</option>)}
@@ -536,7 +582,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             <div className="flex gap-2">
               {(['lat','lng'] as const).map(axis=><label key={axis} className="text-xs min-w-0">{axis==='lat'?'Latitud del destino':'Longitud del destino'}<input aria-label={axis==='lat'?'Latitud del destino':'Longitud del destino'} type="number" step="any" value={pinCoordinates[axis] ?? ''} onChange={e=>handleCoordinateChange(axis,e.target.value)} className="w-full border rounded p-2" /></label>)}
             </div>
-            <button onClick={confirmDestinationPoint} disabled={!addressInput.trim() || !destinationPoint} className="text-xs font-bold text-red-700 underline disabled:text-slate-400">Validar este destino</button>
+            <button onClick={confirmDestinationPoint} disabled={!canValidatePoint} className="text-xs font-bold text-red-700 underline disabled:text-slate-400">Validar este destino</button>
           </details>
 
           {/* Banner obligatorio de transición a Envío Programado */}
@@ -583,6 +629,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
 
             <div className="h-56 min-[669px]:h-72 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
               {apiKey ? <APIProvider apiKey={apiKey}>
+                <DeliveryMapAvailability issue={webMapIssue}>
                 <Map
                   defaultCenter={mapCenter}
                   defaultZoom={destinationPoint ? 14 : 11}
@@ -607,7 +654,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                         <MapPin className="w-5 h-5" />
                       </div>
                       <span className="bg-slate-900 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md mt-1 border border-white/20 whitespace-nowrap">
-                        {isReverseGeocoding ? 'Consultando...' : 'Ajusta el pin aquí'}
+                        {isPreviousPoint ? 'Punto anterior' : isReverseGeocoding ? 'Consultando…' : 'Ajusta el pin aquí'}
                       </span>
                     </div>
                   </AdvancedMarker>}
@@ -632,7 +679,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                       </AdvancedMarker>
                     ))}
                 </Map>
-              </APIProvider> : <p role="status" className="p-4 text-sm text-slate-600">El mapa no está disponible. Escribe y selecciona tu dirección.</p>}
+                </DeliveryMapAvailability>
+              </APIProvider> : <p role="status" className="p-4 text-sm text-slate-600">El mapa no está configurado en esta versión. Escribe y selecciona tu dirección.</p>}
 
               {/* Requisito 6: Indicadores durante la consulta */}
               {isReverseGeocoding && (
@@ -810,10 +858,10 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             {isLocating ? <span className="text-slate-600">Esperando la ubicación del dispositivo…</span> : isReverseGeocoding ? (
               <span className="text-red-600 font-bold flex items-center gap-1.5">
                 <Loader2 className="w-3.5 h-3.5 animate-spin" />
-                Actualizando dirección por movimiento de pin...
+                Consultando la dirección del punto…
               </span>
-            ) : !isAddressSynced && geocodeError ? (
-              <span className="text-amber-700 font-bold">Dirección desincronizada del pin</span>
+            ) : !isAddressSynced && (reverseFailure || geocodeError) ? (
+              <span className="text-amber-700 font-bold">Punto pendiente de validar</span>
             ) : isTurbo ? (
               <span className="text-emerald-700 font-bold">✓ Cumple radio de 6 km y límite de 25 min</span>
             ) : isTurboDividido ? (

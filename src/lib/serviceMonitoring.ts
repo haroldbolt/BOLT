@@ -1,4 +1,5 @@
 import type { RequestHandler } from 'express';
+import type { GeocodingDirection, GeocodingOutcome } from './geocodingProvider';
 
 type Worker = 'dispatch' | 'customer_mail';
 type Area = 'auth' | 'checkout' | 'orders' | 'payments' | 'dispatch' | 'tracking' | 'admin' | 'catalog' | 'maps' | 'health' | 'other';
@@ -62,6 +63,7 @@ export function createServiceMonitoring(options: Options = {}) {
   const log=options.log || (line=>console.error(line));
   const request=options.request || fetch;
   const start=now();
+  const geocoding: Record<GeocodingDirection, {outcome:GeocodingOutcome; at:string} | null> = {forward:null, reverse:null};
   let target: URL | undefined;
   if (env.BOLT_ALERT_WEBHOOK_URL) {
     try { target=new URL(env.BOLT_ALERT_WEBHOOK_URL); }
@@ -143,6 +145,9 @@ export function createServiceMonitoring(options: Options = {}) {
   };
   return {
     middleware,
+    recordGeocoding(direction: GeocodingDirection, outcome: GeocodingOutcome) {
+      geocoding[direction] = {outcome, at:new Date(now()).toISOString()};
+    },
     observeDispatchEvents(events: readonly {id: string; type: string}[]) {
       const length = events.length;
       const lastId = length ? events[length - 1].id : undefined;
@@ -169,6 +174,7 @@ export function createServiceMonitoring(options: Options = {}) {
     snapshot() {
       const at=now();minute(at);
       return structuredClone({startedAt:new Date(start).toISOString(),asOf:new Date(at).toISOString(),
+        geocoding:{configured:!!env.GOOGLE_MAPS_SERVER_API_KEY?.trim(),...geocoding},
         latencyBinsUpperMs:[...latencyBucketsMs,null],http:total,httpByArea:Object.fromEntries(byArea),workerFailures:workerTotals,dispatchSignals,
         recentMinutes:[...windows.entries()].sort(([a],[b])=>a-b).map(([slot,{http,workers}])=>({start:new Date(slot*minuteMs).toISOString(),http,workers})),
         alerts:{configured:!!target,cooldownSeconds,maxAttemptsPerHour,...alerts},suppressedLogs});

@@ -2,6 +2,7 @@ import type {AddressTerritory} from './addressGeography';
 
 export interface AddressSearchCandidate extends AddressTerritory {
   placeId: string;
+  source?: 'BOGOTA_CADASTRE';
   formattedAddress: string;
   coordinates: {lat:number;lng:number};
 }

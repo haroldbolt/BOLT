@@ -1,27 +1,29 @@
 import {coverageMunicipality, normalizeTerritoryString} from '../data/coverageConfig';
 import {parseAddressComponents, validDestinationCoordinates} from './addressGeography';
 import {enrichDestination} from './serverGeography';
+import {matchesStreetPlate} from './colombianStreetPlate';
 import type {AddressSearchResult, AddressSearchCandidate} from './addressSearch';
+
+import {consultGeocoding, type GeocodingOutcome} from './geocodingProvider';
 
 const municipalityKey=(value?:string)=>coverageMunicipality(value)?.code || normalizeTerritoryString(value);
 
 /** Municipality is a search constraint, never a coverage authorization. No first-result selection. */
-export async function searchDeliveryAddress(address:string, municipality:string, apiKey:string, fetcher:typeof fetch=fetch):Promise<AddressSearchResult> {
+export async function searchDeliveryAddress(address:string, municipality:string, apiKey:string, fetcher:typeof fetch=fetch, observe?:(outcome: GeocodingOutcome)=>void):Promise<AddressSearchResult> {
   if(!municipality.trim()) return {status:'MUNICIPALITY_REQUIRED',candidates:[],message:'Elige el municipio de entrega para buscar la dirección en el lugar correcto.'};
   if(!address.trim()) return {status:'NO_RESULTS',candidates:[],message:'Escribe la dirección completa de entrega.'};
-  if(!apiKey) return {status:'UNAVAILABLE',candidates:[],message:'La búsqueda de direcciones está temporalmente fuera de servicio. Puedes confirmar el punto en el mapa.'};
   const requestedPolicy=coverageMunicipality(municipality);
   const name=requestedPolicy?.name || municipality.trim();
-  const url=new URL('https://maps.googleapis.com/maps/api/geocode/json');
-  url.search=new URLSearchParams({address:address.trim(),components:`country:CO|locality:${name==='Bogotá D.C.'?'Bogotá':name}`,language:'es',region:'co',key:apiKey}).toString();
+  const params = new URLSearchParams({address:address.trim(),components:`country:CO|locality:${name==='Bogotá D.C.'?'Bogotá':name}`});
+  const reply = await consultGeocoding(params, apiKey, 10000, fetcher);
+  if (reply.outcome !== 'OK' && reply.outcome !== 'NO_RESULTS') {
+    observe?.(reply.outcome);
+    return {status:'UNAVAILABLE',candidates:[],message:'La búsqueda de direcciones está temporalmente fuera de servicio. Conservamos tu dirección. Intenta de nuevo.'};
+  }
   try {
-    const response=await fetcher(url,{signal:AbortSignal.timeout(10000),redirect:"error"});
-    if(!response.ok) throw Error('Provider unavailable');
-    const data:any=await response.json();
-    if(!['OK','ZERO_RESULTS'].includes(data.status)) throw Error('Provider unavailable');
     const candidates:AddressSearchCandidate[]=[];
     let mismatched=false;
-    for(const result of data.results || []) {
+    for(const result of reply.outcome === 'OK' ? reply.results : []) {
       const coordinates=result.geometry?.location;
       if(!validDestinationCoordinates(coordinates)) continue;
       const provider=parseAddressComponents(result.address_components);
@@ -32,14 +34,17 @@ export async function searchDeliveryAddress(address:string, municipality:string,
       // A city/route centroid or partial match must not silently become a delivery address.
       if(result.partial_match || !result.types?.some((type:string)=>['street_address','premise','subpremise'].includes(type))) continue;
       if(!result.place_id || !result.formatted_address || candidates.some(c=>c.placeId===result.place_id)) continue;
+      if(!matchesStreetPlate(address, result.formatted_address, result.address_components)) continue;
       candidates.push({placeId:result.place_id,formattedAddress:result.formatted_address,coordinates,
         municipality:actual,countryCode:'CO',locality:resolved.locality,neighborhood:provider.neighborhood});
     }
+    observe?.(candidates.length ? 'OK' : mismatched ? 'MUNICIPALITY_MISMATCH' : reply.outcome === 'NO_RESULTS' ? 'NO_RESULTS' : 'NO_EXACT_MATCH');
     if(candidates.length) return {status:'SELECT_ADDRESS',candidates,message:'Selecciona la dirección encontrada y revisa el punto de entrega.'};
     return {status:mismatched?'MUNICIPALITY_MISMATCH':'NO_RESULTS',candidates:[],message:mismatched
       ?'El resultado no corresponde al municipio elegido. Revisa el municipio y la dirección; no cambiamos tu destino.'
       :'No encontramos una dirección exacta en ese municipio. Completa la dirección o marca el punto en el mapa.'};
   } catch {
-    return {status:'UNAVAILABLE',candidates:[],message:'No pudimos consultar el mapa. Conservamos tu dirección; intenta de nuevo o marca el punto de entrega.'};
+    observe?.('UNAVAILABLE');
+    return {status:'UNAVAILABLE',candidates:[],message:'No pudimos consultar la dirección. Intenta de nuevo.'};
   }
 }

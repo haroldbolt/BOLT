@@ -1,7 +1,20 @@
 import { useEffect, useRef, useState } from 'react';
 import { RefreshCw } from 'lucide-react';
-import { formatCOP, formatTimeBogota } from '../../lib/formatters';
+import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { AdminRequestError, boltAdmin, type ServiceReport } from './adminClient';
+
+type Geocoding = NonNullable<ServiceReport['service']['geocoding']>;
+const geocodingLabels: Record<NonNullable<Geocoding['forward']>['outcome'], string> = {
+  OK:'Dirección encontrada', NO_RESULTS:'Sin coincidencias', NO_EXACT_MATCH:'Sin coincidencia exacta',
+  MUNICIPALITY_MISMATCH:'Municipio distinto', NOT_CONFIGURED:'Falta la llave del servidor',
+  DENIED:'Google denegó la consulta. Revisa la API, las restricciones y la facturación.',
+  QUOTA:'Cuota del proveedor agotada', DAILY_LIMIT_OR_BILLING:'Revisa el límite diario y la facturación en Google',
+  TIMEOUT:'Google tardó demasiado en responder', UNAVAILABLE:'No se obtuvo una respuesta válida del proveedor',
+};
+function lastLookup(check: Geocoding['forward']) {
+  if (!check) return 'Sin consultas desde el arranque';
+  return `${geocodingLabels[check.outcome]} · ${formatDateBogota(check.at)} ${formatTimeBogota(check.at)} (Bogotá)`;
+}
 
 export function ServiceStatusDetails({ report }: {report: ServiceReport}) {
   const { operations, service } = report;
@@ -15,6 +28,11 @@ export function ServiceStatusDetails({ report }: {report: ServiceReport}) {
       {alerts.failed > 0 && <small>Envíos fallidos desde el inicio del servicio: {alerts.failed}</small>}</dd></div>
     <div><dt>Errores del servidor (HTTP 5xx)</dt><dd>{recentErrors}
       <small>{formatTimeBogota(windowStart)} – {formatTimeBogota(service.asOf)} · Bogotá</small></dd></div>
+    {service.geocoding && <>
+      <div><dt>Servicio de direcciones</dt><dd>{service.geocoding.configured ? 'Llave del servidor configurada' : 'Falta configurar la llave del servidor'}</dd></div>
+      <div><dt>Última búsqueda por dirección</dt><dd>{lastLookup(service.geocoding.forward)}</dd></div>
+      <div><dt>Última dirección consultada desde el pin</dt><dd>{lastLookup(service.geocoding.reverse)}</dd></div>
+    </>}
     <div><dt>Pedidos registrados</dt><dd>{orders.total}<small>Pendientes de confirmación: {orders.awaitingConfirmation}</small></dd></div>
     <div><dt>Despachos entregados</dt><dd>{dispatches.delivered} de {dispatches.total}<small>Compras con entrega parcial: {orders.partiallyDelivered}</small></dd></div>
     <div><dt>Efectivo verificado</dt><dd>{cash.verifiedCollectedCOP === null ? 'Sin recaudo verificado' : formatCOP(cash.verifiedCollectedCOP)}
