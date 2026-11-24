@@ -51,13 +51,25 @@ Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurre
   if(gpsError){queueMicrotask(()=>fail({code:gpsError} as GeolocationPositionError));return}
   queueMicrotask(()=>success({coords:{latitude:cedritos.coordinates.lat,longitude:cedritos.coordinates.lng,accuracy:18},timestamp:Date.now()} as GeolocationPosition));
 }}});
+// The standalone runner bundles the real form but doesn't compile its Tailwind stylesheet.
+const mapLayout=document.createElement('style');
+mapLayout.textContent='[data-address-map-frame]{position:relative;height:224px;width:100%}';
+document.head.appendChild(mapLayout);
 const root=createRoot(document.getElementById('root')!);
 let mount=0;
-async function reset(saved=false){
+function loadStreetTiles(){
+  const target=el('[data-test=map-tiles]') as HTMLButtonElement;
+  flushSync(()=>target.click());
+}
+async function reset(saved=false, waitFor: 'form' | 'map' | 'tiles' = 'tiles'){
   quoteRequests=[]; reverseCalls=forwardCalls=gpsCalls=gpsError=0; unexpected=[];
   interceptReverse=async f=>resolved(f);interceptForward=async()=>candidates(chapinero,suba);
   flushSync(()=>root.render(<React.StrictMode><AddressConfirmationModal key={++mount} isOpen onClose={()=>{}} currentAddress={saved?cedritos.address:''} currentDetails={saved?'Recepción':''} currentCoordinates={saved?cedritos.coordinates:undefined} currentTerritory={saved?cedritos:undefined} onConfirmAddress={()=>true} stores={INITIAL_STORES} cartItems={[]}/></React.StrictMode>));
   await eventually(()=>street(),'No se montó el formulario');
+  if(waitFor==='form')return;
+  el('[data-address-map-frame]')?.scrollIntoView({block:'center'});
+  await eventually(()=>el('[data-test=map-tiles]'),'No se inicializó el mapa al tener tamaño');
+  if(waitFor==='tiles')loadStreetTiles();
   if(saved)await eventually(()=>button(/Usar esta dirección/)?.disabled===false,'No se restauró el destino verificado');
 }
 async function setMunicipality(){
@@ -65,6 +77,82 @@ async function setMunicipality(){
   select.value=cedritos.municipality;select.dispatchEvent(new Event('change',{bubbles:true}));await sleep(20);
 }
 const tests:[string,()=>Promise<void>][]=[
+  ['Al volver a la pestaña se recupera el mapa pendiente y se conserva el mapa ya pintado',async()=>{
+    const originalHidden=Object.getOwnPropertyDescriptor(document,'hidden');
+    const originalVisibility=Object.getOwnPropertyDescriptor(document,'visibilityState');
+    const changeVisibility=(hidden:boolean)=>{
+      Object.defineProperty(document,'hidden',{configurable:true,value:hidden});
+      Object.defineProperty(document,'visibilityState',{configurable:true,value:hidden?'hidden':'visible'});
+      flushSync(()=>document.dispatchEvent(new Event('visibilitychange')));
+    };
+    const surface=()=>el('[data-test=map-surface]');
+    try {
+      changeVisibility(true);
+      await reset(false,'form');
+      const frame=el('[data-address-map-frame]');
+      assert(frame && frame.clientWidth>0 && frame.clientHeight>0,'La prueba debe tener espacio mientras la pestaña está oculta');
+      await sleep(40);
+      assert(!surface(),'El mapa se inicializó en segundo plano');
+      changeVisibility(false);
+      await eventually(surface,'El mapa no se inicializó al mostrar la pestaña');
+      changeVisibility(true);
+      await eventually(()=>!surface(),'Se conservó un mapa suspendido antes de pintar calles');
+      changeVisibility(false);
+      await eventually(surface,'No se recuperó el mapa pendiente');
+      loadStreetTiles();
+      (el('[data-test=map-click]') as HTMLButtonElement).click();
+      await eventually(()=>pointIs(chapinero) && street().value===chapinero.formattedAddress && quoteRequests.length===1,'No se ubicó el punto antes de volver a segundo plano');
+      const paintedSurface=surface();
+      changeVisibility(true);
+      (el('[data-test=map-chia]') as HTMLButtonElement | null)?.click();
+      changeVisibility(false);
+      await sleep(40);
+      assert(surface()===paintedSurface && pointIs(chapinero),'Regresar a primer plano creó otro mapa o perdió el pin');
+      assert(reverseCalls===1 && quoteRequests.length===1 && forwardCalls===0 && gpsCalls===0,'Cambiar de pestaña repitió una consulta de ubicación o cotización');
+      marker()!.click();
+      await eventually(()=>pointIs(suba) && street().value===suba.formattedAddress,'El pin pintado dejó de responder al volver a la pestaña');
+    } finally {
+      if(originalHidden)Object.defineProperty(document,'hidden',originalHidden);else Reflect.deleteProperty(document,'hidden');
+      if(originalVisibility)Object.defineProperty(document,'visibilityState',originalVisibility);else Reflect.deleteProperty(document,'visibilityState');
+      document.dispatchEvent(new Event('visibilitychange'));
+    }
+  }],
+  ['El mapa espera a tener altura visible y carga al aparecer el formulario',async()=>{
+    const originalLayout=mapLayout.textContent;
+    try {
+      mapLayout.textContent+='[data-address-map-frame]{height:0!important;min-height:0!important}';
+      await reset(false,'form');
+      const frame=el('[data-address-map-frame]');
+      assert(frame && frame.getBoundingClientRect().height<=2,'La prueba necesita un mapa inicialmente sin altura');
+      await sleep(60);
+      assert(!el('[data-test=map-surface]'),'Se inicializó un mapa sin espacio para pintar las calles');
+      mapLayout.textContent=originalLayout;
+      frame!.scrollIntoView({block:'center'});
+      await eventually(()=>el('[data-test=map-tiles]'),'No se recuperó el mapa al ganar altura');
+      loadStreetTiles();
+      (el('[data-test=map-click]') as HTMLButtonElement).click();
+      await eventually(()=>street().value===chapinero.formattedAddress,'Las calles se cargaron sin recuperar la selección en el mapa');
+    } finally {mapLayout.textContent=originalLayout;}
+  }],
+  ['El mapa raster espera las calles y la proyección antes de aceptar un punto',async()=>{
+    await reset(true,'map');
+    assert(el('[data-test=map-surface]')?.getAttribute('data-rendering')==='RASTER','El mapa de direcciones no pide el renderizador raster');
+    const originalStreet=street().value;
+    const initialQuotes=quoteRequests.length;
+    (el('[data-test=map-click]') as HTMLButtonElement).click();
+    marker()?.click();
+    await sleep(30);
+    assert(reverseCalls===0 && quoteRequests.length===initialQuotes && street().value===originalStreet,'Un toque o arrastre actualizó el destino antes de cargar las calles');
+    loadStreetTiles();
+    (el('[data-test=map-invalid-projection]') as HTMLButtonElement).click();
+    await sleep(30);
+    assert(reverseCalls===0 && street().value===originalStreet,'Un punto fuera de los límites visibles se envió a resolver');
+    (el('[data-test=map-click]') as HTMLButtonElement).click();
+    await eventually(()=>pointIs(chapinero) && street().value===chapinero.formattedAddress,'No se habilitó el toque tras cargar las calles');
+    marker()!.click();
+    await eventually(()=>pointIs(suba) && street().value===suba.formattedAddress,'No se habilitó el arrastre tras cargar las calles');
+    assert(reverseCalls===2,'Se enviaron consultas extra al cambiar el punto dos veces');
+  }],
   ['Cambiar el punto de Bogotá a Chía actualiza el municipio antes de continuar',async()=>{
     await reset(true);
     (el('[data-test=map-chia]') as HTMLElement).click();
