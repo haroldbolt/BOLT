@@ -72,6 +72,12 @@ const photoSearchNames = [
 for (const name of photoSearchNames) {
   if (process.env[name] !== undefined) childEnv[name] = process.env[name];
 }
+// Keep the combined forward/reverse limit across restarts on the private demo volume.
+const geocodeLimit = Number(process.env.BOLT_GEOCODE_DAILY_LIMIT);
+childEnv.BOLT_GEOCODE_DAILY_LIMIT = String(
+  Number.isSafeInteger(geocodeLimit) && geocodeLimit > 0 ? Math.min(geocodeLimit, 100) : 100
+);
+childEnv.BOLT_PILOT_VOLUME = root;
 const approvalOrderId = process.env.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID;
 if (approvalOrderId) childEnv.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID = approvalOrderId;
 if (process.env.BOLT_DEMO_EDIT_CATALOG === '1') childEnv.BOLT_DEMO_EDIT_CATALOG = '1';

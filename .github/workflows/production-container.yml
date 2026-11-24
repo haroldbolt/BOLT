@@ -31,6 +31,7 @@ jobs:
           export BOLT_TEST_CHROME="$(command -v google-chrome)"
           export BOLT_TEST_SCREENSHOTS="$RUNNER_TEMP/bolt-capturas"
           node --import tsx src/tests/threeStoreCashBrowser.mjs
+          node deployment/tests/address-map/run.mjs
       - name: Capturas de checkout y Admin con datos ficticios
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:

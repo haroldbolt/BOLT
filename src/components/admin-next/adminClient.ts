@@ -5,8 +5,9 @@ import type { DeliveryQuote } from '../../lib/deliveryService';
 import type { BoltAdminSalesReport, SalesPeriod } from '../../lib/boltAdminSales';
 import type { Order } from '../../types';
 
+type ServiceSnapshot = ReturnType<ReturnType<typeof createServiceMonitoring>['snapshot']>;
 export interface ServiceReport {
-  service: ReturnType<ReturnType<typeof createServiceMonitoring>['snapshot']>;
+  service: Omit<ServiceSnapshot, 'geocoding'> & {geocoding?: ServiceSnapshot['geocoding']};
   operations: ReturnType<typeof operationalMetrics>;
 }
 

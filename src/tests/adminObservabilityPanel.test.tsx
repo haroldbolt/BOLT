@@ -17,6 +17,16 @@ test('Inicio consulta al pulsar y distingue el recaudo desconocido del cero conf
   assert.match(empty, /Pendiente de configurar/);
   assert.match(empty, /Sin recaudo verificado/);
   assert.match(empty, /Operaciones de prueba/);
+  assert.match(empty, /Falta configurar la llave del servidor/);
+  assert.match(empty, /Sin consultas desde el arranque/);
+  const monitor = createServiceMonitoring({env:{GOOGLE_MAPS_SERVER_API_KEY:'private-fixture'}});
+  monitor.recordGeocoding('reverse','DENIED');
+  const denied = renderToStaticMarkup(<ServiceStatusDetails report={{...report,service:monitor.snapshot()}} />);
+  assert.match(denied, /Google denegó la consulta/);
+  assert.doesNotMatch(denied, /private-fixture/);
+  const olderServer = renderToStaticMarkup(<ServiceStatusDetails report={{...report,service:{...report.service,geocoding:undefined}}} />);
+  assert.match(olderServer,/Operaciones de prueba/);
+  assert.doesNotMatch(olderServer,/Última búsqueda por dirección/);
   report.operations.cash.verifiedCollectedCOP = 0;
   report.service.alerts.configured = true;
   const zero = renderToStaticMarkup(<ServiceStatusDetails report={report} />);
