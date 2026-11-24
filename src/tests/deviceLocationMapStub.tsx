@@ -3,6 +3,7 @@ import React from 'react';
 export const APIProvider = ({children}:any) => <>{children}</>;
 export const Map = ({children}:any) => <div className="p-5 text-sm text-slate-500">Mapa omitido en esta simulación. Coordenadas de fixtures verificables.{children}</div>;
 export const AdvancedMarker = () => null;
+export const Marker = AdvancedMarker;
 export const useMap = () => null;
 export const APILoadingStatus = {LOADED:'LOADED', FAILED:'FAILED', AUTH_FAILURE:'AUTH_FAILURE'} as const;
 export const useApiLoadingStatus = () => APILoadingStatus.LOADED;
