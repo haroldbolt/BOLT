@@ -431,9 +431,22 @@ try {
   await admin('/orders?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
   await admin('/inventory?storeId=HUB_SUBA', { token: kennedy, expected: 403 });
   await admin('/inventory?storeId=HUB_SUBA&scope=catalog', { token: suba, expected: 403 });
-  const unassignedInventory = await admin('/inventory?storeId=HUB_KENNEDY&scope=catalog', { token: coordination });
-  assert.equal(unassignedInventory.items.length, 1, 'El catálogo de la demo solo incluye la presentación ficticia');
-  assert.equal(unassignedInventory.items[0].assignedToStore, false);
+  const kennedyCatalog = await admin('/inventory?storeId=HUB_KENNEDY&scope=catalog', { token: coordination });
+  const subaProduct = 'SIM-BOLT-ADMIN-SUBA';
+  const galleryProduct = 'SIM-BOLT-GALERIA-PAWISE';
+  const galleryVariants = ['01', '02', '03', '04', '05', '06'].map(suffix => galleryProduct + '-' + suffix);
+  const expectedVariants = [subaProduct + '-1KG', ...galleryVariants].sort();
+  assert.equal(kennedyCatalog.total, expectedVariants.length);
+  assert.deepEqual(kennedyCatalog.items.map(row => row.variantId).sort(), expectedVariants);
+  for (const row of kennedyCatalog.items) {
+    const isGalleryVariant = galleryVariants.includes(row.variantId);
+    assert.equal(row.productId, isGalleryVariant ? galleryProduct : subaProduct);
+    assert.equal(row.storeId, 'HUB_KENNEDY');
+    assert.equal(row.assignedToStore, isGalleryVariant, row.variantId);
+    assert.equal(row.canEditStock, false);
+    assert.equal(row.canEditPrice, !isGalleryVariant);
+    assert.equal(row.canEditPhoto, true);
+  }
   await api('/api/v1/orders', { token: suba, expected: [401, 403] });
   const beforeOrders = await admin('/orders?storeId=HUB_SUBA', { token: suba });
   assert.equal(beforeOrders.orders.length, 0);
