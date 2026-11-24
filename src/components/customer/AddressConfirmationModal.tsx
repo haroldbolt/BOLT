@@ -5,7 +5,8 @@ import {EntrancePhotoPicker} from './EntrancePhotoPicker';
 import { TERRITORY_OPTIONS } from '../../lib/territoryConfig';
 import { AddressTerritory, validDestinationCoordinates } from '../../lib/addressGeography';
 import React, { useState, useEffect, useCallback, useRef, useMemo } from 'react';
-import { APIProvider, APILoadingStatus, Map, AdvancedMarker, useApiLoadingStatus, useMap } from '@vis.gl/react-google-maps';
+import {AddressStreetMap} from './AddressStreetMap';
+import { APIProvider, APILoadingStatus, useApiLoadingStatus } from '@vis.gl/react-google-maps';
 import { 
   MapPin, X, CheckCircle2, AlertTriangle, Clock, 
   Search, ChevronRight, Calendar, Info, Compass, Sparkles, Navigation, Loader2
@@ -15,22 +16,6 @@ import { api, ReverseGeocodeError } from '../../lib/api';
 import { Store, CartItem, Product } from '../../types';
 import { DeviceLocationRequest, DeviceLocationError, beginDeviceLocation, type DeviceLocationAttempt, type DeviceLocationFailure } from '../../lib/deviceLocation';
 import { CurrentLocationAction } from './CurrentLocationAction';
-
-declare const google: any;
-
-interface MapRecenterProps {
-  center: LatLng;
-}
-
-const MapRecenter: React.FC<MapRecenterProps> = ({ center }) => {
-  const map = useMap();
-  useEffect(() => {
-    if (map && center && typeof center.lat === 'number' && typeof center.lng === 'number') {
-      map.panTo(center);
-    }
-  }, [map, center]);
-  return null;
-};
 
 type WebMapIssue = 'authorization' | 'quota' | 'unavailable';
 function DeliveryMapAvailability({issue, children}: {issue?:WebMapIssue | null; children:React.ReactNode}) {
@@ -108,8 +93,6 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const [detailsInput, setDetailsInput] = useState(currentDetails ?? '');
   const [pinCoordinates, setPinCoordinates] = useState<Partial<LatLng>>(currentCoordinates ?? {});
   const destinationPoint = validDestinationCoordinates(pinCoordinates) ? pinCoordinates : null;
-  // Viewport only: this overview is never sent as the customer's destination.
-  const mapCenter = destinationPoint ?? { lat: 4.711, lng: -74.0721 };
   const [territory, setTerritory] = useState<AddressTerritory>(currentTerritory ?? {});
   const requestSeq = useRef(0);
   const [quote, setQuote] = useState<DeliveryQuote | null>(null);
@@ -313,49 +296,6 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
     cancelDeviceLocation();
     addressInputRef.current?.focus();
     if (isAddressSynced && validDestinationCoordinates(pinCoordinates)) void evaluateAddressQuote(pinCoordinates, addressInput, territory);
-  };
-
-  // Requisito 1: En handlePinDragEnd, al soltar el pin, actualiza sus coordenadas y consulta la dirección mediante geocodificación inversa de Google Maps
-  const handlePinDragEnd = (e: any) => {
-    let lat: number | null = null;
-    let lng: number | null = null;
-
-    if (e.latLng) {
-      lat = typeof e.latLng.lat === 'function' ? e.latLng.lat() : e.latLng.lat;
-      lng = typeof e.latLng.lng === 'function' ? e.latLng.lng() : e.latLng.lng;
-    }
-
-    if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-      const newCoords: LatLng = {
-        lat: Number(lat.toFixed(6)),
-        lng: Number(lng.toFixed(6)),
-      };
-      cancelDeviceLocation();
-      void triggerReverseGeocode(newCoords, 'pin');
-    }
-  };
-
-  // Requisito 3: Aplica el mismo comportamiento en handleMapClick cuando el usuario seleccione otro punto
-  const handleMapClick = (e: any) => {
-    let lat: number | null = null;
-    let lng: number | null = null;
-
-    if (e.detail?.latLng) {
-      lat = typeof e.detail.latLng.lat === 'function' ? e.detail.latLng.lat() : e.detail.latLng.lat;
-      lng = typeof e.detail.latLng.lng === 'function' ? e.detail.latLng.lng() : e.detail.latLng.lng;
-    } else if (e.latLng) {
-      lat = typeof e.latLng.lat === 'function' ? e.latLng.lat() : e.latLng.lat;
-      lng = typeof e.latLng.lng === 'function' ? e.latLng.lng() : e.latLng.lng;
-    }
-
-    if (lat !== null && lng !== null && !isNaN(lat) && !isNaN(lng)) {
-      const newCoords: LatLng = {
-        lat: Number(lat.toFixed(6)),
-        lng: Number(lng.toFixed(6)),
-      };
-      cancelDeviceLocation();
-      void triggerReverseGeocode(newCoords, 'pin');
-    }
   };
 
   // Never infer the city from street numbers or automatically select the provider's first hit.
@@ -630,55 +570,9 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             <div className="h-56 min-[669px]:h-72 w-full rounded-2xl overflow-hidden border border-slate-200 shadow-inner relative">
               {apiKey ? <APIProvider apiKey={apiKey}>
                 <DeliveryMapAvailability issue={webMapIssue}>
-                <Map
-                  defaultCenter={mapCenter}
-                  defaultZoom={destinationPoint ? 14 : 11}
-                  mapId="BOLT_PETS_MAP"
-                  className="w-full h-full"
-                  gestureHandling="greedy"
-                  disableDefaultUI={true}
-                  onClick={handleMapClick}
-                  internalUsageAttributionIds={['gmp_mcp_codeassist_v1_aistudio']}
-                >
-                  <MapRecenter center={mapCenter} />
-
-                  {/* Customer Adjustable Red Delivery Pin */}
-                  {destinationPoint && <AdvancedMarker
-                    position={destinationPoint}
-                    title="Punto de entrega de tu pedido"
-                    draggable={true}
-                    onDragEnd={handlePinDragEnd}
-                  >
-                    <div className="flex flex-col items-center cursor-grab active:cursor-grabbing">
-                      <div className="bg-red-600 text-white p-2 rounded-full shadow-2xl border-2 border-white ring-4 ring-red-500/30 animate-pulse">
-                        <MapPin className="w-5 h-5" />
-                      </div>
-                      <span className="bg-slate-900 text-white text-[9px] font-black px-2 py-0.5 rounded-full shadow-md mt-1 border border-white/20 whitespace-nowrap">
-                        {isPreviousPoint ? 'Punto anterior' : isReverseGeocoding ? 'Consultando…' : 'Ajusta el pin aquí'}
-                      </span>
-                    </div>
-                  </AdvancedMarker>}
-
-                  {/* Enabled Turbo Hubs in Bogotá */}
-                  {stores
-                    .filter(s => s.turboEnabled && s.isActive)
-                    .map(store => (
-                      <AdvancedMarker
-                        key={store.id}
-                        position={store.coordinates}
-                        title={`Sede Bolt Pets: ${store.name}`}
-                      >
-                        <div className="flex flex-col items-center opacity-85 hover:opacity-100 transition">
-                          <div className="bg-yellow-400 text-red-950 p-1 rounded-lg border border-white shadow-md">
-                            <span className="text-[11px] font-black">⚡</span>
-                          </div>
-                          <span className="bg-white/95 text-slate-800 text-[8px] font-bold px-1.5 py-0.5 rounded shadow-xs mt-0.5 border border-slate-200">
-                            {store.name.replace('Sede ', '')}
-                          </span>
-                        </div>
-                      </AdvancedMarker>
-                    ))}
-                </Map>
+                  <AddressStreetMap point={destinationPoint} stores={stores}
+                    label={isPreviousPoint ? 'Punto anterior' : isReverseGeocoding ? 'Consultando…' : 'Ajusta el pin aquí'}
+                    onSelect={coords => {cancelDeviceLocation(); void triggerReverseGeocode(coords, 'pin');}}/>
                 </DeliveryMapAvailability>
               </APIProvider> : <p role="status" className="p-4 text-sm text-slate-600">El mapa no está configurado en esta versión. Escribe y selecciona tu dirección.</p>}
 
