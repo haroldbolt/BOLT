@@ -48,6 +48,35 @@ await test('Partial matches and city/route centroids cannot become delivery addr
     const r=await searchDeliveryAddress('Calle 11','Bogotá','test-key',provider([{...result(bogota,'Bogotá'),...patch}]));assert.equal(r.candidates.length,0);
   }
 });
+await test('Kennedy: el proveedor devuelve street_address y recorta la placa, pero eso no identifica la puerta',async()=>{
+  // Reported formatted addresses from the demo. Reuse the existing Bogotá fixture for isolated geometry.
+  for (const [query,formatted] of [
+    ['Carrera 86 # 43-55 Sur','Av Ciudad de Cali #43, Bogotá, Colombia'],
+    ['Transversal 78K # 41A-04 Sur','Tv. 78k #41, Bogotá, Colombia'],
+    ['Avenida Ciudad de Cali # 6C-09','Av Ciudad de Cali #6, Kennedy, Bogotá, Colombia'],
+    ['Carrera 86 # 43-55 Sur','Cra. 86 #43-55, barrio Sur, Bogotá, Colombia'],
+    ['Transversal 78K # 41A-04 Sur','Tv. 78k #41A-04 Norte, Bogotá, Colombia'],
+  ]) {
+    const r=await searchDeliveryAddress(query,'Bogotá','test-key',provider([{...result(bogota,'Bogotá'),formatted_address:formatted}]));
+    assert.equal(r.status,'NO_RESULTS',formatted);
+    assert.deepEqual(r.candidates,[]);
+  }
+});
+await test('Una placa completa admite grafías equivalentes y un componente street_number verificable',async()=>{
+  for(const [query,formatted,streetNumber] of [
+    ['Avenida Ciudad de Cali # 6C-09','Av Ciudad de Cali #6c-09, Bogotá, Colombia',''],
+    ['Transversal 78K # 41 A-04 Sur','Tv. 78k #41a sur - 4, Bogotá, Colombia','41A-04'],
+    ['Carrera 86 #43-55 Sur','SuperCADE Américas, Bogotá, Colombia','43 SUR-055'],
+    ['Carrera 6 #118-05','Cra. 6 #118-5, Bogotá, Colombia',''],
+    ['Biblioteca El Tintal','Biblioteca El Tintal, Bogotá, Colombia',''],
+  ]) {
+    const candidate=result(bogota,'Bogotá');
+    const r=await searchDeliveryAddress(query,'Bogotá','test-key',provider([{...candidate,formatted_address:formatted,
+      address_components:[...candidate.address_components,...(streetNumber ? [{long_name:streetNumber,types:['street_number']}] : [])]}]));
+    assert.equal(r.status,'SELECT_ADDRESS',formatted);
+  }
+});
+
 await test('Multiple matches stay separate and require the customer to choose',async()=>{
   const r=await searchDeliveryAddress('Calle 11','Bogotá','test-key',provider([result(bogota,'Bogotá','A'),result(bogota,'Bogotá','B'),result(bogota,'Bogotá','A')]));
   assert.deepEqual(r.candidates.map(c=>c.placeId),['A','B']);

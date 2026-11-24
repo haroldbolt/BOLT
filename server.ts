@@ -7,6 +7,7 @@ import { configureRappiCargo } from './src/lib/rappiCargoConfig';
 import { adminEntry, adminEntryPath } from './deployment/admin-entry.mjs';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
+import {findBogotaCadastreAddress} from './src/lib/bogotaCadastre';
 import {consultGeocoding, type GeocodingOutcome} from './src/lib/geocodingProvider';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
 import {mountProductPhotoSearch} from './src/lib/productPhotoSearchRoutes';
@@ -606,6 +607,10 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const query = String(address).slice(0, 500), city = municipality.slice(0, 100);
     const lookup = async () => {
       const result = await searchDeliveryAddress(query, city, apiKey, fetch, outcome => monitoring.recordGeocoding('forward', outcome));
+      if (isDispatchSimulation && process.env.BOLT_DEMO_BOGOTA_CADASTRE === '1' && result.status === 'NO_RESULTS') {
+        const official = await findBogotaCadastreAddress(query, city);
+        if (official) return res.set('Cache-Control', 'no-store').json(official);
+      }
       return res.set('Cache-Control', 'no-store').json(result);
     };
     if (!apiKey || !city.trim() || !query.trim()) return lookup();

@@ -78,6 +78,7 @@ childEnv.BOLT_GEOCODE_DAILY_LIMIT = String(
   Number.isSafeInteger(geocodeLimit) && geocodeLimit > 0 ? Math.min(geocodeLimit, 100) : 100
 );
 childEnv.BOLT_PILOT_VOLUME = root;
+if (process.env.BOLT_DEMO_BOGOTA_CADASTRE === '1') childEnv.BOLT_DEMO_BOGOTA_CADASTRE = '1';
 const approvalOrderId = process.env.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID;
 if (approvalOrderId) childEnv.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID = approvalOrderId;
 if (process.env.BOLT_DEMO_EDIT_CATALOG === '1') childEnv.BOLT_DEMO_EDIT_CATALOG = '1';
