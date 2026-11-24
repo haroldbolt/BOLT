@@ -381,7 +381,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
   const selectAddressCandidate = (candidate:AddressSearchCandidate) => {
     cancelDeviceLocation();detachPhoto();setReverseFailure(null);++reverseGeocodeReqSeqRef.current;
     if(debounceTimeoutRef.current) clearTimeout(debounceTimeoutRef.current);
-    setAddressCandidates([]);setSearchMessage('');setLocatedAddress(candidate.formattedAddress);
+    setAddressCandidates([]);setSearchMessage('');setLocatedAddress(candidate.source === 'BOGOTA_CADASTRE'
+      ? candidate.formattedAddress + ' · Catastro de Bogotá' : candidate.formattedAddress);
     setPinCoordinates(candidate.coordinates);setTerritory(candidate);setPointState('verified');setGeocodeError(null);
     setIsGeocoding(false);setIsReverseGeocoding(false);
     // Keep the customer's street text; display the verified provider address alongside it.
@@ -559,6 +560,8 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
             {addressCandidates.map(candidate=><button type="button" key={candidate.placeId} onClick={()=>selectAddressCandidate(candidate)} className="min-h-11 w-full text-left rounded-xl border border-slate-200 bg-white px-3 py-3 text-sm hover:border-red-500 focus-visible:ring-2 focus-visible:ring-red-500">
               <span className="block font-semibold">{candidate.formattedAddress}</span><span className="block text-xs text-slate-500">{candidate.municipality}{candidate.locality?` · ${candidate.locality}`:''} · Elegir esta dirección</span>
             </button>)}
+            {addressCandidates.some(candidate => candidate.source === 'BOGOTA_CADASTRE') &&
+              <a href="https://datosabiertos.bogota.gov.co/dataset/placa-domiciliaria" target="_blank" rel="noreferrer" className="inline-block py-2 text-xs underline">Fuente de la placa · Catastro de Bogotá</a>}
           </div>}
           {isPreviousPoint && <p role="status" className="rounded-xl bg-amber-50 p-3 text-xs text-amber-900">Punto anterior · pendiente de validar. Elige una dirección o vuelve a marcar el destino en el mapa.</p>}
           {locatedAddress && <p role="status" className="rounded-xl bg-blue-50 p-3 text-xs text-blue-950">Punto ubicado: {locatedAddress}. Revisa el mapa antes de confirmar.</p>}

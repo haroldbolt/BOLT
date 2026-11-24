@@ -1,6 +1,7 @@
 import {coverageMunicipality, normalizeTerritoryString} from '../data/coverageConfig';
 import {parseAddressComponents, validDestinationCoordinates} from './addressGeography';
 import {enrichDestination} from './serverGeography';
+import {matchesStreetPlate} from './colombianStreetPlate';
 import type {AddressSearchResult, AddressSearchCandidate} from './addressSearch';
 
 import {consultGeocoding, type GeocodingOutcome} from './geocodingProvider';
@@ -33,6 +34,7 @@ export async function searchDeliveryAddress(address:string, municipality:string,
       // A city/route centroid or partial match must not silently become a delivery address.
       if(result.partial_match || !result.types?.some((type:string)=>['street_address','premise','subpremise'].includes(type))) continue;
       if(!result.place_id || !result.formatted_address || candidates.some(c=>c.placeId===result.place_id)) continue;
+      if(!matchesStreetPlate(address, result.formatted_address, result.address_components)) continue;
       candidates.push({placeId:result.place_id,formattedAddress:result.formatted_address,coordinates,
         municipality:actual,countryCode:'CO',locality:resolved.locality,neighborhood:provider.neighborhood});
     }
