@@ -5,6 +5,18 @@ import type { CustomerTracking } from '../types/customerTracking';
 import { INITIAL_PRODUCTS, INITIAL_STORES, INITIAL_ORDERS, INITIAL_DRIVERS } from '../data/seedData';
 import { DeliveryQuote, QuoteRequest, evaluateDeliveryQuote } from './deliveryService';
 
+const reverseLookupMessages = {
+  'no-results':'No encontramos una dirección para este punto. Puedes mover el pin o escribir la dirección.',
+  'rate-limit':'Se alcanzó el límite de consultas. Espera un momento antes de reintentar.',
+  'invalid':'El punto no tiene coordenadas válidas. Vuelve a marcarlo en el mapa.',
+  'unavailable':'El servicio de direcciones no está disponible en este momento.',
+  'network':'No pudimos conectar con el servicio de direcciones. Revisa tu conexión.',
+};
+
+export class ReverseGeocodeError extends Error {
+  constructor(public readonly kind: keyof typeof reverseLookupMessages) { super(reverseLookupMessages[kind]); }
+}
+
 const BASE_URL = '/api/v1';
 let pageAdminToken: string | undefined;
 
@@ -64,15 +76,20 @@ export const api = {
     return res.json();
   },
 
-  async reverseGeocode(lat: number, lng: number): Promise<{ address: string; formattedAddress?: string; municipality?: string; locality?: string; neighborhood?: string } | null> {
+  async reverseGeocode(lat: number, lng: number): Promise<{address:string; formattedAddress?:string; municipality?:string; locality?:string; neighborhood?:string}> {
+    const query = new URLSearchParams({lat:String(lat), lng:String(lng)});
+    let res: Response;
     try {
-      const res = await authorizedFetch(`${BASE_URL}/geocode/reverse?lat=${lat}&lng=${lng}`);
-      if (!res.ok) return null;
-      return await res.json();
-    } catch (e) {
-      console.warn('api.reverseGeocode request failed:', e);
-      return null;
+      res = await backendFetch(`${BASE_URL}/geocode/reverse?${query}`, {cache:'no-store'});
+    } catch {
+      throw new ReverseGeocodeError('network');
     }
+    if (res.status === 429) throw new ReverseGeocodeError('rate-limit');
+    if (res.status === 400) throw new ReverseGeocodeError('invalid');
+    const data = await res.json().catch(() => null);
+    if (res.status === 404 && data?.status === 'ZERO_RESULTS') throw new ReverseGeocodeError('no-results');
+    if (!res.ok || typeof data?.address !== 'string' || !data.address.trim()) throw new ReverseGeocodeError('unavailable');
+    return data;
   },
 
   async forwardGeocode(address: string, municipality: string): Promise<AddressSearchResult> {

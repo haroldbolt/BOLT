@@ -60,7 +60,7 @@ export default function App() {
   });
 
   // Quota Defense state required by Google Maps skill
-  const [quotaExceeded, setQuotaExceeded] = useState(false);
+  const [webMapIssue, setWebMapIssue] = useState<'authorization' | 'quota' | 'unavailable' | null>(null);
 
   // App data state
   const [stores, setStores] = useState<Store[]>(() => isBoltSplitDeployment() ? [] : INITIAL_STORES.filter(store => store.isActive));
@@ -350,7 +350,10 @@ export default function App() {
     window.addEventListener('popstate', onPopState);
 
     // Google Maps Quota Listener
-    const onQuotaExceeded = () => setQuotaExceeded(true);
+    const onQuotaExceeded = (event: Event) => {
+      const reason = (event as CustomEvent).detail?.reason;
+      setWebMapIssue(reason === 'authorization' || reason === 'quota' ? reason : 'unavailable');
+    };
     window.addEventListener('gmp-quota-exceeded', onQuotaExceeded);
 
     // Push notification unread count listener
@@ -638,21 +641,9 @@ export default function App() {
   return (
     <PresentationProvider deliveryQuote={deliveryQuote} quantities={cartQuantities} request={{destination:{address:customerAddress,details:customerAddressDetails,coordinates:customerCoordinates,...customerTerritory},items:cartItems.map(i=>({productId:i.product.id,quantity:i.quantity})),requestedMode:selectedDeliveryMode,scheduledWindow:selectedDeliveryMode==='PROGRAMADO' ? selectedScheduledWindow || undefined : undefined}}>
     <div className="min-h-screen bg-[#F8F9FA] text-slate-900 pb-28">
-      {/* Google Maps Quota Defense Banner as required by GMP skill */}
-      {quotaExceeded && (
-        <div className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
-          <span>
-            Google Maps Platform quota reached. If you are the app owner, visit{' '}
-            <a
-              href="https://developers.google.com/maps/ai/ai-studio?utm_campaign=gmp_mcp_codeassist_v1_aistudio#quota_exceeded_errors"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline font-semibold text-amber-950 hover:text-amber-800"
-            >
-              maps developer site
-            </a>{' '}
-            for instructions to update your account.
-          </span>
+      {webMapIssue && !isAddressModalOpen && (
+        <div role="status" className="bg-amber-50 border-b border-amber-200 text-amber-900 px-4 py-2.5 text-xs md:text-sm text-center sticky top-0 z-50 shadow-sm">
+          El mapa no está disponible en esta página. Puedes escribir y seleccionar tu dirección de entrega.
         </div>
       )}
 
@@ -1300,6 +1291,7 @@ export default function App() {
       {/* Address Confirmation & Coverage Modal */}
       <AddressConfirmationModal
         isOpen={isAddressModalOpen}
+        webMapIssue={webMapIssue}
         initialLocationAttempt={initialLocationAttempt}
         onClose={() => {initialLocationAttempt?.cancel();setIsAddressModalOpen(false);setIsAddressBookOpen(true)}}
         onConfirmed={()=>{setIsAddressModalOpen(false);setIsAddressBookOpen(false)}}

@@ -7,6 +7,7 @@ import { configureRappiCargo } from './src/lib/rappiCargoConfig';
 import { adminEntry, adminEntryPath } from './deployment/admin-entry.mjs';
 import { mountCustomerAccounts } from './src/customer/routes';
 import {searchDeliveryAddress} from './src/lib/forwardGeocoding';
+import {consultGeocoding, type GeocodingOutcome} from './src/lib/geocodingProvider';
 import {mountEntrancePhotos} from './src/lib/entrancePhotoRoutes';
 import {mountProductPhotoSearch} from './src/lib/productPhotoSearchRoutes';
 import type {ProductPhotoRecognizer} from './src/lib/productPhotoSearch';
@@ -507,44 +508,47 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(400).json({ error: 'Faltan parámetros lat y lng' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
-    if (!apiKey) return res.status(503).json({ error: 'La búsqueda de dirección está temporalmente fuera de servicio.' });
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY?.trim() || '';
+    res.set('Cache-Control','no-store');
+    const unavailable = (outcome: GeocodingOutcome) => {
+      monitoring.recordGeocoding('reverse', outcome);
+      return res.status(503).json({error:'La búsqueda de dirección está temporalmente fuera de servicio.'});
+    };
+    if (!apiKey) return unavailable('NOT_CONFIGURED');
     return limitGeocode(req, res, async () => {
       try {
-        const response = await fetch(
-          `https://maps.googleapis.com/maps/api/geocode/json?latlng=${Number(lat)},${Number(lng)}&key=${encodeURIComponent(apiKey)}&language=es&region=co`,
-          { signal: AbortSignal.timeout(5000), redirect: "error" }
-        );
-        const data: any = await response.json();
-
-        if (data.status === 'OK' && data.results && data.results.length > 0) {
-          const first = data.results[0];
-          const raw = first.formatted_address;
-          let address = raw
-            .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-            .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
-            .replace(/,\s*Cundinamarca/gi, '')
-            .trim();
-
-          const territory = parseAddressComponents(first.address_components);
-          const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
-
-          return res.json({
-            address,
-            formattedAddress: address,
-            rawAddress: raw,
-            municipality: resolved.municipality || territory.municipality,
-            countryCode: resolved.countryCode || territory.countryCode,
-            locality: resolved.locality,
-            neighborhood: territory.neighborhood,
-            status: 'OK',
-          });
-        } else {
-          return res.status(404).json({ error: 'No se encontraron resultados de dirección', status: data.status });
+        const params = new URLSearchParams({latlng:`${Number(lat)},${Number(lng)}`});
+        const reply = await consultGeocoding(params, apiKey, 5000, fetch);
+        if (reply.outcome === 'NO_RESULTS') {
+          monitoring.recordGeocoding('reverse', reply.outcome);
+          return res.status(404).json({error:'No se encontraron resultados de dirección', status:'ZERO_RESULTS'});
         }
-      } catch (err: any) {
-        console.error('[Maps] reverse geocoding unavailable');
-        return res.status(500).json({ error: 'Error del servidor al consultar geocodificación' });
+        if (reply.outcome !== 'OK') return unavailable(reply.outcome);
+        const first = reply.results[0];
+        if (!first?.formatted_address?.trim()) return unavailable('UNAVAILABLE');
+        const raw = first.formatted_address;
+        let address = raw
+          .replace(/,\s*Bogotá,\s*D\.C\.,\s*Bogotá,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+          .replace(/,\s*Bogotá,\s*D\.C\./gi, ', Bogotá')
+          .replace(/,\s*Cundinamarca/gi, '')
+          .trim();
+
+        const territory = parseAddressComponents(first.address_components);
+        const resolved = enrichDestination({...territory, coordinates: {lat:Number(lat),lng:Number(lng)}});
+
+        monitoring.recordGeocoding('reverse', 'OK');
+        return res.json({
+          address,
+          formattedAddress: address,
+          rawAddress: raw,
+          municipality: resolved.municipality || territory.municipality,
+          countryCode: resolved.countryCode || territory.countryCode,
+          locality: resolved.locality,
+          neighborhood: territory.neighborhood,
+          status: 'OK',
+        });
+      } catch {
+        return unavailable('UNAVAILABLE');
       }
     });
   });
@@ -556,11 +560,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(400).json({ error: 'Parámetro address requerido' });
     }
 
-    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY || '';
+    const apiKey = process.env.GOOGLE_MAPS_SERVER_API_KEY?.trim() || '';
     const municipality=typeof req.query.municipality==='string' ? req.query.municipality : '';
     const query = String(address).slice(0, 500), city = municipality.slice(0, 100);
     const lookup = async () => {
-      const result = await searchDeliveryAddress(query, city, apiKey);
+      const result = await searchDeliveryAddress(query, city, apiKey, fetch, outcome => monitoring.recordGeocoding('forward', outcome));
       return res.set('Cache-Control', 'no-store').json(result);
     };
     if (!apiKey || !city.trim() || !query.trim()) return lookup();

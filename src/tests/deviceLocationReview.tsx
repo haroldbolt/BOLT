@@ -4,7 +4,7 @@ import React, {useState} from 'react';
 import {createRoot} from 'react-dom/client';
 import {AddressConfirmationModal} from '../components/customer/AddressConfirmationModal';
 import {SavedAddressesModal} from '../components/customer/SavedAddressesModal';
-import {api} from '../lib/api';
+import {api, ReverseGeocodeError} from '../lib/api';
 import {GuestAddressStore} from '../lib/guestAddresses';
 import {INITIAL_STORES} from '../data/seedData';
 import fixtures from './coverage-address-fixtures.json';
@@ -27,9 +27,10 @@ Object.defineProperty(navigator,'geolocation',{configurable:true,value:{getCurre
   const fixture=point();queueMicrotask(()=>success(position(fixture)));
 }}});
 api.reverseGeocode=async(lat,lng)=>{
-  if(scenario==='Geocodificación fallida')return null;
+  if(scenario==='Geocodificación fallida') throw new ReverseGeocodeError('unavailable');
   const f=Object.values(destinations).find(f=>f.coordinates.lat===lat && f.coordinates.lng===lng);
-  return f ? {address:f.formattedAddress || f.address,municipality:f.municipality || f.name,locality:f.locality,neighborhood:f.name==='Cedritos'?'Cedritos':undefined} : null;
+  if (!f) throw new ReverseGeocodeError('no-results');
+  return {address:f.formattedAddress || f.address,municipality:f.municipality || f.name,locality:f.locality,neighborhood:f.name==='Cedritos'?'Cedritos':undefined};
 };
 // Read-only delivery quotes continue through the actual BOLT backend on this same test origin.
 const memory=new Map<string,string>();

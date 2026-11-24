@@ -6,6 +6,7 @@ import os from "node:os";
 import { spawn } from "node:child_process";
 import assert from "node:assert/strict";
 import net from "node:net";
+import addressFixtures from "./coverage-address-fixtures.json";
 const source = process.cwd(),
   root = fs.mkdtempSync(path.join(os.tmpdir(), "bolt-dispatch-http-"));
 fs.cpSync(path.join(source, "src/data"), path.join(root, "src/data"), {
@@ -35,7 +36,7 @@ await new Promise<void>((resolve) => socket.close(() => resolve()));
 const setupKey = randomUUID();
 const child = spawn(
   process.execPath,
-  ["--import", "tsx", path.join(source, "server.ts")],
+  ["--import", "tsx", "--import", path.join(source, "src/tests/geocodingHttpProvider.mjs"), path.join(source, "server.ts")],
   {
     cwd: root,
     env: {
@@ -46,6 +47,7 @@ const child = spawn(
       BOLT_ADMIN_EMAIL: "",
       BOLT_ADMIN_PASSWORD: "",
       BOLT_ADMIN_SETUP_TOKEN: setupKey,
+      GOOGLE_MAPS_SERVER_API_KEY: "fixture-server-geocode",
     },
     stdio: ["ignore", "pipe", "pipe"],
   },
@@ -141,6 +143,24 @@ try {
   assert.ok(view.service.http.completed > 0);
   assert.ok(view.operations);
   assert.ok(!JSON.stringify(view).includes(credentials.email));
+  assert.deepEqual(view.service.geocoding, {configured:true, forward:null, reverse:null});
+  const {address, coordinates} = addressFixtures[0];
+  const reversePath = "/geocode/reverse?lat=" + coordinates.lat + "&lng=" + coordinates.lng;
+  const rejected = await call(reversePath);
+  assert.equal(rejected.status, 503);
+  assert.doesNotMatch(await rejected.text(), /REQUEST_DENIED|PRIVATE_PROVIDER_DETAIL|fixture-server-geocode/);
+  assert.equal((await call(reversePath)).status, 404);
+  const success = await call(reversePath);
+  assert.equal(success.status, 200);
+  assert.equal((await success.json()).address, addressFixtures[0].formattedAddress);
+  const forward = await call("/geocode/forward?" + new URLSearchParams({address,municipality:"Bogotá"}));
+  assert.equal(forward.status, 200);
+  assert.equal((await forward.json()).status, "UNAVAILABLE");
+  const diagnostics = (await (await call("/admin/observability", "GET", undefined, coordinator)).json()).service.geocoding;
+  assert.equal(diagnostics.reverse.outcome, "OK");
+  assert.equal(diagnostics.forward.outcome, "QUOTA");
+  assert.doesNotMatch(JSON.stringify(diagnostics), /PRIVATE_PROVIDER_DETAIL|fixture-server-geocode|Cedritos/);
+  assert.equal(publicHealth.geocoding, undefined);
   const profile = await (await call("/bolt-admin/session", "GET", undefined, operator)).json();
   assert.deepEqual(profile.actor.storeIds, ["HUB_SUBA"]);
   assert.equal(profile.actor.canAdjustPrices, false);

@@ -1,5 +1,6 @@
 import assert from 'node:assert/strict';
 import {searchDeliveryAddress} from '../lib/forwardGeocoding';
+import {api} from '../lib/api';
 import {DeviceLocationRequest, DeviceLocationError} from '../lib/deviceLocation';
 import {enrichDestination} from '../lib/serverGeography';
 import fixtures from './municipal-coverage-fixtures.json';
@@ -53,6 +54,40 @@ await test('Multiple matches stay separate and require the customer to choose',a
 });
 await test('Provider failure is not reported as geographic exclusion',async()=>{
   const r=await searchDeliveryAddress('Calle 11','Bogotá','test-key',async()=>{throw Error('offline')});assert.equal(r.status,'UNAVAILABLE');
+});
+
+await test('La búsqueda distingue llave ausente, rechazo, cuota y resultados vacíos en el diagnóstico privado', async () => {
+  const attempts:string[]=[];
+  const search = (key:string, provider:typeof fetch) => searchDeliveryAddress('Calle 11 #15-53','Bogotá',key,provider,observation => attempts.push(observation));
+  const missing = await search('', async () => assert.fail('a missing key must not send a request'));
+  assert.equal(missing.status,'UNAVAILABLE');
+  assert.equal(attempts.at(-1),'NOT_CONFIGURED');
+  for (const [status,expected] of [['REQUEST_DENIED','DENIED'],['OVER_QUERY_LIMIT','QUOTA'],['OVER_DAILY_LIMIT','DAILY_LIMIT_OR_BILLING'],['ZERO_RESULTS','NO_RESULTS']]) {
+    const result = await search('test-key', async () => Response.json({status,results:[],error_message:'private-provider-detail'}));
+    assert.equal(attempts.at(-1),expected);
+    assert.equal(result.status,status === 'ZERO_RESULTS' ? 'NO_RESULTS' : 'UNAVAILABLE');
+    assert.doesNotMatch(JSON.stringify(result),/private-provider-detail|test-key|REQUEST_DENIED|OVER_QUERY_LIMIT/);
+  }
+  const failure = await search('test-key',async () => {throw Error('private-network-error')});
+  assert.equal(failure.status,'UNAVAILABLE');
+  assert.equal(attempts.at(-1),'UNAVAILABLE');
+});
+
+await test('Reverse lookup keeps an unavailable provider distinct from no address and a local rate limit', async () => {
+  const original = globalThis.fetch;
+  const reverse = () => api.reverseGeocode(bogota.lat, bogota.lng);
+  try {
+    for (const [status,providerStatus,kind] of [[404,'ZERO_RESULTS','no-results'],[404,'REQUEST_DENIED','unavailable'],[429,'','rate-limit'],[503,'','unavailable'],[400,'','invalid']] as const) {
+      globalThis.fetch = async () => Response.json({status:providerStatus,error:'private upstream detail'}, {status});
+      await assert.rejects(reverse(), (error:any) => error.kind === kind && !error.message.includes('private'));
+    }
+    globalThis.fetch = async () => {throw Error('private network detail')};
+    await assert.rejects(reverse(), (error:any) => error.kind === 'network' && !error.message.includes('private'));
+    globalThis.fetch = async () => Response.json({});
+    await assert.rejects(reverse(), (error:any) => error.kind === 'unavailable');
+    globalThis.fetch = async () => Response.json({address:'Calle 11 #15-53',municipality:'Bogotá D.C.'});
+    assert.equal((await reverse())?.municipality,'Bogotá D.C.');
+  } finally {globalThis.fetch=original;}
 });
 
 const now=1794100000000;

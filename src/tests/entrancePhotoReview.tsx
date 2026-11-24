@@ -6,7 +6,7 @@ import { SavedAddressesModal } from "../components/customer/SavedAddressesModal"
 import { CheckoutModal } from "../components/customer/CheckoutModal";
 import { OrderTracking } from "../components/customer/OrderTracking";
 import { GuestAddressStore } from "../lib/guestAddresses";
-import { api } from "../lib/api";
+import { api, ReverseGeocodeError } from "../lib/api";
 import fixtures from "./municipal-coverage-fixtures.json";
 import cedritos from "./coverage-address-fixtures.json";
 const book = new GuestAddressStore({
@@ -43,14 +43,13 @@ api.reverseGeocode = async (lat, lng) => {
   const f = places.find(
     (f) => f.coordinates.lat === lat && f.coordinates.lng === lng,
   );
-  return f
-    ? {
-        address: f.formattedAddress || f.address,
-        municipality: f.municipality || f.name,
-        locality: f.locality,
-        neighborhood: f.name === "Cedritos" ? "Cedritos" : undefined,
-      }
-    : null;
+  if (!f) throw new ReverseGeocodeError('no-results');
+  return {
+    address: f.formattedAddress || f.address,
+    municipality: f.municipality || f.name,
+    locality: f.locality,
+    neighborhood: f.name === "Cedritos" ? "Cedritos" : undefined,
+  };
 };
 function Review() {
   const [snapshot, setSnapshot] = useState(book.getSnapshot()),
