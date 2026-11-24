@@ -386,6 +386,27 @@ try {
   assert.equal(coordinator.canAdjustInventory, true);
   const activeWarehouseIds = ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA'];
   const storeIds = stores => stores.map(store => store.id).sort();
+  const operators = initial.profiles.filter(profile => profile.role === 'SEDE');
+  assert.deepEqual(operators.map(profile => profile.storeId).sort(), activeWarehouseIds);
+  assert.equal(operators.find(profile => profile.id === 'alamos')?.name, 'Operador de Álamos');
+  const { token: alamos, actor: alamosActor } = await demoLogin('alamos');
+  assert.equal(alamosActor.role, 'SEDE');
+  assert.deepEqual(alamosActor.storeIds, ['HUB_ALAMOS']);
+  assert.equal(alamosActor.canConfirm, true);
+  assert.equal(alamosActor.canAdjustInventory, false);
+  assert.equal(alamosActor.canAdjustPrices, false);
+  const alamosSession = await admin('/session', { token: alamos });
+  assert.deepEqual(storeIds(alamosSession.stores), ['HUB_ALAMOS']);
+  for (const endpoint of ['/orders', '/inventory', '/sales']) {
+    await admin(endpoint + '?storeId=HUB_ALAMOS', { token: alamos });
+    for (const otherStore of ['HUB_KENNEDY', 'HUB_SUBA']) {
+      await admin(endpoint + '?storeId=' + otherStore, { token: alamos, expected: 403 });
+    }
+  }
+  await admin('/inventory?scope=catalog', { token: alamos, expected: 403 });
+  const alamosSales = await admin('/sales?storeId=all', { token: alamos });
+  assert.deepEqual(storeIds(alamosSales.stores), ['HUB_ALAMOS']);
+  console.log('PASS: Operador de Álamos consulta únicamente los pedidos, inventario y ventas de su sede.');
   const simulation = await api('/api/v1/simulation');
   const { token: adminToken } = await api('/api/v1/auth/login', { method: 'POST', body: simulation.admin });
   const [publicStores, adminSession, shopify] = await Promise.all([
@@ -429,6 +450,8 @@ try {
   const pending = (await admin(orderUrl, { token: suba })).order;
   assert.equal(pending.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
   assert.equal(pending.storeId, 'HUB_SUBA');
+  await admin(orderUrl, { token: alamos, expected: 403 });
+  assert.ok(!(await admin('/orders', { token: alamos })).orders.some(order => order.id === fixture.orderId));
   assert.equal(pending.deliveryReview.requestedMode, 'PROGRAMADO');
   assert.equal(pending.scheduledWindow, undefined);
   await admin(orderUrl, { token: kennedy, expected: 403 });
