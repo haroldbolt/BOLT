@@ -32,7 +32,9 @@ const [health, stores, session, manifest] = await Promise.all([
 assert.equal(health.status, 'ok');
 const storeIds = ['HUB_ALAMOS', 'HUB_KENNEDY', 'HUB_SUBA'];
 assert.deepEqual(health.pilot?.storeIds, storeIds, 'El servidor no inició con las tres sedes operativas.');
-assert.equal(health.pilot.checkoutHold, checkoutOpen ? undefined : 'RAPPI_CASH_UNCONFIRMED');
+if (checkoutOpen) assert.equal(health.pilot.checkoutHold, undefined);
+else assert.ok(['RAPPI_CASH_UNCONFIRMED', 'PILOT_CHECKOUT_CLOSED'].includes(health.pilot.checkoutHold),
+  'El checkout del piloto debe estar cerrado.');
 assert.deepEqual(stores.map(store => store.id).sort(), storeIds);
 for (const store of stores) {
   assert.ok(store.enabledModes?.includes('TURBO') && store.enabledModes?.includes('PROGRAMADO'),
@@ -83,4 +85,4 @@ for (const route of ['/api/v1/simulation/customer-checkout', '/api/v1/simulation
 }
 
 console.log('PWA de Álamos, Kennedy y Suba. Cliente, Admin, Despachos y Conductor accesibles. ' +
-  (checkoutOpen ? 'Apertura del checkout configurada.' : 'Checkout real bloqueado por recaudo pendiente.'));
+  (checkoutOpen ? 'Apertura del checkout configurada.' : 'Checkout real cerrado.'));

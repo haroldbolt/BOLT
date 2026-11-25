@@ -27,6 +27,7 @@ function setup(
   options: {
     providers?: any[];
     simulation?: boolean;
+    ownFleetOnly?: boolean;
     routeEstimate?: any;
   } = {},
 ) {
@@ -213,6 +214,30 @@ test("Route ETA overrides geographic distance; stale routes fall back explicitly
   await x.service.search(r.id);
   assert.equal(x.repo.dispatchState.offers[r.offerId!].driverId, x.ids[1]);
   assert.equal(r.estimate!.seconds, 20);
+});
+test("Own-fleet Turbo dispatch uses the ready deadline and the trip remaining after reaching the warehouse", async () => {
+  let pickupSeconds = 360;
+  const now = Date.parse("2026-11-07T15:00:00Z");
+  const x = setup({
+    ownFleetOnly: true,
+    routeEstimate: async () => ({ kind: "ROUTE", seconds: pickupSeconds, meters: 500, source: "FIXTURE", observedAt: now }),
+  });
+  const driver = x.provision();
+  const order = x.order();
+  const run = x.runs(order)[0];
+  order.timestamps.prepCompletedAt = new Date(now).toISOString();
+  order.originalPromiseWindow = { start: new Date(now - 40 * 60_000).toISOString(), end: new Date(now - 20 * 60_000).toISOString() };
+  order.transportConfirmation = "fixture-only";
+  order.deliveryQuoteSnapshot = {
+    quoteId: "fixture-20-minutes", estimatedMinutes: 20, totalSeconds: 1200, afterArrivalAtWarehouseSeconds: 900,
+    geographicDistanceMeters: 400, roadDistanceMeters: 500, configVersion: "fixture", assignedStoreId: order.storeId,
+  };
+  await x.service.search(run.id);
+  assert.equal(run.offerId, undefined, "six minutes to pickup plus fifteen to deliver exceeds the twenty-minute window");
+  pickupSeconds = 60;
+  await x.service.search(run.id);
+  assert.ok(run.offerId, "a minute to pickup plus fifteen to deliver fits even after a long preparation");
+  assert.equal(x.service.respond(driver, run.offerId, "accept").ok, true);
 });
 test("Closer incompatible, unavailable and stale drivers are excluded", async () => {
   const x = setup();

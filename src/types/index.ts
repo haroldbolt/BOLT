@@ -445,6 +445,7 @@ export interface Order {
     quoteId: string;
     geographicDistanceMeters: number;
     roadDistanceMeters: number;
+    afterArrivalAtWarehouseSeconds?: number;
     totalSeconds: number;
     estimatedMinutes: number;
     configVersion: string;

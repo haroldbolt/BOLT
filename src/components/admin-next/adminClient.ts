@@ -162,6 +162,13 @@ export const boltAdmin = {
   login: (email: string, password: string) => request<{ token: string }>('/api/v1/auth/login', null, { body: { email, password } }),
   demoLogin: (profileId: string) => request<{ token: string; actor: AdminActor }>(`${base}/demo/session`, null, { body: { profileId } }),
   logout: (token: string | null) => request<{ ok: boolean }>(`${base}/logout`, token, { body: {} }),
+  orderEvents: (token: string, storeId: string, signal: AbortSignal) => backendFetch(
+    `${base}/orders/events?${new URLSearchParams({ storeId })}`, {
+      headers: { Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
+      mode: isBoltSplitDeployment() ? 'cors' : 'same-origin', credentials: 'same-origin',
+      cache: 'no-store', redirect: 'error', signal,
+    },
+  ),
   orders: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ orders: AdminOrder[] }>(
     `${base}/orders?${new URLSearchParams({ storeId })}`, token, { signal },
   ),

@@ -8,7 +8,18 @@ const listen = async server => { server.listen(0, '127.0.0.1'); await once(serve
 const password = crypto.randomBytes(24).toString('base64url');
 const key = crypto.randomBytes(48).toString('hex');
 let forwarded;
-const backend = http.createServer((req, res) => { forwarded = req.headers; res.setHeader('Content-Type', 'application/json'); res.end('{"ok":true}'); });
+const orderEventsPath = '/api/v1/bolt-admin/orders/events?storeId=HUB_SUBA';
+let backendStream;
+const backend = http.createServer((req, res) => {
+  forwarded = req.headers;
+  if (req.url === orderEventsPath) {
+    backendStream = res;
+    res.writeHead(200, { 'Content-Type': 'text/event-stream', 'X-Accel-Buffering': 'no' });
+    res.flushHeaders();
+    return;
+  }
+  res.setHeader('Content-Type', 'application/json'); res.end('{"ok":true}');
+});
 const upstreamPort = await listen(backend);
 assert.throws(() => createDemoGateway({ origin: 'http://public.example', password, sessionKey: key, upstreamPort }));
 assert.throws(() => createDemoGateway({ origin: 'https://demo.example/path', password, sessionKey: key, upstreamPort }));
@@ -83,6 +94,24 @@ try {
   assert.equal(forwarded.cookie, undefined);
   assert.equal(forwarded['x-forwarded-host'], undefined);
   assert.equal((await request('/api/v1/simulation', { headers: { Cookie: cookie + 'tamper' } })).status, 401);
+  assert.equal((await request(orderEventsPath)).status, 401);
+  const streamRequest = http.get({
+    hostname: '127.0.0.1', port, path: orderEventsPath,
+    headers: { Host: 'demo.example', Cookie: cookie, Authorization: 'Bearer fixture-admin', Accept: 'text/event-stream' },
+  });
+  const wait = { signal: AbortSignal.timeout(2000) };
+  const [stream] = await once(streamRequest, 'response', wait);
+  assert.equal(stream.statusCode, 200);
+  assert.equal(stream.headers['x-accel-buffering'], 'no');
+  assert.match(stream.headers['cache-control'], /no-transform/);
+  assert.equal(forwarded.authorization, 'Bearer fixture-admin');
+  assert.equal(forwarded.cookie, undefined);
+  const firstFrame = once(stream, 'data', wait);
+  backendStream.write('data: changed\n\n');
+  assert.equal(String((await firstFrame)[0]), 'data: changed\n\n');
+  const upstreamClosed = once(backendStream, 'close', wait);
+  stream.destroy();
+  await upstreamClosed;
   const logout = await request('/__demo/logout', { method: 'POST', headers: { Cookie: cookie, Origin: origin } });
   assert.equal(logout.status, 303); assert.match(logout.headers.get('set-cookie'), /Max-Age=0/);
   console.log('PASS: HTTPS/origin guard, anonymous denial, login, signed cookie, CSRF rejection, token separation, tampering and logout.');

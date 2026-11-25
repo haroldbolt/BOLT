@@ -26,7 +26,7 @@ const source = fileURLToPath(new URL('../../', import.meta.url));
 type RequestOptions = { method?: string; body?: unknown; token?: string; key?: string; guest?: string; status?: number };
 
 /** Empty temporary installation using the Express checkout and real auth, without demo orders or dispatch shortcuts. */
-export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean } = {}) {
+export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean; ownFleetOnly?: boolean } = {}) {
   const socket = net.createServer();
   socket.listen(0, '127.0.0.1');
   await once(socket, 'listening');
@@ -84,8 +84,10 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
         BOLT_DATA_DIR: dataDir, BOLT_TEST_EGRESS_LOG: egressLog, BOLT_PILOT_STORE_IDS: storeIds.join(','),
         ...(options.respondAsCargo && { BOLT_TEST_CARGO_LOG: cargoLog }),
         BOLT_ADMIN_EMAIL: adminCredentials.email, BOLT_ADMIN_PASSWORD: adminCredentials.password,
-        ...(checkoutEnabled ? {
-          BOLT_PILOT_CHECKOUT_ENABLED: '1', BOLT_RAPPI_CARGO_ENABLED: '1', BOLT_RAPPI_CARGO_USER_TOKEN: randomUUID(),
+        ...(options.ownFleetOnly && { BOLT_PILOT_OWN_FLEET_ONLY: '1' }),
+        ...(checkoutEnabled && { BOLT_PILOT_CHECKOUT_ENABLED: '1' }),
+        ...(checkoutEnabled && !options.ownFleetOnly ? {
+          BOLT_RAPPI_CARGO_ENABLED: '1', BOLT_RAPPI_CARGO_USER_TOKEN: randomUUID(),
           BOLT_RAPPI_CARGO_SETTINGS: JSON.stringify({ cashCollectionApproved: true,
             cashApprovalReference: 'FICTICIO-SOLO-PRUEBA-LOCAL', maxCashCOP: 200_000, externalBudgetCOP: 20_000, sites: fakeSites }),
         } : {}),

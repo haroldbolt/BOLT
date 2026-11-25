@@ -343,7 +343,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Entrega a tu puerta con vehículo de capacidad confirmada, hasta 25 min.
+                    El Tiempo Turbo comienza cuando la sede marca tu pedido como listo.
                   </p>
                 </div>
               )}
@@ -370,7 +370,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 mt-1">
-                    Tu compra de {totalWeightKg.toLocaleString('es-CO')} kg: {deliveryQuote.turboDividido?.shipmentCount} entregas con capacidad confirmada y tiempo estimado visible en la cotización.
+                    Tu compra de {totalWeightKg.toLocaleString('es-CO')} kg: {deliveryQuote.turboDividido?.shipmentCount} entregas. El Tiempo Turbo de cada entrega comienza cuando la sede la marca como lista.
                   </p>
                 </div>
               )}

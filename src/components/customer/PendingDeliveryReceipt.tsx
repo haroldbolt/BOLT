@@ -1,12 +1,13 @@
 import React from 'react';
 import type {Order} from '../../types';
 import {formatCOP} from '../../lib/formatters';
-export function PendingDeliveryReceipt({order,onBack,onRefresh,onCancel,cancelling,error}:{order:Order;onBack:()=>void;onRefresh:()=>void;onCancel:()=>void;cancelling:boolean;error:string|null}) {
+export function PendingDeliveryReceipt({order,onBack,onViewSummary,onRefresh,onCancel,cancelling,error}:{order:Order;onBack:()=>void;onViewSummary?:()=>void;onRefresh:()=>void;onCancel:()=>void;cancelling:boolean;error:string|null}) {
   const cancelled=order.fulfillmentStatus==='CANCELADO';
   return <main className="min-h-screen bg-slate-50 p-4 sm:p-8"><section className="max-w-xl mx-auto bg-white rounded-3xl border p-5 sm:p-8 space-y-5">
     <button onClick={onBack} className="min-h-11 text-red-700 font-bold">← Volver a BOLT</button>
     <h1 className="text-2xl font-black text-slate-900">{cancelled?'Solicitud cancelada':'Solicitud recibida'}</h1>
     <p className="font-bold">{order.purchaseCode||order.orderNumber}</p>
+    {onViewSummary && <button type="button" onClick={onViewSummary} className="min-h-11 font-semibold text-red-700 underline">Resumen</button>}
     <p role="status" className="rounded-2xl bg-amber-50 p-4 text-sm">{cancelled?'Tu solicitud fue cancelada. No se ha realizado ningún cobro.':'La sede confirmará contigo el costo y la disponibilidad de entrega. No se ha realizado ningún cobro ni reservado un horario.'}</p>
     <p className="text-sm">Sede: {order.warehouse?.customerName || order.storeName}</p>
     <ul className="divide-y">{order.items.map(i=><li key={i.productId} className="py-3"><p className="font-bold">{i.name} · {i.presentation}</p><p className="text-sm">{i.quantity} × {formatCOP(i.price)}</p></li>)}</ul>

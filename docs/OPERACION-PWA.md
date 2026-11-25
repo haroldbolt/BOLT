@@ -30,7 +30,9 @@ Configura el arranque en los ajustes del servicio nuevo de Railway. El `railway.
 
 ## Apertura del checkout real
 
-El checkout conserva el carrito y responde con `RAPPI_CASH_UNCONFIRMED` mientras esté pendiente el recaudo. Para las dos PWAs, el backend autoriza solo los orígenes HTTPS exactos en `BOLT_PWA_ORIGINS` y ambos paquetes usan el mismo `VITE_BOLT_API_ORIGIN`. Las sesiones administrativas y de conductor conservan sus permisos. El frontend separado admite compras de invitado y seguimiento privado. Los pagos en línea aparecen como **No disponible** hasta integrar Wompi.
+Para operar exclusivamente con flota propia, configura `BOLT_PILOT_OWN_FLEET_ONLY=1`. Cuando las sedes tengan inventario, vehículos y conductores habilitados para recaudar, abre el checkout con `BOLT_PILOT_CHECKOUT_ENABLED=1`. BOLT comprueba la capacidad propia, los horarios y las existencias al cotizar y confirmar. Este modo omite el adaptador de Rappi y funciona sin su credencial. Para cerrar la recepción de pedidos, desactiva `BOLT_PILOT_CHECKOUT_ENABLED`. Antes de cambiar de un modo con Cargo a flota propia, concilia y cierra los despachos externos que sigan activos.
+
+En el modo con respaldo de Cargo (el predeterminado) el checkout conserva el carrito y responde con `RAPPI_CASH_UNCONFIRMED` mientras esté pendiente el recaudo. Para las dos PWAs, el backend autoriza solo los orígenes HTTPS exactos en `BOLT_PWA_ORIGINS` y ambos paquetes usan el mismo `VITE_BOLT_API_ORIGIN`. Las sesiones administrativas y de conductor conservan sus permisos. El frontend separado admite compras de invitado y seguimiento privado. Los pagos en línea aparecen como **No disponible** hasta integrar Wompi.
 
 Confirma con Rappi Cargo la habilitación de efectivo de Agrocentro, credenciales de producción, puntos de recogida de las tres sedes, límites y liquidación. Conecta el adaptador de producción al mismo sistema de cotización y despachos. `POST /v3/order-validate` con `payment_method: "CASH"` valida sin solicitar un envío. La validación de envío y la liquidación bancaria se comprueban por separado. [API oficial de Rappi Cargo](https://cargo-docs.dev.rappi.com/api/)
 

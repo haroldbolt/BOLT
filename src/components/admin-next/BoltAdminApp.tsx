@@ -8,6 +8,7 @@ import {
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
+import { subscribeOrderChanges } from '../../lib/orderUpdatesClient';
 import { ProductImage } from '../common/ProductImage';
 import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type InventoryAdjustment, type InventoryItem, type InventoryPhotoUpdate, type InventoryScope, type PriceAdjustment, type PriceItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
@@ -207,7 +208,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const [inventoryScope, setInventoryScope] = useState<InventoryScope>(actor.canAdjustPrices && session.stores.length === 0 ? 'catalog' : 'store');
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
-  const [inboxRevision, setInboxRevision] = useState(0);
+  const refreshOrders = useRef<(() => void) | null>(null);
   const [notice, setNotice] = useState('');
   const [ordersError, setOrdersError] = useState('');
   const [inventoryError, setInventoryError] = useState('');
@@ -220,14 +221,13 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const requestedStoreUnavailable = landing.storeId && !session.stores.some(item => item.id === landing.storeId);
   const activeStore = useRef(storeId);
   activeStore.current = storeId;
-  const refresh = () => setRevision(value => value + 1);
+  const refresh = () => { refreshOrders.current?.(); setRevision(value => value + 1); };
   const pending = orders?.filter(isPending) ?? [];
   const active = orders?.filter(order => !isPending(order) && !isClosed(order)) ?? [];
   const orderView = tab === 'orders' || tab === 'turbo' || tab === 'scheduled' ? tab : null;
   const orderFiltersForView = orderFilters[orderView ?? 'orders'] ?? defaultOrderFilters;
   const scopedOrders = orderView && orders ? (orderView === 'orders' ? orders : orders.filter(order => orderTab(order) === orderView)) : null;
   const detail = scopedOrders?.find(order => order.id === selectedOrder);
-  const reviewingDelivery = !!detail && !detail.demoReadOnly && isPending(detail) && actor.canConfirm;
   const demoTrackingPath = detail && isDemo ? trackingPathFor(detail) : undefined;
   const demoCheckoutPath = '/demo/pedido-suba';
   const demoDispatchOrders = isDemo ? orders?.filter(order => order.dispatch || order.demoCustomerCheckout) : undefined;
@@ -238,14 +238,46 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const inventoryPageStart = inventory && inventory.total > 0 ? inventory.offset + 1 : 0;
 
   useEffect(() => {
-    if (!storeId) return;
+    if (!storeId || !token) return;
     const controller = new AbortController();
+    let loading = false;
+    let refreshRequested = false;
+    const load = async () => {
+      if (controller.signal.aborted || activeStore.current !== storeId) return;
+      if (loading) { refreshRequested = true; return; }
+      loading = true;
+      try {
+        const result = await boltAdmin.orders(token, storeId, controller.signal);
+        if (!controller.signal.aborted && activeStore.current === storeId) {
+          setOrders(result.orders);
+          setOrdersError('');
+        }
+      } catch (failure) {
+        if (!controller.signal.aborted && activeStore.current === storeId) setOrdersError(errorText(failure));
+      } finally {
+        loading = false;
+        if (refreshRequested) { refreshRequested = false; void load(); }
+      }
+    };
+    const refreshVisible = () => { if (document.visibilityState === 'visible') void load(); };
     setOrdersError('');
-    void boltAdmin.orders(token, storeId, controller.signal).then(result => {
-      if (!controller.signal.aborted) setOrders(result.orders);
-    }).catch(failure => { if (!controller.signal.aborted) setOrdersError(errorText(failure)); });
-    return () => controller.abort();
-  }, [storeId, token, revision, inboxRevision]);
+    refreshOrders.current = load;
+    void load();
+    const stopEvents = subscribeOrderChanges(signal => boltAdmin.orderEvents(token, storeId, signal), refreshVisible);
+    const timer = window.setInterval(refreshVisible, 18_000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    window.addEventListener('online', refreshVisible);
+    window.addEventListener('focus', refreshVisible);
+    return () => {
+      controller.abort();
+      stopEvents();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshVisible);
+      window.removeEventListener('online', refreshVisible);
+      window.removeEventListener('focus', refreshVisible);
+      refreshOrders.current = null;
+    };
+  }, [storeId, token]);
 
   useEffect(() => {
     if (!pendingOrderRef.current || !orders) return;
@@ -257,14 +289,6 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
     setSelectedOrder(order.id);
     if (tab !== 'dispatch' && orderView !== 'orders') setTab(orderTab(order));
   }, [orders, orderView, tab]);
-
-  useEffect(() => {
-    if ((tab !== 'home' && tab !== 'dispatch' && !orderView) || reviewingDelivery || !storeId) return;
-    const refreshInbox = () => { if (document.visibilityState === 'visible') setInboxRevision(n => n + 1); };
-    const timer = window.setInterval(refreshInbox, 18_000);
-    document.addEventListener('visibilitychange', refreshInbox);
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshInbox); };
-  }, [tab, orderView, reviewingDelivery, storeId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setInventoryQuery(inventorySearch.trim()); setOffset(0); }, 200);
@@ -463,6 +487,10 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
             <Metric label="Pedidos en operación" value={orders && !ordersError ? active.length : null} icon={<ClipboardList size={18} />} onClick={() => openAllOrders('active')} />
             <Metric label="Presentaciones registradas" value={inventory && !inventoryError && !inventoryQuery ? inventory.total : null} icon={<Box size={18} />} onClick={() => navigate('inventory')} />
           </div>
+          {active.length > 0 && !ordersError && <section className="ba-panel">
+            <div className="ba-panel-head"><h2>Pedidos en operación</h2><button type="button" className="ba-btn ba-btn-secondary" onClick={() => openAllOrders('active')}>Ver todos <ArrowRight size={15} /></button></div>
+            <OrderRows orders={active.slice(0, 5)} selected="" onSelect={viewOrder} />
+          </section>}
           <section className="ba-panel">
             <div className="ba-panel-head"><div><h2>Pendientes de confirmar</h2><p>Solicitudes que necesitan una propuesta de entrega.</p></div><button type="button" className="ba-btn ba-btn-secondary" onClick={() => openAllOrders('PENDIENTE_CONFIRMACION')}>Ver pedidos <ArrowRight size={15} /></button></div>
             {ordersError ? <FetchError message={ordersError} refresh={refresh} /> : pending.length > 0 ? <OrderRows orders={pending.slice(0, 5)} selected="" onSelect={viewOrder} />
@@ -700,7 +728,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
-  const canPrepare = !order.demoReadOnly && !order.demoCustomerCheckout && actor.canConfirm && !order.isSplitOrder;
+  const canPrepare = !order.demoReadOnly && actor.canConfirm && !order.isSplitOrder;
   const startingPreparation = order.fulfillmentStatus === 'CONFIRMADO';
   const canOpenDispatch = isDemo ? !!order.dispatch || (!!order.demoCustomerCheckout && !isClosed(order))
     : !!order.dispatch || (!isPending(order) && !isClosed(order));
@@ -773,9 +801,7 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
   const inFlight = useRef(false);
   const dispatch = order.dispatch;
   const trackingPath = trackingPathFor(order);
-  const canSimulate = actor.canConfirm && order.demoCustomerCheckout && !order.demoReadOnly && (
-    order.fulfillmentStatus === 'CONFIRMADO' || order.fulfillmentStatus === 'EN_ALISTAMIENTO' || order.fulfillmentStatus === 'LISTO_PARA_DESPACHO'
-  );
+  const canSimulate = actor.canConfirm && order.demoCustomerCheckout && !order.demoReadOnly && order.fulfillmentStatus === 'LISTO_PARA_DESPACHO';
 
   async function simulateDispatch() {
     if (inFlight.current) return;
@@ -803,7 +829,9 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
         {orderMode(order) === 'PROGRAMADO' && <div><dt>Franja</dt><dd><DeliverySchedule window={order.scheduledWindow} /></dd></div>}
         {order.payment?.cashToCollect === 0 && <div><dt>Recaudo</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
       </dl>
-      {isPending(order) && <p className="ba-info">La unidad ya está reservada en Suba. Confirma la entrega en el pedido para habilitar el despacho.</p>}
+      {isPending(order) && <p className="ba-info">La unidad ya está reservada en Suba. Confirma la entrega en el pedido para iniciar el alistamiento.</p>}
+      {order.demoCustomerCheckout && ['CONFIRMADO', 'EN_ALISTAMIENTO'].includes(order.fulfillmentStatus) &&
+        <p className="ba-info">En el detalle del pedido, marca «Listo para despacho» para iniciar el Tiempo Turbo.</p>}
       {canSimulate && <button type="button" className="ba-btn ba-btn-primary" disabled={busy} onClick={() => void simulateDispatch()}>
         {busy ? <LoaderCircle size={16} className="ba-spin" /> : <Truck size={16} aria-hidden="true" />} Simular despacho sin cobro
       </button>}

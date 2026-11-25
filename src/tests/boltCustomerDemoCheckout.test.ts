@@ -113,8 +113,17 @@ try {
   assert.equal(run.status, 'PENDING');
   assert.equal(run.cashDue, 0);
 
+  await assert.rejects(scenarioDispatch.start(order, actor), /Marca primero el pedido listo/);
+  assert.ok(orders.transitionStatus(order.id, 'EN_ALISTAMIENTO', actor).success);
+  await assert.rejects(scenarioDispatch.start(order, actor), /Marca primero el pedido listo/);
+  assert.equal(order.timestamps.prepCompletedAt, undefined);
+  assert.equal(Object.keys(orders.dispatchState.offers).length, 0);
+  assert.ok(orders.transitionStatus(order.id, 'LISTO_PARA_DESPACHO', actor).success);
+  const readyAt = order.timestamps.prepCompletedAt;
+  assert.ok(readyAt);
   const [started, retried] = await Promise.all([scenarioDispatch.start(order, actor), scenarioDispatch.start(order, actor)]);
   assert.equal(started.id, order.id);
+  assert.equal(started.timestamps.prepCompletedAt, readyAt);
   assert.equal(started.fulfillmentStatus, 'EN_CAMINO');
   assert.equal(retried.assignmentId, run.id);
   assert.equal((await scenarioDispatch.start(order, actor)).assignmentId, run.id);

@@ -148,9 +148,9 @@ try {
  assert.equal(created.payment.transactionId,undefined);
  assert.equal(created.totals.shipping,10000);assert.equal(created.totals.serviceFee,0);assert.equal(created.totals.total,69999);assert.equal(created.payment.cashToCollect,69999);
  const tracking=await call('/orders/'+created.id+'/tracking','GET',undefined,'');
- assert.equal(tracking.timing.source,'VERIFIED_QUOTE');
- assert.equal(tracking.timing.dueAt,new Date(created.originalPromiseWindow.end).toISOString());
- assert.ok(Date.parse(tracking.timing.dueAt)>Date.parse(tracking.timing.startedAt));
+ assert.equal(tracking.timing.source,null);
+ assert.equal(tracking.timing.startedAt,null);
+ assert.equal(tracking.timing.dueAt,null);
  assert.equal(tracking.telemetry,null);
  assert.equal((await call('/orders','POST',payload,'')).id,created.id);idem='';
  const rxQuote = await call('/delivery/quote', 'POST', {destination, items:[{productId:'RX-TEST', quantity:1}], requestedMode:'TURBO'}, '');

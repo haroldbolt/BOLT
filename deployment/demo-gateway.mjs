@@ -157,13 +157,16 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
         const selected = (incoming.headers['set-cookie'] || []).filter(x => customerCookie.test(x.split('=')[0]) && !/;\s*Domain=/i.test(x) && /;\s*HttpOnly(?:;|$)/i.test(x) && (local || /;\s*Secure(?:;|$)/i.test(x)));
         if (selected.length) outgoing['set-cookie'] = selected;
       }
-      outgoing['cache-control'] = 'no-store';
+      const isEventStream = incoming.headers['content-type']?.startsWith('text/event-stream');
+      outgoing['cache-control'] = isEventStream ? 'private, no-store, no-transform' : 'no-store';
       res.writeHead(incoming.statusCode || 502, outgoing);
+      if (isEventStream) res.flushHeaders();
       incoming.pipe(res);
     });
     proxy.setTimeout(30000, () => proxy.destroy());
     proxy.on('error', () => { if (!res.headersSent) send(res, 502, '{"error":"La demo se está iniciando. Intenta de nuevo."}', 'application/json'); else res.destroy(); });
     req.on('aborted', () => proxy.destroy());
+    res.once('close', () => { if (!res.writableEnded) proxy.destroy(); });
     req.pipe(proxy);
   });
 }

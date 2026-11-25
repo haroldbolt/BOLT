@@ -7,6 +7,8 @@ import {CartDrawer} from '../components/customer/CartDrawer';
 import {CheckoutModal} from '../components/customer/CheckoutModal';
 import {PendingDeliveryReceipt} from '../components/customer/PendingDeliveryReceipt';
 import {OrderConfirmation} from '../components/customer/OrderConfirmation';
+import {OrderDeliveryTime} from '../components/customer/OrderDeliveryTime';
+import type {CustomerTrackingTiming} from '../types/customerTracking';
 import {formatCOP} from '../lib/formatters';
 import {getCheckoutPreviewOrder} from '../lib/checkoutPreview';
 import {fixtureProduct,fixtureConfig,fixtureDrivers} from './transportFixtures';
@@ -55,3 +57,36 @@ assert.doesNotMatch(simulatedSummary,/Pago contra entrega/);
 console.log('PASS simulated checkout receipt shows the actual zero collection separately from the simulated order total.');
 
 const notifications=new PushNotificationService({getItem:()=>null,setItem:()=>{}});receipt.warehouseAssignment=makeWarehouseAssignment(receipt.id,INITIAL_STORES[0]);assert.equal(notifications.notifyWarehouseAssignment(receipt),null);receipt.deliveryReview!.status='CONFIRMED';assert.ok(notifications.notifyWarehouseAssignment(receipt));
+
+const readyAt = '2026-11-25T16:30:00.000Z';
+const now = Date.parse(readyAt) + 60_000;
+const timing: CustomerTrackingTiming = {
+  serverTime: new Date(now).toISOString(), startedAt: readyAt,
+  dueAt: new Date(Date.parse(readyAt) + 25 * 60_000).toISOString(), source: 'VERIFIED_QUOTE',
+  stages: { confirmedAt: '2026-11-25T16:00:00.000Z', prepStartedAt: '2026-11-25T16:05:00.000Z',
+    prepCompletedAt: readyAt, assignedAt: null, pickedUpAt: null, deliveredAt: null, cancelledAt: null },
+};
+for (const status of ['CONFIRMADO', 'EN_ALISTAMIENTO'] as const) {
+  const waiting = render(<OrderDeliveryTime mode="TURBO" status={status} timing={timing} now={now} />);
+  assert.match(waiting, /cuando la sede marque tu pedido como listo/);
+  assert.doesNotMatch(waiting, /<time\b|\d+:\d+/);
+}
+for (const mode of ['TURBO','TURBO_DIVIDIDO'] as const) {
+  const running = render(<OrderDeliveryTime mode={mode} status="LISTO_PARA_DESPACHO" timing={timing} now={now} />);
+  assert.match(running, /<time\b[^>]*>24:00<\/time>/);
+}
+for (const status of ['CANCELADO', 'ENTREGADO'] as const) {
+  const stop = new Date(Date.parse(readyAt) + 30_000).toISOString();
+  const stopped = { ...timing, stages: { ...timing.stages, [status === 'ENTREGADO' ? 'deliveredAt' : 'cancelledAt']: stop } };
+  const finished = render(<OrderDeliveryTime mode="TURBO" status={status} timing={stopped} now={now} />);
+  assert.doesNotMatch(finished, /<time\b|Tiempo estimado restante/);
+  assert.match(finished, /00:30/);
+}
+const turboSummary = render(<OrderConfirmation order={{...simulatedOrder, deliveryMode:'TURBO', fulfillmentStatus:'EN_ALISTAMIENTO'}} {...actions} />);
+assert.match(turboSummary, /cuando la sede marque tu pedido como listo/);
+assert.doesNotMatch(turboSummary, /Tiempo estimado:|\d+ min/);
+const scheduledTime = render(<OrderDeliveryTime mode="PROGRAMADO" status="LISTO_PARA_DESPACHO"
+  timing={{...timing,source:'BOOKED_WINDOW'}} scheduledWindow={simulatedOrder.scheduledWindow} now={now} />);
+assert.match(scheduledTime, /Entrega programada/);
+assert.doesNotMatch(scheduledTime, /Tiempo Turbo|<time\b/);
+console.log('PASS tracking UI waits for readiness, renders Turbo countdown only while active and keeps scheduled windows.');

@@ -53,7 +53,11 @@ async function assertPanels() {
       const tracking = await request<CustomerTracking>('/orders/' + order.id + '/tracking', { guest: recorded.guestAccessToken });
       assert.equal(tracking.orderId, order.id);
       assert.equal(tracking.deliveryMode, mode);
-      assert.equal(tracking.timing.source, mode === 'PROGRAMADO' ? 'BOOKED_WINDOW' : 'VERIFIED_QUOTE');
+      assert.equal(tracking.timing.source, mode === 'PROGRAMADO' ? 'BOOKED_WINDOW' : null);
+      if (mode === 'TURBO') {
+        assert.equal(tracking.timing.startedAt, null);
+        assert.equal(tracking.timing.dueAt, null);
+      }
       assert.equal(tracking.status, 'CONFIRMADO');
     }
     const sales = await request<{summary: {collectedCOP: number}}>('/bolt-admin/sales?storeId=' + id, { token: admin });
@@ -149,4 +153,51 @@ try {
   console.log('PASS 6 confirmaciones aisladas, 6 bloqueos de efectivo sin aprobación, sin dobles reservas al reintentar o reiniciar, COP 0 recaudados y cero conexiones salientes.');
 } finally {
   await fixture.dispose();
+}
+
+const own = await createThreeStoreCashFixture({ ownFleetOnly: true });
+try {
+  const destination = testStores.find(store => store.id === 'HUB_SUBA')!.destination;
+  const input = { destination, items: units, requestedMode: 'TURBO' };
+  const quote = () => own.request<DeliveryQuote>('/delivery/quote', { body: input });
+  await own.start(false);
+  assert.equal((await quote()).reasonCode, 'PILOT_CHECKOUT_CLOSED');
+  await own.stop();
+  await own.start(true);
+  const coordinator = await own.login();
+  const panel = await own.request<{providers: {id: string; enabled: boolean}[]}>('/admin/dispatch', { token: coordinator });
+  assert.equal(panel.providers.find(provider => provider.id === 'rappi')?.enabled, false);
+  assert.equal((await quote()).reasonCode, 'NO_AVAILABLE_VEHICLES');
+  await own.registerFleet(coordinator);
+  const approved = await quote();
+  assert.equal(approved.recommendedMode, 'TURBO');
+  assert.ok(approved.confirmationToken);
+  const turbo = await own.request<Order>('/orders', { key: randomUUID(), status: 201, body: {
+    customer, items: [{ ...units[0], price: testPrice }], deliveryAddress: destination, deliveryMode: 'TURBO',
+    confirmationToken: approved.confirmationToken, paymentMethod: 'CASH_ON_DELIVERY',
+  } });
+  const adminOrderPath = '/bolt-admin/orders/' + turbo.id;
+  const getTracking = () => own.request<CustomerTracking>('/orders/' + turbo.id + '/tracking', { guest: turbo.guestAccessToken });
+  assert.equal((await getTracking()).timing.dueAt, null);
+  const listed = await own.request<{orders: {id: string}[]}>('/bolt-admin/orders?storeId=HUB_SUBA', { token: coordinator });
+  assert.deepEqual(listed.orders.map(order => order.id), [turbo.id]);
+  await own.request(adminOrderPath + '/start-preparation', { token: coordinator, body: {} });
+  assert.equal((await getTracking()).timing.startedAt, null);
+  await own.request(adminOrderPath + '/ready-for-dispatch', { token: coordinator, body: {} });
+  const ready = await getTracking();
+  assert.ok(ready.timing.startedAt && ready.timing.dueAt);
+  assert.equal(ready.timing.stages.prepCompletedAt, ready.timing.startedAt);
+  assert.equal(Date.parse(ready.timing.dueAt) - Date.parse(ready.timing.startedAt), approved.estimatedMinutes! * 60_000);
+  assert.equal(ready.timing.source, 'VERIFIED_QUOTE');
+  assert.equal(turbo.payment.status, 'PENDIENTE');
+  await own.request(adminOrderPath + '/ready-for-dispatch', { token: coordinator, body: {} });
+  await own.stop();
+  await own.start(true);
+  const afterRestart = await getTracking();
+  assert.equal(afterRestart.timing.startedAt, ready.timing.startedAt);
+  assert.equal(afterRestart.timing.dueAt, ready.timing.dueAt);
+  own.verifyNoEgress();
+  console.log('PASS checkout con flota propia sin Cargo: cupo, pedido, visibilidad por sede y reloj desde Listo conservado tras reintento y reinicio.');
+} finally {
+  await own.dispose();
 }

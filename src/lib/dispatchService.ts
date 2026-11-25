@@ -16,6 +16,7 @@ import type {
 } from "../types/dispatch";
 import type { TransportConfig, TransportVehicle } from "../types/transport";
 import { planTransport } from "./transportPlanner";
+import { turboDeadline } from "./customerTracking";
 import { OrdersRepository } from "./ordersRepository";
 import type {
   DispatchProvider,
@@ -73,6 +74,7 @@ export interface DispatchDependencies {
   now?: () => number;
   providers?: DispatchProvider[];
   externalBudgetCOP?: number;
+  ownFleetOnly?: boolean;
   simulation?: boolean;
   holdDispatch?: (order: Order) => boolean;
   simulationVehicle?: (order: Order) => TransportVehicle | undefined;
@@ -687,6 +689,18 @@ export class DispatchService {
         )
       : Date.parse(order.originalPromiseWindow.end);
   }
+  private ownDeliveryWindow(order: Order, shipment: Order | ChildShipment) {
+    const readyAt = shipment.timestamps?.prepCompletedAt;
+    if (this.deps.ownFleetOnly && readyAt && (order.deliveryMode === 'TURBO' || order.deliveryMode === 'TURBO_DIVIDIDO')) {
+      const deadline = turboDeadline(order, readyAt);
+      const afterArrival = order.deliveryQuoteSnapshot?.afterArrivalAtWarehouseSeconds;
+      if (deadline && typeof afterArrival === 'number' && Number.isFinite(afterArrival) &&
+          afterArrival >= 0 && afterArrival <= deadline.estimatedMinutes * 60) {
+        return { end: Date.parse(deadline.dueAt), afterArrivalSeconds: afterArrival };
+      }
+    }
+    return { end: this.windowEnd(order), afterArrivalSeconds: Math.max(0, order.estimatedDeliveryMinutes * 60) };
+  }
   private windowAllows(order: Order, seconds: number) {
     return (
       this.now() +
@@ -746,8 +760,9 @@ export class DispatchService {
       )
         return;
       if (this.holdForPrescription(r, order, shipment)) return;
+      const window = this.ownDeliveryWindow(order, shipment);
       if (
-        this.now() >= this.windowEnd(order) ||
+        this.now() >= window.end ||
         (r.searchStartedAt !== undefined &&
           this.now() - r.searchStartedAt >=
             this.state.config.searchSeconds * 1000)
@@ -807,7 +822,7 @@ export class DispatchService {
               source: "HAVERSINE_ESTIMATE_NOT_ETA",
               observedAt: this.now(),
             };
-        if (valid && !this.windowAllows(order, estimate.seconds!)) continue;
+        if (valid && this.now() + (estimate.seconds! + window.afterArrivalSeconds) * 1000 > window.end) continue;
         candidates.push({ id: a.driverId, vehicle: c.vehicle, estimate });
       }
       // Only comparable route times are ordered as ETA. Geographic fallback makes no promise of minutes.
@@ -882,7 +897,7 @@ export class DispatchService {
       if (r !== this.state.runs[id] || r.status !== "SEARCHING") return;
       if (this.holdForPrescription(r, order, shipment)) return;
       if (
-        this.now() >= this.windowEnd(order) ||
+        this.now() >= window.end ||
         this.now() - r.searchStartedAt! >=
           this.state.config.searchSeconds * 1000
       ) {
@@ -1169,7 +1184,7 @@ export class DispatchService {
       if (
         !candidate ||
         shipment.fulfillmentStatus !== "LISTO_PARA_DESPACHO" ||
-        this.now() >= this.windowEnd(order)
+        this.now() >= this.ownDeliveryWindow(order, shipment).end
       )
         fail(
           "NO_LONGER_ELIGIBLE",
