@@ -2,6 +2,8 @@
 
 BOLT Despachos prioriza un vehículo propio apto y disponible. Cargo es un respaldo para Turbo y Turbo Dividido cuando la capacidad, el plazo y el presupuesto lo permiten. Programado sigue usando la flota propia y la sede territorial. El adaptador de producción usa exclusivamente el gateway oficial de Colombia y queda desactivado por defecto. [Documentación oficial de Cargo](https://cargo-docs.dev.rappi.com/api/) · [Ambientes](https://cargo-docs.dev.rappi.com/getting-started/environments)
 
+En el [modo exclusivo de flota propia](OPERACION-PWA.md#apertura-del-checkout-real), el servidor omite Cargo aunque encuentre credenciales en el entorno.
+
 ## Autorización de efectivo de Agrocentro
 
 Obtener del ejecutivo de Cargo la confirmación operativa del recaudo para la cuenta de Agrocentro en Colombia y la credencial de producción con acceso a validación, creación, estado y cancelación. Los correos anteriores contienen un borrador de convenio y acceso de desarrollo.

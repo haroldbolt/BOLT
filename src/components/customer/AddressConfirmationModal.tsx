@@ -630,7 +630,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                           </span>
                           <span className="text-xs font-black bg-yellow-400 text-red-950 px-2 py-0.5 rounded-md flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            Llega en aprox. {quote.estimatedMinutes} min
+                            Aprox. {quote.estimatedMinutes} min desde que esté listo
                           </span>
                         </>
                       )}
@@ -642,7 +642,7 @@ export const AddressConfirmationModal: React.FC<AddressConfirmationModalProps> =
                           </span>
                           <span className="text-xs font-black bg-yellow-400 text-red-950 px-2 py-0.5 rounded-md flex items-center gap-1">
                             <Clock className="w-3 h-3" />
-                            {quote.turboDividido?.shipmentCount} motos en simultáneo (~{quote.estimatedMinutes} min)
+                            {quote.turboDividido?.shipmentCount} entregas · aprox. {quote.estimatedMinutes} min desde que cada una esté lista
                           </span>
                         </>
                       )}

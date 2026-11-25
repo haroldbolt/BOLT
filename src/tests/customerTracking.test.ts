@@ -7,6 +7,8 @@ import type { ChildShipment, GPSTelemetry, Order, Store } from '../types';
 import type { DispatchRun } from '../types/dispatch';
 
 const started = Date.parse('2026-11-16T15:00:00.000Z');
+// Preparation can outlast the original checkout estimate.
+const confirmed = started - 30 * 60_000;
 const now = started + 5 * 60_000;
 const iso = (time: number) => new Date(time).toISOString();
 const store: Store = {
@@ -28,8 +30,8 @@ const fixtureOrder: Order = {
     address: 'Destino ficticio', details: '', porteriaPolicy: 'DEJAR_EN_PORTERIA',
     coordinates: { lat: 4.72, lng: -74.07 },
   },
-  timestamps: { confirmedAt: iso(started), pickedUpAt: iso(started + 60_000) },
-  originalPromiseWindow: { start: iso(started), end: iso(started + 20 * 60_000) },
+  timestamps: { confirmedAt: iso(confirmed), prepCompletedAt: iso(started), pickedUpAt: iso(started + 60_000) },
+  originalPromiseWindow: { start: iso(confirmed), end: iso(confirmed + 20 * 60_000) },
   estimatedDeliveryMinutes: 99,
   transportConfirmation: 'checkout-verified-quote',
   deliveryQuoteSnapshot: {
@@ -54,7 +56,7 @@ const point: GPSTelemetry = {
 };
 const fixture = { order: fixtureOrder, store, run, telemetry: point, now, simulation: false, maxAgeSeconds: 30 };
 
-test('a verified promise follows saved times across refreshes, overdue and delivery', () => {
+test('Turbo starts at the persisted ready time even after a long preparation and survives refresh, overdue and delivery', () => {
   const first = buildCustomerTracking(fixture);
   const refreshed = buildCustomerTracking({ ...fixture, now: now + 30_000 });
   assert.equal(first.timing.startedAt, iso(started));
@@ -81,6 +83,25 @@ test('a verified promise follows saved times across refreshes, overdue and deliv
   });
   assert.equal(formatDeliveryClock(390), '06:30');
   assert.equal(formatDeliveryClock(3661), '1:01:01');
+});
+
+test('Turbo confirmation and preparation never start the clock', () => {
+  for (const fulfillmentStatus of ['CONFIRMADO', 'EN_ALISTAMIENTO'] as const) {
+    const tracking = buildCustomerTracking({ ...fixture, order: {
+      ...fixtureOrder, fulfillmentStatus,
+      timestamps: { confirmedAt: iso(confirmed), prepStartedAt: iso(confirmed + 5000) },
+    } });
+    assert.equal(tracking.timing.startedAt, null);
+    assert.equal(tracking.timing.dueAt, null);
+    assert.equal(tracking.timing.source, null);
+    assert.equal(readDeliveryClock(tracking.timing, now).remainingSeconds, null);
+  }
+  const missingReady = buildCustomerTracking({ ...fixture, order: {
+    ...fixtureOrder, timestamps: { confirmedAt: iso(confirmed), pickedUpAt: iso(started + 60_000) },
+  } });
+  assert.equal(missingReady.timing.startedAt, null, 'a later operational state cannot invent a ready timestamp');
+  assert.equal(missingReady.timing.dueAt, null);
+  assert.equal(readDeliveryClock({ startedAt: null, dueAt: iso(now + 60_000), source: 'VERIFIED_QUOTE' }, now).remainingSeconds, null);
 });
 
 test('a legacy or pending order cannot borrow unverified start and countdown values', () => {
@@ -180,10 +201,21 @@ test('split-order selection does not expose a sibling GPS or PIN; hidden warehou
     ...child, shipmentId: 'shipment-b', shipmentIndex: 2, assignmentId: 'sibling-assignment',
     tripId: 'sibling-trip', secretDeliveryCode: 'PIN-B',
   };
-  const order: Order = { ...fixtureOrder, isSplitOrder: true, childShipments: [child, sibling] };
+  const order: Order = { ...fixtureOrder, deliveryMode: 'TURBO_DIVIDIDO', isSplitOrder: true, childShipments: [child, sibling] };
   const selectedRun = { ...run, shipmentId: child.shipmentId };
   const selectedPoint = { ...point, shipmentId: child.shipmentId };
   const both = buildCustomerTracking({ ...fixture, order, run: selectedRun, telemetry: selectedPoint });
+  assert.equal(both.timing.startedAt, null, 'the undifferentiated purchase cannot inherit the first shipment clock');
+  assert.equal(both.timing.dueAt, null);
+  const waitingSibling = buildCustomerTracking({ ...fixture, order, child: {
+    ...sibling, fulfillmentStatus: 'EN_ALISTAMIENTO', timestamps: { confirmedAt: iso(confirmed) },
+  } });
+  assert.equal(waitingSibling.timing.startedAt, null);
+  assert.equal(waitingSibling.timing.dueAt, null);
+  const siblingReady = buildCustomerTracking({ ...fixture, order, child: {
+    ...sibling, fulfillmentStatus: 'LISTO_PARA_DESPACHO', timestamps: { confirmedAt: iso(confirmed), prepCompletedAt: iso(now) },
+  } });
+  assert.equal(siblingReady.timing.dueAt, iso(now + 20 * 60_000));
   assert.equal(both.shipmentCount, 2);
   assert.equal(both.telemetry, null);
   assert.equal(both.secretDeliveryCode, undefined);

@@ -1,3 +1,4 @@
+import type { OrderUpdates } from './orderUpdates';
 import crypto from 'node:crypto';
 import express, { type Express, type Request, type Response } from 'express';
 import { INITIAL_ORDERS } from '../data/seedData';
@@ -54,6 +55,7 @@ function validPhotoEntries(value: unknown, gallery: string[]): value is PhotoEnt
 }
 
 type Options = {
+  orderUpdates: OrderUpdates;
   adminAuth: Pick<AdminAuthService, 'verifyStaffSession' | 'logout'>;
   catalog: Pick<CatalogOperations, 'edit' | 'getAuditLog'>;
   photos: Pick<CatalogRepository, 'getProductById' | 'applyImagePatches'>;
@@ -95,6 +97,10 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
     fulfillmentStatus: order.fulfillmentStatus,
     deliveryMode: order.deliveryMode,
     isSplitOrder: order.isSplitOrder,
+    childShipments: order.childShipments?.map(({ shipmentId, shipmentIndex, fulfillmentStatus, items }) => ({
+      shipmentId, shipmentIndex, fulfillmentStatus,
+      items: items.map(({ productId, name, presentation, quantity }) => ({ productId, name, presentation, quantity })),
+    })),
     scheduledWindow: order.scheduledWindow,
     deliveryReview: review && {
       status: review.status,
@@ -419,6 +425,16 @@ export function mountBoltAdmin(app: Express, options: Options) {
       period, stores, orders, catalog: options.getProducts(), runs: demo ? [] : options.getDispatchRuns(), demo,
       testOrders: demo ? allOrders : [],
     }));
+  });
+
+  app.get(base + '/orders/events', (req, res) => {
+    const actor = authorize(req, res);
+    if (!actor) return;
+    const store = selectStore(req, res, actor);
+    if (!store) return;
+    options.orderUpdates.stream(res, ({ order, previousStoreId }) =>
+      (order.storeId === store.id || previousStoreId === store.id) && isVisibleOrder(order),
+      () => !!getActor(req)?.storeIds.includes(store.id));
   });
 
   app.get(base + '/orders/:orderId', (req, res) => {

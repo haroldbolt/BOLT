@@ -212,6 +212,34 @@ async function verifyCustomerCheckout({ suba, kennedy, coordination }) {
   return { catalog, reserved, storeId };
 }
 
+async function createAndObserveSubaOrder(endpoint, checkout, suba, kennedy) {
+  const events = '/orders/events?storeId=HUB_SUBA';
+  await admin(events, { token: kennedy, expected: 403 });
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 5000);
+  try {
+    const stream = await fetch(origin + adminPath + events, {
+      headers: { Cookie: gatewayCookie, Authorization: 'Bearer ' + suba, Accept: 'text/event-stream' },
+      signal: controller.signal,
+    });
+    assert.equal(stream.status, 200);
+    assert.match(stream.headers.get('content-type'), /^text\/event-stream/);
+    const created = await api(endpoint, checkout);
+    const reader = stream.body.getReader();
+    const decoder = new TextDecoder();
+    let frames = '';
+    while (!frames.includes('data: changed\n\n')) {
+      const next = await reader.read();
+      assert.equal(next.done, false, 'El panel debe recibir el aviso antes de que el servidor cierre la conexión');
+      frames += decoder.decode(next.value, { stream: true });
+    }
+    return created;
+  } finally {
+    clearTimeout(timeout);
+    controller.abort();
+  }
+}
+
 async function verifyUnifiedNoChargeCheckout() {
   const endpoint = '/api/v1/simulation/customer-checkout';
   const gated = await fetch(origin + endpoint);
@@ -230,7 +258,7 @@ async function verifyUnifiedNoChargeCheckout() {
   const baseline = await admin('/sales?storeId=HUB_SUBA', { token: suba });
   const checkout = { method: 'POST', idempotency: crypto.randomUUID(), body: {} };
   await api(endpoint, { ...checkout, idempotency: 'bad-key', expected: 400 });
-  const { order, guestAccessToken, trackingPath } = await api(endpoint, checkout);
+  const { order, guestAccessToken, trackingPath } = await createAndObserveSubaOrder(endpoint, checkout, suba, kennedy);
   assert.equal(order.demoCustomerCheckout, true);
   assert.equal(order.payment.cashToCollect, 0);
   assert.equal(order.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');
@@ -265,6 +293,15 @@ async function verifyUnifiedNoChargeCheckout() {
   assert.equal(confirmed.fulfillmentStatus, 'CONFIRMADO');
   assert.equal(confirmed.payment.cashToCollect, 0);
   assert.equal((await admin(path + '/confirm', confirmation)).id, order.id);
+  await admin(path + '/demo-dispatch', { ...ops, expected: 409 });
+  await admin(path + '/start-preparation', { ...ops, token: kennedy, expected: 403 });
+  assert.equal((await admin(path + '/start-preparation', ops)).fulfillmentStatus, 'EN_ALISTAMIENTO');
+  await admin(path + '/demo-dispatch', { ...ops, expected: 409 });
+  await admin(path + '/ready-for-dispatch', { ...ops, token: kennedy, expected: 403 });
+  const ready = await admin(path + '/ready-for-dispatch', ops);
+  assert.equal(ready.fulfillmentStatus, 'LISTO_PARA_DESPACHO');
+  assert.ok(ready.timestamps.prepCompletedAt);
+  assert.equal((await admin(path + '/ready-for-dispatch', ops)).timestamps.prepCompletedAt, ready.timestamps.prepCompletedAt);
   const [first, retry] = await Promise.all([
     admin(path + '/demo-dispatch', ops),
     admin(path + '/demo-dispatch', ops),

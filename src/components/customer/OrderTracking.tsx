@@ -1,11 +1,11 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { ArrowLeft, Bike, Check, CircleHelp, Clock3, KeyRound, MapPin, MessageCircle, Phone, RefreshCw } from 'lucide-react';
+import { ArrowLeft, Bike, Check, CircleHelp, KeyRound, MapPin, MessageCircle, Phone, RefreshCw } from 'lucide-react';
 import type { FulfillmentStatus, Order } from '../../types';
 import type { CustomerTracking, TrackingStage } from '../../types/customerTracking';
 import type { PublicDispatch } from '../../lib/dispatchClient';
 import { BUSINESS } from '../../customer/legal';
 import { api } from '../../lib/api';
-import { formatDeliveryClock, readDeliveryClock } from '../../lib/customerTrackingTiming';
+import { OrderDeliveryTime } from './OrderDeliveryTime';
 import { formatCOP, formatTimeBogota } from '../../lib/formatters';
 import { pushService } from '../../lib/notifications';
 import { LiveDeliveryMap } from './LiveDeliveryMap';
@@ -18,14 +18,14 @@ interface OrderTrackingProps {
   guestOnly?: boolean;
   adminView?: boolean;
   onBack: () => void;
-  onViewSummary?: () => void;
+  onViewSummary?: (order: Order) => void;
 }
 
 type Snapshot = { order: Order; tracking: CustomerTracking; receivedAt: number };
 const headings: Record<FulfillmentStatus, string> = {
   PENDIENTE_CONFIRMACION: 'Recibimos tu solicitud',
   CONFIRMADO: 'Tu pedido está confirmado',
-  EN_ALISTAMIENTO: 'Estamos preparando tu pedido',
+  EN_ALISTAMIENTO: 'Preparando tu pedido…',
   LISTO_PARA_DESPACHO: 'Tu pedido está listo para recoger',
   REPARTIDOR_ASIGNADO: 'Ya tienes repartidor',
   EN_CAMINO: 'Tu pedido está en camino',
@@ -104,6 +104,9 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
 
   useEffect(() => {
     void load(true);
+    const unsubscribe = guestOnly && !adminView
+      ? api.subscribeOrderChanges(orderId, () => { if (document.visibilityState === 'visible') void load(true); })
+      : undefined;
     const refresh = window.setInterval(() => {
       if (document.visibilityState === 'visible') void load();
     }, 5000);
@@ -112,13 +115,15 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
     return () => {
       ++requestVersion.current;
       currentRequest.current = undefined;
+      unsubscribe?.();
       window.clearInterval(refresh);
       document.removeEventListener('visibilitychange', visibility);
     };
-  }, [load]);
+  }, [load, guestOnly, adminView, orderId]);
 
   useEffect(() => {
-    if (!snapshot || ['ENTREGADO', 'CANCELADO'].includes(snapshot.tracking.status)) return;
+    if (!snapshot || ['ENTREGADO', 'CANCELADO'].includes(snapshot.tracking.status) ||
+      (!snapshot.tracking.timing.startedAt && snapshot.tracking.status !== 'EN_CAMINO')) return;
     const tick = () => setNow(getClockTime(snapshot));
     const timer = window.setInterval(tick, 1000);
     document.addEventListener('visibilitychange', tick);
@@ -159,6 +164,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
   </Container>;
 
   if (!adminView && order.deliveryReview?.status === 'PENDING') return <PendingDeliveryReceipt order={order} onBack={onBack}
+    onViewSummary={onViewSummary && (() => onViewSummary(order))}
     onRefresh={() => void load(true)} onCancel={() => void cancel()} cancelling={cancelling} error={cancelError} />;
 
   const status = tracking?.status ?? child?.fulfillmentStatus ?? order.fulfillmentStatus;
@@ -167,10 +173,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
   const incident = status === 'CON_INCIDENCIA';
   const terminal = done || cancelled;
   const timing = tracking?.timing;
-  const clock = readDeliveryClock(timing, now, terminal ? (done ? timing?.stages.deliveredAt : timing?.stages.cancelledAt) ?? null : undefined);
-  const isScheduled = (tracking?.deliveryMode ?? order.deliveryMode) === 'PROGRAMADO';
-  const scheduled = timing?.source === 'BOOKED_WINDOW' ? tracking?.scheduledWindow : undefined;
-  const countdown = !terminal && !incident && !isScheduled && clock.remainingSeconds !== null && !clock.overdue;
+  const mode = tracking?.deliveryMode ?? order.deliveryMode;
   const dispatches: PublicDispatch[] = (order as Order & { dispatches?: PublicDispatch[] }).dispatches ?? [];
   const dispatch = dispatches.find(entry => entry.shipmentId === child?.shipmentId);
   const driver = tracking?.driver;
@@ -188,7 +191,6 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
   const recordedStep = stages.reduce((last, stage, index) => timing?.stages[stage.time] ? index : last, -1);
   const progress = Math.max(focusedStep, recordedStep);
   const handoffLabel = handoff[order.deliveryAddress.porteriaPolicy];
-  const showElapsed = !isScheduled && clock.elapsedSeconds !== null;
   const supportEmail = import.meta.env?.VITE_BOLT_SUPPORT_EMAIL || BUSINESS.email;
   const supportHref = /^\S+@\S+\.\S+$/.test(supportEmail) ? `mailto:${supportEmail}` : null;
 
@@ -198,7 +200,7 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
         <button type="button" className="inline-flex min-h-11 items-center gap-2 rounded-full px-3 text-sm font-semibold hover:bg-slate-100"
           onClick={onBack}><ArrowLeft className="size-4" aria-hidden="true" /> {adminView ? 'Volver a BOLT Admin' : 'Volver a la tienda'}</button>
         <div className="flex flex-wrap items-center gap-1.5 text-sm font-bold">
-          {onViewSummary && <button type="button" onClick={onViewSummary} className="min-h-11 rounded-full border border-slate-200 bg-white px-3">Resumen</button>}
+          {onViewSummary && <button type="button" onClick={() => onViewSummary(order)} className="min-h-11 rounded-full border border-slate-200 bg-white px-3">Resumen</button>}
           {!adminView && supportHref && <a className="inline-flex min-h-11 items-center gap-2 rounded-full border border-slate-200 bg-white px-3" href={supportHref}>
             <CircleHelp className="size-4" aria-hidden="true" /> Ayuda</a>}
         </div>
@@ -213,21 +215,9 @@ export function OrderTracking({ orderId, onBack, guestOnly = false, adminView = 
                 {order.demoCustomerCheckout ? 'Prueba sin cobro' : 'Simulación'}
               </span>}
             </div>
-            <h1 className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">{headings[status]}</h1>
+            <h1 aria-live="polite" className="text-2xl font-black leading-tight tracking-tight sm:text-3xl">{headings[status]}</h1>
             {dispatch?.code && shipments.length > 1 && <p className="mt-1 text-sm text-slate-600">Despacho {dispatch.code}</p>}
-            {countdown ? <div className="mt-4 flex items-center justify-between gap-3 rounded-2xl bg-red-700 px-4 py-3 text-white">
-              <div><p className="font-black">Turbo</p><p className="text-xs">Tiempo estimado restante</p></div>
-              <time className="text-3xl font-black tabular-nums" aria-label="Tiempo estimado restante" dateTime={`PT${clock.remainingSeconds}S`}>{formatDeliveryClock(clock.remainingSeconds!)}</time>
-            </div> : scheduled && !terminal ? <div className="mt-4 rounded-2xl bg-blue-50 px-4 py-3 text-sm text-blue-950">
-              <p className="font-bold">Entrega programada</p>
-              <p>{scheduled.dateLabel} · {scheduled.displayWindowShort || scheduled.displayWindow}</p>
-            </div> : !terminal && !incident ? <p className="mt-3 text-sm text-slate-700">
-              {isScheduled ? 'Franja de entrega por confirmar.' : clock.overdue ? 'El tiempo estimado ya pasó. Aquí puedes seguir el estado de la entrega.' : 'Hora de llegada por confirmar.'}
-            </p> : null}
-            {showElapsed && <p className="mt-2 flex items-center gap-1.5 text-sm text-slate-600">
-              <Clock3 className="size-4 shrink-0" aria-hidden="true" />
-              <span>{done ? 'Tiempo de entrega' : cancelled ? 'Tiempo hasta la cancelación' : 'Tiempo desde la confirmación'}: <span className="font-bold tabular-nums text-slate-900">{formatDeliveryClock(clock.elapsedSeconds!)}</span></span>
-            </p>}
+            <OrderDeliveryTime mode={mode} status={status} timing={timing} scheduledWindow={tracking?.scheduledWindow} now={now} />
             {loadError && <p role="status" className="mt-2 text-sm text-amber-900">No se pudo actualizar. Mostramos el último estado disponible.</p>}
           </section>
 

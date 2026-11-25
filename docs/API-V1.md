@@ -24,6 +24,10 @@ Guardar las credenciales de compra como secretos. Excluir de telemetría, enlace
 5. Si la cotización ofrece únicamente revisión, usar `requestDeliveryReview: true` y su `reviewRequestToken`. La solicitud queda pendiente de la sede, sin cobrar ni prometer entrega. Administración cotiza sobre esa orden y registra la aceptación del cliente antes de confirmarla. El piloto puede mantener el checkout completo cerrado mientras falta autorización de recaudo.
 6. Consultar `GET /orders/:orderId` y `GET /orders/:orderId/tracking` con la credencial apropiada. En una compra dividida, pasar `shipmentId` al seguimiento para identificar una entrega. La pantalla usa `timing.serverTime`, la ventana o estimación verificada y `locationStatus` (`LIVE`, `STALE`, `UNAVAILABLE` o `NOT_IN_TRANSIT`). La fecha de la última ubicación permite mostrar su antigüedad.
 
+El checkout abre el seguimiento privado en `/pedido/:orderId`. Cliente escucha `GET /orders/:orderId/events` con la misma credencial de la compra. Administración escucha `GET /bolt-admin/orders/events?storeId=…` con su sesión de sede. Ambos reciben avisos `text/event-stream` y vuelven a leer su vista autorizada al conectar, reconectar o recibir un cambio. Los avisos se emiten después de guardar y contienen únicamente `data: changed`.
+
+En Turbo, `timing.startedAt` y `dueAt` permanecen vacíos durante la preparación. Después de «Listo», el inicio es `prepCompletedAt` de esa entrega y el vencimiento usa la duración cotizada. Un reintento o recarga conserva ambos instantes. En una compra dividida cada entrega tiene su propio reloj. Programado muestra la franja reservada.
+
 ## Rutas por función
 
 Las rutas de la tabla son relativas a `/api/v1`. Los nombres de campos y métodos de cada acción están en sus manejadores enlazados.

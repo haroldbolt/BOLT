@@ -49,17 +49,19 @@ function bookedWindow(order: Order, startedAt: string) {
   return new Date(closing).toISOString();
 }
 
-function quoteDeadline(order: Order, startedAt: string) {
+export function turboDeadline(order: Order, readyAt: string) {
   const quote = order.deliveryQuoteSnapshot;
   const eta = quote?.estimatedMinutes;
   const deadline = dateMillis(order.originalPromiseWindow?.end);
   const windowStart = dateMillis(order.originalPromiseWindow?.start);
   if (!order.transportConfirmation || !quote?.quoteId || quote.assignedStoreId !== order.storeId ||
     !Number.isFinite(quote.totalSeconds) || quote.totalSeconds <= 0 || typeof eta !== 'number' ||
-    !Number.isFinite(eta) || eta <= 0 || !deadline || !windowStart || deadline <= Date.parse(startedAt)) return null;
+    !Number.isFinite(eta) || eta <= 0 || !deadline || !windowStart || deadline <= windowStart) return null;
   // The checkout derives the saved promise from this estimate. Allow rounding and writes across a clock tick.
   if (Math.abs(deadline - windowStart - eta * 60_000) > 10_000) return null;
-  return { dueAt: new Date(deadline).toISOString(), estimatedMinutes: eta };
+  // The quote fixes the duration. The warehouse readiness transition fixes the clock origin.
+  const due = new Date(Date.parse(readyAt) + eta * 60_000);
+  return Number.isFinite(due.getTime()) ? { dueAt: due.toISOString(), estimatedMinutes: eta } : null;
 }
 
 export function buildCustomerTracking({
@@ -91,15 +93,21 @@ export function buildCustomerTracking({
     cancelledAt: isoDate(tracked.timestamps?.cancelledAt, now),
   };
   const pending = order.deliveryReview?.status === 'PENDING' || tracked.fulfillmentStatus === 'PENDIENTE_CONFIRMACION';
-  const startedAt = pending ? null : isoDate(order.timestamps?.confirmedAt, now) ?? stages.confirmedAt;
+  const isSelectedShipment = !isSplitOrder || !!child;
+  const isTurbo = order.deliveryMode === 'TURBO' || order.deliveryMode === 'TURBO_DIVIDIDO';
+  const preparing = tracked.fulfillmentStatus === 'CONFIRMADO' || tracked.fulfillmentStatus === 'EN_ALISTAMIENTO';
+  const clockOrigin = isTurbo
+    ? (isSelectedShipment && !preparing ? stages.prepCompletedAt : null)
+    : isoDate(order.timestamps?.confirmedAt, now) ?? stages.confirmedAt;
+  const startedAt = pending ? null : clockOrigin;
   let dueAt: string | null = null;
   let source: CustomerTrackingTiming['source'] = null;
   let estimatedMinutes: number | undefined;
   if (startedAt && order.deliveryMode === 'PROGRAMADO') {
     dueAt = bookedWindow(order, startedAt);
     if (dueAt) source = 'BOOKED_WINDOW';
-  } else if (startedAt && (order.deliveryMode === 'TURBO' || order.deliveryMode === 'TURBO_DIVIDIDO')) {
-    const estimate = quoteDeadline(order, startedAt);
+  } else if (startedAt && isTurbo) {
+    const estimate = turboDeadline(order, startedAt);
     if (estimate) {
       source = 'VERIFIED_QUOTE';
       dueAt = estimate.dueAt;
@@ -108,7 +116,6 @@ export function buildCustomerTracking({
   }
 
   const shipmentId = child?.shipmentId;
-  const isSelectedShipment = !isSplitOrder || !!child;
   const isInTransit = isSelectedShipment && !pending && tracked.fulfillmentStatus === 'EN_CAMINO';
   const isMatchingRun = !!run && isSelectedShipment && run.id === tracked.assignmentId && run.orderId === order.id &&
     run.shipmentId === shipmentId && !!run.driverId && run.driverId === tracked.driver?.id;

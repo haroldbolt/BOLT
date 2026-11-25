@@ -1,3 +1,4 @@
+import { subscribeOrderChanges } from './orderUpdatesClient';
 import type {AddressSearchResult} from './addressSearch';
 import { backendAuthorization, backendFetch, backendUrl, isBoltSplitDeployment, splitCustomerAccountNotice } from './backendRequest';
 import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint } from '../types';
@@ -49,6 +50,11 @@ function authorizedFetch(url: string | URL, init: RequestInit = {}, guestOnly = 
 
 export const api = {
   saveOrderAccess,
+  subscribeOrderChanges(orderId: string, onChange: () => void) {
+    return subscribeOrderChanges(signal => authorizedFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}/events`, {
+      headers: { Accept: 'text/event-stream' }, cache: 'no-store', redirect: 'error', signal,
+    }, true), onChange);
+  },
   hasOrderAccess: (orderId: string) => !!guestOrderTokens()[orderId],
   async uploadEntrancePhoto(orderId:string,photoId:string,blob:Blob,destinationKey:string) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
