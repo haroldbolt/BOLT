@@ -12,7 +12,7 @@ Usa un solo servicio HTTPS para Cliente, Admin, Despachos y Conductor. Los tres 
 | `BOLT_PILOT_VOLUME` | `/data` |
 | `BOLT_REQUIRE_VOLUME_MOUNT` | `1` |
 | `BOLT_PILOT_STORE_IDS` | `HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA` |
-| `BOLT_ADMIN_SETUP_TOKEN` | Secreto de al menos 32 caracteres para el alta inicial de Coordinación |
+| `BOLT_ADMIN_INSTALLATION_ID` y `BOLT_ADMIN_CLOSED_RECEIPT` | Para un disco, alta cerrada o adopción fuera de línea según [el procedimiento R1](ADMIN-ALTA-Y-ROTACION.md). El alta web de un uso exige un control externo independiente. |
 
 Configura el arranque en los ajustes del servicio nuevo de Railway. El `railway.json` existente define el arranque de la demo. El volumen operativo guarda sus datos en `/data/bolt-operacion`. El lanzador rechaza los volúmenes de simulación y exige una migración explícita si el volumen contiene una instalación anterior exclusiva de Suba. Retira el bloqueo de escritura solo después de confirmar que la instancia anterior se detuvo. [Configuración de Railway](https://docs.railway.com/config-as-code) · [Healthchecks y volúmenes](https://docs.railway.com/deployments/healthchecks)
 

@@ -1,4 +1,4 @@
-node_modules/
+node_modules
 build/
 dist/
 coverage/
@@ -15,7 +15,8 @@ server.js
 .bolt-storage/
 
 # Instance data; never commit customer or administrative state
-src/data/persisted-*.json
+persisted-*.json
+.bolt-admin-volume.json
 
 # Private customer entrance images (never public catalog assets)
 **/private-entrance-photos/

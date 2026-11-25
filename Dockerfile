@@ -23,9 +23,9 @@ ENV NODE_ENV=production PORT=8080
 EXPOSE 8080
 
 FROM runtime AS production
-RUN install -d -m 0700 -o node -g node /data
+RUN install -d -m 0700 -o node -g node /data /admin-control
 USER node
-ENV BOLT_PILOT_VOLUME=/data BOLT_REQUIRE_VOLUME_MOUNT=1
+ENV BOLT_PILOT_VOLUME=/data BOLT_ADMIN_CONTROL_DIR=/admin-control BOLT_REQUIRE_VOLUME_MOUNT=1
 HEALTHCHECK --interval=30s --timeout=5s --start-period=90s \
   CMD node -e "fetch('http://127.0.0.1:' + process.env.PORT + '/api/v1/health', {signal:AbortSignal.timeout(3500)}).then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"
 CMD ["node", "--import", "tsx", "deployment/start-pilot.ts"]

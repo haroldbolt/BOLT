@@ -1,4 +1,5 @@
 import { subscribeOrderChanges } from './orderUpdatesClient';
+import { AdminRequestError, adminSetupState, type AdminSetupState } from './adminAccessStatus';
 import type {AddressSearchResult} from './addressSearch';
 import { backendAuthorization, backendFetch, backendUrl, isBoltSplitDeployment, splitCustomerAccountNotice } from './backendRequest';
 import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint } from '../types';
@@ -415,14 +416,15 @@ export const api = {
     }
   },
 
-  async getAuthStatus(): Promise<{ isSetupRequired: boolean; isAuthenticated: boolean; user?: any }> {
+  async getAuthStatus(signal?: AbortSignal): Promise<{ setupState: AdminSetupState; isSetupRequired: boolean; isAuthenticated: boolean; user?: any }> {
     const token = this.getStoredAdminToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await authorizedFetch(`${BASE_URL}/auth/status`, { headers });
-    if (!res.ok) throw new Error('Error al consultar estado de autenticación');
-    return await res.json();
+    const res = await authorizedFetch(`${BASE_URL}/auth/status`, { headers, signal });
+    const data = await res.json();
+    if (!res.ok) throw new AdminRequestError('No pudimos comprobar el acceso administrativo.', res.status, data?.code);
+    return { ...data, setupState: adminSetupState(data) };
   },
 
   async setupMasterAdmin(payload: { email: string; password: string; name: string }, setupToken: string): Promise<any> {
@@ -432,7 +434,7 @@ export const api = {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error al configurar administrador');
+    if (!res.ok) throw new AdminRequestError(data.error || 'Error al configurar administrador', res.status, data.code);
     if (data.token) {
       this.setStoredAdminToken(data.token);
     }
@@ -446,7 +448,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Credenciales inválidas');
+    if (!res.ok) throw new AdminRequestError(data.error || 'Credenciales inválidas', res.status, data.code);
     if (data.token) {
       this.setStoredAdminToken(data.token);
     }

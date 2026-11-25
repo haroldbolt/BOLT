@@ -1,3 +1,4 @@
+import { adminBootstrapFixture } from './adminBootstrapFixture.mjs';
 import fs from 'node:fs';import os from 'node:os';import path from 'node:path';import net from 'node:net';
 import {spawn,ChildProcess} from 'node:child_process';import {once} from 'node:events';import assert from 'node:assert/strict';
 const source=process.cwd(),root=fs.mkdtempSync(path.join(os.tmpdir(),'bolt-inventory-http-'));
@@ -7,7 +8,8 @@ fs.mkdirSync(path.join(root,'src/data/catalogo-local'));for(const name of ['prod
 const socket=net.createServer();socket.listen(0,'127.0.0.1');await once(socket,'listening');const port=(socket.address() as net.AddressInfo).port;socket.close();await once(socket,'close');
 const url=`http://127.0.0.1:${port}/api/v1`;let child:ChildProcess,logs='';
 async function req(route:string,method='GET',body?:any,token?:string,headers={}){const r=await fetch(url+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:'Bearer '+token}:{}),...headers},body:body?JSON.stringify(body):undefined});return {status:r.status,body:await r.json()};}
-async function start(){child=spawn(process.execPath,['--import',path.join(source,'node_modules/tsx/dist/loader.mjs'),path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:path.join(root,'orders'),BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});child.stdout?.on('data',b=>logs+=b);child.stderr?.on('data',b=>logs+=b);for(let i=0;i<100;i++){if(child.exitCode!==null)throw Error(logs);try{if((await req('/catalog')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Isolated server did not start');}
+const staffFixture = adminBootstrapFixture(root, 'inventory@example.invalid');
+async function start(){child=spawn(process.execPath,['--import',path.join(source,'node_modules/tsx/dist/loader.mjs'),path.join(source,'server.ts')],{cwd:root,env:{...process.env, ...staffFixture.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:path.join(root,'orders'),BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});child.stdout?.on('data',b=>logs+=b);child.stderr?.on('data',b=>logs+=b);for(let i=0;i<100;i++){if(child.exitCode!==null)throw Error(logs);try{if((await req('/catalog')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Isolated server did not start');}
 async function stop(){if(child?.exitCode===null){child.kill('SIGTERM');await once(child,'exit');}}
 try{
  await start();const payload={id:'http-plus5',delta:5,reason:'Ajuste manual autorizado de prueba aislada'};
@@ -28,7 +30,7 @@ try{
  assert.equal((await req('/auth/setup-admin','POST',{...credentials,name:[]},undefined,bootstrapHeaders)).status,400);
  assert.equal((await req('/auth/status')).body.isSetupRequired,true);
  const setup=await req('/auth/setup-admin','POST',credentials,undefined,bootstrapHeaders);assert.equal(setup.status,201);let token=setup.body.token;
- assert.equal((await req('/auth/setup-admin','POST',credentials,undefined,bootstrapHeaders)).status,400);
+ assert.equal((await req('/auth/setup-admin','POST',credentials,undefined,bootstrapHeaders)).status,409);
  assert.equal((await req('/auth/login','POST',{email:{value:credentials.email},password:credentials.password})).status,400);
  assert.equal((await req('/auth/login','POST',{email:credentials.email,password:[]})).status,400);
  assert.equal((await req('/auth/login','POST',credentials)).status,200);
@@ -48,4 +50,4 @@ try{
  await stop();await start();token=(await req('/auth/login','POST',{email:'inventory@example.invalid',password:'Isolated-inventory-test-83!'})).body.token;
  assert.deepEqual((await req('/admin/catalog','GET',undefined,token)).body,after);assert.equal((await req('/admin/catalog/batches/http-plus5','GET',undefined,token)).body.status,'COMPLETED');
  console.log('PASS HTTP manual inventory: session required, +5 only, backup/prepare, interrupted apply/resume, repeated request, admin/customer consistency, orders intact and restart persistence.');
-}finally{await stop();fs.rmSync(root,{recursive:true,force:true});}
+}finally{await stop();staffFixture.dispose(); fs.rmSync(root,{recursive:true,force:true});}

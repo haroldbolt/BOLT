@@ -1,3 +1,4 @@
+import { adminBootstrapFixture } from './adminBootstrapFixture.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -39,10 +40,11 @@ async function request(p:string,method='GET',body?:any,auth=admin,extra:any={}){
  const res=await fetch(base+p,{method,headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${auth}`} :{}),...extra},body:body===undefined?undefined:JSON.stringify(body)});
  const response=await res.json();return {status:res.status,data:response};
 }
+const staffFixture = adminBootstrapFixture(root, 'audit@example.invalid');
 async function start(){
  // The isolated audit recovers every historical state from one loopback address.
  // Rate-limit behavior itself is asserted in apiRateLimit.test.ts.
- child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_API_RATE_RECOVERY_PER_MINUTE:String(fixtures.length + 2),BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
+ child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env, ...staffFixture.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_API_RATE_RECOVERY_PER_MINUTE:String(fixtures.length + 2),BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
  child.stdout.on('data',(b:any)=>output+=b);child.stderr.on('data',(b:any)=>output+=b);
  for(let i=0;i<100;i++){if(child.exitCode!==null)throw Error('Isolated server exited');try{if((await request('/health','GET',undefined,'')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Isolated server failed readiness');
 }
@@ -179,4 +181,4 @@ try {
  evidence.preservation={...evidence.preservation,pricesStockReservationsCatalogHashUnchanged:true,historicalCommercialFieldsAndStatusesUnchanged:true,terminalOrdersNotReopened:true,registrationRetryIdempotent:true,restartPreservesCodesAssignmentsAndStates:true,unifiedFileCreated:fs.existsSync(path.join(data,'persisted-fulfillment.json'))};
  fs.writeFileSync(path.join(root,'evidence.json'),JSON.stringify(evidence,null,2));
  console.log('PASS integration HTTP: 9 historical states, register/conciliate/retry, missing custody evidence rollback, verified pickup source, assisted guest recovery open/closed, access denied, warehouse auth, privacy, commercial preservation and restart');
-} finally {await stop();fs.rmSync(root,{recursive:true,force:true});}
+} finally {await stop();staffFixture.dispose(); fs.rmSync(root,{recursive:true,force:true});}

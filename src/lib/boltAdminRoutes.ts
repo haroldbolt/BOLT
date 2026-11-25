@@ -34,6 +34,7 @@ type Actor = {
   canConfirm: boolean;
   canAdjustInventory: boolean;
   canAdjustPrices: boolean;
+  rotationRecommended?: boolean;
 };
 
 type PendingDeliveryAction = (req: Request, res: Response, order: Order, actor: Actor) => void;
@@ -256,6 +257,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     if (!coordinator && !stores.length) return null;
     return {
       id: staff.userId, name: staff.name, email: staff.email, role: coordinator ? 'COORDINACION' : 'SEDE',
+      ...(staff.rotationRecommended && { rotationRecommended: true }),
       storeIds: stores.map(store => store.id), canConfirm: true, canAdjustInventory: coordinator, canAdjustPrices: coordinator,
     };
   }

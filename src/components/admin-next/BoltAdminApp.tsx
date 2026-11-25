@@ -1,4 +1,5 @@
 import { isBoltSplitDeployment } from '../../lib/backendRequest';
+import { adminRecoveryMessage, adminRotationMessage, adminSignInFailure, adminStatusFailure, type AdminSetupState } from '../../lib/adminAccessStatus';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
@@ -111,32 +112,30 @@ export function BoltAdminApp() {
   const [password, setPassword] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [landing, setLanding] = useState(landingFromUrl);
-  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupState, setSetupState] = useState<AdminSetupState | null>(null);
+  const setupRequired = setupState === 'open';
   const [adminName, setAdminName] = useState('');
   const [setupToken, setSetupToken] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
-    setSession(null); setError('');
-    void boltAdmin.session(token, controller.signal).then(result => {
+    setSession(null); setSetupState(null); setError('');
+    void boltAdmin.session(token, controller.signal).then(async result => {
+      const state = result.mode === 'live' && !result.actor ? await boltAdmin.authStatus(controller.signal) : null;
       if (controller.signal.aborted) return;
       setSession(result);
+      setSetupState(state);
       if (!result.actor) storeAdminToken(null);
-    }).catch(error => { if (!controller.signal.aborted) setError(errorText(error)); });
+    }).catch(failure => {
+      if (controller.signal.aborted) return;
+      const status = adminStatusFailure(failure);
+      setSetupState(status.state); setError(status.message);
+    });
     return () => controller.abort();
   }, [token, attempt]);
 
-  useEffect(() => {
-    if (session?.mode !== 'live' || session.actor) return;
-    const controller = new AbortController();
-    void boltAdmin.authStatus(controller.signal).then(result => {
-      if (!controller.signal.aborted) setSetupRequired(result.isSetupRequired);
-    }).catch(() => {});
-    return () => controller.abort();
-  }, [session]);
-
   async function signIn(profileId?: string, destination = landing) {
-    if (busy) return;
+    if (busy || (!profileId && setupState !== 'closed' && setupState !== 'open')) return;
     setBusy(true); setError('');
     try {
       const next = profileId ? await boltAdmin.demoLogin(profileId)
@@ -145,7 +144,11 @@ export function BoltAdminApp() {
       if (session?.actor && token && token !== next.token) void boltAdmin.logout(token).catch(() => {});
       setLanding(destination);
       storeAdminToken(next.token); setSession(null); setToken(next.token); setPassword(''); setSetupToken('');
-    } catch (failure) { setError(errorText(failure)); }
+    } catch (failure) {
+      const status = await adminSignInFailure(failure, setupState, boltAdmin.authStatus);
+      setSetupState(status.state); setError(status.message);
+      if (status.state !== setupState) { setSetupToken(''); setPassword(''); }
+    }
     finally { setBusy(false); }
   }
 
@@ -164,7 +167,8 @@ export function BoltAdminApp() {
     <div className="ba-login-content">
       <Brand />
       <h1>Operación por sede</h1>
-      {!session && !error && <p className="ba-loading" role="status"><LoaderCircle size={18} className="ba-spin" />Comprobando el acceso…</p>}
+      {!session && !error && !setupState && <p className="ba-loading" role="status"><LoaderCircle size={18} className="ba-spin" />Comprobando el acceso…</p>}
+      {setupState === 'recovery-required' && <p className="ba-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{adminRecoveryMessage}</p>}
       {session?.mode === 'demo' && <>
         <p>Elige un perfil de prueba para consultar pedidos e inventario.</p>
         <div className="ba-profiles">
@@ -173,8 +177,8 @@ export function BoltAdminApp() {
             <span><strong>{profile.name}</strong><small>{profile.role === 'COORDINACION' ? 'Todas las sedes' : 'Acceso de sede'}</small></span><ArrowRight size={16} /></button>)}
         </div>
       </>}
-      {session?.mode === 'live' && <form onSubmit={event => { event.preventDefault(); void signIn(); }} className="ba-login-form">
-        <p>{setupRequired ? 'Configura la primera cuenta administrativa de esta instalación.' : 'Ingresa con tu cuenta administrativa.'}</p>
+      {session?.mode === 'live' && (setupRequired || setupState === 'closed') && <form onSubmit={event => { event.preventDefault(); void signIn(); }} className="ba-login-form">
+        <p>{setupRequired ? 'Usa el correo autorizado y el código de instalación para crear la primera cuenta.' : 'Ingresa con tu cuenta administrativa.'}</p>
         {setupRequired && <label className="ba-field">Nombre<input autoComplete="name" required value={adminName} onChange={event => setAdminName(event.target.value)} /></label>}
         <label className="ba-field">Correo<input type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} /></label>
         <label className="ba-field">Contraseña<input type="password" autoComplete={setupRequired ? 'new-password' : 'current-password'} minLength={setupRequired ? 8 : undefined} required value={password} onChange={event => setPassword(event.target.value)} /></label>
@@ -182,7 +186,7 @@ export function BoltAdminApp() {
         <button className="ba-btn ba-btn-primary" disabled={busy}>{busy ? 'Validando…' : setupRequired ? 'Configurar administrador' : 'Ingresar'}</button>
       </form>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
-      {!session && error && <button className="ba-btn ba-btn-secondary" type="button" onClick={() => setAttempt(n => n + 1)}>Reintentar</button>}
+      {((!setupState && error && session?.mode !== 'demo') || setupState === 'recovery-required') && <button className="ba-btn ba-btn-secondary" type="button" onClick={() => setAttempt(n => n + 1)}>Volver a comprobar</button>}
       {!isBoltSplitDeployment() && <a className="ba-text-link" href="/"><ArrowLeft size={15} /> BOLT Cliente</a>}
     </div>
   </main>;
@@ -472,6 +476,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
       <main className="ba-content">
         {notice && <div className="ba-notice" role="status"><CheckCircle2 size={18} /><span>{notice}</span><button className="ba-icon-btn" type="button" aria-label="Cerrar aviso" onClick={() => setNotice('')}><X size={16} /></button></div>}
         {requestedStoreUnavailable && <p className="ba-info"><ShieldCheck size={16} aria-hidden="true" /> La sede del enlace no está asignada a este perfil.</p>}
+        {!isDemo && actor.rotationRecommended === true && <p className="ba-info" role="status"><ShieldCheck size={16} aria-hidden="true" />{adminRotationMessage}</p>}
         {sessionError && <p className="ba-error" role="alert"><CircleAlert size={16} />{sessionError}</p>}
 
         {tab === 'home' && <>

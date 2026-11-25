@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { execFile, spawn } from 'node:child_process';
-import { randomBytes } from 'node:crypto';
+import { randomBytes, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs/promises';
 import net from 'node:net';
@@ -9,6 +9,8 @@ import path from 'node:path';
 import { test } from 'node:test';
 import { promisify } from 'node:util';
 import { setTimeout as delay } from 'node:timers/promises';
+
+import { adminBootstrapFixture, establishFixtureAdmin } from '../src/tests/adminBootstrapFixture.mjs';
 
 const source = path.resolve(import.meta.dirname, '..');
 
@@ -23,11 +25,16 @@ test('built server starts twice with the pilot launcher, durable files and no si
   await once(socket, 'close');
   const origin = 'http://127.0.0.1:' + port;
   const get = name => fetch(origin + name, { signal: AbortSignal.timeout(3000) });
+  const runtime = path.join(volume, 'bolt-operacion');
+  const adminEmail = randomUUID() + '@example.invalid';
+  const password = randomBytes(32).toString('hex');
+  const bootstrap = adminBootstrapFixture(volume, adminEmail, runtime);
+  t.after(bootstrap.dispose);
   const env = {
+    ...bootstrap.env,
     PATH: process.env.PATH, NODE_ENV: 'production', PORT: String(port),
     BOLT_PILOT_VOLUME: volume, BOLT_PILOT_STORE_IDS: 'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA',
     BOLT_BIND_LOOPBACK_ONLY: '1',
-    BOLT_ADMIN_SETUP_TOKEN: randomBytes(32).toString('hex'),
   };
   let child;
   async function stop() {
@@ -40,7 +47,6 @@ test('built server starts twice with the pilot launcher, durable files and no si
   t.after(async () => {
     try { await stop(); } finally { await fs.rm(volume, { recursive: true, force: true }); }
   });
-  const runtime = path.join(volume, 'bolt-operacion');
   const fixture = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+jksQAAAAASUVORK5CYII=', 'base64');
   let persisted;
   for (let run = 0; run < 2; run++) {
@@ -60,10 +66,14 @@ test('built server starts twice with the pilot launcher, durable files and no si
     assert.match(await (await get('/')).text(), /<html/);
     assert.match(await (await get('/admin/nuevo/')).text(), /BOLT Admin/);
     if (!run) {
+      assert.equal((await (await get('/api/v1/auth/status')).json()).setupState, 'open');
+      await establishFixtureAdmin(origin, adminEmail, password, bootstrap.env.BOLT_ADMIN_SETUP_TOKEN);
+      delete env.BOLT_ADMIN_SETUP_TOKEN;
       const images = path.join(runtime, 'public/uploads/catalog');
       await fs.mkdir(images, { recursive: true });
       await fs.writeFile(path.join(images, 'fixture.png'), fixture);
     }
+    assert.equal((await (await get('/api/v1/auth/status')).json()).setupState, 'closed');
     const image = await get('/uploads/catalog/fixture.png');
     assert.equal(image.headers.get('content-type'), 'image/png');
     assert.deepEqual(Buffer.from(await image.arrayBuffer()), fixture);
