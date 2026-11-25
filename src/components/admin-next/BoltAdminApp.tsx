@@ -728,8 +728,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
-  const canPrepare = !order.demoReadOnly && actor.canConfirm && !order.isSplitOrder;
-  const startingPreparation = order.fulfillmentStatus === 'CONFIRMADO';
+  const canPrepare = !order.demoReadOnly && actor.canConfirm;
   const canOpenDispatch = isDemo ? !!order.dispatch || (!!order.demoCustomerCheckout && !isClosed(order))
     : !!order.dispatch || (!isPending(order) && !isClosed(order));
   const cashToCollect = order.payment?.cashToCollect ?? 0;
@@ -737,20 +736,26 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
     heading.current?.focus({ preventScroll: true });
     if (window.matchMedia('(max-width: 1050px)').matches) heading.current?.scrollIntoView({ block: 'start' });
   }, []);
-  const prepare = async () => {
+  const prepare = async (status: FulfillmentStatus, shipmentId?: string) => {
     if (preparing) return;
     setPreparing(true); setError('');
     try {
-      if (startingPreparation) {
-        const result = await boltAdmin.startPreparation(token, order.id);
-        changed(result, 'Alistamiento iniciado. El pedido está en preparación.');
+      if (status === 'CONFIRMADO') {
+        const result = await boltAdmin.startPreparation(token, order.id, shipmentId);
+        changed(result, 'Alistamiento iniciado.');
       } else {
-        const result = await boltAdmin.readyForDispatch(token, order.id);
-        changed(result, 'Pedido listo para despacho. Consulta su asignación en Despachos.');
+        const result = await boltAdmin.readyForDispatch(token, order.id, shipmentId);
+        changed(result, shipmentId ? 'Entrega lista para despacho.' : 'Pedido listo para despacho. Consulta su asignación en Despachos.');
       }
     } catch (failure) { setError(errorText(failure)); }
     finally { setPreparing(false); }
   };
+  function preparationButton(status: FulfillmentStatus, shipmentId?: string) {
+    if (!canPrepare || (status !== 'CONFIRMADO' && status !== 'EN_ALISTAMIENTO')) return null;
+    return <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare(status, shipmentId)}>
+      {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} {status === 'CONFIRMADO' ? 'Iniciar alistamiento' : 'Marcar listo para despacho'}
+    </button>;
+  }
   return <section className="ba-panel ba-order-detail" aria-label="Detalle del pedido">
     <div className="ba-panel-head"><div><p>Detalle del pedido</p><h2 ref={heading} tabIndex={-1}>{orderLabel(order)}</h2></div><button className="ba-icon-btn" type="button" aria-label="Cerrar detalle del pedido" onClick={close}><X size={19} /></button></div>
     <div className="ba-order-body">
@@ -771,9 +776,11 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
       {!order.demoReadOnly && isPending(order) && (actor.canConfirm ? <DeliveryReviewPanel order={order} token={token} isDemo={isDemo}
         onConfirmed={result => changed(result, 'Entrega confirmada. Puedes consultar el nuevo estado del pedido.')} />
         : <p className="ba-info"><ShieldCheck size={16} /> Tu perfil no puede confirmar entregas.</p>)}
-      {canPrepare && (startingPreparation || order.fulfillmentStatus === 'EN_ALISTAMIENTO') && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
-        {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} {startingPreparation ? 'Iniciar alistamiento' : 'Marcar listo para despacho'}
-      </button>}
+      {order.isSplitOrder ? order.childShipments?.map(child => <section key={child.shipmentId} className="ba-order-items" aria-label={`Entrega ${child.shipmentIndex}`}>
+        <h3>Entrega {child.shipmentIndex}</h3><Status status={child.fulfillmentStatus} />
+        <ul>{child.items.map(item => <li key={`${item.productId}:${item.presentation}`}><span>{item.name}<small>{item.presentation}</small></span><strong>×{number.format(item.quantity)}</strong></li>)}</ul>
+        {preparationButton(child.fulfillmentStatus, child.shipmentId)}
+      </section>) : preparationButton(order.fulfillmentStatus)}
       {(!isDemo || order.demoCustomerCheckout) && order.items.length === 1 && !isClosed(order) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
       {canOpenDispatch && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewDispatch}><Truck size={16} aria-hidden="true" /> Ver despacho</button>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}

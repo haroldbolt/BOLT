@@ -26,7 +26,7 @@ const source = fileURLToPath(new URL('../../', import.meta.url));
 type RequestOptions = { method?: string; body?: unknown; token?: string; key?: string; guest?: string; status?: number };
 
 /** Empty temporary installation using the Express checkout and real auth, without demo orders or dispatch shortcuts. */
-export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean; ownFleetOnly?: boolean } = {}) {
+export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean; ownFleetOnly?: boolean; splitSuba?: boolean } = {}) {
   const socket = net.createServer();
   socket.listen(0, '127.0.0.1');
   await once(socket, 'listening');
@@ -39,6 +39,9 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
   const localData = path.join(runtime, 'src/data');
   const egressLog = path.join(runtime, 'egress.log');
   const cargoLog = path.join(runtime, 'cargo-fixture.log');
+  const fleet = testStores.flatMap(store => fixtureDrivers.filter(driver =>
+    driver.id === 'SIM-' + store.id + '-1' || (options.splitSuba && store.id === 'HUB_SUBA' && driver.id === 'SIM-HUB_SUBA-2'),
+  ).map(driver => ({ store, driver })));
   const adminCredentials = { email: 'coordination@rdi.invalid', password: randomUUID() };
   let child: ChildProcess | undefined;
 
@@ -108,15 +111,14 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
   const login = async () => (await request<{ token: string }>('/auth/login', { body: adminCredentials })).token;
   async function registerFleet(admin: string) {
     const tokens = new Map<string, string>();
-    for (const store of testStores) {
-      const driver = fixtureDrivers.find(d => d.id === 'SIM-' + store.id + '-1')!;
-      const credentials = { email: store.id.toLowerCase() + '@rdi.invalid', password: randomUUID() };
+    for (const { store, driver } of fleet) {
+      const credentials = { email: driver.id.toLowerCase() + '@rdi.invalid', password: randomUUID() };
       await request('/admin/dispatch/drivers', { token: admin, body: { driver, ...credentials, storeIds: [store.id] } });
       const { token } = await request<{token: string}>('/driver/auth/login', { body: credentials });
       await request('/driver/shift', { token, body: { action: 'START' } });
       const { lat, lng } = store.destination.coordinates;
       await request('/driver/location', { token, body: { latitude: lat, longitude: lng, accuracy: 8, timestamp: Date.now() } });
-      tokens.set(store.id, token);
+      if (!tokens.has(store.id)) tokens.set(store.id, token);
     }
     return tokens;
   }
@@ -132,7 +134,10 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     fs.symlinkSync(fs.realpathSync(path.join(source, 'node_modules')), path.join(runtime, 'node_modules'), 'dir');
     new FulfillmentStorage(dataDir).commit({ orders: [], drivers: [], audit: [], telemetry: {}, dispatch: newDispatchState() });
     const config = fixtureConfig();
-    config.vehicles = config.vehicles.filter(v => storeIds.some(id => v.driverId === 'SIM-' + id + '-1'));
+    config.vehicles = config.vehicles.filter(v => fleet.some(({driver}) => v.driverId === driver.id));
+    if (options.splitSuba) {
+      for (const vehicle of config.vehicles.filter(v => v.storeIds.includes('HUB_SUBA'))) vehicle.maxLoadGrams = 2_000;
+    }
     fs.writeFileSync(path.join(privateDir, 'transport-config.json'), JSON.stringify({ config, revision: 'rdi-fixture-only', audit: [] }));
     const product = {
       ...fixtureProduct(testSku, 1_000), name: 'Alimento de prueba RDI', price: testPrice, bodegaIds: storeIds,

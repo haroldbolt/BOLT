@@ -138,6 +138,10 @@ try {
     }
   }
   await assertPanels();
+  const [first, other] = results;
+  const privateEvents = '/orders/' + first.order.id + '/events';
+  await request(privateEvents, { status: 403 });
+  await request(privateEvents, { guest: other.order.guestAccessToken, status: 403 });
   assert.equal(new Set(results.map(r => r.order.purchaseCode)).size, 6);
   await fixture.stop();
   await fixture.start(true);

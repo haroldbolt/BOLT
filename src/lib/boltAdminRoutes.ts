@@ -97,6 +97,10 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
     fulfillmentStatus: order.fulfillmentStatus,
     deliveryMode: order.deliveryMode,
     isSplitOrder: order.isSplitOrder,
+    childShipments: order.childShipments?.map(({ shipmentId, shipmentIndex, fulfillmentStatus, items }) => ({
+      shipmentId, shipmentIndex, fulfillmentStatus,
+      items: items.map(({ productId, name, presentation, quantity }) => ({ productId, name, presentation, quantity })),
+    })),
     scheduledWindow: order.scheduledWindow,
     deliveryReview: review && {
       status: review.status,

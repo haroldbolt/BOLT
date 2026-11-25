@@ -973,19 +973,21 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     confirmPendingDelivery(req,res,ordersRepository.getOrderById(req.params.orderId),{id:userId,name,role:'ADMINISTRADOR'});
   });
   const updatePreparation = (res: Response, order: Order, actor: ReviewActor,
-    target: 'EN_ALISTAMIENTO' | 'LISTO_PARA_DESPACHO', current: 'CONFIRMADO' | 'EN_ALISTAMIENTO', reason: string) => {
-    if (order.isSplitOrder && order.childShipments?.length) {
-      return res.status(409).json({error:'Gestiona el alistamiento por entrega en Despachos.'});
-    }
-    if (order.fulfillmentStatus === target || (target === 'LISTO_PARA_DESPACHO' && order.timestamps.prepCompletedAt)) {
+    target: 'EN_ALISTAMIENTO' | 'LISTO_PARA_DESPACHO', current: 'CONFIRMADO' | 'EN_ALISTAMIENTO', reason: string, shipmentId?: unknown) => {
+    const child = order.isSplitOrder && typeof shipmentId === 'string'
+      ? order.childShipments?.find(item => item.shipmentId === shipmentId) : undefined;
+    if (shipmentId !== undefined && !child) return res.status(404).json({error:'Entrega no encontrada en este pedido.'});
+    if (order.isSplitOrder && !child) return res.status(409).json({error:'Selecciona la entrega que quieres preparar.'});
+    const preparing = child ?? order;
+    if (preparing.fulfillmentStatus === target || (target === 'LISTO_PARA_DESPACHO' && preparing.timestamps.prepCompletedAt)) {
       return res.json(boltAdminOrder(order));
     }
-    if (order.fulfillmentStatus !== current) {
+    if (preparing.fulfillmentStatus !== current) {
       return res.status(409).json({error: target === 'EN_ALISTAMIENTO'
         ? 'Solo se puede iniciar el alistamiento de un pedido confirmado.'
         : 'Inicia el alistamiento antes de marcar el pedido listo para despacho.'});
     }
-    const result = ordersRepository.transaction(() => ordersRepository.transitionStatus(order.id, target, actor, {reason}));
+    const result = ordersRepository.transaction(() => ordersRepository.transitionStatus(order.id, target, actor, {reason, shipmentId: child?.shipmentId}));
     if (!result.success || !result.order) return res.status(result.code || 409).json({error:result.error || 'No se pudo actualizar el alistamiento.'});
     return res.json(boltAdminOrder(result.order));
   };
@@ -1011,12 +1013,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     confirm:(req,res,order,actor)=>confirmPendingDelivery(req,res,order,{
       id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
     },boltAdminOrder),
-    startPreparation:(_req,res,order,actor)=>updatePreparation(res, order, {
+    startPreparation:(req,res,order,actor)=>updatePreparation(res, order, {
       id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
-    }, 'EN_ALISTAMIENTO', 'CONFIRMADO', 'Alistamiento iniciado desde BOLT Admin'),
-    readyForDispatch:(_req,res,order,actor)=>updatePreparation(res, order, {
+    }, 'EN_ALISTAMIENTO', 'CONFIRMADO', 'Alistamiento iniciado desde BOLT Admin', req.body?.shipmentId),
+    readyForDispatch:(req,res,order,actor)=>updatePreparation(res, order, {
       id:actor.id,name:actor.name,role:actor.role==='SEDE'?'BODEGA':'ADMINISTRADOR',
-    }, 'LISTO_PARA_DESPACHO', 'EN_ALISTAMIENTO', 'Pedido preparado desde BOLT Admin'),
+    }, 'LISTO_PARA_DESPACHO', 'EN_ALISTAMIENTO', 'Pedido preparado desde BOLT Admin', req.body?.shipmentId),
     demo:isDispatchSimulation ? {
       productId:BOLT_ADMIN_DEMO_PRODUCT_ID,
       editCatalog:process.env.BOLT_DEMO_EDIT_CATALOG === '1',
