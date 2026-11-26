@@ -1,6 +1,9 @@
-import React, { useState, useEffect } from 'react';
-import { Lock, ShieldCheck, Mail, KeyRound, User, AlertCircle, CheckCircle2, X } from 'lucide-react';
+import React, { useId, useState, useEffect } from 'react';
+import { Lock, ShieldCheck, Mail, KeyRound, User, AlertCircle, X } from 'lucide-react';
 import { api } from '../../lib/api';
+import { adminRecoveryMessage, adminRotationMessage, adminSignInFailure, adminStatusFailure, type AdminSetupState } from '../../lib/adminAccessStatus';
+
+type AdminModalUser = { id: string; name: string; rotationRecommended?: boolean };
 
 interface AdminAuthModalProps {
   isOpen: boolean;
@@ -13,7 +16,11 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   onClose,
   onAuthenticated,
 }) => {
-  const [isSetup, setIsSetup] = useState(false);
+  const formId = useId();
+  const [setupState, setSetupState] = useState<AdminSetupState | null>(null);
+  const isSetup = setupState === 'open';
+  const [statusAttempt, setStatusAttempt] = useState(0);
+  const [rotationUser, setRotationUser] = useState<AdminModalUser | null>(null);
   const [loading, setLoading] = useState(true);
   const [submitting, setSubmitting] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -25,36 +32,37 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
   const [name, setName] = useState('');
   const [setupToken, setSetupToken] = useState('');
 
-  useEffect(() => {
-    if (isOpen) {
-      checkAuthStatus();
+  const finishAuthentication = (user: AdminModalUser) => {
+    if (user.rotationRecommended === true) {
+      setRotationUser(user);
     } else {
-      setSetupToken('');
-    }
-  }, [isOpen]);
-
-  const checkAuthStatus = async () => {
-    setLoading(true);
-    setError(null);
-    try {
-      const status = await api.getAuthStatus();
-      if (status.isAuthenticated && status.user) {
-        onAuthenticated(status.user);
-        onClose();
-        return;
-      }
-      setIsSetup(status.isSetupRequired);
-    } catch (err: any) {
-      console.warn('Error checking auth status:', err);
-    } finally {
-      setLoading(false);
+      onAuthenticated(user);
+      onClose();
     }
   };
+
+  useEffect(() => {
+    setLoading(true); setSetupState(null); setError(null); setRotationUser(null);
+    setSetupToken(''); setPassword(''); setConfirmPassword('');
+    if (!isOpen) return;
+    const controller = new AbortController();
+    void api.getAuthStatus(controller.signal).then(status => {
+      if (controller.signal.aborted) return;
+      setSetupState(status.setupState);
+      if (status.setupState === 'closed' && status.isAuthenticated && status.user) finishAuthentication(status.user);
+    }).catch(failure => {
+      if (controller.signal.aborted) return;
+      const status = adminStatusFailure(failure);
+      setSetupState(status.state); setError(status.message);
+    }).finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [isOpen, statusAttempt]);
 
   if (!isOpen) return null;
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    if (submitting || (setupState !== 'closed' && !isSetup)) return;
     setError(null);
     setSubmitting(true);
 
@@ -80,18 +88,18 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
           password,
           name: name.trim(),
         }, setupToken.trim());
-        onAuthenticated(res.user);
-        onClose();
+        finishAuthentication(res.user);
       } else {
         if (!email.trim() || !password) {
           throw new Error('Ingresa tu correo y contraseña.');
         }
         const res = await api.loginAdmin(email.trim(), password);
-        onAuthenticated(res.user);
-        onClose();
+        finishAuthentication(res.user);
       }
-    } catch (err: any) {
-      setError(err.message || 'Error de autenticación');
+    } catch (failure) {
+      const status = await adminSignInFailure(failure, setupState, async () => (await api.getAuthStatus()).setupState);
+      setSetupState(status.state); setError(status.message);
+      if (status.state !== setupState) { setSetupToken(''); setPassword(''); setConfirmPassword(''); }
     } finally {
       setSubmitting(false);
     }
@@ -104,6 +112,7 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
         <div className="bg-gradient-to-r from-slate-900 via-slate-800 to-slate-900 p-6 text-white relative">
           <button
             onClick={onClose}
+            aria-label="Cerrar acceso administrativo"
             className="absolute top-4 right-4 text-slate-400 hover:text-white p-1 rounded-full hover:bg-slate-800 transition"
           >
             <X className="w-5 h-5" />
@@ -118,8 +127,8 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               </h2>
               <p className="text-xs text-slate-400">
                 {isSetup
-                  ? 'Ingresa el código de instalación y crea tu cuenta administrativa'
-                  : 'Ingresa con tu sesión administrativa verificada por el servidor'}
+                  ? 'Usa el correo autorizado y el código de instalación para crear la primera cuenta.'
+                  : setupState === 'closed' && !rotationUser ? 'Ingresa con tu cuenta administrativa.' : null}
               </p>
             </div>
           </div>
@@ -132,10 +141,20 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               <div className="w-8 h-8 border-3 border-red-600 border-t-transparent rounded-full animate-spin"></div>
               <p className="text-xs font-semibold">Verificando seguridad del servidor...</p>
             </div>
+          ) : rotationUser ? (
+            <div className="space-y-4">
+              <p role="status">{adminRotationMessage}</p>
+              <button type="button" className="font-bold text-red-700" onClick={() => { onAuthenticated(rotationUser); onClose(); }}>Continuar</button>
+            </div>
+          ) : setupState === 'recovery-required' || !setupState ? (
+            <div className="space-y-4">
+              <p role="alert">{setupState === 'recovery-required' ? adminRecoveryMessage : error}</p>
+              <button type="button" className="font-bold text-red-700" onClick={() => setStatusAttempt(value => value + 1)}>Volver a comprobar</button>
+            </div>
           ) : (
             <form onSubmit={handleSubmit} className="space-y-4">
               {error && (
-                <div className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-2xl flex items-start gap-2.5 text-xs">
+                <div role="alert" className="bg-rose-50 border border-rose-200 text-rose-800 p-3.5 rounded-2xl flex items-start gap-2.5 text-xs">
                   <AlertCircle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5" />
                   <span>{error}</span>
                 </div>
@@ -143,16 +162,17 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
               {isSetup && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor={formId + '-name'} className="block text-xs font-bold text-slate-700 mb-1.5">
                     Nombre completo del Administrador
                   </label>
                   <div className="relative">
                     <User className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
+                      id={formId + '-name'}
                       type="text"
                       value={name}
                       onChange={e => setName(e.target.value)}
-                      placeholder="Ej. Juan Pérez"
+                      autoComplete="name"
                       required
                       className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-600 focus:bg-white font-medium"
                     />
@@ -161,16 +181,17 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               )}
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor={formId + '-email'} className="block text-xs font-bold text-slate-700 mb-1.5">
                   Correo Electrónico
                 </label>
                 <div className="relative">
                   <Mail className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
+                    id={formId + '-email'}
                     type="email"
                     value={email}
                     onChange={e => setEmail(e.target.value)}
-                    placeholder="admin@bolt.pet"
+                    autoComplete="username"
                     required
                     className="w-full pl-10 pr-4 py-2.5 bg-slate-50 border border-slate-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-red-600 focus:bg-white font-medium"
                   />
@@ -178,13 +199,15 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
               </div>
 
               <div>
-                <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                <label htmlFor={formId + '-password'} className="block text-xs font-bold text-slate-700 mb-1.5">
                   Contraseña {isSetup && <span className="text-slate-400 font-normal">(mínimo 8 caracteres)</span>}
                 </label>
                 <div className="relative">
                   <KeyRound className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                   <input
+                    id={formId + '-password'}
                     type="password"
+                    autoComplete={isSetup ? 'new-password' : 'current-password'}
                     value={password}
                     onChange={e => setPassword(e.target.value)}
                     placeholder="••••••••••••"
@@ -196,13 +219,15 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
 
               {isSetup && (
                 <div>
-                  <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                  <label htmlFor={formId + '-confirm'} className="block text-xs font-bold text-slate-700 mb-1.5">
                     Confirmar Contraseña
                   </label>
                   <div className="relative">
                     <Lock className="w-4 h-4 text-slate-400 absolute left-3.5 top-3" />
                     <input
+                      id={formId + '-confirm'}
                       type="password"
+                      autoComplete="new-password"
                       value={confirmPassword}
                       onChange={e => setConfirmPassword(e.target.value)}
                       placeholder="••••••••••••"
@@ -226,16 +251,6 @@ export const AdminAuthModal: React.FC<AdminAuthModalProps> = ({
                   />
                 </label>
               )}
-
-              <div className="bg-slate-50 p-3 rounded-2xl border border-slate-100 text-[11px] text-slate-500 space-y-1">
-                <div className="flex items-center gap-1.5 font-bold text-slate-700">
-                  <ShieldCheck className="w-3.5 h-3.5 text-emerald-600" />
-                  <span>Seguridad estricta en servidor</span>
-                </div>
-                <p>
-                  Las contraseñas se almacenan con hashing PBKDF2 y salting aleatorio. El servidor exige un Bearer token criptográfico para autorizar cualquier cambio de precios, inventario o productos.
-                </p>
-              </div>
 
               <div className="pt-2 flex items-center justify-end gap-2.5">
                 <button

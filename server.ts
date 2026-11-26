@@ -56,7 +56,7 @@ import { localCatalogService } from './src/lib/localCatalogService';
 import { providerRouteLimit } from './src/lib/providerQuota';
 import { mountWompiLookup } from './src/lib/wompiLookup';
 import { ordersRepository } from './src/lib/ordersRepository';
-import { adminAuthService } from './src/lib/adminAuthService';
+import { AdminAuthService } from './src/lib/adminAuthService';
 import { catalogRepository } from './src/lib/catalogRepository';
 import {
   resolveTerritorialAssignment,
@@ -91,6 +91,9 @@ let drivers: DriverProfile[] = ordersRepository.getAllDrivers();
 
 
 const isDispatchSimulation=simulationEnabled();
+if (isDispatchSimulation && (process.env.BOLT_ADMIN_INSTALLATION_ID || process.env.BOLT_ADMIN_CONTROL_DIR || process.env.BOLT_ADMIN_CLOSED_RECEIPT)) {
+  throw Error('Usa una instalación administrativa independiente de la simulación.');
+}
 if (pilot && (isDispatchSimulation || activeStores().length !== pilot.storeIds.length)) {
   throw Error('La operación requiere una instalación separada y todas las sedes configuradas activas.');
 }
@@ -175,6 +178,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   if(photoRecognizer && (!isDispatchSimulation || process.env.NODE_ENV==='production'))throw Error('Photo recognition fixture is restricted to isolated local simulations');
   acquireCatalogWriterLock();
   acquireCatalogWriterLock(process.env.BOLT_DATA_DIR || path.join(process.cwd(),'src/data'));
+  const adminAuthService = new AdminAuthService(undefined, isDispatchSimulation
+    ? { mode: 'isolated' } : { mode: 'managed', env: process.env });
   if(isDispatchSimulation && adminAuthService.isSetupRequired()) {const fixture=JSON.parse(fs.readFileSync(path.join(process.cwd(),'.bolt-private','dispatch-simulation.json'),'utf8'));adminAuthService.setupMasterAdmin({...fixture.admin,name:'Administración simulada'});}
   catalogOperations.initializeOrderTracking();
   const app = express();
@@ -1335,17 +1340,19 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const authHeader = req.headers.authorization;
     const token = authHeader && authHeader.startsWith('Bearer ') ? authHeader.substring(7).trim() : undefined;
     const session = adminAuthService.verifySession(token);
+    const setupState = adminAuthService.setupState();
     res.json({
-      isSetupRequired: adminAuthService.isSetupRequired(),
+      setupState,
+      isSetupRequired: setupState === 'open',
       isAuthenticated: !!session,
-      user: session ? { id: session.userId, email: session.email, name: session.name, role: session.role } : null,
+      user: session ? { id: session.userId, email: session.email, name: session.name, role: session.role, ...(session.rotationRecommended && { rotationRecommended: true }) } : null,
     });
   });
 
   app.post('/api/v1/auth/setup-admin', (req: Request, res: Response) => {
     const expected = process.env.BOLT_ADMIN_SETUP_TOKEN;
     const supplied = req.get('X-Bolt-Admin-Setup-Token');
-    if (!expected || !supplied || !crypto.timingSafeEqual(
+    if (!expected || expected.trim().length < 32 || !supplied || !crypto.timingSafeEqual(
       crypto.createHash('sha256').update(expected).digest(),
       crypto.createHash('sha256').update(supplied).digest(),
     )) {
@@ -1357,7 +1364,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     }
     const result = adminAuthService.setupMasterAdmin({ email, password, name });
     if (!result.success) {
-      return res.status(400).json({ error: result.error });
+      return res.status(result.status ?? 400).json({ error: result.error, ...(result.status === 503 && { code: 'ADMIN_RECOVERY_REQUIRED' }) });
     }
     res.status(201).json({
       message: 'Administrador principal configurado exitosamente.',
@@ -1370,6 +1377,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     const { email, password } = req.body || {};
     if (typeof email !== 'string' || !email.trim() || typeof password !== 'string' || !password.trim()) {
       return res.status(400).json({ error: 'Proporciona correo y contraseña.' });
+    }
+    if (adminAuthService.setupState() === 'recovery-required') {
+      return res.status(503).json({ code: 'ADMIN_RECOVERY_REQUIRED', error: 'La instalación administrativa requiere recuperación autorizada.' });
     }
     const result = adminAuthService.login(email, password);
     if (!result.success) {

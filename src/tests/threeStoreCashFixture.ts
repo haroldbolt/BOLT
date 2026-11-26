@@ -1,3 +1,4 @@
+import { adminBootstrapFixture, establishFixtureAdmin } from './adminBootstrapFixture.mjs';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -43,6 +44,7 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     driver.id === 'SIM-' + store.id + '-1' || (options.splitSuba && store.id === 'HUB_SUBA' && driver.id === 'SIM-HUB_SUBA-2'),
   ).map(driver => ({ store, driver })));
   const adminCredentials = { email: 'coordination@rdi.invalid', password: randomUUID() };
+  const staffFixture = adminBootstrapFixture(runtime, adminCredentials.email);
   let child: ChildProcess | undefined;
 
   async function request<T>(route: string, options: RequestOptions = {}): Promise<T> {
@@ -86,7 +88,7 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
         PATH: process.env.PATH, NODE_ENV: 'production', BOLT_BIND_LOOPBACK_ONLY: '1', PORT: String(port),
         BOLT_DATA_DIR: dataDir, BOLT_TEST_EGRESS_LOG: egressLog, BOLT_PILOT_STORE_IDS: storeIds.join(','),
         ...(options.respondAsCargo && { BOLT_TEST_CARGO_LOG: cargoLog }),
-        BOLT_ADMIN_EMAIL: adminCredentials.email, BOLT_ADMIN_PASSWORD: adminCredentials.password,
+        ...staffFixture.env,
         ...(options.ownFleetOnly && { BOLT_PILOT_OWN_FLEET_ONLY: '1' }),
         ...(checkoutEnabled && { BOLT_PILOT_CHECKOUT_ENABLED: '1' }),
         ...(checkoutEnabled && !options.ownFleetOnly ? {
@@ -102,7 +104,10 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     for (let attempt = 0; attempt < 150; attempt++) {
       if (child.exitCode !== null || child.signalCode !== null) throw Error('Servidor local interrumpido. ' + startupLog);
       const healthy = await fetch(origin + '/api/v1/health', { signal: AbortSignal.timeout(500) }).then(r => r.ok, () => false);
-      if (healthy) return;
+      if (healthy) {
+        await establishFixtureAdmin(origin, adminCredentials.email, adminCredentials.password, staffFixture.env.BOLT_ADMIN_SETUP_TOKEN);
+        return;
+      }
       await delay(80);
     }
     throw Error('No inició la instalación temporal de BOLT. ' + startupLog);
@@ -127,7 +132,7 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     return fs.existsSync(cargoLog) ? fs.readFileSync(cargoLog, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
   }
   function verifyNoEgress() { assert.equal(fs.existsSync(egressLog), false, 'Hubo un intento de usar un servicio de red externo.'); }
-  async function dispose() { try { await stop(); verifyNoEgress(); } finally { fs.rmSync(runtime, { recursive: true, force: true }); } }
+  async function dispose() { try { await stop(); verifyNoEgress(); } finally { staffFixture.dispose(); fs.rmSync(runtime, { recursive: true, force: true }); } }
   try {
     fs.mkdirSync(localData, { recursive: true });
     for (const folder of ['catalogo-local', 'geography']) fs.symlinkSync(path.join(source, 'src/data', folder), path.join(localData, folder), 'dir');

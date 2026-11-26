@@ -2,6 +2,7 @@ import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
 import { atomicJson } from './fulfillmentStorage';
+import { AdminBootstrap, type AdminBinding } from './adminBootstrap';
 
 export interface AdminUser {
   id: string;
@@ -11,6 +12,7 @@ export interface AdminUser {
   salt: string;
   role: 'ADMINISTRADOR' | 'OPERADOR_SEDE';
   storeId?: string;
+  rotationRecommended?: boolean;
   createdAt: string;
   lastLoginAt?: string;
 }
@@ -21,14 +23,14 @@ export interface AdminSession {
   name: string;
   role: 'ADMINISTRADOR' | 'OPERADOR_SEDE';
   storeId?: string;
+  rotationRecommended?: boolean;
   createdAt: string;
   expiresAt: string;
 }
 
-interface PersistedAuthData {
-  version: string;
-  admins: AdminUser[];
-}
+type AuthMode = { mode: 'managed'; env: NodeJS.ProcessEnv; offlineBootstrap?: true } | { mode: 'isolated' };
+type SetupState = 'open' | 'closed' | 'recovery-required';
+const RECOVERY = 'Almacenamiento de administración pendiente de recuperación. Recupera la copia autorizada antes de iniciar.';
 
 const AUTH_FILE_PATH = path.join(process.cwd(), 'src', 'data', 'persisted-admin-auth.json');
 const SESSION_DURATION_HOURS = 24;
@@ -37,12 +39,11 @@ type PublicAdmin = Omit<AdminUser, 'passwordHash' | 'salt'>;
 
 function publicAdmin(user: AdminUser): PublicAdmin {
   const { id, email, name, role, storeId, createdAt, lastLoginAt } = user;
-  return { id, email, name, role, storeId, createdAt, lastLoginAt };
+  return { id, email, name, role, storeId, createdAt, lastLoginAt, ...(user.rotationRecommended === true && { rotationRecommended: true }) };
 }
 
-function parseAccounts(raw: string): Map<string, AdminUser> {
-  const data = JSON.parse(raw);
-  if (data?.version !== '1.0.0' || !Array.isArray(data.admins) || !data.admins.length) throw Error('Invalid account list');
+export function parseAdminAccounts(data: any): Map<string, AdminUser> {
+  if (!['1.0.0','2.0.0'].includes(data?.version) || !Array.isArray(data.admins) || !data.admins.length) throw Error('Invalid account list');
   const accounts = new Map<string, AdminUser>();
   const ids = new Set<string>();
   for (const account of data.admins) {
@@ -66,53 +67,93 @@ export class AdminAuthService {
   private activeSessions: Map<string, AdminSession> = new Map();
   private storageAvailable = true;
 
-  constructor(private authFile=AUTH_FILE_PATH) {
-    this.loadFromDisk();
+  private control?: AdminBootstrap;
+  private binding?: AdminBinding;
+  private diskIdentity?: fs.Stats;
+
+  constructor(private authFile = AUTH_FILE_PATH, private access: AuthMode = { mode: 'managed', env: process.env }) {
+    try {
+      if (access.mode === 'managed') this.control = AdminBootstrap.fromEnvironment(access.env, authFile);
+      this.loadFromDisk();
+    } catch {
+      this.lockForRecovery();
+      if (access.mode === 'isolated') throw Error(RECOVERY);
+    }
   }
 
-  private loadFromDisk(): void {
-    try {
-      const stat = fs.lstatSync(this.authFile, { throwIfNoEntry: false });
-      if (stat) {
-        if (!stat.isFile()) throw Error('Invalid account storage');
-        this.admins = parseAccounts(fs.readFileSync(this.authFile, 'utf8'));
-        return;
+  private lockForRecovery() {
+    this.storageAvailable = false;
+    this.activeSessions.clear();
+  }
+
+  private loadFromDisk() {
+    const stat = fs.lstatSync(this.authFile, { throwIfNoEntry: false });
+    if (!stat) {
+      if (this.control && this.control.inspect() !== 'open') throw Error(RECOVERY);
+      return;
+    }
+    if (!stat.isFile()) throw Error(RECOVERY);
+    const raw = fs.readFileSync(this.authFile, 'utf8');
+    const data = JSON.parse(raw);
+    const accounts = parseAdminAccounts(data);
+    this.diskIdentity = stat;
+    if (this.control) {
+      if (data.version === '1.0.0') {
+        if (this.control.inspect(undefined, raw) !== 'adopt') throw Error(RECOVERY);
+        this.binding = this.control.adopt(raw);
+      } else {
+        if (!data.bootstrap) throw Error(RECOVERY);
+        this.binding = data.bootstrap as AdminBinding;
       }
+      const binding = this.binding!;
+      const owner = [...accounts.values()].find(user =>
+        user.role === 'ADMINISTRADOR' && this.control!.matchesAccount(binding, user.email));
+      if (!owner) throw Error(RECOVERY);
+      if (data.version === '1.0.0') this.saveToDisk(accounts);
+      this.control.complete(binding, owner.email);
+    } else if (data.version !== '1.0.0') {
+      throw Error(RECOVERY);
+    }
+    this.admins = accounts;
+  }
+
+  private matchesDisk() {
+    const current = fs.lstatSync(this.authFile, { throwIfNoEntry: false });
+    const saved = this.diskIdentity;
+    return saved ? !!current && current.isFile() && current.dev === saved.dev &&
+      current.ino === saved.ino && current.ctimeMs === saved.ctimeMs && current.size === saved.size : !current;
+  }
+
+  public setupState(): SetupState {
+    if (!this.storageAvailable) return 'recovery-required';
+    try {
+      if (!this.matchesDisk()) throw Error(RECOVERY);
+      if (this.control) {
+        const state = this.control.inspect(this.binding);
+        if (state !== 'open' && state !== 'closed') throw Error(RECOVERY);
+        if (state === 'open' && this.access.mode === 'managed' && !this.access.offlineBootstrap && (this.access.env.BOLT_ADMIN_SETUP_TOKEN?.trim().length ?? 0) < 32) return 'recovery-required';
+        return state;
+      }
+      return this.admins.size ? 'closed' : 'open';
     } catch {
-      throw Error('Almacenamiento de administración ilegible. Recupera la copia autorizada antes de iniciar.');
+      this.lockForRecovery();
+      return 'recovery-required';
     }
-
-    // Optional environment variable injection (without exposing default credentials in source code)
-    const envEmail = process.env.BOLT_ADMIN_EMAIL?.trim();
-    const envPassword = process.env.BOLT_ADMIN_PASSWORD?.trim();
-    if (envEmail && envPassword) {
-      if (!envEmail.includes('@') || envPassword.length < 8) throw Error('Verifica las credenciales administrativas iniciales del entorno.');
-      const salt = crypto.randomBytes(16).toString('hex');
-      const passwordHash = this.hashPassword(envPassword, salt);
-      const newAdmin: AdminUser = {
-        id: `adm-${Date.now().toString(36)}`,
-        email: envEmail.toLowerCase(),
-        name: process.env.BOLT_ADMIN_NAME?.trim() || 'Administrador Bolt Pets',
-        passwordHash,
-        salt,
-        role: 'ADMINISTRADOR',
-        createdAt: new Date().toISOString(),
-      };
-      this.saveToDisk(new Map([[newAdmin.email, newAdmin]]));
-      console.log('[AdminAuthService] Administrador inicial aprovisionado.');
-    }
-
   }
 
   private requireStorage(): void {
-    if (!this.storageAvailable) throw Error('Almacenamiento de administración pendiente de recuperación.');
+    if (!this.storageAvailable) throw Error(RECOVERY);
   }
 
   private saveToDisk(accounts: Map<string, AdminUser>): void {
     this.requireStorage();
-    const data: PersistedAuthData = { version: '1.0.0', admins: Array.from(accounts.values()) };
+    const data = this.binding
+      ? { version: '2.0.0', bootstrap: this.binding, admins: [...accounts.values()] }
+      : { version: '1.0.0', admins: [...accounts.values()] };
     try {
+      if (!this.matchesDisk()) throw Error(RECOVERY);
       atomicJson(this.authFile, data);
+      this.diskIdentity = fs.lstatSync(this.authFile);
     } catch {
       // A failure after rename can leave a committed file. Reload on restart before granting access.
       this.storageAvailable = false;
@@ -139,7 +180,7 @@ export class AdminAuthService {
     const operator = Array.from(this.admins.values()).find(user => user.id === id && user.role === 'OPERADOR_SEDE');
     if (!operator) return false;
     const accounts = new Map(this.admins);
-    accounts.delete(operator.email);
+    accounts.delete(operator.email.toLowerCase());
     this.saveToDisk(accounts);
     for (const [token, session] of this.activeSessions) {
       if (session.userId === id) this.activeSessions.delete(token);
@@ -153,7 +194,9 @@ export class AdminAuthService {
 
   public isSetupRequired(): boolean {
     this.requireStorage();
-    return this.admins.size === 0;
+    const state = this.setupState();
+    if (state === 'recovery-required') throw Error(RECOVERY);
+    return state === 'open';
   }
 
   public getAdminCount(): number {
@@ -161,12 +204,12 @@ export class AdminAuthService {
     return this.admins.size;
   }
 
-  public setupMasterAdmin(params: { email: string; password: string; name: string }): { success: boolean; user?: PublicAdmin; token?: string; error?: string } {
-    this.requireStorage();
-
+  public setupMasterAdmin(params: { email: string; password: string; name: string }): { success: boolean; user?: PublicAdmin; token?: string; error?: string; status?: number } {
     // Solo se permite configurar si no existe ningún administrador
-    if (this.admins.size > 0) {
-      return { success: false, error: 'Ya existe un administrador registrado en el sistema. Inicia sesión con tus credenciales.' };
+    const state = this.setupState();
+    if (state === 'recovery-required') return { success: false, status: 503, error: RECOVERY };
+    if (state === 'closed') {
+      return { success: false, status: 409, error: 'Ya existe un administrador registrado en el sistema. Inicia sesión con tus credenciales.' };
     }
 
     const email = params.email.trim().toLowerCase();
@@ -197,10 +240,24 @@ export class AdminAuthService {
       lastLoginAt: new Date().toISOString(),
     };
 
-    this.saveToDisk(new Map(this.admins).set(email, newAdmin));
+    if (this.control) {
+      try { this.binding = this.control.reserve(email); }
+      catch {
+        return this.setupState() === 'open'
+          ? { success: false, status: 403, error: 'Alta no autorizada para esta cuenta.' }
+          : { success: false, status: 503, error: RECOVERY };
+      }
+    }
+    try {
+      this.saveToDisk(new Map(this.admins).set(email, newAdmin));
+      if (this.control) this.control.complete(this.binding!, email);
+    } catch {
+      this.lockForRecovery();
+      return { success: false, status: 503, error: RECOVERY };
+    }
 
-    // Crear sesión de inmediato
-    const token = this.createSession(newAdmin);
+    const token = this.access.mode === 'managed' && this.access.offlineBootstrap
+      ? undefined : this.createSession(newAdmin);
 
     return {
       success: true,
@@ -242,6 +299,7 @@ export class AdminAuthService {
       name: admin.name,
       role: admin.role,
       storeId: admin.storeId,
+      ...(admin.rotationRecommended && { rotationRecommended: true }),
       createdAt: new Date().toISOString(),
       expiresAt,
     };
@@ -258,7 +316,7 @@ export class AdminAuthService {
   }
 
   public verifyStaffSession(token: string | undefined): AdminSession | null {
-    if (!this.storageAvailable || !token) return null;
+    if (!token || this.setupState() !== 'closed') return null;
     const digest = crypto.createHash('sha256').update(token).digest('hex');
     const session = this.activeSessions.get(digest);
     if (!session) return null;
@@ -276,18 +334,24 @@ export class AdminAuthService {
     return this.activeSessions.delete(crypto.createHash('sha256').update(token).digest('hex'));
   }
 
-  /**
-   * Resetea el almacenamiento para suites de pruebas automatizadas aisladas
-   */
-  public resetForTesting(): void {
-    this.admins.clear();
-    this.activeSessions.clear();
-    if (fs.existsSync(this.authFile)) {
-      try {
-        fs.unlinkSync(this.authFile);
-      } catch {}
+  /** Offline maintenance only. Caller holds the same writer lock as the running service. */
+  public maintainCredential(email: string, password?: string) {
+    if (this.setupState() !== 'closed' || !this.control) throw Error(RECOVERY);
+    const user = this.admins.get(email.trim().toLowerCase());
+    if (!user) throw Error('Cuenta administrativa desconocida.');
+    const updated = { ...user };
+    if (password === undefined) {
+      updated.rotationRecommended = true;
+    } else {
+      if (password !== password.trim() || password.length < 16 || password.length > 256 ||
+          this.hashPassword(password, user.salt) === user.passwordHash) throw Error('Se requiere una contraseña distinta de 16 a 256 caracteres, sin espacios exteriores.');
+      updated.salt = crypto.randomBytes(16).toString('hex');
+      updated.passwordHash = this.hashPassword(password, updated.salt);
+      delete updated.rotationRecommended;
+    }
+    this.saveToDisk(new Map(this.admins).set(user.email.toLowerCase(), updated));
+    for (const [digest, session] of this.activeSessions) {
+      if (session.userId === user.id) this.activeSessions.delete(digest);
     }
   }
 }
-
-export const adminAuthService = new AdminAuthService();

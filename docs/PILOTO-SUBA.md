@@ -10,7 +10,7 @@ Prepara un servicio y un volumen dedicados. Usa una réplica con HTTPS, conserva
 | Réplicas | 1 |
 | `BOLT_PILOT_STORE_ID` | `HUB_SUBA` |
 | `BOLT_PILOT_VOLUME` | Ruta absoluta del volumen montado para el piloto |
-| `BOLT_ADMIN_SETUP_TOKEN` | Secreto independiente de al menos 32 caracteres mientras exista una cuenta administrativa por configurar |
+| `BOLT_ADMIN_INSTALLATION_ID` y `BOLT_ADMIN_CLOSED_RECEIPT` | Para un disco, alta cerrada o adopción fuera de línea según [el procedimiento R1](ADMIN-ALTA-Y-ROTACION.md). El alta web de un uso exige un control externo independiente. |
 
 Configura el servicio del piloto con el comando indicado y revisa su configuración efectiva antes de arrancar. La configuración existente de la demo usa otro lanzador y otra verificación de salud. [Comando de inicio en Railway](https://docs.railway.com/deployments/start-command)
 

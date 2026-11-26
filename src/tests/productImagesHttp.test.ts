@@ -1,3 +1,4 @@
+import { adminBootstrapFixture } from './adminBootstrapFixture.mjs';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
@@ -20,7 +21,8 @@ const bootstrapToken=crypto.randomUUID();
 const request=async(route:string,method='GET',body?:any,token?:string,extraHeaders:Record<string,string>={})=>{
  const r=await fetch(url+route,{method,headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`}:{}),...extraHeaders},body:body?JSON.stringify(body):undefined});return {status:r.status,body:await r.json()};
 };
-async function start(){server=spawn(process.execPath,['--import',path.join(source,'node_modules/tsx/dist/loader.mjs'),path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:'3057',NODE_ENV:'production',BOLT_DATA_DIR:path.join(root,'orders'),BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});server.stderr?.on('data',d=>process.stderr.write(d));for(let i=0;i<80;i++){try{if((await request('/catalog')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Servidor aislado no inició');}
+const staffFixture = adminBootstrapFixture(root, 'images@test.invalid');
+async function start(){server=spawn(process.execPath,['--import',path.join(source,'node_modules/tsx/dist/loader.mjs'),path.join(source,'server.ts')],{cwd:root,env:{...process.env, ...staffFixture.env,PORT:'3057',NODE_ENV:'production',BOLT_DATA_DIR:path.join(root,'orders'),BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});server.stderr?.on('data',d=>process.stderr.write(d));for(let i=0;i<80;i++){try{if((await request('/catalog')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Servidor aislado no inició');}
 async function stop(){server.kill('SIGTERM');await new Promise(r=>server.once('exit',r));}
 try {
  await start();
@@ -237,4 +239,4 @@ try {
  console.log('PASS HTTP BOLT Admin: límite de seis fotos, rechazo de la séptima, conflicto, orden, foto principal y retiro persistente sin cambiar las variantes.');
  console.log('PASS HTTP BOLT Admin: carga de bytes y asignación independiente a producto y variante, autenticación, conflicto y persistencia sin cambiar datos comerciales.');
  console.log('PASS HTTP: autenticación, campos protegidos, imágenes por variante, conflicto, idempotencia, catálogo y reinicio real sin alterar importes/stock/reservas.');
-}finally{if(server?.exitCode===null)await stop();fs.rmSync(root,{recursive:true,force:true});}
+}finally{if(server?.exitCode===null)await stop();staffFixture.dispose(); fs.rmSync(root,{recursive:true,force:true});}

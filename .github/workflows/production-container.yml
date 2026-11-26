@@ -10,6 +10,15 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683
+        with:
+          fetch-depth: 0
+      - name: Comprobar archivos privados y credenciales antes de compilar
+        env:
+          BOLT_PR_BASE: ${{ github.event.pull_request.base.sha }}
+          BOLT_PR_HEAD: ${{ github.event.pull_request.head.sha }}
+        run: |
+          node --test scripts/check-repository-secrets.test.mjs
+          node scripts/check-repository-secrets.mjs --pr "$BOLT_PR_BASE" "$BOLT_PR_HEAD"
       - name: Construir la imagen y comprobar el arranque aislado
         run: bash deployment/check-container.sh
       - name: Preparar las dependencias e interfaces compiladas del contenedor para el navegador
@@ -24,12 +33,15 @@ jobs:
           echo "$RUNNER_TEMP/bolt-node" >> "$GITHUB_PATH"
           npm install --ignore-scripts --no-audit --no-fund --prefix "$RUNNER_TEMP/bolt-browser" playwright-core@1.65.1
       - name: Confirmación HTTP, reservas, reinicio y respaldo de Cargo en instalación aislada
-        run: npm run test:pilot
+        run: |
+          npm run test:r1
+          npm run test:pilot
       - name: Checkout en móvil y escritorio con una instalación temporal por caso
         run: |
           export BOLT_BROWSER_MODULE="$RUNNER_TEMP/bolt-browser/node_modules/playwright-core"
           export BOLT_TEST_CHROME="$(command -v google-chrome)"
           export BOLT_TEST_SCREENSHOTS="$RUNNER_TEMP/bolt-capturas"
+          node src/tests/adminBootstrapScreens.browser.mjs
           node --import tsx src/tests/threeStoreCashBrowser.mjs
           node deployment/tests/address-map/run.mjs
       - name: Capturas de checkout y Admin con datos ficticios

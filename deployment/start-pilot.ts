@@ -4,6 +4,8 @@ import { fileURLToPath } from 'node:url';
 import { spawn } from 'node:child_process';
 import { atomicJson, checkStorageRelease, FulfillmentStorage } from '../src/lib/fulfillmentStorage';
 import { newDispatchState } from '../src/types/dispatch';
+import { parseAdminAccounts } from '../src/lib/adminAuthService';
+import { AdminBootstrap, ADMIN_VOLUME_MARKER } from '../src/lib/adminBootstrap';
 import { pilotScope } from '../src/lib/pilotScope';
 
 const source = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
@@ -26,7 +28,7 @@ export function isPersistentMount(volume: string, mountInfo: string) {
   });
 }
 
-function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv, directory: string): string {
+function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv, directory: string, offlineAdminBootstrap: boolean): string {
   if (env.BOLT_DISPATCH_SIMULATION === '1' || env.BOLT_DEMO_PASSWORD || env.RAILWAY_ENVIRONMENT_NAME?.toLowerCase() === 'demo') {
     throw Error('Selecciona el servicio independiente del piloto.');
   }
@@ -42,8 +44,14 @@ function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv, directory: s
   }
   if (env.BOLT_REQUIRE_VOLUME_MOUNT === '1') {
     const mountFile = '/proc/self/mountinfo';
-    if (!fs.existsSync(mountFile) || !isPersistentMount(volume, fs.readFileSync(mountFile, 'utf8'))) {
+    const mounts = fs.existsSync(mountFile) ? fs.readFileSync(mountFile, 'utf8') : '';
+    if (!isPersistentMount(volume, mounts)) {
       throw Error('Monta un disco persistente de lectura y escritura en BOLT_PILOT_VOLUME.');
+    }
+    const control = env.BOLT_ADMIN_CONTROL_DIR;
+    if (!offlineAdminBootstrap && !env.BOLT_ADMIN_CLOSED_RECEIPT && (!control || !path.isAbsolute(control) || !fs.existsSync(control) ||
+        !isPersistentMount(fs.realpathSync(control), mounts))) {
+      throw Error('Monta un segundo volumen persistente y privado en BOLT_ADMIN_CONTROL_DIR.');
     }
   }
   const simulationMarkers = ['.bolt-private/hosted-demo.json', '.bolt-private/dispatch-simulation.json'];
@@ -56,7 +64,7 @@ function dedicatedVolume(sourceDir: string, env: NodeJS.ProcessEnv, directory: s
   if (fs.existsSync(path.join(volume, otherDirectory))) {
     throw Error('El volumen pertenece a un alcance operativo diferente. Conserva sus datos antes de migrar.');
   }
-  if (!fs.existsSync(path.join(volume, directory)) && fs.readdirSync(volume).some(name => name !== 'lost+found' && !name.startsWith('.bolt-pilot-initializing-'))) {
+  if (!fs.existsSync(path.join(volume, directory)) && fs.readdirSync(volume).some(name => name !== 'lost+found' && name !== ADMIN_VOLUME_MARKER && !name.startsWith('.bolt-pilot-initializing-'))) {
     throw Error('El volumen contiene datos previos. Verifica la instalación antes de inicializar otra operación.');
   }
   return volume;
@@ -76,27 +84,32 @@ function linkReleaseData(sourceDir: string, runtime: string) {
   }
 }
 
-function checkAdmin(runtime: string, env: NodeJS.ProcessEnv) {
+function checkAdmin(runtime: string, env: NodeJS.ProcessEnv, offlineAdminBootstrap: boolean) {
   const filename = path.join(runtime, 'src/data/persisted-admin-auth.json');
-  if (fs.existsSync(filename)) {
-    const data = JSON.parse(fs.readFileSync(filename, 'utf8'));
-    if (data?.version !== '1.0.0' || !Array.isArray(data.admins) || !data.admins.length || data.admins.some((admin: {
-      email?: unknown; passwordHash?: unknown; salt?: unknown; role?: unknown; storeId?: unknown;
-    } | null) =>
-      typeof admin?.email !== 'string' || typeof admin.passwordHash !== 'string' || typeof admin.salt !== 'string' ||
-      (admin.role !== 'ADMINISTRADOR' && !(admin.role === 'OPERADOR_SEDE' && typeof admin.storeId === 'string' && admin.storeId.length > 0)))) {
-      throw Error('Almacenamiento de administración inválido. Recupera la copia autorizada.');
-    }
-  } else if ((env.BOLT_ADMIN_SETUP_TOKEN?.trim().length ?? 0) < 32) {
+  const control = AdminBootstrap.fromEnvironment(env, filename);
+  const stat = fs.lstatSync(filename, { throwIfNoEntry: false });
+  if (stat && !stat.isFile()) throw Error('Almacenamiento de administración inválido. Recupera la copia autorizada.');
+  const raw = stat ? fs.readFileSync(filename, 'utf8') : undefined;
+  const data = raw === undefined ? undefined : JSON.parse(raw);
+  if (raw !== undefined) {
+    try {
+      parseAdminAccounts(data);
+      if (data.version === '2.0.0' && !data.bootstrap) throw Error();
+    } catch { throw Error('Almacenamiento de administración inválido. Recupera la copia autorizada.'); }
+  }
+  if (control.inspect(data?.bootstrap, data?.version === '1.0.0' ? raw : undefined) === 'open' && !offlineAdminBootstrap && (env.BOLT_ADMIN_SETUP_TOKEN?.trim().length ?? 0) < 32) {
     throw Error('Configura BOLT_ADMIN_SETUP_TOKEN para crear la cuenta administrativa inicial.');
   }
 }
 
-export function preparePilot(sourceDir: string, env: NodeJS.ProcessEnv) {
+type PilotPreparation = { offlineAdminBootstrap?: false; authorize?: never } |
+  { offlineAdminBootstrap: true; authorize?: (runtime: string) => void };
+export function preparePilot(sourceDir: string, env: NodeJS.ProcessEnv, options: PilotPreparation = {}) {
+  const offlineAdminBootstrap = options.offlineAdminBootstrap === true;
   const scope = pilotScope(env);
   if (!scope) throw Error('Configura BOLT_PILOT_STORE_IDS o BOLT_PILOT_STORE_ID=HUB_SUBA.');
   const { directory, marker } = scope;
-  const volume = dedicatedVolume(sourceDir, env, directory);
+  const volume = dedicatedVolume(sourceDir, env, directory, offlineAdminBootstrap);
   const runtime = path.join(volume, directory);
   const data = path.join(runtime, dataRelative);
   const entry = path.join(sourceDir, 'server.js');
@@ -112,9 +125,10 @@ export function preparePilot(sourceDir: string, env: NodeJS.ProcessEnv) {
   const release = () => fs.rmdirSync(lock);
 
   try {
+    if (offlineAdminBootstrap) options.authorize?.(runtime);
     const current = fs.lstatSync(runtime, { throwIfNoEntry: false });
     if (!current) {
-      checkAdmin(runtime, env);
+      checkAdmin(runtime, env, offlineAdminBootstrap);
       const stage = fs.mkdtempSync(path.join(volume, '.bolt-pilot-initializing-'));
       try {
         fs.mkdirSync(path.join(stage, 'src/data'), { recursive: true, mode: 0o700 });
@@ -139,7 +153,7 @@ export function preparePilot(sourceDir: string, env: NodeJS.ProcessEnv) {
       throw Error('Volumen incompatible con el alcance operativo de BOLT.');
     }
     if (checkStorageRelease(data, sourceDir).sourceVersion !== 2) throw Error('No se encontró el almacenamiento operativo v2.');
-    checkAdmin(runtime, env);
+    checkAdmin(runtime, env, offlineAdminBootstrap);
     linkReleaseData(sourceDir, runtime);
     return { data, entry, runtime, release };
   } catch (error) {

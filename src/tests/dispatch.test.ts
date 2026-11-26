@@ -592,7 +592,7 @@ test("HTTP routes authenticate real driver/admin sessions and deny cross-driver 
   const o = x.order(),
     r = x.runs(o)[0];
   await x.service.search(r.id);
-  const auth = new AdminAuthService(path.join(x.dir, "admin-test.json"));
+  const auth = new AdminAuthService(path.join(x.dir, "admin-test.json"), { mode: "isolated" });
   const admin = auth.setupMasterAdmin({
     email: "admin@fixture.test",
     name: "Fixture Admin",

@@ -1,7 +1,7 @@
 // Run after npm run build. Deliberately no target, volume, credentials or traffic flags.
 import assert from 'node:assert/strict';
 import { spawn } from 'node:child_process';
-import { createHash, randomBytes } from 'node:crypto';
+import { createHash, randomUUID } from 'node:crypto';
 import { once } from 'node:events';
 import fs from 'node:fs';
 import net from 'node:net';
@@ -9,6 +9,8 @@ import os from 'node:os';
 import path from 'node:path';
 import { setTimeout as wait } from 'node:timers/promises';
 import { fileURLToPath } from 'node:url';
+
+import { adminBootstrapFixture } from '../src/tests/adminBootstrapFixture.mjs';
 
 assert.equal(process.argv.length, 2, 'Este ensayo siempre crea su propio servidor local.');
 const source = fileURLToPath(new URL('..', import.meta.url));
@@ -22,9 +24,11 @@ await new Promise((resolve, reject) => probe.once('error', reject).listen(0, '12
 const port = probe.address().port;
 await new Promise(resolve => probe.close(resolve));
 const origin = 'http://127.0.0.1:' + port;
+const bootstrap = adminBootstrapFixture(volume, randomUUID() + '@example.invalid', path.join(volume, 'bolt-operacion'));
 const environment = {
+  ...bootstrap.env,
   PATH: process.env.PATH, NODE_ENV:'production', PORT:String(port), BOLT_BIND_LOOPBACK_ONLY:'1',
-  BOLT_PILOT_STORE_IDS:'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA', BOLT_PILOT_VOLUME:volume, BOLT_ADMIN_SETUP_TOKEN:randomBytes(32).toString('hex'),
+  BOLT_PILOT_STORE_IDS:'HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA', BOLT_PILOT_VOLUME:volume,
   // All virtual shoppers share one loopback IP; testing that IP's default cap is a separate regression.
   BOLT_API_RATE_IP_PER_MINUTE:'100000',
 };
@@ -170,6 +174,7 @@ try {
 } finally {
   clearInterval(ticker); stop();
   await closed;
+  bootstrap.dispose();
   fs.rmSync(volume,{recursive:true,force:true});
   process.off('SIGTERM',stop); process.off('SIGINT',stop);
 }
