@@ -37,6 +37,8 @@ jobs:
           npm run test:r1
           npm run test:r2
           npm run test:pilot
+      - name: Verificar la identidad de Google y la persistencia de sesiones con proveedor aislado
+        run: npm run test:r3
       - name: Checkout en móvil y escritorio con una instalación temporal por caso
         run: |
           export BOLT_BROWSER_MODULE="$RUNNER_TEMP/bolt-browser/node_modules/playwright-core"

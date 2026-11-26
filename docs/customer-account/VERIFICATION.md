@@ -2,6 +2,19 @@
 
 Este informe corresponde a la implementación inicial. Posteriormente el usuario autorizó actualizar la demo HTTPS: ver [alcance y pruebas del despliegue](DEMO-HTTPS.md).
 
+## R3 · Verificar la identidad de Google antes de abrir sesión
+
+En el flujo web de BOLT, Better Auth valida el estado de un solo uso y canjea el código con PKCE. La extensión de servidor `getUserInfo` verifica el ID token recibido durante ese canje antes de resolver la cuenta, vincular el método de acceso o emitir una sesión. Se reutiliza `jose`, ya incluido en el proyecto. [Documentación de Google sobre ID tokens](https://developers.google.com/identity/openid-connect/openid-connect#validatinganidtoken).
+
+- El servidor acepta RS256 con las claves públicas oficiales de Google. Comprueba emisor, audiencia de BOLT, emisión, vencimiento, identificador estable del usuario y correo verificado. Si hay varias audiencias, exige que `azp` identifique a BOLT. Siempre que aparezca `azp`, comprueba su valor. El perfil procede de la identidad verificada.
+- La configuración actual usa código y PKCE. Si la transacción entrega un `nonce` esperado, el token debe contener ese mismo valor. Un `nonce` inesperado también se rechaza. El acceso y la vinculación de Google en la PWA requieren el retorno web.
+- Se consultan las claves por HTTPS en el endpoint fijo de Google. La caché respeta `Cache-Control` y `Age`, con un máximo de diez minutos. Un identificador de clave nuevo permite actualizarla; el servidor agrupa consultas concurrentes y limita las actualizaciones por claves desconocidas. Cuando ya no hay una clave confiable vigente, el acceso falla antes de crear la sesión.
+- Para repetir la verificación con Node 22 y las dependencias instaladas, ejecutar `npm run test:r3`. Incluye el retorno HTTP con Better Auth, las escrituras en una base temporal PostgreSQL embebida, el retorno de Apple, la vinculación explícita y el recorrido a través del proxy de la demo. Cubre también el correo verificado cuando Google está indisponible.
+- Para la reunión, ejecutar `npm run review:google-identity` y abrir el enlace local que muestra. Cada caso empieza con una base temporal vacía. Una identidad válida crea una cuenta, un vínculo y una sesión. Una firma no verificable o unas claves públicas inaccesibles dejan los tres contadores en cero. Se usan claves efímeras y datos ficticios. En «Sesión en este navegador» se puede entrar con Google simulado, recargar, cerrar la sesión y volver a entrar con el usuario de correo de prueba. Esta sección consulta la sesión del navegador en el backend de BOLT. Los contadores de cada caso pertenecen a su propia base de datos.
+- Para acreditar el acceso con Google real en la PWA, usar una cuenta autorizada en el origen HTTPS registrado y comprobar en Safari del iPhone el retorno a «Mi cuenta», el cierre de sesión y el acceso por correo. La simulación local permite revisar la decisión del servidor sin compartir contraseñas ni tokens. Si es necesario suspender Google, retirar su configuración del entorno y reiniciar con una revisión que mantenga esta verificación. Las cuentas y sus otros métodos vinculados se conservan.
+
+**Evidencia de la revisión local.** Las 17 respuestas de prueba rechazadas dejaron cero cuentas, vínculos y sesiones nuevas en la base de la matriz. La identidad válida generó una de cada una. Una respuesta rechazada tampoco creó sesión para una cuenta Google preexistente ni añadió un vínculo a una cuenta de correo. En Safari de macOS se comprobó entrada con Google simulado, persistencia al recargar, cierre, entrada por correo de prueba y un segundo cierre. Se consultaron los metadatos y las claves públicas reales de Google por HTTPS. La autorización interactiva con una cuenta real en iPhone sigue pendiente.
+
 ## Versiones y alcance
 
 - `main`: `38ea7bf1966d6cef13cddb6d52e07d7620c003c4` (comprobado otra vez antes de publicar).

@@ -90,6 +90,19 @@ export function LegalPage({ kind }: { kind: LegalKind }) {
     </Frame>
   );
 }
+function providerErrorURL(provider: "google" | "apple") {
+  return provider === "google" ? "/cuenta?proveedor=google" : "/cuenta?error=oauth";
+}
+
+function authorizationNotice(params: URLSearchParams) {
+  if (!params.has("error")) return "";
+  if (params.get("proveedor") === "google" &&
+      params.getAll("error").some(code => ["unable_to_get_user_info", "issuer_mismatch", "invalid_code"].includes(code))) {
+    return "Esta vez no pudimos verificar tu identidad con Google. Intenta más tarde o usa otro método que ya tengas vinculado.";
+  }
+  return "No se completó la autorización. Intenta nuevamente con tu método de acceso original.";
+}
+
 export function AccountPage() {
   const customer = useCustomer();
   const { user, config } = customer;
@@ -98,7 +111,7 @@ export function AccountPage() {
     [busy, setBusy] = useState(false),
     [notice, setNotice] = useState(
       params.has("error")
-        ? "No se completó la autorización. Intenta nuevamente con tu método de acceso original."
+        ? authorizationNotice(params)
         : params.has("eliminada")
           ? "Tu cuenta fue eliminada. Los registros sujetos a retención se conservan según la política."
           : params.has("verificado")
@@ -147,7 +160,7 @@ export function AccountPage() {
         {
           provider,
           callbackURL: "/cuenta",
-          errorCallbackURL: "/cuenta?error=oauth",
+          errorCallbackURL: providerErrorURL(provider),
           newUserCallbackURL: "/cuenta?importar=1",
           requestSignUp: registering,
           disableRedirect: true,
@@ -486,7 +499,7 @@ function AccountHome() {
         ? "Datos de invitado importados. Los originales siguen en este dispositivo."
         : "",
     ),
-    [error, setError] = useState(""),
+    [error, setError] = useState(() => authorizationNotice(new URLSearchParams(location.search))),
     [newEmail, setNewEmail] = useState(""),
     [orders, setOrders] = useState<any[]>([]),
     [guestOrders, setGuestOrders] = useState<any[]>([]),
@@ -660,7 +673,7 @@ function AccountHome() {
                     {
                       provider,
                       callbackURL: "/cuenta",
-                      errorCallbackURL: "/cuenta?error=oauth",
+                      errorCallbackURL: providerErrorURL(provider),
                     },
                   );
                   const url = new URL(result.url);

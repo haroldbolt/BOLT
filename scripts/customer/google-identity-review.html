@@ -1,0 +1,179 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Acceso con Google · BOLT</title>
+  <style>
+    :root { font: 16px/1.5 Inter, system-ui, sans-serif; color: #182033; background: #f6f7f9; color-scheme: light; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body, h1, h2, p, dd { margin: 0; }
+    header { border-bottom: 1px solid #dce1e7; background: white; }
+    header div, main { max-width: 920px; margin: 0 auto; padding-inline: clamp(16px, 4vw, 40px); }
+    header div { display: flex; align-items: center; gap: 16px; min-height: 64px; }
+    .brand { font-size: 1.6rem; color: #cc122f; font-weight: 900; letter-spacing: -.055em; }
+    .context { color: #465165; border-left: 1px solid #dce1e7; padding-left: 16px; }
+    main { padding-block: clamp(28px, 6vw, 64px); }
+    h1 { font-size: clamp(1.85rem, 4vw, 2.55rem); line-height: 1.12; letter-spacing: -.042em; }
+    h2 { font-size: 1.1rem; line-height: 1.35; }
+    .intro { margin: .75rem 0 2rem; color: #495568; max-width: 65ch; }
+    .panels { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; align-items: start; }
+    section { border: 1px solid #dce1e7; border-radius: 16px; background: white; padding: clamp(18px, 3.2vw, 28px); }
+    .choices { display: grid; gap: 9px; margin-top: 16px; }
+    button { display: flex; justify-content: space-between; align-items: center; gap: 12px; text-align: left; min-height: 48px; border: 1px solid #c7ced8; border-radius: 10px; padding: 10px 14px; background: white; color: #273349; font: inherit; font-weight: 620; cursor: pointer; }
+    button:hover, button[aria-pressed=true] { border-color: #c91d35; background: #fff4f5; color: #9e162c; }
+    button:focus-visible { outline: 3px solid #8a172d; outline-offset: 2px; }
+    button[aria-disabled=true] { cursor: progress; }
+    #status { margin-block: 16px 4px; font-size: 1.15rem; font-weight: 700; }
+    #status[data-result=verified] { color: #18633e; } #status[data-result=problem] { color: #9e162c; }
+    #note, dt { color: #495568; } dl { margin: 20px 0 0; }
+    dl div { display: flex; justify-content: space-between; gap: 12px; border-top: 1px solid #e3e7ed; padding: 9px 0; }
+    dd { font-weight: 700; font-variant-numeric: tabular-nums; }
+    .browser { margin-top: 16px; }
+    .browser p { margin-block: 8px; }
+    .browser-actions { display: flex; flex-wrap: wrap; gap: 8px; }
+    .browser [hidden] { display: none; }
+    @media(max-width: 640px) { .panels { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header><div><span class="brand">BOLT</span><span class="context">Demo local</span></div></header>
+  <main>
+    <h1>Acceso con Google</h1>
+    <p class="intro">Prueba cómo BOLT verifica la identidad antes de abrir una sesión. Cada caso usa un proveedor simulado y una cuenta ficticia en una base temporal.</p>
+    <div class="panels">
+      <section aria-labelledby="options-title">
+        <h2 id="options-title">Respuesta del proveedor</h2>
+        <div class="choices" role="group" aria-labelledby="options-title">
+          <button type="button" data-case="identidad-valida" aria-pressed="false">Identidad válida <span aria-hidden="true">→</span></button>
+          <button type="button" data-case="identidad-rechazada" aria-pressed="false">Firma sin verificar <span aria-hidden="true">→</span></button>
+          <button type="button" data-case="claves-indisponibles" aria-pressed="false">Claves públicas indisponibles <span aria-hidden="true">→</span></button>
+        </div>
+      </section>
+      <section aria-labelledby="result-title">
+        <h2 id="result-title">Resultado en BOLT</h2>
+        <div role="status" aria-live="polite" aria-atomic="true">
+          <p id="status">Elige un caso</p>
+          <p id="note">Aquí verás si el servidor creó la sesión.</p>
+          <dl hidden id="records">
+            <div><dt>Cuentas creadas</dt><dd id="accounts"></dd></div>
+            <div><dt>Vínculos con Google</dt><dd id="links"></dd></div>
+            <div><dt>Sesiones creadas</dt><dd id="sessions"></dd></div>
+          </dl>
+        </div>
+      </section>
+    </div>
+    <section id="sesion-navegador" class="browser" aria-labelledby="browser-heading">
+      <h2 id="browser-heading">Sesión en este navegador</h2>
+      <p>Elige un cliente de prueba. Puedes actualizar la página para comprobar que conserva la sesión.</p>
+      <div class="browser-actions">
+        <button type="button" id="browser-google" disabled>Entrar con Google simulado</button>
+        <button type="button" id="browser-email" disabled>Entrar con correo de prueba</button>
+        <button type="button" id="browser-logout" hidden>Cerrar sesión</button>
+      </div>
+      <p id="browser-session" role="status" aria-live="polite">Consultando sesión…</p>
+    </section>
+    <noscript>Activa JavaScript para ejecutar la prueba local.</noscript>
+  </main>
+  <script>
+    'use strict';
+    const buttons = Array.from(document.querySelectorAll('[data-case]'));
+    const status = document.getElementById('status');
+    const note = document.getElementById('note');
+    const records = document.getElementById('records');
+    let running = false;
+    async function run(chosen) {
+      if (running) return;
+      running = true;
+      for (const btn of buttons) {
+        btn.setAttribute('aria-pressed', String(btn === chosen));
+        btn.setAttribute('aria-disabled', 'true');
+      }
+      records.hidden = true;
+      status.dataset.result = 'pending';
+      status.textContent = 'Comprobando el acceso…';
+      note.textContent = 'BOLT está procesando la respuesta de prueba.';
+      try {
+        const response = await fetch('/casos/' + chosen.dataset.case, {
+          method: 'POST', credentials: 'omit', redirect: 'error', cache: 'no-store',
+        });
+        if (!response.ok) throw Error();
+        const result = await response.json();
+        if (result.caso !== chosen.dataset.case) throw Error();
+        if (!result.coincide) {
+          status.dataset.result = 'problem';
+          status.textContent = 'Revisar este resultado';
+          note.textContent = 'La sesión o los registros difieren de lo esperado para este caso.';
+        } else if (result.sesionActiva) {
+          status.dataset.result = 'verified';
+          status.textContent = 'Sesión iniciada';
+          note.textContent = 'El servidor verificó la identidad y reconoció al cliente de prueba.';
+        } else {
+          status.dataset.result = 'closed';
+          status.textContent = 'Acceso rechazado';
+          note.textContent = result.caso === 'claves-indisponibles' ?
+            'El servidor no pudo consultar las claves públicas para comprobar la identidad.' :
+            'El servidor no pudo verificar la firma del proveedor.';
+        }
+        document.getElementById('accounts').textContent = result.cuentas;
+        document.getElementById('links').textContent = result.vinculos;
+        document.getElementById('sessions').textContent = result.sesiones;
+        records.hidden = false;
+      } catch {
+        status.dataset.result = 'problem';
+        status.textContent = 'Prueba interrumpida';
+        note.textContent = 'Vuelve a seleccionar el caso para intentarlo de nuevo.';
+      } finally {
+        running = false;
+        for (const btn of buttons) btn.removeAttribute('aria-disabled');
+      }
+    }
+    for (const button of buttons) button.addEventListener('click', () => run(button));
+
+    const google = document.getElementById('browser-google');
+    const email = document.getElementById('browser-email');
+    const logout = document.getElementById('browser-logout');
+    const session = document.getElementById('browser-session');
+    function busyBrowser(busy) {
+      for (const button of [google,email,logout]) button.disabled = busy;
+    }
+    async function sessionRequest(path, method) {
+      const response = await fetch(path, {method, credentials:'same-origin', cache:'no-store', redirect:'error'});
+      if (!response.ok) throw Error();
+      return response;
+    }
+    async function showBrowserSession() {
+      const response = await sessionRequest('/api/customer/me', 'GET');
+      const {user} = await response.json();
+      google.hidden = email.hidden = !!user;
+      logout.hidden = !user;
+      if (user) session.textContent = 'Sesión activa · ' + user.name;
+      else session.textContent = 'Sin sesión';
+      busyBrowser(false);
+    }
+    async function browserAction(which) {
+      busyBrowser(true);
+      try {
+        if (which === google) {
+          const response = await sessionRequest('/navegador/google','POST');
+          const result = await response.json();
+          const url = new URL(result.returnTo, location.origin);
+          if (url.origin !== location.origin || url.pathname !== '/api/customer-auth/callback/google') throw Error();
+          location.assign(url.href);
+          return;
+        }
+        if (which) await sessionRequest(which === email ? '/api/customer-auth/sign-in/email' : '/api/customer-auth/sign-out', 'POST');
+        await showBrowserSession();
+        if (!which && new URL(location.href).searchParams.get('resultado') === 'error') {
+          session.textContent = 'La validación de Google fue rechazada. Prueba otro método.';
+        }
+      } catch {
+        session.textContent = 'No pudimos comprobar la sesión. Actualiza la página y vuelve a intentarlo.';
+        busyBrowser(false);
+      }
+    }
+    for (const button of [google,email,logout]) button.addEventListener('click', () => browserAction(button));
+    void browserAction();
+  </script>
+</body>
+</html>
