@@ -1,10 +1,11 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 // This script writes synthetic orders only in the isolated runtime on port 3004.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const base='http://localhost:3004/api/v1';
 if(!process.cwd().endsWith('/batch-test-runtime'))throw new Error('Solo permite el almacenamiento de pruebas aislado');
 const get=async(url:string,token?:string)=>{const r=await fetch(base+url,{headers:token?{Authorization:`Bearer ${token}`}:{}});return {status:r.status,body:await r.json()};};
-const post=async(url:string,body:any,token?:string,key?:string)=>{const r=await fetch(base+url,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} :{}),...(key?{'Idempotency-Key':key}:{})},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
+const post=async(url:string,body:any,token?:string,key?:string)=>{const r=await checkoutFetch(base+url,{method:'POST',headers:{'Content-Type':'application/json',...(token?{Authorization:`Bearer ${token}`} :{}),...(key?{'Idempotency-Key':key}:{})},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
 if(process.argv.includes('--verify-restart')) {
  const state=JSON.parse(fs.readFileSync('../batch-http-proof.json','utf8'));
  const catalog=(await get('/catalog')).body;const p=catalog.find((p:any)=>p.id===state.productId);

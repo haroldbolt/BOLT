@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 /** Full HTTP test in an independently created simulator, including restart and capability checks. */
 import fs from "node:fs";
 import path from "node:path";
@@ -32,7 +33,7 @@ async function call(
   token = admin,
   expected = 200,
 ) {
-  const res = await fetch(base + p, {
+  const res = await checkoutFetch(base + p, {
     method,
     headers: {
       "Content-Type": "application/json",

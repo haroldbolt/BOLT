@@ -1,10 +1,11 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 // Only run against the isolated preview, never against production.
 import fs from 'node:fs';
 import assert from 'node:assert/strict';
 import { PushNotificationService } from '../lib/notifications';
 const base=process.env.BOLT_TEST_BASE_URL;
 if(base!=='http://localhost:3002')throw Error('Use the isolated test server on localhost:3002');
-const post=async(body:any,key:string)=>{const res=await fetch(base+'/api/v1/orders',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(body)});return {status:res.status,body:await res.json()}};
+const post=async(body:any,key:string)=>{const res=await checkoutFetch(base+'/api/v1/orders',{method:'POST',headers:{'Content-Type':'application/json','Idempotency-Key':key},body:JSON.stringify(body)});return {status:res.status,body:await res.json()}};
 const resultFile=process.env.BOLT_TEST_RESULT || '/tmp/bolt-warehouse-http.json';
 if(process.argv.includes('--verify-restart')) {
  const prior=JSON.parse(fs.readFileSync(resultFile,'utf8'));

@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 /** Read/deny-only checks against the isolated local simulation; never creates an order. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ import municipal from './municipal-coverage-fixtures.json';
 const origin=process.env.BOLT_COVERAGE_TEST_URL;
 if(origin!=='http://localhost:3020' || !process.cwd().endsWith('/BOLT-coverage')) throw Error('Use the isolated BOLT-coverage copy on port 3020.');
 async function request(path:string,body?:any){
- const response=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:body===undefined?undefined:JSON.stringify(body)});
+ const response=await checkoutFetch(origin+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json','Idempotency-Key':crypto.randomUUID()},body:body===undefined?undefined:JSON.stringify(body)});
  return {status:response.status,data:await response.json()};
 }
 const before=(await request('/api/v1/orders')).data;

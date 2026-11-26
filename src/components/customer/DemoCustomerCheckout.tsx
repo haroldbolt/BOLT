@@ -1,3 +1,5 @@
+import { CheckoutAttemptReview } from './CheckoutAttemptReview';
+import { prepareCheckout, finishCheckout } from '../../lib/checkoutAttemptClient';
 import { backendFetch } from '../../lib/backendRequest';
 import { useEffect, useRef, useState } from 'react';
 import { ArrowLeft, ArrowRight, MapPin, Package } from 'lucide-react';
@@ -44,6 +46,7 @@ export function DemoCustomerCheckout({ onOrderSuccess }: { onOrderSuccess: (orde
   const [order, setOrder] = useState<Order>();
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
+  const [reviewAttempt, setReviewAttempt] = useState<string>();
 
   useEffect(() => {
     const controller = new AbortController();
@@ -80,7 +83,7 @@ export function DemoCustomerCheckout({ onOrderSuccess }: { onOrderSuccess: (orde
   }, []);
 
   const confirm = async () => {
-    if (submitting.current || !preview) return;
+    if (submitting.current || reviewAttempt || !preview) return;
     submitting.current = true;
     setBusy(true);
     setError('');
@@ -88,18 +91,24 @@ export function DemoCustomerCheckout({ onOrderSuccess }: { onOrderSuccess: (orde
     try {
       const current = attempt.current ??= { requestId: crypto.randomUUID() };
       saveAttempt(current);
+      const proof = await prepareCheckout('demo-' + current.requestId, current.requestId);
       const response = await backendFetch(DEMO_CUSTOMER_CHECKOUT_ENDPOINT, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', 'Idempotency-Key': current.requestId },
+        headers: { 'Content-Type': 'application/json', ...proof },
         cache: 'no-store',
         body: '{}',
       });
       const data = await response.json().catch(() => null);
+      if (data?.code === 'CHECKOUT_REVIEW_REQUIRED') {
+        setReviewAttempt(current.requestId);
+        return;
+      }
       if (!response.ok || !data?.order?.id || data.order.demoCustomerCheckout !== true || data.order.payment?.cashToCollect !== 0 ||
         typeof data.guestAccessToken !== 'string' || !data.guestAccessToken) {
         throw new Error(data?.error || 'No pudimos confirmar el pedido de prueba. Puedes reintentar.');
       }
       api.saveOrderAccess(data.order.id, data.guestAccessToken);
+      finishCheckout(current.requestId);
       current.orderId = data.order.id;
       saveAttempt(current);
       setOrder(data.order);
@@ -156,12 +165,18 @@ export function DemoCustomerCheckout({ onOrderSuccess }: { onOrderSuccess: (orde
               <div className="flex justify-between gap-2 text-slate-700"><dt>Subtotal de prueba</dt><dd>{formatCOP(preview.subtotalCOP)}</dd></div>
               <div className="flex justify-between gap-2 text-base font-extrabold"><dt>Total a cobrar</dt><dd>{formatCOP(preview.cashToCollect)}</dd></div>
             </dl>
-            <button type="button" onClick={confirm} disabled={busy}
+            <button type="button" onClick={confirm} disabled={busy || !!reviewAttempt}
               className="flex min-h-12 w-full items-center justify-center gap-2 rounded-xl bg-red-700 px-4 text-sm font-bold text-white hover:bg-red-800 focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-red-700 disabled:opacity-50">
               {busy ? 'Confirmando pedido…' : 'Confirmar pedido de prueba'} <ArrowRight className="size-4" aria-hidden="true" />
             </button>
           </section>
         )}
+        {reviewAttempt && <CheckoutAttemptReview onStartNew={() => {
+          finishCheckout(reviewAttempt);
+          attempt.current = undefined;
+          try { sessionStorage.removeItem(checkoutStorageKey); } catch {}
+          setReviewAttempt(undefined);
+        }} />}
         {error && <p role="alert" className="rounded-xl bg-amber-50 p-4 text-sm text-amber-950">{error}</p>}
       </div>
     </main>

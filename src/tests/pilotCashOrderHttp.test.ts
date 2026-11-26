@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 import { adminBootstrapFixture, establishFixtureAdmin } from './adminBootstrapFixture.mjs';
 /** Cash order across the real HTTP handlers, with only disposable records and measured test fixtures. */
 import assert from 'node:assert/strict';
@@ -43,7 +44,7 @@ let base: string;
 
 type RequestOptions = { method?: string; body?: unknown; token?: string; guest?: string; idempotencyKey?: string; status?: number };
 async function call<T>(route: string, { method = 'GET', body, token, guest, idempotencyKey, status = 200 }: RequestOptions = {}): Promise<T> {
-  const response = await fetch(base + route, {
+  const response = await checkoutFetch(base + route, {
     method,
     headers: {
       'Content-Type': 'application/json',

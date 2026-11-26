@@ -942,7 +942,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                                     </span>
                                   </div>
                                   <div className="flex justify-between items-center text-[10px] text-slate-500">
-                                    <span>PIN: <strong className="text-red-600 font-mono">{child.secretDeliveryCode}</strong></span>
                                     <span>{child.driver?.name?.split(' ')[0]} ({child.driver?.vehiclePlate})</span>
                                   </div>
 
@@ -992,9 +991,6 @@ export const OperationsDashboard: React.FC<OperationsDashboardProps> = ({
                             <div className="p-2 bg-slate-50 rounded-xl text-xs space-y-1">
                               <p className="text-slate-600 text-[11px]">
                                 Vehículo: <strong className="text-slate-800">{order.driver?.vehiclePlate}</strong>
-                              </p>
-                              <p className="text-slate-600 text-[11px]">
-                                Código Secreto: <strong className="text-red-600 font-black">{order.secretDeliveryCode}</strong>
                               </p>
                             </div>
 

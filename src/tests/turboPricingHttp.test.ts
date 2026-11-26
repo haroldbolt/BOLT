@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 /** Full HTTP test in an independently created simulator, including restart and capability checks. */
 import fs from "node:fs";
 import path from "node:path";
@@ -32,7 +33,7 @@ async function call(
   token = admin,
   expected = 200,
 ) {
-  const res = await fetch(base + p, {
+  const res = await checkoutFetch(base + p, {
     method,
     headers: {
       "Content-Type": "application/json",
@@ -115,7 +116,7 @@ try {
  assert.equal((await call('/orders')).length, 0);
  assert.equal((await call('/catalog')).find((p:any) => p.id === 'PRICE-59999').reservedStockByStore.HUB_SUBA ?? 0, 0);
  const race = async (key:string) => {
-   const response = await fetch(base+'/orders', {method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key':key}, body:JSON.stringify(payload)});
+   const response = await checkoutFetch(base+'/orders', {method:'POST', headers:{'Content-Type':'application/json','Idempotency-Key':key}, body:JSON.stringify(payload)});
    return {status:response.status, result:await response.json(), key};
  };
  // Distinct checkout attempts deliberately compete for one sellable unit.

@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 /** Explicit isolated simulation only. A test admin file is supplied outside source control. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -7,7 +8,7 @@ const origin=process.env.BOLT_TRANSPORT_TEST_URL,credentialFile=process.env.BOLT
 if(origin!=='http://localhost:3010' || !credentialFile) throw Error('Use only the isolated port 3010 and an explicit test-admin credentials file.');
 const credentials=JSON.parse(fs.readFileSync(credentialFile,'utf8'));
 if(!credentials.email.endsWith('@example.invalid')) throw Error('A fictitious admin is required.');
-const request=async(path:string,body?:any,headers:any={},method=body===undefined?'GET':'POST')=>{const r=await fetch(origin+path,{method,headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()};};
+const request=async(path:string,body?:any,headers:any={},method=body===undefined?'GET':'POST')=>{const r=await checkoutFetch(origin+path,{method,headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()};};
 const login=await request('/api/v1/auth/login',{email:credentials.email,password:credentials.password});assert.equal(login.status,200);const auth={Authorization:`Bearer ${login.data.token}`};
 const initial=(await request('/api/v1/admin/transport',undefined,auth)).data;
 let current=initial;

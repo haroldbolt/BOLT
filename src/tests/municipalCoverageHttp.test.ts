@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 /** Explicitly isolated local copy; this script never targets production. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
@@ -6,7 +7,7 @@ import fixtures from './municipal-coverage-fixtures.json';
 import existing from './coverage-address-fixtures.json';
 const origin=process.env.BOLT_COVERAGE_TEST_URL;
 if(origin!=='http://localhost:3020' || !process.cwd().endsWith('/BOLT-coverage')) throw Error('Use the isolated BOLT-coverage copy on port 3020.');
-const request=async(path:string,body?:any,key?:string)=>{const r=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(key?{'Idempotency-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()}};
+const request=async(path:string,body?:any,key?:string)=>{const r=await checkoutFetch(origin+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...(key?{'Idempotency-Key':key}:{})},body:body===undefined?undefined:JSON.stringify(body)});return {status:r.status,data:await r.json()}};
 const catalog=(await request('/api/v1/catalog?q=SIMULACI%C3%93N')).data;
 const product=catalog.find((p:any)=>p.id==='sim-snack-1kg');assert.ok(product?.name.startsWith('SIMULACIÓN'));
 const items=[{productId:product.id,quantity:1}],purchaseItems=[{...items[0],price:product.price}];

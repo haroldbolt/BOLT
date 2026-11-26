@@ -1,3 +1,4 @@
+import { visibleActor, visibleCustomer, visibleItem, visibleTimestamps, visibleTotals, visibleWindow } from './orderViews';
 import type { OrderUpdates } from './orderUpdates';
 import crypto from 'node:crypto';
 import express, { type Express, type Request, type Response } from 'express';
@@ -102,7 +103,7 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
       shipmentId, shipmentIndex, fulfillmentStatus,
       items: items.map(({ productId, name, presentation, quantity }) => ({ productId, name, presentation, quantity })),
     })),
-    scheduledWindow: order.scheduledWindow,
+    scheduledWindow: visibleWindow(order.scheduledWindow),
     deliveryReview: review && {
       status: review.status,
       requestedAt: review.requestedAt,
@@ -111,26 +112,24 @@ export function boltAdminOrder(order: Order, demoReadOnly = false) {
       reasonCode: review.reasonCode,
     },
     ...(demoReadOnly ? { demoReadOnly: true } : {
-      customer: order.customer,
+      customer: visibleCustomer(order.customer),
       deliveryAddress: {
         address: order.deliveryAddress.address,
         details: order.deliveryAddress.details,
         locality: order.deliveryAddress.locality,
       },
     }),
-    items: demoReadOnly ? order.items.map(({ productId, sku, name, brand, presentation, price, quantity, image, weightKg, requiresPrescription }) => ({
-      productId, sku, name, brand, presentation, price, quantity, image, weightKg, requiresPrescription,
-    })) : order.items,
-    totals: order.totals,
+    items: order.items.map(visibleItem),
+    totals: visibleTotals(order.totals),
     payment: {
       method: order.payment.method,
       status: order.payment.status,
       ...(!demoReadOnly && { cashToCollect: order.payment.cashToCollect }),
     },
     ...(customerDemo && { demoCustomerCheckout: true }),
-    timestamps: order.timestamps,
+    timestamps: visibleTimestamps(order.timestamps),
     statusHistory: order.statusHistory?.map(({ previousStatus, newStatus, timestamp, actor }) => ({
-      previousStatus, newStatus, timestamp, ...(!demoReadOnly && { actor }),
+      previousStatus, newStatus, timestamp, ...(!demoReadOnly && { actor: visibleActor(actor) }),
     })),
   };
 }
@@ -436,7 +435,7 @@ export function mountBoltAdmin(app: Express, options: Options) {
     if (!store) return;
     options.orderUpdates.stream(res, ({ order, previousStoreId }) =>
       (order.storeId === store.id || previousStoreId === store.id) && isVisibleOrder(order),
-      () => !!getActor(req)?.storeIds.includes(store.id));
+      () => !!getActor(req)?.storeIds.includes(store.id) && activeStores().some(current => current.id === store.id));
   });
 
   app.get(base + '/orders/:orderId', (req, res) => {

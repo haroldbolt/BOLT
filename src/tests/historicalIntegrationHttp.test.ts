@@ -6,6 +6,8 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { FulfillmentStorage } from '../lib/fulfillmentStorage';
 import {INITIAL_ORDERS} from '../data/seedData';
 import {fixtureProduct,fixtureDrivers,fixtureConfig} from '../tests/transportFixtures';
 import {api} from '../lib/api';
@@ -55,9 +57,11 @@ try {
  admin=(await request('/auth/login','POST',credentials,'')).data.token;assert.ok(admin);
  assert.equal((await request('/auth/me')).data.user.role,'ADMINISTRADOR');
  const originalCatalog=await request('/catalog');const catalogHash=digest(originalCatalog.data);
+ const originalStaffViews=new Map<string,any>();
  const adminBefore=await request('/admin/dispatch');assert.equal(adminBefore.data.orders.length,0);
  for(const f of fixtures){
   const stored=await request('/orders/'+f.id);assert.equal(stored.status,200);
+  originalStaffViews.set(f.id, stored.data);
   const guest=await request('/orders/'+f.id+'/tracking','GET',undefined,'');assert.equal(guest.status,403);
   const assigning=await request('/operations/orders/'+f.id+'/assign-driver','POST',{});assert.equal(assigning.status,409);
   evidence.before.push({case:f.id,status:f.fulfillmentStatus,stored:stored.status,visibleInDispatchPanel:false,guestTracking:guest.status,guestCode:guest.data.code,assign:assigning.status,message:assigning.data.error});
@@ -166,11 +170,25 @@ try {
  }
  assert.equal((await request('/admin/dispatch')).data.orders.length,runsBeforeRecovery);
  const finalOrders=(await request('/orders')).data;
- const relevant=(o:any)=>Object.fromEntries(['id','items','totals','payment','fulfillmentStatus','createdAt','statusHistory','customer','deliveryAddress','storeId','assignmentId','tripId','timestamps'].map(k=>[k,o[k]]));
- for(const f of fixtures)assert.equal(digest(relevant(finalOrders.find((o:any)=>o.id===f.id))),digest(relevant(f)),'Historical commercial fields preserved');
- for(const f of fixtures.filter(o=>['ENTREGADO','CANCELADO'].includes(o.fulfillmentStatus))) {
-  const saved=finalOrders.find((o:any)=>o.id===f.id);
-  assert.equal(saved.purchaseCode,undefined);
+ const authoritativeOrders=new FulfillmentStorage(data).read().orders;
+ const preservedFields=['id','orderNumber','items','totals','payment','fulfillmentStatus','createdAt','statusHistory','customer','deliveryAddress','storeId','assignmentId','tripId','timestamps'];
+ for(const fixture of fixtures) {
+  const saved=authoritativeOrders.find((o:any)=>o.id===fixture.id);
+  const before=originalStaffViews.get(fixture.id), after=finalOrders.find((o:any)=>o.id===fixture.id);
+  assert.ok(saved && before && after, 'Historical order remains available');
+  for(const key of preservedFields) {
+   assert.ok(isDeepStrictEqual(saved[key],fixture[key]), 'Persisted historical field changed: '+key);
+   assert.ok(isDeepStrictEqual(after[key],before[key]), 'Administrative field changed: '+key);
+  }
+  assert.ok(isDeepStrictEqual(after.totals,fixture.totals));
+  assert.ok(isDeepStrictEqual(after.items,fixture.items));
+  assert.equal(after.fulfillmentStatus,fixture.fulfillmentStatus);
+  assert.ok(!('secretDeliveryCode' in after) && !('customerAccountId' in after) && !('creationRequestFingerprint' in after));
+  assert.ok(saved.secretDeliveryCode===fixture.secretDeliveryCode, 'Persisted delivery credential preserved');
+  if(['ENTREGADO','CANCELADO'].includes(fixture.fulfillmentStatus)){
+   assert.equal(saved.purchaseCode,undefined);
+   assert.equal(after.purchaseCode,undefined);
+  }
  }
  assert.equal(digest((await request('/catalog')).data),catalogHash);
  const beforeRestart=finalView.orders.map((o:any)=>({id:o.id,code:o.code,dispatches:o.dispatches.map((d:any)=>({id:d.id,code:d.code,status:d.status,driverId:d.driverId}))}));

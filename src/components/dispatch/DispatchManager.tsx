@@ -22,7 +22,7 @@ type CargoDispatch = {
   pickedUpAt?: number;
   cashDue: number;
   cashCollected: number;
-  external?: ExternalRequest;
+  external?: Pick<ExternalRequest, 'providerId' | 'simulation' | 'providerStage' | 'cashCollectionReference'> & {bankReceipt?: {netCOP:number}};
 };
 
 function CargoReconciliation({ dispatch, busy, action }: {

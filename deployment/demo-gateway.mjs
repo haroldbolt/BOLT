@@ -25,6 +25,10 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
   const getCookie = (req, name) => (req.headers.cookie || '').split(';').map(x => x.trim()).find(x => x.startsWith(name + '='))?.slice(name.length + 1);
   const customerRoute = p => p === '/api/customer' || p.startsWith('/api/customer/') || p.startsWith('/api/customer-auth/');
   const cookieRoute = p => customerRoute(p) || p === '/api/v1/orders' || p.startsWith('/api/v1/orders/');
+  const checkoutCookie = local ? 'bolt_checkout_local' : '__Host-bolt_checkout_attempt';
+  const checkoutRoute = p => ['/api/v1/checkout/attempt','/api/v1/orders','/api/v1/simulation/customer-checkout'].includes(p);
+  const allowCookie = (name, p) => (customerEnabled && cookieRoute(p) && customerCookie.test(name)) ||
+    (checkoutRoute(p) && name === checkoutCookie);
   const safeReturn = value => {
     if (typeof value !== 'string' || value.length > 1800 || !value.startsWith('/') || value.startsWith('//') || value.includes('\\')) return null;
     try {
@@ -143,8 +147,8 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
     const headers = { ...req.headers, host: `127.0.0.1:${upstreamPort}` };
     if (headers.origin && !customerEnabled) headers.origin = `http://127.0.0.1:${upstreamPort}`;
     delete headers.cookie;
-    if (customerEnabled && cookieRoute(pathname)) {
-      const selected = (req.headers.cookie || '').split(';').map(x => x.trim()).filter(x => customerCookie.test(x.split('=')[0]));
+    if (customerEnabled && cookieRoute(pathname) || checkoutRoute(pathname)) {
+      const selected = (req.headers.cookie || '').split(';').map(x => x.trim()).filter(x => allowCookie(x.split('=')[0], pathname));
       if (selected.length) headers.cookie = selected.join('; ');
     }
     for (const header of Object.keys(headers)) if (header.startsWith('x-forwarded-') || header === 'forwarded') delete headers[header];
@@ -153,8 +157,8 @@ export function createDemoGateway({ origin, password, sessionKey, upstreamPort, 
       const outgoing = { ...incoming.headers };
       delete outgoing['access-control-allow-origin'];
       delete outgoing['set-cookie'];
-      if (customerEnabled && cookieRoute(pathname)) {
-        const selected = (incoming.headers['set-cookie'] || []).filter(x => customerCookie.test(x.split('=')[0]) && !/;\s*Domain=/i.test(x) && /;\s*HttpOnly(?:;|$)/i.test(x) && (local || /;\s*Secure(?:;|$)/i.test(x)));
+      if (customerEnabled && cookieRoute(pathname) || checkoutRoute(pathname)) {
+        const selected = (incoming.headers['set-cookie'] || []).filter(x => allowCookie(x.split('=')[0], pathname) && !/;\s*Domain=/i.test(x) && /;\s*HttpOnly(?:;|$)/i.test(x) && (local || /;\s*Secure(?:;|$)/i.test(x)));
         if (selected.length) outgoing['set-cookie'] = selected;
       }
       const isEventStream = incoming.headers['content-type']?.startsWith('text/event-stream');

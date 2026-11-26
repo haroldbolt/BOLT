@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 import { adminBootstrapFixture, establishFixtureAdmin } from './adminBootstrapFixture.mjs';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -50,7 +51,7 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
   async function request<T>(route: string, options: RequestOptions = {}): Promise<T> {
     assert.ok(route.startsWith('/') && !route.startsWith('//'));
     const method = options.method ?? (options.body === undefined ? 'GET' : 'POST');
-    const response = await fetch(origin + '/api/v1' + route, {
+    const response = await checkoutFetch(origin + '/api/v1' + route, {
       method,
       headers: {
         'Content-Type': 'application/json',

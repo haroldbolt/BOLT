@@ -346,6 +346,21 @@ test("Authentication, privacy, assignment ownership and PIN attempt limit", asyn
     ),
   );
 });
+test("Una oferta vencida deja de autorizar el detalle aunque todavía no haya corrido el planificador", async () => {
+  const x = setup();
+  const driver = x.provision();
+  const order = x.order();
+  const [run] = x.runs(order);
+  await x.service.search(run.id);
+  const offered = x.service.driverDispatch(run,driver);
+  assert.equal(offered.destination,undefined);
+  assert.equal(offered.customerPhone,undefined);
+  assert.equal(x.service.driverAssignments(driver).length,1);
+  x.advance(31_000);
+  assert.equal(x.service.driverAssignments(driver).length,0);
+  assert.throws(() => x.service.driverDispatch(run,driver), {status:403});
+});
+
 test("Grouped dispatches, independent PINs, partial completion, cash exactly once and warehouse wait metrics", async () => {
   const x = setup();
   x.provision();
