@@ -8,6 +8,7 @@ import {acceptsDemoOrigin} from "../lib/demoOrigin";
 import express from "express";
 import { sql } from "kysely";
 import { generateKeyPair, exportJWK, SignJWT } from "jose";
+import { createGoogleProviderFixture } from "./customer/googleProviderFixture";
 import { fixtureConfig, fixtureDatabase } from "./customer/fixture";
 import { mountCustomerAccounts } from "../customer/routes";
 import { LEGAL_VERSION } from "../customer/legal";
@@ -44,6 +45,7 @@ const config = {
   google: { clientId: "ISOLATED-GOOGLE", clientSecret: "ISOLATED-SECRET" },
   apple: { clientId: "ISOLATED-APPLE", clientSecret: "ISOLATED-SECRET" },
 };
+const localGoogle = await createGoogleProviderFixture(config.google);
 const { instance } = await mountCustomerAccounts(
   app,
   { list: () => [], authorizeGuest: () => false, present: (o) => o },
@@ -60,9 +62,7 @@ const realFetch = globalThis.fetch;
 let email = "google-fixture@example.invalid",
   subject = "GOOGLE-FIXTURE",
   provider: "google" | "apple" = "google",
-  revocation = "ok",
-  tokenExchanges = 0;
-let lastVerifier = "";
+  revocation = "ok";
 globalThis.fetch = async (input, init) => {
   const url = new URL(
     typeof input === "string"
@@ -72,32 +72,18 @@ globalThis.fetch = async (input, init) => {
         : input.url,
   );
   if (url.origin === origin) return hosted ? throughGateway(input, init) : realFetch(input, init);
-  if (
-    url.href === "https://www.googleapis.com/oauth2/v3/certs" ||
-    url.href === "https://appleid.apple.com/auth/keys"
-  )
+  const googleResponse = await localGoogle.fetch(input, init);
+  if (googleResponse) return googleResponse;
+  if (url.href === "https://appleid.apple.com/auth/keys")
     return Response.json({ keys: [jwk] });
-  if (
-    url.href === "https://oauth2.googleapis.com/token" ||
-    url.href === "https://appleid.apple.com/auth/token"
-  ) {
-    tokenExchanges++;
-    lastVerifier =
-      new URLSearchParams(String(init?.body)).get("code_verifier") || "";
+  if (url.href === "https://appleid.apple.com/auth/token") {
     const idToken = await new SignJWT({
       email,
       email_verified: true,
-      name: provider === "google" ? "Nombre Google fixture" : undefined,
     })
       .setProtectedHeader({ alg: "RS256", kid: "fixture-key" })
-      .setIssuer(
-        provider === "google"
-          ? "https://accounts.google.com"
-          : "https://appleid.apple.com",
-      )
-      .setAudience(
-        provider === "google" ? config.google.clientId : config.apple.clientId,
-      )
+      .setIssuer("https://appleid.apple.com")
+      .setAudience(config.apple.clientId)
       .setSubject(subject)
       .setIssuedAt()
       .setExpirationTime("10m")
@@ -170,6 +156,14 @@ async function begin(register = true, legal: any = consent) {
     ...(legal ? { additionalData: { legalConsent: legal } } : {}),
   });
 }
+async function identityTotals() {
+  const snapshot = await sql<{users:number,accounts:number,sessions:number}>`
+    select (select count(*)::int from customer_user) as users,
+           (select count(*)::int from customer_account) as accounts,
+           (select count(*)::int from customer_session) as sessions`.execute(db);
+  return snapshot.rows[0];
+}
+
 try {
   if (hosted) {
     const login=await throughGateway(origin+'/__demo/login',{method:'POST',headers:{Origin:origin},body:new URLSearchParams({password:gatePassword})});
@@ -177,6 +171,10 @@ try {
     assert.equal(login.status,303);
   }
   assert.equal((await begin(true, null)).status, 400);
+  const nativeInput = { provider:"google", idToken:{ token:"fixture-browser-input" } };
+  assert.equal((await request('/api/customer-auth/sign-in/social', nativeInput)).status,400);
+  assert.deepEqual(await identityTotals(),{users:0,accounts:0,sessions:0});
+  assert.equal(localGoogle.stats.exchanges,0);
   console.log(
     "PASS OAuth registration requires server-validated legal consent",
   );
@@ -185,37 +183,52 @@ try {
   let authorize = new URL(start.data.url);
   assert.equal(authorize.searchParams.get("code_challenge_method"), "S256");
   assert.ok(authorize.searchParams.get("state"));
-  const state = authorize.searchParams.get("state")!;
+  const {state, code} = localGoogle.authorize(authorize, "valid", {email, subject});
   let callback = await request(
-    `/api/customer-auth/callback/google?code=fixture-code&state=${encodeURIComponent(state)}`,
+    `/api/customer-auth/callback/google?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
   );
   assert.equal(callback.status, 302);
   assert.equal(callback.headers.get("location"), "/cuenta");
-  assert.ok(lastVerifier.length >= 43);
+  assert.equal(localGoogle.stats.keyRequests, 1);
   let me = (await request("/api/customer/me")).data;
   assert.equal(me.user.name, "Nombre Google fixture");
   const googleUser = me.user.id;
+  const googleProfile = await db.selectFrom('customer_user').select('legalReceipt').where('id','=',googleUser).executeTakeFirstOrThrow();
+  assert.equal(JSON.parse(googleProfile.legalReceipt).version,LEGAL_VERSION);
+  assert.equal(JSON.parse(googleProfile.legalReceipt).marketing,false);
+  const googleIdentity = await db.selectFrom('customer_account').select(['providerId','accountId']).where('userId','=',googleUser).executeTakeFirstOrThrow();
+  assert.deepEqual(googleIdentity,{providerId:'google', accountId:subject});
   console.log(
     "PASS Google authorization code, PKCE, signed ID token and real DB session (fixture provider)",
   );
   await request("/api/customer-auth/sign-out", {});
-  const before = tokenExchanges;
+  const before = localGoogle.stats.exchanges;
   await request(
-    `/api/customer-auth/callback/google?code=fixture-code&state=${encodeURIComponent(state)}`,
+    `/api/customer-auth/callback/google?code=${encodeURIComponent(code)}&state=${encodeURIComponent(state)}`,
   );
-  assert.equal(tokenExchanges, before);
+  assert.equal(localGoogle.stats.exchanges, before);
   assert.equal((await request("/api/customer/me")).data.user, null);
   console.log("PASS consumed state cannot be replayed");
   start = await begin(false);
   authorize = new URL(start.data.url);
+  const nextGoogle = localGoogle.authorize(authorize, "valid", {email, subject});
   await request(
-    `/api/customer-auth/callback/google?code=fixture-code2&state=${encodeURIComponent(authorize.searchParams.get("state")!)}`,
+    `/api/customer-auth/callback/google?code=${nextGoogle.code}&state=${encodeURIComponent(authorize.searchParams.get("state")!)}`,
   );
   assert.equal((await request("/api/customer/me")).data.user.id, googleUser);
   await request("/api/customer-auth/sign-out", {});
   console.log(
     "PASS existing Google identity logs in without creating another account",
   );
+  start = await begin();
+  assert.equal(start.status, 200);
+  const rejected = localGoogle.authorize(start.data.url, "wrong-audience", {email, subject});
+  callback = await request('/api/customer-auth/callback/google?' + new URLSearchParams(rejected));
+  assert.equal(callback.status, 302);
+  assert.ok(callback.headers.get('location')?.includes('error='));
+  assert.equal((await request('/api/customer/me')).data.user,null);
+  assert.deepEqual(await identityTotals(),{users:1,accounts:1,sessions:0});
+  console.log("PASS wrong audience refused before creating a session for an existing customer");
   provider = "apple";
   subject = "APPLE-SAME-EMAIL";
   start = await begin();
@@ -319,7 +332,7 @@ try {
   );
   console.log("PASS pending Apple deletion can resume without recreating user");
   console.log(
-    "10 OAuth protocol checks passed with isolated signed fixtures. Live Google/Apple credentials remain pending.",
+    "Google and Apple callback contracts passed with isolated signed fixtures.",
   );
 } finally {
   globalThis.fetch = realFetch;

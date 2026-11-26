@@ -9,6 +9,7 @@ import {
 } from "better-auth/api";
 import { symmetricDecrypt } from "better-auth/crypto";
 import { customerEmailConfigured, type CustomerConfig } from "./config";
+import { googleUserInfo } from "./googleIdentity";
 import type { CustomerDB } from "./database";
 import { LEGAL_VERSION, legalDocuments } from "./legal";
 export const legalHashes = Object.fromEntries(
@@ -214,7 +215,12 @@ export function createCustomerAuth(
     },
     socialProviders: {
       ...(customerEmailConfigured(config) && config.google
-        ? { google: { ...config.google, disableImplicitSignUp: true } }
+        ? { google: {
+            ...config.google,
+            disableImplicitSignUp: true,
+            disableIdTokenSignIn: true,
+            getUserInfo: googleUserInfo(config.google.clientId),
+          } }
         : {}),
       ...(customerEmailConfigured(config) && config.apple
         ? {
