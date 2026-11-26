@@ -53,8 +53,10 @@ export function createCustomerDemoDispatch(repo: OrdersRepository, dispatch: Dis
       throw new DispatchError(409, 'SIMULATION_DISPATCH_NOT_READY', 'El despacho de prueba aún no está disponible en Suba.');
     }
     if (run.driverId === driverId && ['PICKED_UP', 'DELIVERED'].includes(run.status)) return order;
-    if (!['CONFIRMADO', 'EN_ALISTAMIENTO', 'LISTO_PARA_DESPACHO'].includes(order.fulfillmentStatus) ||
-        !['PENDING', 'SEARCHING', 'OFFER_PENDING', 'ASSIGNED'].includes(run.status) || run.external ||
+    if (order.fulfillmentStatus !== 'LISTO_PARA_DESPACHO') {
+      throw new DispatchError(409, 'SIMULATION_DISPATCH_NOT_READY', 'Marca primero el pedido listo para despacho en BOLT Admin.');
+    }
+    if (!['PENDING', 'SEARCHING', 'OFFER_PENDING', 'ASSIGNED'].includes(run.status) || run.external ||
         (run.driverId && run.driverId !== driverId)) {
       throw new DispatchError(409, 'SIMULATION_DISPATCH_NOT_READY', 'El estado actual no permite iniciar este despacho de prueba.');
     }
@@ -87,11 +89,6 @@ export function createCustomerDemoDispatch(repo: OrdersRepository, dispatch: Dis
             cashBalance: 0,
           },
         }, actor.id ?? 'BOLT_ADMIN');
-      }
-      for (const status of ['EN_ALISTAMIENTO', 'LISTO_PARA_DESPACHO'] as const) {
-        if (order.fulfillmentStatus !== (status === 'EN_ALISTAMIENTO' ? 'CONFIRMADO' : 'EN_ALISTAMIENTO')) continue;
-        const step = repo.transitionStatus(order.id, status, actor, { reason: 'Despacho de prueba desde BOLT Admin' });
-        if (!step.success) throw new DispatchError(step.code ?? 409, 'SIMULATION_DISPATCH_NOT_READY', step.error ?? 'No se pudo preparar el despacho.');
       }
       if (repo.dispatchState.accounts[driverId].status === 'OFF_DUTY') dispatch.shift(driverId, 'START');
       dispatch.location(driverId, { latitude: entrance.lat, longitude: entrance.lng, accuracy: 5, timestamp: Date.now() });

@@ -90,6 +90,25 @@ try {
   });
   await assert.rejects(withCustomerScope(restricted, "one", tx => tx.insertInto("customer_imports").values({user_id:"two",import_id:"wrong-owner"}).execute()), /row.level security/i);
   assert.equal((await restricted.selectFrom("customer_data").selectAll().execute()).length, 0);
+  // The fixture leases the same PostgreSQL connection to both subjects. A failed
+  // transaction must clear its subject just like a committed one.
+  const forced = await sql<{relname: string}>`select relname from pg_class
+    where oid in ('customer_data'::regclass, 'customer_imports'::regclass, 'customer_order_links'::regclass)
+      and relrowsecurity and relforcerowsecurity order by relname`.execute(restricted);
+  assert.deepEqual(forced.rows.map(row => row.relname), ["customer_data", "customer_imports", "customer_order_links"]);
+  for (const subject of ["one", "two"]) {
+    await withCustomerScope(restricted, subject, tx => tx.insertInto("customer_order_links")
+      .values({order_id: "review-" + subject, user_id: subject, evidence: "guest-capability"}).execute());
+  }
+  await assert.rejects(withCustomerScope(restricted, "one", async tx => {
+    assert.deepEqual(await tx.selectFrom("customer_order_links").select("order_id").execute(), [{order_id:"review-one"}]);
+    throw Error("Interrupción de revisión");
+  }), /Interrupción de revisión/);
+  assert.deepEqual(await restricted.selectFrom("customer_order_links").select("order_id").execute(), []);
+  await withCustomerScope(restricted, "two", async tx => {
+    assert.deepEqual(await tx.selectFrom("customer_order_links").select("order_id").execute(), [{order_id:"review-two"}]);
+  });
+  assert.deepEqual(await restricted.selectFrom("customer_order_links").select("order_id").execute(), []);
   console.log("PASS restricted owner enforces per-session RLS and clears pooled transaction context");
 } finally {
   await restricted.destroy();

@@ -1,4 +1,5 @@
 import { isDemoInventoryDeliveryOrder } from './demoInventoryDelivery';
+import { sameCheckoutAttempt } from './checkoutAttempt';
 import {FulfillmentStorage} from './fulfillmentStorage';
 import {newDispatchState, type DispatchState} from '../types/dispatch';
 import { makeWarehouseAssignment } from './warehouseAssignment';
@@ -82,6 +83,17 @@ export class OrdersRepository {
   private transactionReservations: (() => void)[] = [];
   private unified = false;
   private committedRevision = 0;
+  private commitListeners = new Set<() => void>();
+  public onCommit(listener: () => void) {
+    this.commitListeners.add(listener);
+    return () => this.commitListeners.delete(listener);
+  }
+  private didCommit() {
+    this.committedRevision++;
+    if (this.commitListeners.size) queueMicrotask(() => {
+      for (const listener of this.commitListeners) listener();
+    });
+  }
   get inventoryCacheRevision() { return this.committedRevision; }
   private fulfillmentFile: string;
   public dispatchState: DispatchState = newDispatchState();
@@ -94,7 +106,7 @@ export class OrdersRepository {
   private restore(s:any) {this.orders=s.orders;this.drivers=s.drivers;this.auditHistory=s.audit;this.telemetryHistory=s.telemetry;this.dispatchState=s.dispatch}
   private persistUnified() {
     new FulfillmentStorage(this.dataDir).commit(this.currentState());this.unified=true;
-    this.committedRevision++;
+    this.didCommit();
   }
   /** One synchronous writer (server lock). All dispatch/order/driver changes commit in one atomic rename. */
   public transaction<T>(fn:()=>T):T {
@@ -103,7 +115,7 @@ export class OrdersRepository {
     try {const value=fn();this.persistUnified();return value}
     catch(error){
       const durable=new FulfillmentStorage(this.dataDir).read();
-      if((durable?.revision||0)>previousRevision) { this.restore(durable); this.committedRevision++; }
+      if((durable?.revision||0)>previousRevision) { this.restore(durable); this.didCommit(); }
       else {
         for(const release of this.transactionReservations.reverse()) release();
         if(JSON.stringify(this.currentState())!==JSON.stringify(before)) this.restore(before);
@@ -355,10 +367,16 @@ export class OrdersRepository {
   // CREACIÓN DE PEDIDO CON RESERVA ATÓMICA
   // ==========================================
 
-  public createOrder(orderData: Order, catalogProducts?: Product[], warehouse?: Store): { success: boolean; order?: Order; error?: string } {
-    if(orderData.creationRequestId) {
-      const prior=this.orders.find(o=>o.creationRequestId===orderData.creationRequestId);
-      if(prior) return prior.creationRequestFingerprint===orderData.creationRequestFingerprint ? {success:true,order:prior} : {success:false,error:'La solicitud ya fue utilizada con otros datos.'};
+  public createOrder(orderData: Order, catalogProducts?: Product[], warehouse?: Store): { success: boolean; order?: Order; error?: string; code?: string } {
+    if (orderData.creationRequestId) {
+      const prior = this.getOrderByCreationRequest(orderData.creationRequestId);
+      if (prior) {
+        const sameBinding = prior.checkoutAttemptVerifier || orderData.checkoutAttemptVerifier
+          ? sameCheckoutAttempt(prior, orderData.checkoutAttemptVerifier) : true;
+        const sameIntent = sameBinding && prior.creationRequestFingerprint === orderData.creationRequestFingerprint &&
+          prior.customerAccountId === orderData.customerAccountId;
+        return sameIntent ? { success: true, order: prior } : { success: false, code:'CHECKOUT_REVIEW_REQUIRED', error: 'La solicitud ya fue utilizada con otros datos.' };
+      }
     }
     // 1. Validar que no exista un pedido con el mismo ID
     if (this.orders.some(o => o.id === orderData.id)) {

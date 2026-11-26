@@ -21,7 +21,9 @@ services:
         value: '1'
       - key: BOLT_PILOT_STORE_IDS
         value: HUB_ALAMOS,HUB_KENNEDY,HUB_SUBA
-      - key: BOLT_ADMIN_SETUP_TOKEN
+      - key: BOLT_ADMIN_INSTALLATION_ID
+        sync: false
+      - key: BOLT_ADMIN_CLOSED_RECEIPT
         sync: false
       - key: BOLT_TRUSTED_PROXY_CIDRS
         sync: false

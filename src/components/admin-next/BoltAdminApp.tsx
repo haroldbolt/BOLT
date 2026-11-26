@@ -1,4 +1,5 @@
 import { isBoltSplitDeployment } from '../../lib/backendRequest';
+import { adminRecoveryMessage, adminRotationMessage, adminSignInFailure, adminStatusFailure, type AdminSetupState } from '../../lib/adminAccessStatus';
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import {
   ArrowDownRight, ArrowLeft, ArrowRight, ArrowUpRight, Box, Building2, CalendarDays, ChartNoAxesCombined, CheckCircle2, ChevronLeft,
@@ -8,6 +9,7 @@ import {
 import type { FulfillmentStatus } from '../../types';
 import { formatCOP, formatDateBogota, formatTimeBogota } from '../../lib/formatters';
 import { api } from '../../lib/api';
+import { subscribeOrderChanges } from '../../lib/orderUpdatesClient';
 import { ProductImage } from '../common/ProductImage';
 import { boltAdmin, readAdminToken, storeAdminToken, type AdminActor, type AdminOrder, type AdminSession, type InventoryAdjustment, type InventoryItem, type InventoryPhotoUpdate, type InventoryScope, type PriceAdjustment, type PriceItem } from './adminClient';
 import { DeliveryReviewPanel, deliveryModeLabel } from './DeliveryReviewPanel';
@@ -110,32 +112,30 @@ export function BoltAdminApp() {
   const [password, setPassword] = useState('');
   const [attempt, setAttempt] = useState(0);
   const [landing, setLanding] = useState(landingFromUrl);
-  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupState, setSetupState] = useState<AdminSetupState | null>(null);
+  const setupRequired = setupState === 'open';
   const [adminName, setAdminName] = useState('');
   const [setupToken, setSetupToken] = useState('');
 
   useEffect(() => {
     const controller = new AbortController();
-    setSession(null); setError('');
-    void boltAdmin.session(token, controller.signal).then(result => {
+    setSession(null); setSetupState(null); setError('');
+    void boltAdmin.session(token, controller.signal).then(async result => {
+      const state = result.mode === 'live' && !result.actor ? await boltAdmin.authStatus(controller.signal) : null;
       if (controller.signal.aborted) return;
       setSession(result);
+      setSetupState(state);
       if (!result.actor) storeAdminToken(null);
-    }).catch(error => { if (!controller.signal.aborted) setError(errorText(error)); });
+    }).catch(failure => {
+      if (controller.signal.aborted) return;
+      const status = adminStatusFailure(failure);
+      setSetupState(status.state); setError(status.message);
+    });
     return () => controller.abort();
   }, [token, attempt]);
 
-  useEffect(() => {
-    if (session?.mode !== 'live' || session.actor) return;
-    const controller = new AbortController();
-    void boltAdmin.authStatus(controller.signal).then(result => {
-      if (!controller.signal.aborted) setSetupRequired(result.isSetupRequired);
-    }).catch(() => {});
-    return () => controller.abort();
-  }, [session]);
-
   async function signIn(profileId?: string, destination = landing) {
-    if (busy) return;
+    if (busy || (!profileId && setupState !== 'closed' && setupState !== 'open')) return;
     setBusy(true); setError('');
     try {
       const next = profileId ? await boltAdmin.demoLogin(profileId)
@@ -144,7 +144,11 @@ export function BoltAdminApp() {
       if (session?.actor && token && token !== next.token) void boltAdmin.logout(token).catch(() => {});
       setLanding(destination);
       storeAdminToken(next.token); setSession(null); setToken(next.token); setPassword(''); setSetupToken('');
-    } catch (failure) { setError(errorText(failure)); }
+    } catch (failure) {
+      const status = await adminSignInFailure(failure, setupState, boltAdmin.authStatus);
+      setSetupState(status.state); setError(status.message);
+      if (status.state !== setupState) { setSetupToken(''); setPassword(''); }
+    }
     finally { setBusy(false); }
   }
 
@@ -163,7 +167,8 @@ export function BoltAdminApp() {
     <div className="ba-login-content">
       <Brand />
       <h1>Operación por sede</h1>
-      {!session && !error && <p className="ba-loading" role="status"><LoaderCircle size={18} className="ba-spin" />Comprobando el acceso…</p>}
+      {!session && !error && !setupState && <p className="ba-loading" role="status"><LoaderCircle size={18} className="ba-spin" />Comprobando el acceso…</p>}
+      {setupState === 'recovery-required' && <p className="ba-error" role="alert"><CircleAlert size={16} aria-hidden="true" />{adminRecoveryMessage}</p>}
       {session?.mode === 'demo' && <>
         <p>Elige un perfil de prueba para consultar pedidos e inventario.</p>
         <div className="ba-profiles">
@@ -172,8 +177,8 @@ export function BoltAdminApp() {
             <span><strong>{profile.name}</strong><small>{profile.role === 'COORDINACION' ? 'Todas las sedes' : 'Acceso de sede'}</small></span><ArrowRight size={16} /></button>)}
         </div>
       </>}
-      {session?.mode === 'live' && <form onSubmit={event => { event.preventDefault(); void signIn(); }} className="ba-login-form">
-        <p>{setupRequired ? 'Configura la primera cuenta administrativa de esta instalación.' : 'Ingresa con tu cuenta administrativa.'}</p>
+      {session?.mode === 'live' && (setupRequired || setupState === 'closed') && <form onSubmit={event => { event.preventDefault(); void signIn(); }} className="ba-login-form">
+        <p>{setupRequired ? 'Usa el correo autorizado y el código de instalación para crear la primera cuenta.' : 'Ingresa con tu cuenta administrativa.'}</p>
         {setupRequired && <label className="ba-field">Nombre<input autoComplete="name" required value={adminName} onChange={event => setAdminName(event.target.value)} /></label>}
         <label className="ba-field">Correo<input type="email" autoComplete="username" required value={email} onChange={event => setEmail(event.target.value)} /></label>
         <label className="ba-field">Contraseña<input type="password" autoComplete={setupRequired ? 'new-password' : 'current-password'} minLength={setupRequired ? 8 : undefined} required value={password} onChange={event => setPassword(event.target.value)} /></label>
@@ -181,7 +186,7 @@ export function BoltAdminApp() {
         <button className="ba-btn ba-btn-primary" disabled={busy}>{busy ? 'Validando…' : setupRequired ? 'Configurar administrador' : 'Ingresar'}</button>
       </form>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
-      {!session && error && <button className="ba-btn ba-btn-secondary" type="button" onClick={() => setAttempt(n => n + 1)}>Reintentar</button>}
+      {((!setupState && error && session?.mode !== 'demo') || setupState === 'recovery-required') && <button className="ba-btn ba-btn-secondary" type="button" onClick={() => setAttempt(n => n + 1)}>Volver a comprobar</button>}
       {!isBoltSplitDeployment() && <a className="ba-text-link" href="/"><ArrowLeft size={15} /> BOLT Cliente</a>}
     </div>
   </main>;
@@ -207,7 +212,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const [inventoryScope, setInventoryScope] = useState<InventoryScope>(actor.canAdjustPrices && session.stores.length === 0 ? 'catalog' : 'store');
   const [offset, setOffset] = useState(0);
   const [revision, setRevision] = useState(0);
-  const [inboxRevision, setInboxRevision] = useState(0);
+  const refreshOrders = useRef<(() => void) | null>(null);
   const [notice, setNotice] = useState('');
   const [ordersError, setOrdersError] = useState('');
   const [inventoryError, setInventoryError] = useState('');
@@ -220,14 +225,13 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const requestedStoreUnavailable = landing.storeId && !session.stores.some(item => item.id === landing.storeId);
   const activeStore = useRef(storeId);
   activeStore.current = storeId;
-  const refresh = () => setRevision(value => value + 1);
+  const refresh = () => { refreshOrders.current?.(); setRevision(value => value + 1); };
   const pending = orders?.filter(isPending) ?? [];
   const active = orders?.filter(order => !isPending(order) && !isClosed(order)) ?? [];
   const orderView = tab === 'orders' || tab === 'turbo' || tab === 'scheduled' ? tab : null;
   const orderFiltersForView = orderFilters[orderView ?? 'orders'] ?? defaultOrderFilters;
   const scopedOrders = orderView && orders ? (orderView === 'orders' ? orders : orders.filter(order => orderTab(order) === orderView)) : null;
   const detail = scopedOrders?.find(order => order.id === selectedOrder);
-  const reviewingDelivery = !!detail && !detail.demoReadOnly && isPending(detail) && actor.canConfirm;
   const demoTrackingPath = detail && isDemo ? trackingPathFor(detail) : undefined;
   const demoCheckoutPath = '/demo/pedido-suba';
   const demoDispatchOrders = isDemo ? orders?.filter(order => order.dispatch || order.demoCustomerCheckout) : undefined;
@@ -238,14 +242,46 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
   const inventoryPageStart = inventory && inventory.total > 0 ? inventory.offset + 1 : 0;
 
   useEffect(() => {
-    if (!storeId) return;
+    if (!storeId || !token) return;
     const controller = new AbortController();
+    let loading = false;
+    let refreshRequested = false;
+    const load = async () => {
+      if (controller.signal.aborted || activeStore.current !== storeId) return;
+      if (loading) { refreshRequested = true; return; }
+      loading = true;
+      try {
+        const result = await boltAdmin.orders(token, storeId, controller.signal);
+        if (!controller.signal.aborted && activeStore.current === storeId) {
+          setOrders(result.orders);
+          setOrdersError('');
+        }
+      } catch (failure) {
+        if (!controller.signal.aborted && activeStore.current === storeId) setOrdersError(errorText(failure));
+      } finally {
+        loading = false;
+        if (refreshRequested) { refreshRequested = false; void load(); }
+      }
+    };
+    const refreshVisible = () => { if (document.visibilityState === 'visible') void load(); };
     setOrdersError('');
-    void boltAdmin.orders(token, storeId, controller.signal).then(result => {
-      if (!controller.signal.aborted) setOrders(result.orders);
-    }).catch(failure => { if (!controller.signal.aborted) setOrdersError(errorText(failure)); });
-    return () => controller.abort();
-  }, [storeId, token, revision, inboxRevision]);
+    refreshOrders.current = load;
+    void load();
+    const stopEvents = subscribeOrderChanges(signal => boltAdmin.orderEvents(token, storeId, signal), refreshVisible);
+    const timer = window.setInterval(refreshVisible, 18_000);
+    document.addEventListener('visibilitychange', refreshVisible);
+    window.addEventListener('online', refreshVisible);
+    window.addEventListener('focus', refreshVisible);
+    return () => {
+      controller.abort();
+      stopEvents();
+      window.clearInterval(timer);
+      document.removeEventListener('visibilitychange', refreshVisible);
+      window.removeEventListener('online', refreshVisible);
+      window.removeEventListener('focus', refreshVisible);
+      refreshOrders.current = null;
+    };
+  }, [storeId, token]);
 
   useEffect(() => {
     if (!pendingOrderRef.current || !orders) return;
@@ -257,14 +293,6 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
     setSelectedOrder(order.id);
     if (tab !== 'dispatch' && orderView !== 'orders') setTab(orderTab(order));
   }, [orders, orderView, tab]);
-
-  useEffect(() => {
-    if ((tab !== 'home' && tab !== 'dispatch' && !orderView) || reviewingDelivery || !storeId) return;
-    const refreshInbox = () => { if (document.visibilityState === 'visible') setInboxRevision(n => n + 1); };
-    const timer = window.setInterval(refreshInbox, 18_000);
-    document.addEventListener('visibilitychange', refreshInbox);
-    return () => { window.clearInterval(timer); document.removeEventListener('visibilitychange', refreshInbox); };
-  }, [tab, orderView, reviewingDelivery, storeId]);
 
   useEffect(() => {
     const timer = window.setTimeout(() => { setInventoryQuery(inventorySearch.trim()); setOffset(0); }, 200);
@@ -448,6 +476,7 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
       <main className="ba-content">
         {notice && <div className="ba-notice" role="status"><CheckCircle2 size={18} /><span>{notice}</span><button className="ba-icon-btn" type="button" aria-label="Cerrar aviso" onClick={() => setNotice('')}><X size={16} /></button></div>}
         {requestedStoreUnavailable && <p className="ba-info"><ShieldCheck size={16} aria-hidden="true" /> La sede del enlace no está asignada a este perfil.</p>}
+        {!isDemo && actor.rotationRecommended === true && <p className="ba-info" role="status"><ShieldCheck size={16} aria-hidden="true" />{adminRotationMessage}</p>}
         {sessionError && <p className="ba-error" role="alert"><CircleAlert size={16} />{sessionError}</p>}
 
         {tab === 'home' && <>
@@ -463,6 +492,10 @@ function AdminWorkspace({ session, actor, token, landing, switchProfile, signOut
             <Metric label="Pedidos en operación" value={orders && !ordersError ? active.length : null} icon={<ClipboardList size={18} />} onClick={() => openAllOrders('active')} />
             <Metric label="Presentaciones registradas" value={inventory && !inventoryError && !inventoryQuery ? inventory.total : null} icon={<Box size={18} />} onClick={() => navigate('inventory')} />
           </div>
+          {active.length > 0 && !ordersError && <section className="ba-panel">
+            <div className="ba-panel-head"><h2>Pedidos en operación</h2><button type="button" className="ba-btn ba-btn-secondary" onClick={() => openAllOrders('active')}>Ver todos <ArrowRight size={15} /></button></div>
+            <OrderRows orders={active.slice(0, 5)} selected="" onSelect={viewOrder} />
+          </section>}
           <section className="ba-panel">
             <div className="ba-panel-head"><div><h2>Pendientes de confirmar</h2><p>Solicitudes que necesitan una propuesta de entrega.</p></div><button type="button" className="ba-btn ba-btn-secondary" onClick={() => openAllOrders('PENDIENTE_CONFIRMACION')}>Ver pedidos <ArrowRight size={15} /></button></div>
             {ordersError ? <FetchError message={ordersError} refresh={refresh} /> : pending.length > 0 ? <OrderRows orders={pending.slice(0, 5)} selected="" onSelect={viewOrder} />
@@ -700,8 +733,7 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
   const [preparing, setPreparing] = useState(false);
   const [error, setError] = useState('');
   const heading = useRef<HTMLHeadingElement>(null);
-  const canPrepare = !order.demoReadOnly && !order.demoCustomerCheckout && actor.canConfirm && !order.isSplitOrder;
-  const startingPreparation = order.fulfillmentStatus === 'CONFIRMADO';
+  const canPrepare = !order.demoReadOnly && actor.canConfirm;
   const canOpenDispatch = isDemo ? !!order.dispatch || (!!order.demoCustomerCheckout && !isClosed(order))
     : !!order.dispatch || (!isPending(order) && !isClosed(order));
   const cashToCollect = order.payment?.cashToCollect ?? 0;
@@ -709,16 +741,16 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
     heading.current?.focus({ preventScroll: true });
     if (window.matchMedia('(max-width: 1050px)').matches) heading.current?.scrollIntoView({ block: 'start' });
   }, []);
-  const prepare = async () => {
+  const prepare = async (status: FulfillmentStatus, shipmentId?: string) => {
     if (preparing) return;
     setPreparing(true); setError('');
     try {
-      if (startingPreparation) {
-        const result = await boltAdmin.startPreparation(token, order.id);
-        changed(result, 'Alistamiento iniciado. El pedido está en preparación.');
+      if (status === 'CONFIRMADO') {
+        const result = await boltAdmin.startPreparation(token, order.id, shipmentId);
+        changed(result, 'Alistamiento iniciado.');
       } else {
-        const result = await boltAdmin.readyForDispatch(token, order.id);
-        changed(result, 'Pedido listo para despacho. Consulta su asignación en Despachos.');
+        const result = await boltAdmin.readyForDispatch(token, order.id, shipmentId);
+        changed(result, shipmentId ? 'Entrega lista para despacho.' : 'Pedido listo para despacho. Consulta su asignación en Despachos.');
       }
     } catch (failure) { setError(errorText(failure)); }
     finally { setPreparing(false); }
@@ -732,6 +764,12 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
     } catch (failure) { setError(errorText(failure)); }
     finally { setPreparing(false); }
   };
+  function preparationButton(status: FulfillmentStatus, shipmentId?: string) {
+    if (!canPrepare || (status !== 'CONFIRMADO' && status !== 'EN_ALISTAMIENTO')) return null;
+    return <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare(status, shipmentId)}>
+      {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} {status === 'CONFIRMADO' ? 'Iniciar alistamiento' : 'Marcar listo para despacho'}
+    </button>;
+  }
   return <section className="ba-panel ba-order-detail" aria-label="Detalle del pedido">
     <div className="ba-panel-head"><div><p>Detalle del pedido</p><h2 ref={heading} tabIndex={-1}>{orderLabel(order)}</h2></div><button className="ba-icon-btn" type="button" aria-label="Cerrar detalle del pedido" onClick={close}><X size={19} /></button></div>
     <div className="ba-order-body">
@@ -758,9 +796,11 @@ function OrderDetail({ order, trackingPath, token, actor, isDemo, close, viewDis
       {!order.demoReadOnly && isPending(order) && (actor.canConfirm ? <DeliveryReviewPanel order={order} token={token} isDemo={isDemo}
         onConfirmed={result => changed(result, 'Entrega confirmada. Puedes consultar el nuevo estado del pedido.')} />
         : <p className="ba-info"><ShieldCheck size={16} /> Tu perfil no puede confirmar entregas.</p>)}
-      {canPrepare && (startingPreparation || order.fulfillmentStatus === 'EN_ALISTAMIENTO') && <button type="button" className="ba-btn ba-btn-primary" disabled={preparing} onClick={() => void prepare()}>
-        {preparing ? <LoaderCircle size={16} className="ba-spin" /> : <Box size={16} />} {startingPreparation ? 'Iniciar alistamiento' : 'Marcar listo para despacho'}
-      </button>}
+      {order.isSplitOrder ? order.childShipments?.map(child => <section key={child.shipmentId} className="ba-order-items" aria-label={`Entrega ${child.shipmentIndex}`}>
+        <h3>Entrega {child.shipmentIndex}</h3><Status status={child.fulfillmentStatus} />
+        <ul>{child.items.map(item => <li key={`${item.productId}:${item.presentation}`}><span>{item.name}<small>{item.presentation}</small></span><strong>×{number.format(item.quantity)}</strong></li>)}</ul>
+        {preparationButton(child.fulfillmentStatus, child.shipmentId)}
+      </section>) : preparationButton(order.fulfillmentStatus)}
       {(!isDemo || order.demoCustomerCheckout || order.demoCashCheckout) && order.items.length === 1 && !isClosed(order) && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewInventory}><Box size={16} aria-hidden="true" /> Ver reserva en Inventario</button>}
       {canOpenDispatch && <button type="button" className="ba-btn ba-btn-secondary" onClick={viewDispatch}><Truck size={16} aria-hidden="true" /> Ver despacho</button>}
       {error && <p className="ba-error" role="alert"><CircleAlert size={16} />{error}</p>}
@@ -799,9 +839,7 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
     SEARCH_EXHAUSTED: 'Sin conductor disponible',
   } as Record<string, string>)[dispatch?.status ?? ''];
   const trackingPath = trackingPathFor(order);
-  const canSimulate = actor.canConfirm && order.demoCustomerCheckout && !order.demoReadOnly && (
-    order.fulfillmentStatus === 'CONFIRMADO' || order.fulfillmentStatus === 'EN_ALISTAMIENTO' || order.fulfillmentStatus === 'LISTO_PARA_DESPACHO'
-  );
+  const canSimulate = actor.canConfirm && order.demoCustomerCheckout && !order.demoReadOnly && order.fulfillmentStatus === 'LISTO_PARA_DESPACHO';
 
   async function simulateDispatch() {
     if (inFlight.current) return;
@@ -831,7 +869,9 @@ function DemoDispatchPanel({ order, actor, token, close, openOrder, viewInventor
         {order.demoCashCheckout && order.payment?.cashToCollect !== undefined && <div><dt>Efectivo de prueba</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
         {!order.demoCashCheckout && order.payment?.cashToCollect === 0 && <div><dt>Recaudo</dt><dd>{formatCOP(order.payment.cashToCollect)}</dd></div>}
       </dl>
-      {isPending(order) && <p className="ba-info">La unidad ya está reservada en Suba. Confirma la entrega en el pedido para habilitar el despacho.</p>}
+      {isPending(order) && <p className="ba-info">La unidad ya está reservada en Suba. Confirma la entrega en el pedido para iniciar el alistamiento.</p>}
+      {order.demoCustomerCheckout && ['CONFIRMADO', 'EN_ALISTAMIENTO'].includes(order.fulfillmentStatus) &&
+        <p className="ba-info">En el detalle del pedido, marca «Listo para despacho» para iniciar el Tiempo Turbo.</p>}
       {canSimulate && <button type="button" className="ba-btn ba-btn-primary" disabled={busy} onClick={() => void simulateDispatch()}>
         {busy ? <LoaderCircle size={16} className="ba-spin" /> : <Truck size={16} aria-hidden="true" />} Simular despacho sin cobro
       </button>}

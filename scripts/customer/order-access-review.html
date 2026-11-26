@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="referrer" content="no-referrer">
+  <title>Acceso a pedidos · BOLT</title>
+  <style>
+    :root { color-scheme: light; font: 400 16px/1.5 Inter, system-ui, sans-serif; color: #211f2c; background: #f6f7f9; }
+    *, *::before, *::after { box-sizing: border-box; }
+    body, h1, h2, p { margin: 0; }
+    header { background: #201d2a; color: white; }
+    .bar, main { max-width: 960px; margin-inline: auto; padding-inline: clamp(16px, 4vw, 40px); }
+    .bar { display: flex; align-items: center; gap: 12px; min-height: 66px; }
+    .brand { font-size: 1.4rem; font-weight: 850; letter-spacing: .03em; }
+    .context { border-left: 1px solid #706c79; padding-left: 12px; color: #e5e1e9; font-size: .88rem; }
+    main { padding-block: clamp(24px, 5vw, 56px); }
+    h1 { font-size: clamp(1.85rem, 5vw, 2.5rem); line-height: 1.12; letter-spacing: -.04em; }
+    h2 { font-size: 1.14rem; line-height: 1.3; }
+    .intro { margin: 8px 0 24px; color: #5e5b69; }
+    .panels { display: grid; grid-template-columns: minmax(220px, 5fr) minmax(280px, 8fr); gap: 16px; align-items: start; }
+    section { background: white; border: 1px solid #dedee6; border-radius: 16px; padding: clamp(16px, 3vw, 24px); }
+    .choices { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 14px; }
+    button { min-height: 46px; padding: 8px 10px; background: white; color: #393443; border: 1px solid #c9c8d0; border-radius: 10px; font: inherit; font-size: .94rem; font-weight: 620; line-height: 1.25; cursor: pointer; }
+    button:hover { border-color: #ae2138; }
+    button[aria-pressed=true] { border-color: #ae2138; background: #fff1f3; color: #981d36; box-shadow: inset 0 0 0 1px #ae2138; }
+    button:focus-visible { outline: 3px solid #ae2138; outline-offset: 2px; }
+    #outcome { border-top: 1px solid #e5e6eb; margin-top: 22px; padding-top: 18px; min-height: 95px; }
+    #outcome strong { display: block; }
+    #outcome p { color: #5b5865; margin-top: 4px; }
+    #outcome[data-state=allowed] strong { color: #136841; }
+    #outcome[data-state=denied] strong { color: #393443; }
+    #outcome[data-state=error] strong { color: #981d36; }
+    dl { display: grid; grid-template-columns: max-content 1fr; gap: 4px 16px; margin-bottom: 0; }
+    dt { color: #5b5865; } dd { margin: 0; overflow-wrap: anywhere; }
+    @media (max-width: 640px) { .panels { grid-template-columns: 1fr; } }
+  </style>
+</head>
+<body>
+  <header><div class="bar"><span class="brand">BOLT</span><span class="context">Demo local</span></div></header>
+  <main>
+    <h1>Acceso a pedidos</h1>
+    <p class="intro">Elige un perfil y consulta un pedido propio o ajeno. Todos los datos son de prueba.</p>
+    <div class="panels">
+      <section aria-labelledby="profiles-heading">
+        <h2 id="profiles-heading">Perfil de revisión</h2>
+        <div class="choices" role="group" aria-labelledby="profiles-heading" id="profiles">
+          <button type="button" data-profile="cliente-a" aria-pressed="true">Cliente A</button>
+          <button type="button" data-profile="cliente-b" aria-pressed="false">Cliente B</button>
+          <button type="button" data-profile="invitado-a" aria-pressed="false">Invitado A</button>
+          <button type="button" data-profile="invitado-b" aria-pressed="false">Invitado B</button>
+          <button type="button" data-profile="conductor-a" aria-pressed="false">Conductor A</button>
+          <button type="button" data-profile="conductor-b" aria-pressed="false">Conductor B</button>
+        </div>
+      </section>
+      <section aria-labelledby="consultation-heading">
+        <h2 id="consultation-heading">Consulta de Cliente A</h2>
+        <div class="choices" role="group" aria-labelledby="consultation-heading" id="cases">
+          <button type="button" data-case="propio" aria-pressed="true">Mi pedido</button>
+          <button type="button" data-case="otro" aria-pressed="false">Otro pedido de prueba</button>
+        </div>
+        <div id="outcome" role="status" aria-live="polite" aria-atomic="true"></div>
+        <noscript>Activa JavaScript para consultar el resultado.</noscript>
+      </section>
+    </div>
+  </main>
+  <script>
+    'use strict';
+    const profiles = Array.from(document.querySelectorAll('[data-profile]'));
+    const cases = Array.from(document.querySelectorAll('[data-case]'));
+    const heading = document.getElementById('consultation-heading');
+    const outcome = document.getElementById('outcome');
+    let profile = profiles[0];
+    let target = cases[0];
+    let activeRequest;
+
+    function show(state, title, body) {
+      const label = document.createElement('strong');
+      label.textContent = title;
+      const text = document.createElement('p');
+      text.textContent = body;
+      outcome.dataset.state = state;
+      outcome.replaceChildren(label, text);
+    }
+
+    function addDetail(details, title, value) {
+      if (!value) return;
+      const label = document.createElement('dt');
+      const text = document.createElement('dd');
+      label.textContent = title;
+      text.textContent = value;
+      details.append(label, text);
+    }
+
+    async function consult() {
+      activeRequest?.abort();
+      const request = new AbortController();
+      activeRequest = request;
+      const own = target.dataset.case === 'propio';
+      const type = profile.dataset.profile.split('-')[0];
+      const noun = type === 'conductor' ? 'despacho' : 'pedido';
+      for (const button of profiles) button.setAttribute('aria-pressed', String(button === profile));
+      for (const button of cases) button.setAttribute('aria-pressed', String(button === target));
+      heading.textContent = 'Consulta de ' + profile.textContent;
+      cases[0].textContent = 'Mi ' + noun;
+      cases[1].textContent = 'Otro ' + noun + ' de prueba';
+      show('loading', 'Consultando…', 'Comprobando el acceso en BOLT.');
+      try {
+        const response = await fetch('/casos/' + profile.dataset.profile + '/' + target.dataset.case, {
+          signal: request.signal, cache: 'no-store', credentials: 'same-origin', redirect: 'error',
+        });
+        const data = await response.json();
+        if (activeRequest !== request) return;
+        if (data.tipo !== type || typeof data.permitido !== 'boolean' || !Number.isInteger(data.estadoHTTP)) throw Error();
+        if (!own && !data.permitido && [401, 403, 404].includes(data.estadoHTTP)) {
+          show('denied', 'Acceso denegado', 'Este perfil no tiene acceso al ' + noun + ' seleccionado. HTTP ' + data.estadoHTTP + '.');
+          return;
+        }
+        if (!own || !data.permitido || !response.ok || data.estadoHTTP !== 200) {
+          show('error', 'Revisar resultado', 'La respuesta no coincide con el permiso esperado. HTTP ' + data.estadoHTTP + '.');
+          return;
+        }
+        show('allowed', 'Acceso permitido', 'BOLT autorizó la consulta de este ' + noun + '. HTTP 200.');
+        const details = document.createElement('dl');
+        addDetail(details, 'Código', data.codigo);
+        addDetail(details, 'Estado', data.estado?.replaceAll('_', ' '));
+        if (Array.isArray(data.elementos)) addDetail(details, 'Productos', data.elementos.join(' · '));
+        if (Array.isArray(data.lista)) addDetail(details, 'En mi lista', data.lista.join(' · '));
+        if (details.childElementCount) outcome.append(details);
+      } catch {
+        if (activeRequest === request) show('error', 'Consulta interrumpida', 'Vuelve a pulsar la opción para consultar el servidor local.');
+      }
+    }
+    for (const button of profiles) button.addEventListener('click', () => { profile = button; void consult(); });
+    for (const button of cases) button.addEventListener('click', () => { target = button; void consult(); });
+    void consult();
+  </script>
+</body>
+</html>

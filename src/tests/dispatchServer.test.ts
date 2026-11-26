@@ -1,3 +1,4 @@
+import { adminBootstrapFixture } from './adminBootstrapFixture.mjs';
 /** Smoke the actual server and its legacy-route guards in an isolated working/data directory. */
 import fs from "node:fs";
 import { randomUUID } from "node:crypto";
@@ -33,6 +34,7 @@ const socket = net.createServer();
 await new Promise<void>((resolve) => socket.listen(0, "127.0.0.1", resolve));
 const port = (socket.address() as net.AddressInfo).port;
 await new Promise<void>((resolve) => socket.close(() => resolve()));
+const staffFixture = adminBootstrapFixture(root, 'coordination@example.invalid');
 const setupKey = randomUUID();
 const child = spawn(
   process.execPath,
@@ -40,7 +42,7 @@ const child = spawn(
   {
     cwd: root,
     env: {
-      ...process.env,
+      ...process.env, ...staffFixture.env,
       PORT: String(port),
       NODE_ENV: "production",
       BOLT_DATA_DIR: data,
@@ -202,5 +204,5 @@ try {
 } finally {
   child.kill("SIGTERM");
   await new Promise<void>((resolve) => child.once("exit", () => resolve()));
-  fs.rmSync(root, { recursive: true, force: true });
+  staffFixture.dispose(); fs.rmSync(root, { recursive: true, force: true });
 }

@@ -1,3 +1,4 @@
+import { adminBootstrapFixture } from './adminBootstrapFixture.mjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import os from 'node:os';
@@ -5,6 +6,8 @@ import crypto from 'node:crypto';
 import net from 'node:net';
 import {spawn} from 'node:child_process';
 import assert from 'node:assert/strict';
+import { isDeepStrictEqual } from 'node:util';
+import { FulfillmentStorage } from '../lib/fulfillmentStorage';
 import {INITIAL_ORDERS} from '../data/seedData';
 import {fixtureProduct,fixtureDrivers,fixtureConfig} from '../tests/transportFixtures';
 import {api} from '../lib/api';
@@ -39,10 +42,11 @@ async function request(p:string,method='GET',body?:any,auth=admin,extra:any={}){
  const res=await fetch(base+p,{method,headers:{'Content-Type':'application/json',...(auth?{Authorization:`Bearer ${auth}`} :{}),...extra},body:body===undefined?undefined:JSON.stringify(body)});
  const response=await res.json();return {status:res.status,data:response};
 }
+const staffFixture = adminBootstrapFixture(root, 'audit@example.invalid');
 async function start(){
  // The isolated audit recovers every historical state from one loopback address.
  // Rate-limit behavior itself is asserted in apiRateLimit.test.ts.
- child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_API_RATE_RECOVERY_PER_MINUTE:String(fixtures.length + 2),BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
+ child=spawn(process.execPath,['--import','tsx',path.join(source,'server.ts')],{cwd:root,env:{...process.env, ...staffFixture.env,PORT:String(port),NODE_ENV:'production',BOLT_DATA_DIR:data,BOLT_API_RATE_RECOVERY_PER_MINUTE:String(fixtures.length + 2),BOLT_DISPATCH_SIMULATION:'0',BOLT_ADMIN_EMAIL:'',BOLT_ADMIN_PASSWORD:'',BOLT_ADMIN_SETUP_TOKEN:bootstrapToken},stdio:['ignore','pipe','pipe']});
  child.stdout.on('data',(b:any)=>output+=b);child.stderr.on('data',(b:any)=>output+=b);
  for(let i=0;i<100;i++){if(child.exitCode!==null)throw Error('Isolated server exited');try{if((await request('/health','GET',undefined,'')).status===200)return;}catch{}await new Promise(r=>setTimeout(r,100));}throw Error('Isolated server failed readiness');
 }
@@ -53,9 +57,11 @@ try {
  admin=(await request('/auth/login','POST',credentials,'')).data.token;assert.ok(admin);
  assert.equal((await request('/auth/me')).data.user.role,'ADMINISTRADOR');
  const originalCatalog=await request('/catalog');const catalogHash=digest(originalCatalog.data);
+ const originalStaffViews=new Map<string,any>();
  const adminBefore=await request('/admin/dispatch');assert.equal(adminBefore.data.orders.length,0);
  for(const f of fixtures){
   const stored=await request('/orders/'+f.id);assert.equal(stored.status,200);
+  originalStaffViews.set(f.id, stored.data);
   const guest=await request('/orders/'+f.id+'/tracking','GET',undefined,'');assert.equal(guest.status,403);
   const assigning=await request('/operations/orders/'+f.id+'/assign-driver','POST',{});assert.equal(assigning.status,409);
   evidence.before.push({case:f.id,status:f.fulfillmentStatus,stored:stored.status,visibleInDispatchPanel:false,guestTracking:guest.status,guestCode:guest.data.code,assign:assigning.status,message:assigning.data.error});
@@ -164,11 +170,25 @@ try {
  }
  assert.equal((await request('/admin/dispatch')).data.orders.length,runsBeforeRecovery);
  const finalOrders=(await request('/orders')).data;
- const relevant=(o:any)=>Object.fromEntries(['id','items','totals','payment','fulfillmentStatus','createdAt','statusHistory','customer','deliveryAddress','storeId','assignmentId','tripId','timestamps'].map(k=>[k,o[k]]));
- for(const f of fixtures)assert.equal(digest(relevant(finalOrders.find((o:any)=>o.id===f.id))),digest(relevant(f)),'Historical commercial fields preserved');
- for(const f of fixtures.filter(o=>['ENTREGADO','CANCELADO'].includes(o.fulfillmentStatus))) {
-  const saved=finalOrders.find((o:any)=>o.id===f.id);
-  assert.equal(saved.purchaseCode,undefined);
+ const authoritativeOrders=new FulfillmentStorage(data).read().orders;
+ const preservedFields=['id','orderNumber','items','totals','payment','fulfillmentStatus','createdAt','statusHistory','customer','deliveryAddress','storeId','assignmentId','tripId','timestamps'];
+ for(const fixture of fixtures) {
+  const saved=authoritativeOrders.find((o:any)=>o.id===fixture.id);
+  const before=originalStaffViews.get(fixture.id), after=finalOrders.find((o:any)=>o.id===fixture.id);
+  assert.ok(saved && before && after, 'Historical order remains available');
+  for(const key of preservedFields) {
+   assert.ok(isDeepStrictEqual(saved[key],fixture[key]), 'Persisted historical field changed: '+key);
+   assert.ok(isDeepStrictEqual(after[key],before[key]), 'Administrative field changed: '+key);
+  }
+  assert.ok(isDeepStrictEqual(after.totals,fixture.totals));
+  assert.ok(isDeepStrictEqual(after.items,fixture.items));
+  assert.equal(after.fulfillmentStatus,fixture.fulfillmentStatus);
+  assert.ok(!('secretDeliveryCode' in after) && !('customerAccountId' in after) && !('creationRequestFingerprint' in after));
+  assert.ok(saved.secretDeliveryCode===fixture.secretDeliveryCode, 'Persisted delivery credential preserved');
+  if(['ENTREGADO','CANCELADO'].includes(fixture.fulfillmentStatus)){
+   assert.equal(saved.purchaseCode,undefined);
+   assert.equal(after.purchaseCode,undefined);
+  }
  }
  assert.equal(digest((await request('/catalog')).data),catalogHash);
  const beforeRestart=finalView.orders.map((o:any)=>({id:o.id,code:o.code,dispatches:o.dispatches.map((d:any)=>({id:d.id,code:d.code,status:d.status,driverId:d.driverId}))}));
@@ -179,4 +199,4 @@ try {
  evidence.preservation={...evidence.preservation,pricesStockReservationsCatalogHashUnchanged:true,historicalCommercialFieldsAndStatusesUnchanged:true,terminalOrdersNotReopened:true,registrationRetryIdempotent:true,restartPreservesCodesAssignmentsAndStates:true,unifiedFileCreated:fs.existsSync(path.join(data,'persisted-fulfillment.json'))};
  fs.writeFileSync(path.join(root,'evidence.json'),JSON.stringify(evidence,null,2));
  console.log('PASS integration HTTP: 9 historical states, register/conciliate/retry, missing custody evidence rollback, verified pickup source, assisted guest recovery open/closed, access denied, warehouse auth, privacy, commercial preservation and restart');
-} finally {await stop();fs.rmSync(root,{recursive:true,force:true});}
+} finally {await stop();staffFixture.dispose(); fs.rmSync(root,{recursive:true,force:true});}

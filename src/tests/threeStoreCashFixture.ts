@@ -1,3 +1,5 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
+import { adminBootstrapFixture, establishFixtureAdmin } from './adminBootstrapFixture.mjs';
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
 import { randomUUID } from 'node:crypto';
@@ -26,7 +28,7 @@ const source = fileURLToPath(new URL('../../', import.meta.url));
 type RequestOptions = { method?: string; body?: unknown; token?: string; key?: string; guest?: string; status?: number };
 
 /** Empty temporary installation using the Express checkout and real auth, without demo orders or dispatch shortcuts. */
-export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean; simulation?: boolean } = {}) {
+export async function createThreeStoreCashFixture(options: { respondAsCargo?: boolean; simulation?: boolean; ownFleetOnly?: boolean; splitSuba?: boolean } = {}) {
   const socket = net.createServer();
   socket.listen(0, '127.0.0.1');
   await once(socket, 'listening');
@@ -39,13 +41,17 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
   const localData = path.join(runtime, 'src/data');
   const egressLog = path.join(runtime, 'egress.log');
   const cargoLog = path.join(runtime, 'cargo-fixture.log');
+  const fleet = testStores.flatMap(store => fixtureDrivers.filter(driver =>
+    driver.id === 'SIM-' + store.id + '-1' || (options.splitSuba && store.id === 'HUB_SUBA' && driver.id === 'SIM-HUB_SUBA-2'),
+  ).map(driver => ({ store, driver })));
   const adminCredentials = { email: 'coordination@rdi.invalid', password: randomUUID() };
+  const staffFixture = options.simulation ? undefined : adminBootstrapFixture(runtime, adminCredentials.email);
   let child: ChildProcess | undefined;
 
   async function request<T>(route: string, options: RequestOptions = {}): Promise<T> {
     assert.ok(route.startsWith('/') && !route.startsWith('//'));
     const method = options.method ?? (options.body === undefined ? 'GET' : 'POST');
-    const response = await fetch(origin + '/api/v1' + route, {
+    const response = await checkoutFetch(origin + '/api/v1' + route, {
       method,
       headers: {
         'Content-Type': 'application/json',
@@ -84,9 +90,11 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
         BOLT_DATA_DIR: dataDir, BOLT_TEST_EGRESS_LOG: egressLog,
         ...(options.simulation ? { BOLT_DISPATCH_SIMULATION: '1' } : { BOLT_PILOT_STORE_IDS: storeIds.join(',') }),
         ...(options.respondAsCargo && { BOLT_TEST_CARGO_LOG: cargoLog }),
-        BOLT_ADMIN_EMAIL: adminCredentials.email, BOLT_ADMIN_PASSWORD: adminCredentials.password,
-        ...(checkoutEnabled && !options.simulation ? {
-          BOLT_PILOT_CHECKOUT_ENABLED: '1', BOLT_RAPPI_CARGO_ENABLED: '1', BOLT_RAPPI_CARGO_USER_TOKEN: randomUUID(),
+        ...staffFixture?.env,
+        ...(!options.simulation && options.ownFleetOnly && { BOLT_PILOT_OWN_FLEET_ONLY: '1' }),
+        ...(!options.simulation && checkoutEnabled && { BOLT_PILOT_CHECKOUT_ENABLED: '1' }),
+        ...(!options.simulation && checkoutEnabled && !options.ownFleetOnly ? {
+          BOLT_RAPPI_CARGO_ENABLED: '1', BOLT_RAPPI_CARGO_USER_TOKEN: randomUUID(),
           BOLT_RAPPI_CARGO_SETTINGS: JSON.stringify({ cashCollectionApproved: true,
             cashApprovalReference: 'FICTICIO-SOLO-PRUEBA-LOCAL', maxCashCOP: 200_000, externalBudgetCOP: 20_000, sites: fakeSites }),
         } : {}),
@@ -98,7 +106,10 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     for (let attempt = 0; attempt < 150; attempt++) {
       if (child.exitCode !== null || child.signalCode !== null) throw Error('Servidor local interrumpido. ' + startupLog);
       const healthy = await fetch(origin + '/api/v1/health', { signal: AbortSignal.timeout(500) }).then(r => r.ok, () => false);
-      if (healthy) return;
+      if (healthy) {
+        if (staffFixture) await establishFixtureAdmin(origin, adminCredentials.email, adminCredentials.password, staffFixture.env.BOLT_ADMIN_SETUP_TOKEN);
+        return;
+      }
       await delay(80);
     }
     throw Error('No inició la instalación temporal de BOLT. ' + startupLog);
@@ -107,15 +118,14 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
   const login = async () => (await request<{ token: string }>('/auth/login', { body: adminCredentials })).token;
   async function registerFleet(admin: string) {
     const tokens = new Map<string, string>();
-    for (const store of testStores) {
-      const driver = fixtureDrivers.find(d => d.id === 'SIM-' + store.id + '-1')!;
-      const credentials = { email: store.id.toLowerCase() + '@rdi.invalid', password: randomUUID() };
+    for (const { store, driver } of fleet) {
+      const credentials = { email: driver.id.toLowerCase() + '@rdi.invalid', password: randomUUID() };
       await request('/admin/dispatch/drivers', { token: admin, body: { driver, ...credentials, storeIds: [store.id] } });
       const { token } = await request<{token: string}>('/driver/auth/login', { body: credentials });
       await request('/driver/shift', { token, body: { action: 'START' } });
       const { lat, lng } = store.destination.coordinates;
       await request('/driver/location', { token, body: { latitude: lat, longitude: lng, accuracy: 8, timestamp: Date.now() } });
-      tokens.set(store.id, token);
+      if (!tokens.has(store.id)) tokens.set(store.id, token);
     }
     return tokens;
   }
@@ -124,7 +134,7 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
     return fs.existsSync(cargoLog) ? fs.readFileSync(cargoLog, 'utf8').trim().split('\n').map(line => JSON.parse(line)) : [];
   }
   function verifyNoEgress() { assert.equal(fs.existsSync(egressLog), false, 'Hubo un intento de usar un servicio de red externo.'); }
-  async function dispose() { try { await stop(); verifyNoEgress(); } finally { fs.rmSync(runtime, { recursive: true, force: true }); } }
+  async function dispose() { try { await stop(); verifyNoEgress(); } finally { staffFixture?.dispose(); fs.rmSync(runtime, { recursive: true, force: true }); } }
   try {
     fs.mkdirSync(localData, { recursive: true });
     for (const folder of ['catalogo-local', 'geography']) fs.symlinkSync(path.join(source, 'src/data', folder), path.join(localData, folder), 'dir');
@@ -134,7 +144,10 @@ export async function createThreeStoreCashFixture(options: { respondAsCargo?: bo
       kind: 'DISPATCH_SIMULATION', version: 1, initialized: true, admin: adminCredentials, drivers: [],
     }));
     const config = fixtureConfig();
-    config.vehicles = config.vehicles.filter(v => storeIds.some(id => v.driverId === 'SIM-' + id + '-1'));
+    config.vehicles = config.vehicles.filter(v => fleet.some(({driver}) => v.driverId === driver.id));
+    if (options.splitSuba) {
+      for (const vehicle of config.vehicles.filter(v => v.storeIds.includes('HUB_SUBA'))) vehicle.maxLoadGrams = 2_000;
+    }
     fs.writeFileSync(path.join(privateDir, 'transport-config.json'), JSON.stringify({ config, revision: 'rdi-fixture-only', audit: [] }));
     const product = {
       ...fixtureProduct(testSku, 1_000), name: 'Alimento de prueba RDI', price: testPrice, bodegaIds: storeIds,

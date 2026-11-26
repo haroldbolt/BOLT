@@ -1,9 +1,11 @@
 import { backendFetch, isBoltSplitDeployment } from '../../lib/backendRequest';
+import { AdminRequestError, adminSetupState } from '../../lib/adminAccessStatus';
+export { AdminRequestError } from '../../lib/adminAccessStatus';
 import type { operationalMetrics } from '../../lib/operationalMetrics';
 import type { createServiceMonitoring } from '../../lib/serviceMonitoring';
 import type { DeliveryQuote } from '../../lib/deliveryService';
 import type { BoltAdminSalesReport, SalesPeriod } from '../../lib/boltAdminSales';
-import type { Order } from '../../types';
+import type { ChildShipment, Order } from '../../types';
 
 type ServiceSnapshot = ReturnType<ReturnType<typeof createServiceMonitoring>['snapshot']>;
 export interface ServiceReport {
@@ -13,6 +15,7 @@ export interface ServiceReport {
 
 export interface AdminActor {
   id: string;
+  rotationRecommended?: boolean;
   name: string;
   role: 'COORDINACION' | 'SEDE';
   storeIds: string[];
@@ -35,6 +38,9 @@ export type AdminOrder = Pick<Order, 'id' | 'orderNumber' | 'purchaseCode' | 'cr
   deliveryAddress?: Pick<Order['deliveryAddress'], 'address' | 'details' | 'locality'>;
   payment?: Pick<Order['payment'], 'status' | 'method' | 'cashToCollect'>;
   demoCashCheckout?: boolean;
+  childShipments?: Array<Pick<ChildShipment, 'shipmentId' | 'shipmentIndex' | 'fulfillmentStatus'> & {
+    items: Array<Pick<Order['items'][number], 'productId' | 'name' | 'presentation' | 'quantity'>>;
+  }>;
   demoCustomerCheckout?: boolean;
   dispatch?: { id: string; code: string; providerId?: string; status: string; driverName?: string };
   demoReadOnly?: boolean;
@@ -113,13 +119,6 @@ export type InventoryPhotoUpdate = {
   photos: InventoryGalleryPhoto[];
 });
 
-export class AdminRequestError extends Error {
-  constructor(message: string, readonly status: number) {
-    super(message);
-    this.name = 'AdminRequestError';
-  }
-}
-
 const sessionTokenKey = 'bolt_admin_next_token';
 
 export function readAdminToken() {
@@ -146,7 +145,7 @@ async function request<T>(url: string, token: string | null, options: { body?: u
   });
   const result = await response.json().catch(() => null);
   if (!response.ok || (result === null && response.status !== 204)) {
-    throw new AdminRequestError(typeof result?.error === 'string' ? result.error : 'No se pudo completar la consulta.', response.status);
+    throw new AdminRequestError(typeof result?.error === 'string' ? result.error : 'No se pudo completar la consulta.', response.status, result?.code);
   }
   return result as T;
 }
@@ -158,13 +157,20 @@ const orderPath = (orderId: string) => `${base}/orders/${encodeURIComponent(orde
 export const boltAdmin = {
   observability: (token: string, signal: AbortSignal) => request<ServiceReport>(`${apiBase}/admin/observability`, token, { signal }),
   session: (token: string | null, signal?: AbortSignal) => request<AdminSession>(`${base}/session`, token, { signal }),
-  authStatus: (signal?: AbortSignal) => request<{ isSetupRequired: boolean }>('/api/v1/auth/status', null, { signal }),
+  authStatus: async (signal?: AbortSignal) => adminSetupState(await request('/api/v1/auth/status', null, { signal })),
   setup: (name: string, email: string, password: string, setupToken: string) => request<{ token: string }>(
     '/api/v1/auth/setup-admin', null, { body: { name, email, password }, setupToken },
   ),
   login: (email: string, password: string) => request<{ token: string }>('/api/v1/auth/login', null, { body: { email, password } }),
   demoLogin: (profileId: string) => request<{ token: string; actor: AdminActor }>(`${base}/demo/session`, null, { body: { profileId } }),
   logout: (token: string | null) => request<{ ok: boolean }>(`${base}/logout`, token, { body: {} }),
+  orderEvents: (token: string, storeId: string, signal: AbortSignal) => backendFetch(
+    `${base}/orders/events?${new URLSearchParams({ storeId })}`, {
+      headers: { Accept: 'text/event-stream', Authorization: `Bearer ${token}` },
+      mode: isBoltSplitDeployment() ? 'cors' : 'same-origin', credentials: 'same-origin',
+      cache: 'no-store', redirect: 'error', signal,
+    },
+  ),
   orders: (token: string | null, storeId: string, signal?: AbortSignal) => request<{ orders: AdminOrder[] }>(
     `${base}/orders?${new URLSearchParams({ storeId })}`, token, { signal },
   ),
@@ -192,9 +198,9 @@ export const boltAdmin = {
   quote: (token: string | null, orderId: string, body: unknown) => request<DeliveryQuote>(`${orderPath(orderId)}/quote`, token, { body }),
   confirm: (token: string | null, orderId: string, body: unknown) => request<AdminOrder>(`${orderPath(orderId)}/confirm`, token, { body }),
   demoDispatch: (token: string | null, orderId: string) => request<{ order: AdminOrder }>(`${orderPath(orderId)}/demo-dispatch`, token, { body: {} }),
-  startPreparation: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: {} }),
+  startPreparation: (token: string | null, orderId: string, shipmentId?: string) => request<AdminOrder>(`${orderPath(orderId)}/start-preparation`, token, { body: { shipmentId } }),
+  readyForDispatch: (token: string | null, orderId: string, shipmentId?: string) => request<AdminOrder>(`${orderPath(orderId)}/ready-for-dispatch`, token, { body: { shipmentId } }),
   simulateInventoryDelivery: (token: string | null, orderId: string) => request<AdminOrder>(
     `${orderPath(orderId)}/simulate-inventory-delivery`, token, { body: {} },
   ),
-  readyForDispatch: (token: string | null, orderId: string) => request<AdminOrder>(`${orderPath(orderId)}/ready-for-dispatch`, token, { body: {} }),
 };

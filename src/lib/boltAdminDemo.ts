@@ -178,6 +178,7 @@ export function createBoltAdminDemoOrder(input: {
   requestId: string | undefined;
   requestedMode?: BoltAdminDemoMode;
   origin?: 'customer';
+  checkoutAttemptVerifier?: string;
   catalog: Product[];
   store: Store | undefined;
   dispatch: Pick<DispatchService, 'createOrder'>;
@@ -212,12 +213,13 @@ export function createBoltAdminDemoOrder(input: {
     store,
     requestedMode: customerCheckout ? 'TURBO' : requestedMode,
     creationRequestId: (customerCheckout ? customerKeyPrefix : keyPrefix) + requestId,
+    checkoutAttemptVerifier: input.checkoutAttemptVerifier,
     creationRequestFingerprint: customerCheckout ? customerFingerprint : fingerprints[requestedMode],
   });
   if (customerCheckout && order.deliveryReview) order.deliveryReview.reasonCode = 'DEMO_CONFIRMATION_REQUIRED';
   const result = dispatch.createOrder(order, catalog.map(p => activateBoltAdminDemoProduct(order, p)), store);
   if (!result.success || !result.order || !isBoltAdminDemoOrder(result.order)) {
-    throw new DispatchError(409, 'SIMULATION_ORDER_FAILED', result.error || 'No se pudo registrar el pedido de prueba.');
+    throw new DispatchError(409, result.code || 'SIMULATION_ORDER_FAILED', result.error || 'No se pudo registrar el pedido de prueba.');
   }
   return result.order;
 }

@@ -6,6 +6,7 @@ server.js
 .bolt-storage
 .env*
 **/persisted-*.json
+**/.bolt-admin-volume.json
 **/private-entrance-photos
 public/uploads
 *.log

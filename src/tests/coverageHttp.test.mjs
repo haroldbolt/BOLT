@@ -1,3 +1,4 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 // Run only against a disposable copy of the app and its persisted data.
 // Usage: BOLT_TEST_BASE_URL=http://localhost:3001 node src/tests/coverageHttp.test.mjs
 import assert from 'node:assert/strict';
@@ -5,7 +6,7 @@ import fs from 'node:fs';
 const base=process.env.BOLT_TEST_BASE_URL;
 if(!base || !/^http:\/\/localhost:3001$/.test(base)) throw Error('Use isolated test server on localhost:3001');
 const fixtures=JSON.parse(fs.readFileSync(new URL('./coverage-address-fixtures.json',import.meta.url)));
-const post=async(path,body)=>{const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()}};
+const post=async(path,body)=>{const r=await checkoutFetch(base+path,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(body)});return {status:r.status,body:await r.json()}};
 const result=[];
 for(const f of fixtures){
  const q=await post('/api/v1/delivery/quote',{destination:{address:f.address,coordinates:f.coordinates},requestedMode:'PROGRAMADO'});

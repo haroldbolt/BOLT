@@ -1,55 +1,17 @@
-import { useEffect, useState } from 'react';
-import { api } from '../../lib/api';
+import { useState } from 'react';
 import { OrderConfirmation, type ConfirmationOrder } from './OrderConfirmation';
 import { OrderTracking } from './OrderTracking';
 
-type ConfirmationWithDemo = ConfirmationOrder & { demoTrackingPreview?: true };
-
-function awaitingConfirmation(order: ConfirmationOrder) {
-  return order.fulfillmentStatus === 'PENDIENTE_CONFIRMACION' || order.deliveryReview?.status === 'PENDING' || order.deliveryReview?.status === 'SIMULATED';
-}
-
 interface Props {
   orderId: string;
-  initialOrder: ConfirmationOrder | null;
-  onTrack: () => void;
   onContinue: () => void;
 }
 
-export function OrderConfirmationPage({ orderId, initialOrder, onTrack, onContinue }: Props) {
-  const [order, setOrder] = useState<ConfirmationWithDemo | null>(initialOrder);
-  const [loadFailed, setLoadFailed] = useState(false);
-  const [showSummary, setShowSummary] = useState(false);
+export function OrderConfirmationPage({ orderId, onContinue }: Props) {
+  const [summary, setSummary] = useState<ConfirmationOrder | null>(null);
 
-  useEffect(() => {
-    if (initialOrder && !awaitingConfirmation(initialOrder)) return;
-    let active = true;
-    api.getOrder(orderId, true).then((result) => {
-      if (active) setOrder(result);
-    }).catch(() => {
-      if (active) setLoadFailed(true);
-    });
-    return () => { active = false; };
-  }, [orderId, initialOrder]);
-
-  if (order) {
-    const canShowTracking = (order.demoTrackingPreview || !awaitingConfirmation(order)) && order.fulfillmentStatus !== 'CANCELADO';
-    if (canShowTracking && !showSummary) {
-      return <OrderTracking key={orderId} orderId={orderId} guestOnly onBack={onContinue} onViewSummary={() => setShowSummary(true)} />;
-    }
-    return <OrderConfirmation order={order} onTrack={canShowTracking ? () => setShowSummary(false) : onTrack} onContinue={onContinue} />;
+  if (summary) {
+    return <OrderConfirmation order={summary} onTrack={() => setSummary(null)} onContinue={onContinue} />;
   }
-
-  return (
-    <main className="min-h-screen bg-slate-50 p-4 text-slate-950 sm:p-8">
-      <div className="mx-auto max-w-lg rounded-2xl border border-slate-200 bg-white p-5">
-        <h1 className="text-xl font-extrabold">Resumen de tu pedido</h1>
-        <p role="status" className="mt-2 text-sm text-slate-700">
-          {loadFailed ? 'No pudimos cargar el resumen. Abre el seguimiento para consultar tu pedido.' : 'Cargando los detalles de tu pedido…'}
-        </p>
-        {loadFailed && <button type="button" onClick={onTrack} className="mt-3 min-h-11 font-bold text-red-700 underline">Abrir seguimiento</button>}
-        <button type="button" onClick={onContinue} className="block min-h-11 text-sm font-semibold text-slate-700">Volver a la tienda</button>
-      </div>
-    </main>
-  );
+  return <OrderTracking orderId={orderId} guestOnly onBack={onContinue} onViewSummary={setSummary} />;
 }

@@ -1,10 +1,11 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 // Only writes to a disposable runtime. Never creates orders in the user's local data.
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 const base='http://localhost:3006/api/v1';
 if(!process.cwd().endsWith('/purchase-test-runtime')) throw new Error('Use the isolated purchase-test-runtime only');
 const get=async(path:string)=>{const r=await fetch(base+path);assert.ok(r.ok);return r.json();};
-const post=async(path:string,body:any,key?:string)=>{const r=await fetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(key?{'Idempotency-Key':key}:{})},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
+const post=async(path:string,body:any,key?:string)=>{const r=await checkoutFetch(base+path,{method:'POST',headers:{'Content-Type':'application/json',...(key?{'Idempotency-Key':key}:{})},body:JSON.stringify(body)});return {status:r.status,body:await r.json()};};
 const proofFile='../purchase-http-proof.json';
 if(process.argv.includes('--verify-restart')) {
  const proof=JSON.parse(fs.readFileSync(proofFile,'utf8'));

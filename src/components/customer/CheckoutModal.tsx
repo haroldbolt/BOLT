@@ -1,3 +1,5 @@
+import { CheckoutAttemptNeedsReview, finishCheckout } from '../../lib/checkoutAttemptClient';
+import { CheckoutAttemptReview } from './CheckoutAttemptReview';
 import {canRequestDeliveryReview,hasConfirmedDeliveryQuote,visibleDeliveryCharges} from '../../lib/checkoutReadiness';
 import {useCustomer} from '../../customer/client';
 import {EntrancePhotoPreview} from './EntrancePhotoPicker';
@@ -72,6 +74,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
   const submitPending=useRef(false);
   const [isSubmitting, setIsSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState('');
+  const [reviewAttempt, setReviewAttempt] = useState<string>();
 
   // Delivery mode state
   const defaultMode: DeliveryMode = selectedModeProp || deliveryQuote?.recommendedMode || 'TURBO';
@@ -156,7 +159,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
   const handleSubmitOrder = async (e: React.FormEvent) => {
     e.preventDefault();
-    if(submitPending.current)return;submitPending.current=true;
+    if(submitPending.current || reviewAttempt)return;submitPending.current=true;
     setIsSubmitting(true);
     setErrorMessage('');
 
@@ -239,7 +242,8 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
 
       onOrderSuccess(newOrder);
     } catch (err: any) {
-      setErrorMessage(err.message || 'Error al procesar el pedido. Por favor intente de nuevo.');
+      if (err instanceof CheckoutAttemptNeedsReview) setReviewAttempt(err.requestId);
+      else setErrorMessage(err.message || 'Error al procesar el pedido. Por favor intente de nuevo.');
     } finally {
       submitPending.current=false;
       setIsSubmitting(false);
@@ -290,6 +294,10 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
         </div>
 
         <form onSubmit={handleSubmitOrder} className="p-5 space-y-4">
+          {reviewAttempt && <CheckoutAttemptReview onStartNew={() => {
+            finishCheckout(reviewAttempt);
+            setReviewAttempt(undefined);
+          }} />}
           {errorMessage && (
             <div className="p-3 bg-red-50 border border-red-200 text-red-800 rounded-2xl text-xs font-semibold flex items-center gap-2">
               <AlertTriangle className="w-4 h-4 text-red-600 shrink-0" />
@@ -346,7 +354,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-500 mt-1">
-                    Entrega a tu puerta con vehículo de capacidad confirmada, hasta 25 min.
+                    El Tiempo Turbo comienza cuando la sede marca tu pedido como listo.
                   </p>
                 </div>
               )}
@@ -373,7 +381,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
                     </span>
                   </div>
                   <p className="text-[11px] text-slate-600 mt-1">
-                    Tu compra de {totalWeightKg.toLocaleString('es-CO')} kg: {deliveryQuote.turboDividido?.shipmentCount} entregas con capacidad confirmada y tiempo estimado visible en la cotización.
+                    Tu compra de {totalWeightKg.toLocaleString('es-CO')} kg: {deliveryQuote.turboDividido?.shipmentCount} entregas. El Tiempo Turbo de cada entrega comienza cuando la sede la marca como lista.
                   </p>
                 </div>
               )}
@@ -707,7 +715,7 @@ export const CheckoutModal: React.FC<CheckoutModalProps> = ({
           {errorMessage && <button type="button" className="text-sm font-bold text-red-600 underline" onClick={onRefreshCatalog}>Actualizar carrito y volver a confirmar</button>}
           <button
             type="submit"
-            disabled={isSubmitting || (!isEligibleForAny && !requestReview) || !!cartBlockReason || !cartItems.length || (!requestReview && selectedMode==='PROGRAMADO' && !selectedSlot)}
+            disabled={isSubmitting || !!reviewAttempt || (!isEligibleForAny && !requestReview) || !!cartBlockReason || !cartItems.length || (!requestReview && selectedMode==='PROGRAMADO' && !selectedSlot)}
             className="w-full bg-red-600 hover:bg-red-700 disabled:bg-slate-400 text-white font-black py-4 rounded-2xl text-sm flex items-center justify-center gap-2 shadow-lg shadow-red-500/30 transition active:scale-98 disabled:cursor-not-allowed"
           >
             {isSubmitting ? (

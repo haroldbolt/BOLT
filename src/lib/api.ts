@@ -1,3 +1,6 @@
+import { prepareCheckout, finishCheckout, CheckoutAttemptNeedsReview } from './checkoutAttemptClient';
+import { subscribeOrderChanges } from './orderUpdatesClient';
+import { AdminRequestError, adminSetupState, type AdminSetupState } from './adminAccessStatus';
 import type {AddressSearchResult} from './addressSearch';
 import { backendAuthorization, backendFetch, backendUrl, isBoltSplitDeployment, splitCustomerAccountNotice } from './backendRequest';
 import { Product, Store, Order, GPSTelemetry, DriverProfile, GPSTrackingPoint } from '../types';
@@ -26,7 +29,6 @@ export function bindPageAdminToken(token: string) {
   return () => { if (pageAdminToken === token) pageAdminToken = undefined; };
 }
 
-let pendingCheckoutRequest: {fingerprint:string;requestId:string} | undefined;
 
 const guestOrderKey='bolt_guest_order_access_v1';
 let guestOrderMemory:Record<string,string>={};
@@ -49,6 +51,11 @@ function authorizedFetch(url: string | URL, init: RequestInit = {}, guestOnly = 
 
 export const api = {
   saveOrderAccess,
+  subscribeOrderChanges(orderId: string, onChange: () => void) {
+    return subscribeOrderChanges(signal => authorizedFetch(`${BASE_URL}/orders/${encodeURIComponent(orderId)}/events`, {
+      headers: { Accept: 'text/event-stream' }, cache: 'no-store', redirect: 'error', signal,
+    }, true), onChange);
+  },
   hasOrderAccess: (orderId: string) => !!guestOrderTokens()[orderId],
   async uploadEntrancePhoto(orderId:string,photoId:string,blob:Blob,destinationKey:string) {
     const controller=new AbortController(),timer=setTimeout(()=>controller.abort(),15000);
@@ -135,28 +142,32 @@ export const api = {
   },
 
   async createOrder(payload: any, demoScope?: 'cash-review'): Promise<Order> {
-    const retryKey = demoScope ? 'bolt_demo_cash_review_request' : 'bolt_checkout_request';
     const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(payload))))).map(b=>b.toString(16).padStart(2,'0')).join('');
-    let requestId=pendingCheckoutRequest?.fingerprint===fingerprint ? pendingCheckoutRequest.requestId : crypto.randomUUID();
-    try {
-      const previous=JSON.parse(sessionStorage.getItem(retryKey) || 'null');
-      if(previous?.fingerprint===fingerprint) requestId=previous.requestId;
-      sessionStorage.setItem(retryKey,JSON.stringify({fingerprint,requestId}));
-    } catch {}
-    pendingCheckoutRequest={fingerprint,requestId};
+    const isCashReview = demoScope === 'cash-review';
+    let legacyDemoRequestId: string | undefined;
+    if (isCashReview) {
+      try {
+        const prior = JSON.parse(sessionStorage.getItem('bolt_demo_cash_review_request') || 'null');
+        if (prior?.fingerprint === fingerprint && typeof prior.requestId === 'string') legacyDemoRequestId = prior.requestId;
+      } catch { /* Session storage may be unavailable. */ }
+    }
+    const attempt = await prepareCheckout(isCashReview ? 'demo-cash:' + fingerprint : fingerprint, legacyDemoRequestId);
     const res = await authorizedFetch(`${BASE_URL}/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key':requestId },
+      headers: { 'Content-Type': 'application/json', ...attempt },
       body: JSON.stringify(payload),
-    }, demoScope === 'cash-review');
+    }, true);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.code === 'CHECKOUT_REVIEW_REQUIRED') throw new CheckoutAttemptNeedsReview(attempt['Idempotency-Key']);
       throw new Error(err.error || 'No se pudo crear el pedido');
     }
     const created:Order=await res.json();
-    if(created.guestAccessToken && !(created as any).customerAccountId)saveOrderAccess(created.id,created.guestAccessToken);
-    pendingCheckoutRequest=undefined;
-    try {sessionStorage.removeItem(retryKey)} catch {}
+    if(created.guestAccessToken)saveOrderAccess(created.id,created.guestAccessToken);
+    finishCheckout(attempt['Idempotency-Key']);
+    if (legacyDemoRequestId) {
+      try { sessionStorage.removeItem('bolt_demo_cash_review_request'); } catch { /* The order was confirmed. */ }
+    }
     return created;
   },
 
@@ -411,14 +422,15 @@ export const api = {
     }
   },
 
-  async getAuthStatus(): Promise<{ isSetupRequired: boolean; isAuthenticated: boolean; user?: any }> {
+  async getAuthStatus(signal?: AbortSignal): Promise<{ setupState: AdminSetupState; isSetupRequired: boolean; isAuthenticated: boolean; user?: any }> {
     const token = this.getStoredAdminToken();
     const headers: Record<string, string> = { 'Content-Type': 'application/json' };
     if (token) headers['Authorization'] = `Bearer ${token}`;
 
-    const res = await authorizedFetch(`${BASE_URL}/auth/status`, { headers });
-    if (!res.ok) throw new Error('Error al consultar estado de autenticación');
-    return await res.json();
+    const res = await authorizedFetch(`${BASE_URL}/auth/status`, { headers, signal });
+    const data = await res.json();
+    if (!res.ok) throw new AdminRequestError('No pudimos comprobar el acceso administrativo.', res.status, data?.code);
+    return { ...data, setupState: adminSetupState(data) };
   },
 
   async setupMasterAdmin(payload: { email: string; password: string; name: string }, setupToken: string): Promise<any> {
@@ -428,7 +440,7 @@ export const api = {
       body: JSON.stringify(payload),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Error al configurar administrador');
+    if (!res.ok) throw new AdminRequestError(data.error || 'Error al configurar administrador', res.status, data.code);
     if (data.token) {
       this.setStoredAdminToken(data.token);
     }
@@ -442,7 +454,7 @@ export const api = {
       body: JSON.stringify({ email, password }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || 'Credenciales inválidas');
+    if (!res.ok) throw new AdminRequestError(data.error || 'Credenciales inválidas', res.status, data.code);
     if (data.token) {
       this.setStoredAdminToken(data.token);
     }

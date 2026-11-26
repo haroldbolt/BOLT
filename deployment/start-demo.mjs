@@ -82,7 +82,7 @@ if (process.env.BOLT_DEMO_BOGOTA_CADASTRE === '1') childEnv.BOLT_DEMO_BOGOTA_CAD
 const approvalOrderId = process.env.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID;
 if (approvalOrderId) childEnv.BOLT_DEMO_TRACKING_APPROVAL_ORDER_ID = approvalOrderId;
 if (process.env.BOLT_DEMO_EDIT_CATALOG === '1') childEnv.BOLT_DEMO_EDIT_CATALOG = '1';
-Object.assign(childEnv, customer.env, { NODE_ENV: 'production', PORT: String(upstreamPort), BOLT_DISPATCH_SIMULATION: '1', BOLT_DATA_DIR: data });
+Object.assign(childEnv, customer.env, { NODE_ENV: 'production', PORT: String(upstreamPort), BOLT_DISPATCH_SIMULATION: '1', BOLT_DEMO_PUBLIC_ORIGIN: origin, BOLT_DATA_DIR: data });
 // The compatible storage check above is the same check used by the normal launcher.
 // Own the actual server PID so graceful container restarts can release only its locks.
 const child = spawn(process.execPath, [path.join(runtime, 'server.js')], { cwd: runtime, env: childEnv, stdio: ['ignore', 'inherit', 'inherit'] });

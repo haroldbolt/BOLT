@@ -141,9 +141,13 @@ try {
   };
   const key = crypto.randomUUID(),
     headers = { "Idempotency-Key": key };
-  const first = await request("/api/v1/orders", payload, headers);
+  const simultaneous = await Promise.all([request("/api/v1/orders", payload, headers), request("/api/v1/orders", payload, headers)]);
+  assert.deepEqual(simultaneous.map(r => r.status).sort(), [200, 201]);
+  const first = simultaneous.find(r => r.status === 201)!;
+  assert.equal(simultaneous.find(r => r.status === 200)!.data.id, first.data.id);
   assert.equal(first.status, 201, first.data?.code || first.data?.error);
-  assert.equal(first.data.customerAccountId, accountId);
+  assert.equal(first.data.customerAccountId, undefined);
+  assert.equal(first.data.guestAccessToken, undefined);
   assert.equal(first.data.storeId, "HUB_SUBA");
   const again = await request("/api/v1/orders", payload, headers);
   assert.equal(again.status, 200);
@@ -190,6 +194,7 @@ try {
   const reviewPayload = { ...payload, customerAccountId: accountId, items: reviewItems, deliveryAddress: reviewDestination,
     confirmationToken: reviewQuote.confirmationToken };
   const reviewKey = { "Idempotency-Key": crypto.randomUUID() };
+  assert.equal((await request("/api/v1/checkout/attempt", {})).status, 204);
   const created = await request("/api/v1/orders", reviewPayload, reviewKey);
   assert.equal(created.status, 201, created.data?.code || created.data?.error);
   assert.equal(created.data.demoCustomerCheckout, true);
@@ -225,6 +230,23 @@ try {
   console.log(
     "PASS stock reserved once; price and closed historical order unchanged",
   );
+
+  // Use the same read-only SSE request across the normal sign-out flow.
+  const stream = await fetch(origin + "/api/v1/orders/" + first.data.id + "/events", {
+    headers: { Cookie: [...jar].map(([key, value]) => key + "=" + value).join("; "), Accept: "text/event-stream" },
+    signal: AbortSignal.timeout(20_000),
+  });
+  assert.equal(stream.status, 200);
+  const reader = stream.body!.getReader();
+  try {
+    assert.match(new TextDecoder().decode((await reader.read()).value), /: connected/);
+    assert.equal((await request("/api/customer-auth/sign-out", {})).status, 200);
+    const signedOut = Date.now();
+    while (!(await reader.read()).done) { /* Consume any in-flight heartbeat. */ }
+    assert.ok(Date.now() - signedOut <= 15_000, "El canal de una sesión cerrada debe terminar en 15 segundos");
+    assert.equal((await request("/api/customer/me")).data.user, null);
+    console.log("PASS sign-out closes the existing order subscription while the order is idle");
+  } finally { await reader.cancel().catch(() => {}); }
 } finally {
   child.kill("SIGTERM");
   if (child.exitCode === null) await new Promise((r) => child.once("exit", r));

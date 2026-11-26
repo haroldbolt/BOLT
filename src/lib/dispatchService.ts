@@ -16,6 +16,8 @@ import type {
 } from "../types/dispatch";
 import type { TransportConfig, TransportVehicle } from "../types/transport";
 import { planTransport } from "./transportPlanner";
+import { visibleDestination, visibleCoordinates } from "./orderViews";
+import { turboDeadline } from "./customerTracking";
 import { OrdersRepository } from "./ordersRepository";
 import type {
   DispatchProvider,
@@ -73,6 +75,7 @@ export interface DispatchDependencies {
   now?: () => number;
   providers?: DispatchProvider[];
   externalBudgetCOP?: number;
+  ownFleetOnly?: boolean;
   simulation?: boolean;
   holdDispatch?: (order: Order) => boolean;
   simulationVehicle?: (order: Order) => TransportVehicle | undefined;
@@ -280,7 +283,7 @@ export class DispatchService {
       const order=this.repo.getOrderById(id);
       if(!order || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION' || order.deliveryReview?.status!=='PENDING') fail('REVIEW_NOT_PENDING','Esta solicitud ya no está pendiente.',409);
       const review=order!.deliveryReview!;
-      const identity={id:order!.id,orderNumber:order!.orderNumber,purchaseCode:order!.purchaseCode,createdAt:order!.createdAt,creationRequestId:order!.creationRequestId,creationRequestFingerprint:order!.creationRequestFingerprint,customerAccountId:order!.customerAccountId,secretDeliveryCode:order!.secretDeliveryCode,assignmentId:order!.assignmentId,tripId:order!.tripId,warehouseAssignment:order!.warehouseAssignment,statusHistory:order!.statusHistory};
+      const identity={id:order!.id,orderNumber:order!.orderNumber,purchaseCode:order!.purchaseCode,createdAt:order!.createdAt,creationRequestId:order!.creationRequestId,creationRequestFingerprint:order!.creationRequestFingerprint,checkoutAttemptVerifier:order!.checkoutAttemptVerifier,customerAccountId:order!.customerAccountId,secretDeliveryCode:order!.secretDeliveryCode,assignmentId:order!.assignmentId,tripId:order!.tripId,warehouseAssignment:order!.warehouseAssignment,statusHistory:order!.statusHistory};
       if(candidate.storeId!==order!.storeId) fail('WAREHOUSE_CHANGED','La revisión debe conservar la sede asignada.',409);
       if(JSON.stringify(candidate.items.map(i=>[i.productId,i.quantity,i.price]))!==JSON.stringify(order!.items.map(i=>[i.productId,i.quantity,i.price]))) fail('ITEMS_CHANGED','Los productos o precios cambiaron; solicita una nueva confirmación del cliente.',409);
       order!.deliveryReview={...review,status:'CONFIRMED',confirmedAt:new Date(this.now()).toISOString(),confirmedBy:actorId,customerAgreementReference,confirmationToken:candidate.transportConfirmation};
@@ -462,6 +465,7 @@ export class DispatchService {
       0,
       (this.now() - Date.parse(d.currentLocation.updatedAt)) / 1000,
     );
+    const vehicle = this.deps.transport().vehicles.find(v => v.driverId === id);
     return {
       userId: a.userId,
       driverId: id,
@@ -471,9 +475,14 @@ export class DispatchService {
       status: a.status,
       storeIds: a.storeIds,
       activeDispatchId: a.activeDispatchId,
-      vehicle: this.deps.transport().vehicles.find((v) => v.driverId === id),
+      vehicle: vehicle && {
+        driverId: vehicle.driverId, storeIds: vehicle.storeIds, enabled: vehicle.enabled, modes: vehicle.modes,
+        maxLoadGrams: vehicle.maxLoadGrams, cargoDimensionsCm: vehicle.cargoDimensionsCm,
+        maxVolumeCm3: vehicle.maxVolumeCm3, packagingGrams: vehicle.packagingGrams, scheduledSlots: vehicle.scheduledSlots,
+      },
       location: Date.parse(d.currentLocation.updatedAt)>0 ? {
-        ...d.currentLocation,
+        lat: d.currentLocation.lat, lng: d.currentLocation.lng, heading: d.currentLocation.heading,
+        speed: d.currentLocation.speed, updatedAt: d.currentLocation.updatedAt,
         ageSeconds: age,
         stale: age > this.state.config.locationMaxAgeSeconds,
       } : undefined,
@@ -687,6 +696,18 @@ export class DispatchService {
         )
       : Date.parse(order.originalPromiseWindow.end);
   }
+  private ownDeliveryWindow(order: Order, shipment: Order | ChildShipment) {
+    const readyAt = shipment.timestamps?.prepCompletedAt;
+    if (this.deps.ownFleetOnly && readyAt && (order.deliveryMode === 'TURBO' || order.deliveryMode === 'TURBO_DIVIDIDO')) {
+      const deadline = turboDeadline(order, readyAt);
+      const afterArrival = order.deliveryQuoteSnapshot?.afterArrivalAtWarehouseSeconds;
+      if (deadline && typeof afterArrival === 'number' && Number.isFinite(afterArrival) &&
+          afterArrival >= 0 && afterArrival <= deadline.estimatedMinutes * 60) {
+        return { end: Date.parse(deadline.dueAt), afterArrivalSeconds: afterArrival };
+      }
+    }
+    return { end: this.windowEnd(order), afterArrivalSeconds: Math.max(0, order.estimatedDeliveryMinutes * 60) };
+  }
   private windowAllows(order: Order, seconds: number) {
     return (
       this.now() +
@@ -746,8 +767,9 @@ export class DispatchService {
       )
         return;
       if (this.holdForPrescription(r, order, shipment)) return;
+      const window = this.ownDeliveryWindow(order, shipment);
       if (
-        this.now() >= this.windowEnd(order) ||
+        this.now() >= window.end ||
         (r.searchStartedAt !== undefined &&
           this.now() - r.searchStartedAt >=
             this.state.config.searchSeconds * 1000)
@@ -807,7 +829,7 @@ export class DispatchService {
               source: "HAVERSINE_ESTIMATE_NOT_ETA",
               observedAt: this.now(),
             };
-        if (valid && !this.windowAllows(order, estimate.seconds!)) continue;
+        if (valid && this.now() + (estimate.seconds! + window.afterArrivalSeconds) * 1000 > window.end) continue;
         candidates.push({ id: a.driverId, vehicle: c.vehicle, estimate });
       }
       // Only comparable route times are ordered as ETA. Geographic fallback makes no promise of minutes.
@@ -882,7 +904,7 @@ export class DispatchService {
       if (r !== this.state.runs[id] || r.status !== "SEARCHING") return;
       if (this.holdForPrescription(r, order, shipment)) return;
       if (
-        this.now() >= this.windowEnd(order) ||
+        this.now() >= window.end ||
         this.now() - r.searchStartedAt! >=
           this.state.config.searchSeconds * 1000
       ) {
@@ -1169,7 +1191,7 @@ export class DispatchService {
       if (
         !candidate ||
         shipment.fulfillmentStatus !== "LISTO_PARA_DESPACHO" ||
-        this.now() >= this.windowEnd(order)
+        this.now() >= this.ownDeliveryWindow(order, shipment).end
       )
         fail(
           "NO_LONGER_ELIGIBLE",
@@ -1356,7 +1378,7 @@ export class DispatchService {
       } else if (["ASSIGNED","INCIDENT"].includes(r.status) && r.driverId) r.releaseRequested = true;
       else fail("INVALID_STATE", "No existe asignación que liberar");
       this.event("RELEASE_REQUESTED", adminId, r.id);
-      return r;
+      return this.staffDispatch(r);
     });
   }
   confirmRelease(id: string, dispatchId: string) {
@@ -1933,18 +1955,27 @@ export class DispatchService {
   private estimateView(estimate?:PickupEstimate) {
     if(!estimate)return undefined;
     const ageSeconds=Math.max(0,(this.now()-estimate.observedAt)/1000),stale=ageSeconds>this.state.config.routeMaxAgeSeconds;
-    return {...estimate,ageSeconds,stale,seconds:stale?undefined:estimate.seconds};
+    return {kind:estimate.kind, meters:estimate.meters, source:estimate.source, observedAt:estimate.observedAt, ageSeconds, stale, seconds:stale?undefined:estimate.seconds};
   }
   canViewDeliveryContact(run: DispatchRun | undefined, driverId: string) {
     return !!run && run.driverId === driverId &&
       ["ASSIGNED", "PICKED_UP", "INCIDENT"].includes(run.status) &&
       !(run.transfer?.releasedAt && !run.transfer.acceptedAt);
   }
+  private hasCurrentOffer(run: DispatchRun, driverId: string) {
+    const offer = run.offerId ? this.state.offers[run.offerId] : undefined;
+    return offer?.driverId === driverId && offer.dispatchId === run.id &&
+      offer.status === "PENDING" && offer.expiresAt > this.now();
+  }
+  private pickupWarehouse(storeId: string) {
+    const store = this.deps.stores().find(s => s.id === storeId);
+    return store && {id:store.id, name:store.name, address:store.address, coordinates:visibleCoordinates(store.coordinates), verifiedEntrance:visibleCoordinates(store.verifiedEntrance)};
+  }
   driverDispatch(r: DispatchRun, id: string) {
     const offer = r.offerId ? this.state.offers[r.offerId] : undefined;
     if (
       r.driverId !== id &&
-      !(offer?.driverId === id && offer.status === "PENDING") &&
+      !this.hasCurrentOffer(r, id) &&
       !(r.transfer?.to === id && !r.transfer.acceptedAt)
     )
       fail("FORBIDDEN", "No tienes acceso a este despacho", 403);
@@ -1963,7 +1994,7 @@ export class DispatchService {
         offer?.driverId === id
           ? { id: offer.id, expiresAt: offer.expiresAt, status: offer.status }
           : undefined,
-      warehouse: this.deps.stores().find((s) => s.id === order.storeId),
+      warehouse: this.pickupWarehouse(shipment.storeId || order.storeId),
       items: shipment.items.map((i) => ({
         productId: i.productId,
         name: i.name,
@@ -1976,7 +2007,7 @@ export class DispatchService {
       warnings: [
         "Transportar unidades cerradas; verificar embalaje y precintos",
       ],
-      destination: mayContact ? order.deliveryAddress : undefined,
+      destination: mayContact ? visibleDestination(order.deliveryAddress) : undefined,
       customerPhone: mayContact ? order.customer.phone : undefined,
       pickupEstimate: this.estimateView(r.estimate),
       cashToCollect: r.status === "CANCELLED" ? 0 : r.cashDue - r.cashCollected,
@@ -2016,9 +2047,7 @@ export class DispatchService {
         (r) =>
           (r.driverId === id &&
             !["DELIVERED", "CANCELLED"].includes(r.status)) ||
-          (r.offerId &&
-            this.state.offers[r.offerId]?.driverId === id &&
-            this.state.offers[r.offerId]?.status === "PENDING") ||
+          this.hasCurrentOffer(r, id) ||
           (r.transfer?.to === id && !r.transfer.acceptedAt),
       )
       .map((r) => this.driverDispatch(r, id));
@@ -2059,24 +2088,7 @@ export class DispatchService {
               ? r.external.providerName || r.external.providerId
               : undefined,
         driverConfirmed: !!r.assignedAt,
-        pickupEstimate:
-          r.assignedAt && r.estimate
-            ? {
-                ...r.estimate,
-                ageSeconds: Math.max(
-                  0,
-                  (this.now() - r.estimate.observedAt) / 1000,
-                ),
-                stale:
-                  this.now() - r.estimate.observedAt >
-                  this.state.config.routeMaxAgeSeconds * 1000,
-                seconds:
-                  this.now() - r.estimate.observedAt <=
-                  this.state.config.routeMaxAgeSeconds * 1000
-                    ? r.estimate.seconds
-                    : undefined,
-              }
-            : undefined,
+        pickupEstimate: r.assignedAt ? this.estimateView(r.estimate) : undefined,
         cashToCollect: r.status === "CANCELLED" ? 0 : r.cashDue - r.cashCollected,
         events: this.state.events
           .filter(
@@ -2114,6 +2126,37 @@ export class DispatchService {
       return {registered:true,replayed:before};
     });
   }
+  private staffDispatch(run: DispatchRun) {
+    const {external, transfer} = run;
+    const shipment = this.target(run).shipment;
+    return {
+      id:run.id, orderId:run.orderId, shipmentId:run.shipmentId, code:run.code, status:run.status,
+      createdAt:run.createdAt, searchStartedAt:run.searchStartedAt, assignedAt:run.assignedAt,
+      arrivedAt:run.arrivedAt, pickedUpAt:run.pickedUpAt, deliveredAt:run.deliveredAt,
+      driverId:run.driverId, providerId:run.providerId, releaseRequested:run.releaseRequested,
+      reason:run.reason, cashDue:run.cashDue, cashCollected:run.cashCollected,
+      estimate:this.estimateView(run.estimate),
+      transfer:transfer && {from:transfer.from, to:transfer.to, releasedAt:transfer.releasedAt, acceptedAt:transfer.acceptedAt},
+      external:external && {
+        key:external.key, reference:external.reference, providerId:external.providerId, providerName:external.providerName,
+        status:external.status, simulation:external.simulation, startedAt:external.startedAt, updatedAt:external.updatedAt,
+        providerStage:external.providerStage, costCOP:external.costCOP, cancellationPending:external.cancellationPending,
+        cashCollectionIndicated:external.cashCollectionIndicated, cashCollectionReference:external.cashCollectionReference,
+        returnReference:external.returnReference,
+        driver:external.driver && {id:external.driver.id, name:external.driver.name},
+        bankReceipt:external.bankReceipt && {
+          netCOP:external.bankReceipt.netCOP, reference:external.bankReceipt.reference, recordedAt:external.bankReceipt.recordedAt,
+          deductionsCOP:external.bankReceipt.deductionsCOP,
+        },
+      },
+      fulfillmentStatus:shipment.fulfillmentStatus,
+      items:shipment.items.map(({productId,name,presentation,quantity})=>({productId,name,presentation,quantity})),
+      weightGrams:shipment.transportLoad?.grossWeightGrams,
+      offers:Object.values(this.state.offers).filter(o => o.dispatchId === run.id)
+        .map(o => ({id:o.id, dispatchId:o.dispatchId, driverId:o.driverId, createdAt:o.createdAt, expiresAt:o.expiresAt,
+          status:o.status, estimate:this.estimateView(o.estimate)})),
+    };
+  }
   adminView() {
     return {
       pendingDeliveryReviews:this.repo.getAllOrders().filter(o=>o.deliveryReview?.status==='PENDING' && o.fulfillmentStatus==='PENDIENTE_CONFIRMACION').map(o=>({id:o.id,code:o.purchaseCode||o.orderNumber,storeId:o.storeId,storeName:o.storeName,items:o.items.map(({productId,name,presentation,quantity,price})=>({productId,name,presentation,quantity,price})),subtotal:o.totals.subtotal,requestedAt:o.createdAt,requestedMode:o.deliveryReview?.requestedMode})),
@@ -2136,23 +2179,14 @@ export class DispatchService {
           id: o.id,
           code: o.purchaseCode,
           storeId: o.storeId,
-          warehouse: this.deps.stores().find(s=>s.id===o.storeId),
+          warehouse: this.pickupWarehouse(o.storeId),
           status: o.fulfillmentStatus,
           dispatches: Object.values(this.state.runs)
             .filter((r) => r.orderId === o.id)
-            .map((r) => ({
-              ...r,
-              estimate:this.estimateView(r.estimate),
-              fulfillmentStatus: this.target(r).shipment.fulfillmentStatus,
-              items: this.target(r).shipment.items.map(({productId,name,presentation,quantity})=>({productId,name,presentation,quantity})),
-              weightGrams: this.target(r).shipment.transportLoad?.grossWeightGrams,
-              offers: Object.values(this.state.offers).filter(
-                (of) => of.dispatchId === r.id,
-              ),
-            })),
+            .map(r => this.staffDispatch(r)),
         })),
       metrics: this.metrics(),
-      events: this.state.events,
+      events: this.state.events.map(({id, at, type, actorId, dispatchId, detail}) => ({id, at, type, actorId, dispatchId, detail})),
     };
   }
   metrics() {

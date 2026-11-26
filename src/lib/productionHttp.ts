@@ -46,7 +46,7 @@ export function mountProductionHttp(app: Express, env: NodeJS.ProcessEnv, simula
   const trusted = app.get('trust proxy fn') as (ip: string, hop: number) => boolean;
   const allowCors = cors({
     origin: allowed,
-    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Order-Token', 'X-Photo-Id', 'X-Photo-Destination', 'X-Bolt-Admin-Setup-Token'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'Idempotency-Key', 'X-Bolt-Checkout-Proof', 'X-Order-Token', 'X-Photo-Id', 'X-Photo-Destination', 'X-Bolt-Admin-Setup-Token'],
     exposedHeaders: ['X-Request-Id', 'Retry-After'],
     methods: ['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
     maxAge: 300,

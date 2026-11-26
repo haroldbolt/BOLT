@@ -1,11 +1,12 @@
 import crypto from 'node:crypto';
 import type {Order, OrderItem, DeliveryMode, Store} from '../types';
 /** Existing order storage/state machine; no dispatch, payment, ETA or physical measurements invented. */
-export function pendingDeliveryOrder(input:{items:OrderItem[];customer:Order['customer'];address:Order['deliveryAddress'];store:Store;requestedMode?:DeliveryMode;creationRequestId:string;creationRequestFingerprint:string;customerAccountId?:string}):Order {
+export function pendingDeliveryOrder(input:{items:OrderItem[];customer:Order['customer'];address:Order['deliveryAddress'];store:Store;requestedMode?:DeliveryMode;creationRequestId:string;creationRequestFingerprint:string;checkoutAttemptVerifier?:string;customerAccountId?:string}):Order {
   const at=new Date().toISOString(),id=`ORD-${crypto.randomUUID()}`;
   const subtotal=input.items.reduce((sum,item)=>sum+item.price*item.quantity,0);
   return {
     id,orderNumber:id,createdAt:at,creationRequestId:input.creationRequestId,creationRequestFingerprint:input.creationRequestFingerprint,
+    ...(input.checkoutAttemptVerifier && {checkoutAttemptVerifier:input.checkoutAttemptVerifier}),
     ...(input.customerAccountId?{customerAccountId:input.customerAccountId}:{}),
     storeId:input.store.id,storeName:input.store.name,customer:input.customer,deliveryAddress:input.address,items:input.items,
     deliveryReview:{status:'PENDING',reasonCode:'TRANSPORT_DATA_PENDING',requestedAt:at,requestedMode:input.requestedMode},

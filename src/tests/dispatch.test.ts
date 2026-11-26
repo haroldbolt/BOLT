@@ -27,6 +27,7 @@ function setup(
   options: {
     providers?: any[];
     simulation?: boolean;
+    ownFleetOnly?: boolean;
     routeEstimate?: any;
   } = {},
 ) {
@@ -214,6 +215,30 @@ test("Route ETA overrides geographic distance; stale routes fall back explicitly
   assert.equal(x.repo.dispatchState.offers[r.offerId!].driverId, x.ids[1]);
   assert.equal(r.estimate!.seconds, 20);
 });
+test("Own-fleet Turbo dispatch uses the ready deadline and the trip remaining after reaching the warehouse", async () => {
+  let pickupSeconds = 360;
+  const now = Date.parse("2026-11-07T15:00:00Z");
+  const x = setup({
+    ownFleetOnly: true,
+    routeEstimate: async () => ({ kind: "ROUTE", seconds: pickupSeconds, meters: 500, source: "FIXTURE", observedAt: now }),
+  });
+  const driver = x.provision();
+  const order = x.order();
+  const run = x.runs(order)[0];
+  order.timestamps.prepCompletedAt = new Date(now).toISOString();
+  order.originalPromiseWindow = { start: new Date(now - 40 * 60_000).toISOString(), end: new Date(now - 20 * 60_000).toISOString() };
+  order.transportConfirmation = "fixture-only";
+  order.deliveryQuoteSnapshot = {
+    quoteId: "fixture-20-minutes", estimatedMinutes: 20, totalSeconds: 1200, afterArrivalAtWarehouseSeconds: 900,
+    geographicDistanceMeters: 400, roadDistanceMeters: 500, configVersion: "fixture", assignedStoreId: order.storeId,
+  };
+  await x.service.search(run.id);
+  assert.equal(run.offerId, undefined, "six minutes to pickup plus fifteen to deliver exceeds the twenty-minute window");
+  pickupSeconds = 60;
+  await x.service.search(run.id);
+  assert.ok(run.offerId, "a minute to pickup plus fifteen to deliver fits even after a long preparation");
+  assert.equal(x.service.respond(driver, run.offerId, "accept").ok, true);
+});
 test("Closer incompatible, unavailable and stale drivers are excluded", async () => {
   const x = setup();
   x.provision(x.ids[0], 0);
@@ -321,6 +346,21 @@ test("Authentication, privacy, assignment ownership and PIN attempt limit", asyn
     ),
   );
 });
+test("Una oferta vencida deja de autorizar el detalle aunque todavía no haya corrido el planificador", async () => {
+  const x = setup();
+  const driver = x.provision();
+  const order = x.order();
+  const [run] = x.runs(order);
+  await x.service.search(run.id);
+  const offered = x.service.driverDispatch(run,driver);
+  assert.equal(offered.destination,undefined);
+  assert.equal(offered.customerPhone,undefined);
+  assert.equal(x.service.driverAssignments(driver).length,1);
+  x.advance(31_000);
+  assert.equal(x.service.driverAssignments(driver).length,0);
+  assert.throws(() => x.service.driverDispatch(run,driver), {status:403});
+});
+
 test("Grouped dispatches, independent PINs, partial completion, cash exactly once and warehouse wait metrics", async () => {
   const x = setup();
   x.provision();
@@ -567,7 +607,7 @@ test("HTTP routes authenticate real driver/admin sessions and deny cross-driver 
   const o = x.order(),
     r = x.runs(o)[0];
   await x.service.search(r.id);
-  const auth = new AdminAuthService(path.join(x.dir, "admin-test.json"));
+  const auth = new AdminAuthService(path.join(x.dir, "admin-test.json"), { mode: "isolated" });
   const admin = auth.setupMasterAdmin({
     email: "admin@fixture.test",
     name: "Fixture Admin",

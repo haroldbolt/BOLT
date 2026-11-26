@@ -15,6 +15,7 @@ import type { OrdersRepository } from "./ordersRepository";
 import type { TransportRepository } from "./transportRepository";
 import { planTransport } from "./transportPlanner";
 import { getCheckoutPreviewOrder } from "./checkoutPreview";
+import { staffOrderDetail } from "./orderViews";
 const marker = path.join(
   process.cwd(),
   ".bolt-private",
@@ -294,9 +295,9 @@ export function mountDispatchSimulation(
         throw Error("Identificador de solicitud requerido");
       const previous = repo
         .getAllOrders()
-        .find((o) => o.creationRequestId === key);
+        .find((o) => o.id.startsWith("SIM-") && o.creationRequestId === key);
       if (previous)
-        return { order: previous, guestAccessToken: s.guestToken(previous) };
+        return { order: staffOrderDetail(previous, store), guestAccessToken: s.guestToken(previous) };
       const p = products().find((p) => p.id === "SIM-FOOD-20KG")!;
       if (!p) throw Error("Catálogo de pruebas no cargado");
       // Quote fixtures represent verified synthetic capacity. Assignment still uses real service availability.
@@ -401,7 +402,7 @@ export function mountDispatchSimulation(
       const result = s.createOrder(base, products(), store);
       if (!result.success) throw Error(result.error);
       return {
-        order: result.order,
+        order: staffOrderDetail(result.order!, store),
         guestAccessToken: s.guestToken(result.order!),
       };
     }),

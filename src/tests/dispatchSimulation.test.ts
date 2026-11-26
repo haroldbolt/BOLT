@@ -44,7 +44,7 @@ async function call(
   assert.equal(
     res.status,
     expected,
-    JSON.stringify({ p, status: res.status, data }),
+    JSON.stringify({ p, status: res.status, code: data?.code }),
   );
   return data;
 }
@@ -193,10 +193,11 @@ try {
     const siblingTracking = await call("/orders/" + order.id + "/tracking?shipmentId=" + siblingId, "GET", undefined, "");
     assert.equal(siblingTracking.telemetry, null);
     const own = await call("/orders/" + order.id, "GET", undefined, "");
-    const pin = own.childShipments.find(
-      (s: any) => s.shipmentId === task.shipmentId,
-    ).secretDeliveryCode;
-    assert.equal(tracking.secretDeliveryCode, pin);
+    assert.ok(own.childShipments.every((s: any) => !('secretDeliveryCode' in s)));
+    const staffTracking = await call("/orders/" + order.id + "/tracking?shipmentId=" + task.shipmentId);
+    assert.ok(!('secretDeliveryCode' in staffTracking));
+    const pin = tracking.secretDeliveryCode;
+    assert.ok(typeof pin === 'string' && /^\d{4}$/.test(pin), 'En camino, el titular recibe el PIN del despacho seleccionado');
     await call(
       "/driver/assignments/" + task.assignmentId + "/delivered",
       "POST",

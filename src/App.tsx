@@ -54,10 +54,6 @@ export default function App() {
   const customerStorage=customerSession.storage;
   // Navigation / Routing
   const [currentPath, setCurrentPath] = useState<string>(() => customerNavigationPath(window.location));
-  const [trackingOrderId, setTrackingOrderId] = useState<string | null>(() => {
-    const match = customerNavigationPath(window.location).match(/\/pedido\/([a-zA-Z0-9_-]+)/);
-    return match ? match[1] : null;
-  });
 
   // Quota Defense state required by Google Maps skill
   const [webMapIssue, setWebMapIssue] = useState<'authorization' | 'quota' | 'unavailable' | null>(null);
@@ -66,7 +62,6 @@ export default function App() {
   const [stores, setStores] = useState<Store[]>(() => isBoltSplitDeployment() ? [] : INITIAL_STORES.filter(store => store.isActive));
   const [products, setProducts] = useState<Product[]>(() => isBoltSplitDeployment() ? [] : INITIAL_PRODUCTS);
   const [orders, setOrders] = useState<Order[]>([]);
-  const [recentOrder, setRecentOrder] = useState<Order | null>(null);
   const [customerDemoCheckoutEnabled, setCustomerDemoCheckoutEnabled] = useState(false);
   useEffect(() => {
     if (currentPath !== '/' || isBoltSplitDeployment()) return;
@@ -336,16 +331,12 @@ export default function App() {
   const navigateTo = (path: string) => {
     window.history.pushState({}, '', customerNavigationUrl(path));
     setCurrentPath(path);
-    const match = path.match(/\/pedido\/([a-zA-Z0-9_-]+)/);
-    setTrackingOrderId(match ? match[1] : null);
     window.scrollTo({ top: 0, behavior: 'smooth' });
   };
 
   useEffect(() => {
     const onPopState = () => {
       setCurrentPath(customerNavigationPath(window.location));
-      const match = customerNavigationPath(window.location).match(/\/pedido\/([a-zA-Z0-9_-]+)/);
-      setTrackingOrderId(match ? match[1] : null);
     };
     window.addEventListener('popstate', onPopState);
 
@@ -607,32 +598,13 @@ export default function App() {
   }
   if(currentPath.startsWith('/simulacion/cliente/'))return <><SimulationBanner/><OrderTracking key={currentPath} orderId={currentPath.split('/')[3]} guestOnly onBack={()=>window.location.assign('/simulacion')}/><PushNotificationBanner onNavigateToOrder={id=>window.location.assign("/simulacion/cliente/"+id)}/></>;
 
-  const confirmationMatch = currentPath.match(/^\/confirmacion\/([a-zA-Z0-9_-]+)\/?$/);
-  if (confirmationMatch) {
-    const orderId = confirmationMatch[1];
-    const leaveConfirmation = (path: string) => {
-      setRecentOrder(null);
-      navigateTo(path);
-    };
-    return <OrderConfirmationPage key={orderId} orderId={orderId}
-      initialOrder={recentOrder?.id === orderId ? recentOrder : null}
-      onTrack={() => leaveConfirmation(`/pedido/${orderId}`)}
-      onContinue={() => leaveConfirmation('/')}
-    />;
-  }
-
-  if (currentPath.startsWith('/pedido') && trackingOrderId) {
-    return (
-      <>
-      <OrderTracking
-        key={trackingOrderId}
-        orderId={trackingOrderId}
-        guestOnly
-        onBack={() => navigateTo('/')}
-      />
+  const orderRoute = currentPath.match(/^\/(?:pedido|confirmacion)\/([a-zA-Z0-9_-]+)\/?$/);
+  if (orderRoute) {
+    const orderId = orderRoute[1];
+    return <>
+      <OrderConfirmationPage key={orderId} orderId={orderId} onContinue={() => navigateTo('/')} />
       <PushNotificationBanner onNavigateToOrder={(id)=>navigateTo('/pedido/'+id)} />
-      </>
-    );
+    </>;
   }
 
   // -------------------------------------------------------------
@@ -1271,8 +1243,7 @@ export default function App() {
         onOrderSuccess={(order) => {
           setIsCheckoutOpen(false);
           guestCart.clear();
-          setRecentOrder(order);
-          navigateTo(`/confirmacion/${order.id}`);
+          navigateTo('/pedido/' + encodeURIComponent(order.id));
         }}
       />
 

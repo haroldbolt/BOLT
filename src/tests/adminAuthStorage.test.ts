@@ -3,17 +3,9 @@ import { randomUUID } from 'node:crypto';
 import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
-import { after, test, type TestContext } from 'node:test';
+import { test, type TestContext } from 'node:test';
 
-// This file runs in its own Node test process. Isolate the module's default singleton too.
-const source = process.cwd();
-const singletonRoot = fs.mkdtempSync(path.join(os.tmpdir(), 'bolt-auth-module-'));
-delete process.env.BOLT_ADMIN_EMAIL;
-delete process.env.BOLT_ADMIN_PASSWORD;
-process.chdir(singletonRoot);
-const { AdminAuthService } = await import('../lib/adminAuthService');
-process.chdir(source);
-after(() => fs.rmSync(singletonRoot, { recursive: true, force: true }));
+import { AdminAuthService } from '../lib/adminAuthService';
 const master = { email: 'coordination@example.invalid', name: 'Coordinación de prueba', password: randomUUID() };
 
 function fixture(t: TestContext) {
@@ -25,7 +17,7 @@ function fixture(t: TestContext) {
 
 test('only valid persisted accounts may serve requests; broken files never trigger bootstrap', t => {
   const { file } = fixture(t);
-  const auth = new AdminAuthService(file);
+  const auth = new AdminAuthService(file, { mode: 'isolated' });
   assert.ok(auth.setupMasterAdmin(master).success);
   const existing = JSON.parse(fs.readFileSync(file, 'utf8'));
   const user = existing.admins[0];
@@ -38,17 +30,17 @@ test('only valid persisted accounts may serve requests; broken files never trigg
   process.env.BOLT_ADMIN_EMAIL = 'bootstrap@example.invalid';
   process.env.BOLT_ADMIN_PASSWORD = randomUUID();
   t.after(() => { delete process.env.BOLT_ADMIN_EMAIL; delete process.env.BOLT_ADMIN_PASSWORD; });
-  assert.equal(new AdminAuthService(file).getAdminCount(), 1);
+  assert.equal(new AdminAuthService(file, { mode: 'isolated' }).getAdminCount(), 1);
   for (const content of malformed) {
     fs.writeFileSync(file, content);
-    assert.throws(() => new AdminAuthService(file), /Recupera la copia/);
+    assert.throws(() => new AdminAuthService(file, { mode: 'isolated' }), /Recupera la copia/);
     assert.equal(fs.readFileSync(file, 'utf8'), content);
   }
 });
 
 test('secrets are absent from account projections and sessions, active bearer returned only at login/setup', t => {
   const { file } = fixture(t);
-  const auth = new AdminAuthService(file);
+  const auth = new AdminAuthService(file, { mode: 'isolated' });
   const setup = auth.setupMasterAdmin(master);
   const login = auth.login(master.email, master.password);
   assert.ok(setup.token && login.token && setup.token !== login.token);
@@ -65,7 +57,7 @@ test('secrets are absent from account projections and sessions, active bearer re
 
 test('a failed administrative write closes active access until restart from durable data', t => {
   const { file, directory } = fixture(t);
-  const auth = new AdminAuthService(file);
+  const auth = new AdminAuthService(file, { mode: 'isolated' });
   const setup = auth.setupMasterAdmin(master);
   const original = fs.readFileSync(file, 'utf8');
   const parent = path.dirname(file);
@@ -78,7 +70,7 @@ test('a failed administrative write closes active access until restart from dura
   fs.unlinkSync(parent);
   fs.renameSync(backup, parent);
   assert.equal(fs.readFileSync(file, 'utf8'), original);
-  const restarted = new AdminAuthService(file);
+  const restarted = new AdminAuthService(file, { mode: 'isolated' });
   assert.ok(restarted.login(master.email, master.password).success);
   assert.equal(restarted.verifySession(setup.token), null);
 });

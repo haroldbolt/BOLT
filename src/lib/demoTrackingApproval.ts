@@ -46,7 +46,7 @@ export function projectApprovedDemoTracking(tracking: CustomerTracking, startedA
       startedAt: began,
       dueAt: new Date(deadline).toISOString(),
       source: 'SIMULATION',
-      stages: { ...tracking.timing.stages, confirmedAt: began, pickedUpAt: began,
+      stages: { ...tracking.timing.stages, confirmedAt: began, prepCompletedAt: began, pickedUpAt: began,
         deliveredAt: completed ? new Date(deadline).toISOString() : null },
     },
     locationStatus: completed ? 'NOT_IN_TRANSIT' : point ? 'LIVE' : 'UNAVAILABLE',

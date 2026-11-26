@@ -102,11 +102,11 @@ export async function mountCustomerAccounts(
         }),
     );
   const readSessions = new WeakMap<Request, ReturnType<typeof resolveSession>>();
-  const resolveSession = async (req: Request, res?: Response) => {
+  const resolveSession = async (req: Request, res?: Response, fresh = false) => {
     if (!instance) return null;
     const result = await instance.auth.api.getSession({
       headers: fromNodeHeaders(req.headers),
-      query: { disableRefresh: !res },
+      query: { disableRefresh: !res, disableCookieCache: fresh },
       returnHeaders: true,
     });
     // A server API call does not automatically forward renewed cookies to Express.
@@ -390,7 +390,7 @@ export async function mountCustomerAccounts(
   const canReadOrder = async (id: string, userId: string) => {
     const order = orders.list().find((o) => o.id === id);
     if (!order) return false;
-    if ((order as any).customerAccountId === userId) return true;
+    if (order.customerAccountId) return order.customerAccountId === userId;
     return !!(await withCustomerScope(db!, userId, tx => tx
       .selectFrom("customer_order_links")
       .select("order_id")
@@ -412,7 +412,7 @@ export async function mountCustomerAccounts(
           .list()
           .filter(
             (o) =>
-              (o as any).customerAccountId === session.user.id || ids.has(o.id),
+              o.customerAccountId ? o.customerAccountId === session.user.id : ids.has(o.id),
           )
           .map(orders.present),
       );
@@ -477,8 +477,9 @@ export async function mountCustomerAccounts(
           });
       }
     },
-    authorizeOrder: async (req: Request, id: string) => {
-      const session = await getSession(req);
+    authorizeOrder: async (req: Request, id: string, options?: { freshSession: boolean }) => {
+      // An open event stream outlives the normal per-request session cache.
+      const session = options?.freshSession ? await resolveSession(req, undefined, true) : await getSession(req);
       return (
         !!session?.user.emailVerified &&
         (["GET", "HEAD"].includes(req.method) ||

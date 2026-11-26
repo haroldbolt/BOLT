@@ -39,8 +39,8 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
     : order.deliveryMode === 'TURBO_DIVIDIDO' ? 'Entrega Turbo en varios envíos'
     : order.deliveryMode === 'TURBO' ? 'Entrega Turbo' : 'Entrega';
   const scheduled = order.deliveryMode === 'PROGRAMADO' ? order.scheduledWindow : undefined;
-  const eta = order.deliveryMode !== 'PROGRAMADO' && order.estimatedDeliveryMinutes > 0
-    ? `Tiempo estimado: ${Math.ceil(order.estimatedDeliveryMinutes)} min` : null;
+  const waitingForTurbo = (order.deliveryMode === 'TURBO' || order.deliveryMode === 'TURBO_DIVIDIDO') &&
+    (order.fulfillmentStatus === 'CONFIRMADO' || order.fulfillmentStatus === 'EN_ALISTAMIENTO');
 
   return (
     <main className="min-h-screen bg-slate-50 px-4 pb-10 pt-5 text-slate-950 sm:px-6 sm:pt-9">
@@ -120,7 +120,7 @@ export function OrderConfirmation({ order, onTrack, onContinue }: Props) {
                 <div className="mt-2 text-sm text-slate-700">
                   <p className="font-semibold text-slate-800">{mode}</p>
                   {scheduled && <p>{scheduled.dateLabel} · {scheduled.displayWindowShort || scheduled.displayWindow}</p>}
-                  {!delivered && eta && <p>{eta}</p>}
+                  {waitingForTurbo && <p>El Tiempo Turbo comenzará cuando la sede marque tu pedido como listo.</p>}
                 </div>
               )}
               {order.deliveryAddress.address && (

@@ -2,8 +2,9 @@ import assert from 'assert';
 import fs from 'fs';
 import path from 'path';
 import crypto from 'crypto';
-import { adminAuthService } from '../lib/adminAuthService';
-import { catalogRepository, CatalogRepository } from '../lib/catalogRepository';
+import os from 'node:os';
+import { AdminAuthService } from '../lib/adminAuthService';
+import { CatalogRepository } from '../lib/catalogRepository';
 
 console.log('=============================================================');
 console.log('BOLT PETS — TEST SUITE: ADMINISTRADOR DE CATÁLOGO & SEGURIDAD');
@@ -16,13 +17,11 @@ async function runCatalogAdminTests() {
     passedCount++;
   }
 
-  // Rutas de archivos de prueba
-  const testAuthPath = path.join(process.cwd(), 'src', 'data', 'persisted-admin-auth.json');
-  const testCatalogPath = path.join(process.cwd(), 'src', 'data', 'persisted-catalog-overrides.json');
-
-  // Guardar respaldos si existen
-  const authBackup = fs.existsSync(testAuthPath) ? fs.readFileSync(testAuthPath, 'utf-8') : null;
-  const catalogBackup = fs.existsSync(testCatalogPath) ? fs.readFileSync(testCatalogPath, 'utf-8') : null;
+  const directory = fs.mkdtempSync(path.join(os.tmpdir(), 'bolt-catalog-admin-'));
+  const testAuthPath = path.join(directory, 'admin.json');
+  const testCatalogPath = path.join(directory, 'catalog.json');
+  const adminAuthService = new AdminAuthService(testAuthPath, { mode: 'isolated' });
+  const catalogRepository = new CatalogRepository(undefined, testCatalogPath);
 
   try {
     // ------------------------------------------------------------------------
@@ -30,8 +29,6 @@ async function runCatalogAdminTests() {
     // ------------------------------------------------------------------------
     console.log('\n--- 1. Acceso Seguro y Permisos Comprobados por Servidor ---');
 
-    // Limpiar estado para pruebas aisladas
-    adminAuthService.resetForTesting();
     assert.strictEqual(adminAuthService.isSetupRequired(), true, 'Debe requerir configuración inicial si no hay admin');
     pass('El servidor detecta que se requiere configuración de administrador maestro');
 
@@ -86,7 +83,6 @@ async function runCatalogAdminTests() {
     // 2. CREACIÓN Y EDICIÓN DE PRODUCTOS
     // ------------------------------------------------------------------------
     console.log('\n--- 2. Creación y Edición de Productos ---');
-    catalogRepository.resetForTesting();
 
     const actor = { email: 'admin.seguro@bolt.pet', name: 'Super Administrador' };
 
@@ -221,7 +217,7 @@ async function runCatalogAdminTests() {
     console.log('\n--- 7. Persistencia en Disco y Supervivencia a Reinicios ---');
 
     // Instanciar un nuevo repositorio independiente simulando un reinicio total de la app
-    const rebootedRepo = new CatalogRepository();
+    const rebootedRepo = new CatalogRepository(undefined, testCatalogPath);
     const persistedProd = rebootedRepo.getProductById(createdId);
 
     assert.ok(persistedProd, 'El producto debe encontrarse tras reiniciar el repositorio');
@@ -246,21 +242,7 @@ async function runCatalogAdminTests() {
     console.log('=============================================================');
 
   } finally {
-    // Restaurar archivos originales para no alterar el entorno
-    if (authBackup) {
-      fs.writeFileSync(testAuthPath, authBackup, 'utf-8');
-    } else if (fs.existsSync(testAuthPath)) {
-      try { fs.unlinkSync(testAuthPath); } catch {}
-    }
-
-    if (catalogBackup) {
-      fs.writeFileSync(testCatalogPath, catalogBackup, 'utf-8');
-    } else if (fs.existsSync(testCatalogPath)) {
-      try { fs.unlinkSync(testCatalogPath); } catch {}
-    }
-
-    // Reinicializar repositorios con datos limpios
-    catalogRepository.init();
+    fs.rmSync(directory, { recursive: true, force: true });
   }
 }
 

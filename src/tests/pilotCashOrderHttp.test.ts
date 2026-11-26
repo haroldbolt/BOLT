@@ -1,3 +1,5 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
+import { adminBootstrapFixture, establishFixtureAdmin } from './adminBootstrapFixture.mjs';
 /** Cash order across the real HTTP handlers, with only disposable records and measured test fixtures. */
 import assert from 'node:assert/strict';
 import { spawn, type ChildProcess } from 'node:child_process';
@@ -18,6 +20,7 @@ const data = path.join(runtime, 'orders');
 const sku = 'FIXTURE-PILOT-CASH';
 const warehouse = 'HUB_SUBA';
 const adminCredentials = { email: 'admin@fixture.invalid', password: randomUUID() };
+const staffFixture = adminBootstrapFixture(runtime, adminCredentials.email);
 const driverCredentials = { email: 'driver@fixture.invalid', password: randomUUID() };
 const driver = fixtureDrivers.find(item => item.id.includes(warehouse))!;
 const location = { lat: 4.747154, lng: -74.098137 };
@@ -41,7 +44,7 @@ let base: string;
 
 type RequestOptions = { method?: string; body?: unknown; token?: string; guest?: string; idempotencyKey?: string; status?: number };
 async function call<T>(route: string, { method = 'GET', body, token, guest, idempotencyKey, status = 200 }: RequestOptions = {}): Promise<T> {
-  const response = await fetch(base + route, {
+  const response = await checkoutFetch(base + route, {
     method,
     headers: {
       'Content-Type': 'application/json',
@@ -67,8 +70,7 @@ async function start(pilotStore?: string) {
       NODE_ENV: 'production',
       PORT: port,
       BOLT_DATA_DIR: data,
-      BOLT_ADMIN_EMAIL: adminCredentials.email,
-      BOLT_ADMIN_PASSWORD: adminCredentials.password,
+      ...staffFixture.env,
       ...(pilotStore && { BOLT_PILOT_STORE_ID: pilotStore }),
     },
     stdio: ['ignore', 'pipe', 'pipe'],
@@ -120,6 +122,7 @@ try {
   assert.equal((await call<{ enabled: boolean }>('/simulation')).enabled, false);
   const login = (route: string, credentials: { email: string; password: string }) =>
     call<{ token: string }>(route, { method: 'POST', body: credentials }).then(result => result.token);
+  await establishFixtureAdmin(new URL(base).origin, adminCredentials.email, adminCredentials.password, staffFixture.env.BOLT_ADMIN_SETUP_TOKEN);
   let admin = await login('/auth/login', adminCredentials);
   assert.equal((await call<{ mode: string }>('/bolt-admin/session', { token: admin })).mode, 'live');
   await call('/admin/dispatch/drivers', { method: 'POST', token: admin, body: {
@@ -257,5 +260,5 @@ try {
 } finally {
   if (socket.listening) await new Promise<void>(resolve => socket.close(() => resolve()));
   await stop();
-  fs.rmSync(runtime, { recursive: true, force: true });
+  staffFixture.dispose(); fs.rmSync(runtime, { recursive: true, force: true });
 }
