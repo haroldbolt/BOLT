@@ -1,3 +1,4 @@
+import { prepareCheckout, finishCheckout, CheckoutAttemptNeedsReview } from './checkoutAttemptClient';
 import { subscribeOrderChanges } from './orderUpdatesClient';
 import { AdminRequestError, adminSetupState, type AdminSetupState } from './adminAccessStatus';
 import type {AddressSearchResult} from './addressSearch';
@@ -28,7 +29,6 @@ export function bindPageAdminToken(token: string) {
   return () => { if (pageAdminToken === token) pageAdminToken = undefined; };
 }
 
-let pendingCheckoutRequest: {fingerprint:string;requestId:string} | undefined;
 
 const guestOrderKey='bolt_guest_order_access_v1';
 let guestOrderMemory:Record<string,string>={};
@@ -143,26 +143,20 @@ export const api = {
 
   async createOrder(payload: any): Promise<Order> {
     const fingerprint=Array.from(new Uint8Array(await crypto.subtle.digest('SHA-256',new TextEncoder().encode(JSON.stringify(payload))))).map(b=>b.toString(16).padStart(2,'0')).join('');
-    let requestId=pendingCheckoutRequest?.fingerprint===fingerprint ? pendingCheckoutRequest.requestId : crypto.randomUUID();
-    try {
-      const previous=JSON.parse(sessionStorage.getItem('bolt_checkout_request') || 'null');
-      if(previous?.fingerprint===fingerprint) requestId=previous.requestId;
-      sessionStorage.setItem('bolt_checkout_request',JSON.stringify({fingerprint,requestId}));
-    } catch {}
-    pendingCheckoutRequest={fingerprint,requestId};
+    const attempt = await prepareCheckout(fingerprint);
     const res = await authorizedFetch(`${BASE_URL}/orders`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', 'Idempotency-Key':requestId },
+      headers: { 'Content-Type': 'application/json', ...attempt },
       body: JSON.stringify(payload),
-    });
+    }, true);
     if (!res.ok) {
       const err = await res.json().catch(() => ({}));
+      if (err.code === 'CHECKOUT_REVIEW_REQUIRED') throw new CheckoutAttemptNeedsReview(attempt['Idempotency-Key']);
       throw new Error(err.error || 'No se pudo crear el pedido');
     }
     const created:Order=await res.json();
-    if(created.guestAccessToken && !(created as any).customerAccountId)saveOrderAccess(created.id,created.guestAccessToken);
-    pendingCheckoutRequest=undefined;
-    try {sessionStorage.removeItem('bolt_checkout_request')} catch {}
+    if(created.guestAccessToken)saveOrderAccess(created.id,created.guestAccessToken);
+    finishCheckout(attempt['Idempotency-Key']);
     return created;
   },
 

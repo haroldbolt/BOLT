@@ -35,6 +35,7 @@ jobs:
       - name: Confirmación HTTP, reservas, reinicio y respaldo de Cargo en instalación aislada
         run: |
           npm run test:r1
+          npm run test:r2
           npm run test:pilot
       - name: Checkout en móvil y escritorio con una instalación temporal por caso
         run: |

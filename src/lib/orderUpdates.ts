@@ -16,10 +16,11 @@ export class OrderUpdates {
   private readChanges(): Change[] {
     const changes: Change[] = [];
     for (const order of this.repo.getAllOrders()) {
-      const stage = (item: Pick<Order, 'fulfillmentStatus' | 'assignmentId' | 'timestamps'>) => [
-        item.fulfillmentStatus, item.timestamps?.prepCompletedAt,
-        item.assignmentId && this.repo.dispatchState.runs[item.assignmentId]?.status,
-      ];
+      const stage = (item: Pick<Order, 'fulfillmentStatus' | 'assignmentId' | 'timestamps'>) => {
+        const run = item.assignmentId ? this.repo.dispatchState.runs[item.assignmentId] : undefined;
+        return [item.fulfillmentStatus, item.timestamps?.prepCompletedAt, item.assignmentId,
+          run?.status, run?.driverId, run?.providerId];
+      };
       const version = JSON.stringify([order.storeId, order.statusHistory?.length, order.deliveryReview?.status,
         stage(order), order.childShipments?.map(stage)]);
       const old = this.previous.get(order.id);
@@ -38,21 +39,42 @@ export class OrderUpdates {
         if (changes.length) for (const listener of this.listeners) listener(changes);
       });
     }
+    // Every frame after the authorized handshake requires a current grant. A stalled
+    // authorizer must not keep an idle subscription alive past the revocation window.
     let checking = false;
-    const changed = async (changes: Change[]) => {
-      if (checking || res.destroyed || !changes.some(matches)) return;
+    let pending: 'changed' | 'heartbeat' | undefined;
+    const ended = () => res.destroyed || res.writableEnded;
+    const close = () => { if (!ended()) res.end(); };
+    const send = async (kind: 'changed' | 'heartbeat') => {
+      if (ended()) return;
+      if (pending !== 'changed') pending = kind;
+      if (checking) return;
       checking = true;
       try {
-        if (!(await authorized())) { res.end(); return; }
-        if (!res.destroyed && !res.writableEnded && !res.write('data: changed\n\n')) res.end();
-      } catch { res.end(); }
+        while (pending && !ended()) {
+          const frame = pending === 'changed' ? 'data: changed\n\n' : ': heartbeat\n\n';
+          pending = undefined;
+          const deadline = setTimeout(close, 5_000);
+          try {
+            if (!(await authorized()) || ended() || !res.write(frame)) {
+              close();
+              return;
+            }
+          } finally {
+            clearTimeout(deadline);
+          }
+        }
+      } catch { close(); }
       finally { checking = false; }
+    };
+    const changed: Listener = changes => {
+      if (changes.some(matches)) void send('changed');
     };
     this.listeners.add(changed);
     res.set({ 'Content-Type': 'text/event-stream', 'Cache-Control': 'private, no-store, no-transform', 'X-Accel-Buffering': 'no' });
     res.flushHeaders();
     res.write(': connected\n\n');
-    const heartbeat = setInterval(() => { if (!res.write(': heartbeat\n\n')) res.end(); }, 15_000);
+    const heartbeat = setInterval(() => { void send('heartbeat'); }, 10_000);
     const renew = setTimeout(() => res.end(), 120_000);
     res.once('close', () => {
       clearInterval(heartbeat);

@@ -1,5 +1,7 @@
+import { customerOrderDetail, customerOrderHistory, staffOrderDetail, staffShipment, staffHistory, staffTelemetry } from './src/lib/orderViews';
 import { OrderUpdates } from './src/lib/orderUpdates';
 import { AsyncLocalStorage } from 'node:async_hooks';
+import { checkoutVerifier, checkoutProofRequired, mountCheckoutAttempt, sameCheckoutAttempt } from './src/lib/checkoutAttempt';
 import {REVIEW_MESSAGE} from './src/lib/checkoutReadiness';
 import {pendingDeliveryOrder} from './src/lib/pendingDeliveryOrder';
 import { acceptsDemoOrigin } from './src/lib/demoOrigin';
@@ -209,7 +211,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     driver: token => dispatchService.authenticate(token),
     customer: req => customerAccounts.ratePrincipal(req),
   });
-  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>presentOrder(order)},customerOverride, () => monitoring.workerFailure('customer_mail'));
+  const customerAccounts = await mountCustomerAccounts(app,{list:()=>ordersRepository.getAllOrders(),authorizeGuest:(id,token)=>dispatchService.authorizeGuest(id,token),present:order=>customerOrderHistory(order,stores.find(store=>store.id===order.storeId))},customerOverride, () => monitoring.workerFailure('customer_mail'));
   mountProductPhotoSearch(app, {catalog:()=>withoutRedundantCatalogCards(catalogOperations.getProducts().filter(p=>!p.status||p.status==='ACTIVE')), recognizer:photoRecognizer});
   const parseJson = express.json({ limit: '15mb' });
   app.use((req, res, next) => req.method === 'PUT' && req.path.toLowerCase().replace(/\/$/, '') === boltAdminPhotoPath
@@ -464,12 +466,22 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     res.json(filtered);
   });
 
-  const presentOrder = (order: Order) => {
-    const warehouse=stores.find(store=>store.id===order.storeId);
-    return {...order, ...(isDispatchSimulation && isBoltCustomerDemoOrder(order) && {demoCustomerCheckout:true as const}), dispatchStatusMessage:dispatchService.customerMessage(order.id), dispatches:dispatchService.customerDispatches(order.id), warehouseAssignment:order.warehouseAssignment,
-      storeName:order.warehouseAssignment?.store.name || warehouse?.name || '',
-      warehouse:order.warehouseAssignment?.store || describeWarehouse(warehouse)};
-  };
+  function dispatchSummary(order: Order) {
+    return {
+      ...(isDispatchSimulation && isBoltCustomerDemoOrder(order) && { demoCustomerCheckout: true as const }),
+      dispatchStatusMessage: dispatchService.customerMessage(order.id),
+      dispatches: dispatchService.customerDispatches(order.id),
+    };
+  }
+  function presentOrder(order: Order) {
+    return { ...customerOrderDetail(order, stores.find(s => s.id === order.storeId)), ...dispatchSummary(order) };
+  }
+  function presentStaffOrder(order: Order) {
+    return { ...staffOrderDetail(order, stores.find(s => s.id === order.storeId)), ...dispatchSummary(order) };
+  }
+  function presentForRequester(req: Request, order: Order) {
+    return (req as any).adminSession ? presentStaffOrder(order) : presentOrder(order);
+  }
 
   if (isDispatchSimulation) {
     const scenarioStore = () => stores.find(store => store.id === BOLT_ADMIN_DEMO_STORE_ID);
@@ -487,9 +499,15 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       handleScenario(res, () => boltCustomerDemoCheckout(currentSalesProducts(), scenarioStore()));
     });
     app.post('/api/v1/simulation/customer-checkout', (req, res) => {
+      const requestId = req.get('Idempotency-Key');
+      if (!requestId || !/^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(requestId)) {
+        return res.status(400).json({ code: 'IDEMPOTENCY_REQUIRED', error: 'Envía un identificador de confirmación válido.' });
+      }
+      const verifier = checkoutVerifier(req, res, requestId);
+      if (!verifier) return checkoutProofRequired(res);
       handleScenario(res, () => {
         const order = createBoltAdminDemoOrder({
-          requestId: req.get('Idempotency-Key'),
+          requestId, checkoutAttemptVerifier: verifier,
           origin: 'customer',
           catalog: currentSalesProducts(),
           store: scenarioStore(),
@@ -588,10 +606,12 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     return limitGeocode(req, res, lookup);
   });
 
+  mountCheckoutAttempt(app);
+
   // Create Order with transactional stock reservation & delivery policy validation
   type ReviewActor = {id:string; role:'ADMINISTRADOR'|'BODEGA'; name?:string};
   type PurchaseReview = {order:Order; actor:ReviewActor; catalog:Product[]; mapOrder?:(order:Order)=>unknown};
-  const createPurchase = (req: Request, res: Response, review?:PurchaseReview) => {
+  const createPurchase = async (req: Request, res: Response, review?:PurchaseReview) => {
     const reviewingOrder=review?.order;
     const purchaseCatalog=review?.catalog ?? currentSalesProducts();
     try {
@@ -601,12 +621,24 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       const creationRequestId=req.get('Idempotency-Key');
       if(!creationRequestId) return res.status(400).json({code:'IDEMPOTENCY_REQUIRED',error:'Falta el identificador estable de confirmación. Actualiza e intenta nuevamente.'});
       const creationRequestFingerprint=crypto.createHash('sha256').update(JSON.stringify(req.body)).digest('hex');
-      if(creationRequestId && !reviewingOrder) {
+      const accountId: string | undefined = (req as any).customerAccountId;
+      const verifier = !reviewingOrder && !accountId ? checkoutVerifier(req, res, creationRequestId) : undefined;
+      const checkoutReceipt = (order: Order) => ({
+        ...presentOrder(order),
+        ...(!accountId && !order.customerAccountId && {guestAccessToken: dispatchService.guestToken(order)}),
+      });
+      if(!reviewingOrder) {
         if(creationRequestId.length>150) return res.status(400).json({error:'Identificador de solicitud inválido'});
         const previous=ordersRepository.getOrderByCreationRequest(creationRequestId);
-        if(previous && (previous as any).customerAccountId !== (req as any).customerAccountId) return res.status(409).json({error:'La confirmación pertenece a otra sesión.'});
-        if(previous) return previous.creationRequestFingerprint===creationRequestFingerprint
-          ? res.status(200).json({...presentOrder(previous),guestAccessToken:dispatchService.guestToken(previous)}) : res.status(409).json({error:'La solicitud ya fue utilizada con otros datos.'});
+        if (previous) {
+          const owns = accountId
+            ? await customerAccounts.authorizeOrder(req, previous.id)
+            : !previous.customerAccountId && (sameCheckoutAttempt(previous, verifier) || dispatchService.authorizeGuest(previous.id, req.get('X-Order-Token')));
+          if (!owns || previous.creationRequestFingerprint !== creationRequestFingerprint) {
+            return res.status(409).json({ code:'CHECKOUT_REVIEW_REQUIRED', error: 'No se pudo recuperar esta confirmación. Consulta tu historial o recupera el seguimiento privado.' });
+          }
+          return res.status(200).json(checkoutReceipt(previous));
+        }
       }
       const {
         storeId,
@@ -673,10 +705,11 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
           const warehouse=stores.find(s=>s.id===evaluatedQuote.assignedStoreId && s.isActive);
           if(!warehouse)return res.status(400).json({error:'Sede no disponible.'});
           if(items.some(i=>{const p=purchaseCatalog.find(p=>p.id===i.productId)!;return p.bodegaIds && !p.bodegaIds.includes(warehouse.id) && !p.bodegaIds.includes(warehouse.shopifyLocationGid||'')}))return res.status(400).json({error:'Variante no asociada a la sede.'});
-          const pending=pendingDeliveryOrder({items,customer,address:deliveryAddress,store:warehouse,requestedMode:requestedDeliveryMode,creationRequestId,creationRequestFingerprint,customerAccountId:(req as any).customerAccountId});
+          if (!accountId && !verifier) return checkoutProofRequired(res);
+          const pending=pendingDeliveryOrder({items,customer,address:deliveryAddress,store:warehouse,requestedMode:requestedDeliveryMode,creationRequestId,creationRequestFingerprint,checkoutAttemptVerifier:verifier,customerAccountId:accountId});
           const result=dispatchService.createOrder(pending,purchaseCatalog,warehouse);
           if(!result.success)return res.status(400).json({error:result.error});
-          return res.status(201).json({...presentOrder(result.order!),guestAccessToken:dispatchService.guestToken(result.order!)});
+          return res.status(201).json(checkoutReceipt(result.order!));
         }
         // Si el cliente pide Envío Programado, validar que tenga cobertura programada, no esté vencido el corte y haya cupo
         if (requestedDeliveryMode === 'PROGRAMADO') {
@@ -845,7 +878,9 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         });
       }
 
+      if (!reviewingOrder && !accountId && !verifier) return checkoutProofRequired(res);
       const newOrder: Order = {
+        ...(verifier && {checkoutAttemptVerifier:verifier}),
         ...((req as any).customerAccountId?{customerAccountId:(req as any).customerAccountId}:{}),
         creationRequestId, creationRequestFingerprint,
         transportConfirmation: evaluatedQuote.confirmationToken,
@@ -922,7 +957,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
         return res.status(400).json({ error: createResult.error });
       }
       const order=createResult.order!;
-      return res.status(201).json(review?.mapOrder ? review.mapOrder(order) : {...presentOrder(order),guestAccessToken:dispatchService.guestToken(order)});
+      return res.status(201).json(review ? (review.mapOrder ? review.mapOrder(order) : presentStaffOrder(order)) : checkoutReceipt(order));
     } catch (e: any) {
       return res.status(500).json({ code: 'ORDER_OPERATION_FAILED', error: 'No se pudo completar el pedido.', requestId: res.locals.requestId });
     }
@@ -960,7 +995,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
   function confirmPendingDelivery(req:Request,res:Response,order:Order|undefined,actor:ReviewActor,mapOrder?:(order:Order)=>unknown) {
     if(!order)return res.status(404).json({error:'Solicitud no encontrada.'});
     const input=req.body || {};
-    if(order.deliveryReview?.status==='CONFIRMED' && typeof input.confirmationToken==='string' && order.deliveryReview.confirmationToken===input.confirmationToken)return res.json(mapOrder?mapOrder(order):presentOrder(order));
+    if(order.deliveryReview?.status==='CONFIRMED' && typeof input.confirmationToken==='string' && order.deliveryReview.confirmationToken===input.confirmationToken)return res.json(mapOrder?mapOrder(order):presentStaffOrder(order));
     if(order.deliveryReview?.status!=='PENDING' || order.fulfillmentStatus!=='PENDIENTE_CONFIRMACION')return res.status(409).json({error:'La solicitud ya no está pendiente.'});
     const reference=typeof input.customerAgreementReference==='string'?input.customerAgreementReference.trim():'';
     if(input.customerAccepted!==true || reference.length<8 || reference.length>500)return res.status(400).json({error:'Registra la referencia de la aceptación del cliente al costo, modalidad y horario propuestos; no incluyas secretos.'});
@@ -1045,14 +1080,14 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     let list = ordersRepository.getAllOrders();
     if (storeId) list = list.filter(o => o.storeId === storeId);
     if (status) list = list.filter(o => o.fulfillmentStatus === status);
-    res.json(list.map(presentOrder));
+    res.json(list.map(presentStaffOrder));
   });
 
   // Get specific order
   app.get('/api/v1/orders/:orderId', (req: Request, res: Response) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-    res.json(presentOrder(order));
+    res.json(presentForRequester(req, order));
   });
 
   // Get audit history of an order
@@ -1063,7 +1098,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       orderId: order.id,
       orderNumber: order.orderNumber,
       status: order.fulfillmentStatus,
-      history: order.statusHistory || ordersRepository.getAuditHistory(order.id),
+      history: staffHistory(order.statusHistory || ordersRepository.getAuditHistory(order.id)),
     });
   });
 
@@ -1094,7 +1129,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       return res.status(result.code || 400).json({ error: result.error });
     }
 
-    res.json({ message: 'Pedido cancelado exitosamente', order: result.order });
+    res.json({ message: 'Pedido cancelado exitosamente', order: presentForRequester(req, result.order!) });
   });
 
   // Prescription submissions and reviews use the same durable order record.
@@ -1128,16 +1163,18 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       reviewNotes: undefined,
     });
     if (!result.success) return res.status(result.code).json({error:result.error});
-    res.json({ message: 'Fórmula veterinaria enviada a revisión', order: result.order });
+    res.json({ message: 'Fórmula veterinaria enviada a revisión', order: presentForRequester(req, result.order!) });
   });
 
   app.get('/api/v1/orders/:orderId/events', (req, res) => {
     const order = ordersRepository.getOrderById(req.params.orderId);
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
-    orderUpdates.stream(res, change => change.order.id === order.id, () =>
-      dispatchService.authorizeGuest(order.id, req.get('X-Order-Token')) ||
-      !!adminAuthService.verifySession(req.get('Authorization')?.replace(/^Bearer /, '')) ||
-      customerAccounts.authorizeOrder(req, order.id));
+    orderUpdates.stream(res, change => change.order.id === order.id, () => {
+      if (!ordersRepository.getOrderById(order.id)) return false;
+      return dispatchService.authorizeGuest(order.id, req.get('X-Order-Token')) ||
+        !!adminAuthService.verifySession(req.get('Authorization')?.replace(/^Bearer /, '')) ||
+        customerAccounts.authorizeOrder(req, order.id, { freshSession: true });
+    });
   });
 
   // Order access is enforced by mountOrderAccess before serving the tracking snapshot.
@@ -1169,6 +1206,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     res.set('Cache-Control', 'private, no-store');
     res.json({
       ...tracking,
+      secretDeliveryCode: (req as any).adminSession ? undefined : tracking.secretDeliveryCode,
       dispatches: dispatchService.customerDispatches(order.id),
       dispatchStatusMessage: dispatchService.customerMessage(order.id),
     });
@@ -1180,7 +1218,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
     if (!order) return res.status(404).json({ error: 'Pedido no encontrado' });
 
     const shipmentId = req.query.shipmentId ? String(req.query.shipmentId) : undefined;
-    const history = ordersRepository.getTelemetryHistory(order.id, shipmentId);
+    const history = ordersRepository.getTelemetryHistory(order.id, shipmentId).map(staffTelemetry);
 
     res.json({
       orderId: order.id,
@@ -1222,8 +1260,8 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
     res.json({
       message: `Estado actualizado exitosamente a ${status}`,
-      order: result.order,
-      childShipment: result.childShipment,
+      order: presentStaffOrder(result.order!),
+      childShipment: result.childShipment && staffShipment(result.childShipment),
     });
   });
 
@@ -1247,7 +1285,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
       reviewedBy: actor.name || actor.id, reviewedAt: new Date().toISOString(),
     });
     if (!result.success) return res.status(result.code).json({error:result.error});
-    res.json({ message: 'Revisión farmacéutica registrada', order: result.order });
+    res.json({ message: 'Revisión farmacéutica registrada', order: presentForRequester(req, result.order!) });
   });
 
   app.post('/api/v1/operations/orders/:orderId/assign-driver', async (req,res)=>{
@@ -1275,7 +1313,7 @@ export async function startServer(customerOverride?: Parameters<typeof mountCust
 
     res.json({
       message: 'Devolución física confirmada. Inventario reingresado a disponible.',
-      order: result.order,
+      order: presentStaffOrder(result.order!),
     });
   });
 

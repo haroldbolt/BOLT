@@ -518,7 +518,6 @@ export const WarehouseManagerTab: React.FC<WarehouseManagerTabProps> = ({
                   <div key={ord.id} className="p-3 bg-slate-50 rounded-xl border border-slate-100 text-xs space-y-1">
                     <div className="flex items-center justify-between font-bold text-slate-900">
                       <span>{ord.orderNumber}</span>
-                      <span className="text-amber-700 font-mono">Código: {ord.secretDeliveryCode}</span>
                     </div>
                     <p className="text-slate-600 text-[11px]">{ord.deliveryAddress.address}</p>
                   </div>

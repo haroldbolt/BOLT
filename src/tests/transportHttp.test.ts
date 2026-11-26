@@ -1,10 +1,11 @@
+import { checkoutFetch } from './checkoutBrowserFixture.mjs';
 /** Run ONLY against isolated simulation server; no automatic launch or production URL. */
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import crypto from 'node:crypto';
 const origin=process.env.BOLT_TRANSPORT_TEST_URL;
 if(origin!=='http://localhost:3010') throw Error('Only the dedicated port 3010 simulation is permitted.');
-const request=async(path:string,body?:any,headers:any={})=>{const res=await fetch(origin+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:res.status,data:await res.json()};};
+const request=async(path:string,body?:any,headers:any={})=>{const res=await checkoutFetch(origin+path,{method:body===undefined?'GET':'POST',headers:{'Content-Type':'application/json',...headers},body:body===undefined?undefined:JSON.stringify(body)});return {status:res.status,data:await res.json()};};
 const initial=await request('/api/v1/orders');
 const runId=crypto.randomUUID();
 const catalog=(await request('/api/v1/catalog?q=SIMULACIÓN')).data;

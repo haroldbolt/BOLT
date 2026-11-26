@@ -1,7 +1,7 @@
 import type { ChildShipment, GPSTelemetry, Order, Store } from '../types';
 import type { DispatchRun } from '../types/dispatch';
 import type { CustomerTracking, CustomerTrackingCoordinates, CustomerTrackingTiming } from '../types/customerTracking';
-import { resolveOrderWarehouse } from './warehouseAssignment';
+import { orderWarehouse, visibleWindow } from './orderViews';
 
 export const CUSTOMER_TRACKING_TRAIL_POINTS = 24;
 const TRAIL_MAX_AGE_MS = 5 * 60_000;
@@ -69,12 +69,8 @@ export function buildCustomerTracking({
 }: TrackingEvidence): CustomerTracking {
   const isSplitOrder = !!order.isSplitOrder || !!order.childShipments?.length;
   const tracked = child || order;
-  const savedWarehouse = resolveOrderWarehouse(order, store ? [store] : []);
+  const { warehouse, warehouseAssignment } = orderWarehouse(order, store);
   const hideWarehouseAddress = store?.showAddressToCustomer === false;
-  const warehouse = savedWarehouse && hideWarehouseAddress ? { ...savedWarehouse, address: undefined } : savedWarehouse;
-  const warehouseAssignment = order.warehouseAssignment && hideWarehouseAddress
-    ? { ...order.warehouseAssignment, store: { ...order.warehouseAssignment.store, address: undefined } }
-    : order.warehouseAssignment;
   const origin = warehouse ? {
     name: warehouse.customerName,
     address: warehouse.address,
@@ -148,7 +144,7 @@ export function buildCustomerTracking({
 
   return {
     orderId: order.id, orderNumber: order.orderNumber, shipmentId, status: tracked.fulfillmentStatus,
-    deliveryMode: order.deliveryMode, scheduledWindow: dueAt && source === 'BOOKED_WINDOW' ? order.scheduledWindow : undefined,
+    deliveryMode: order.deliveryMode, scheduledWindow: dueAt && source === 'BOOKED_WINDOW' ? visibleWindow(order.scheduledWindow) : undefined,
     timing: { serverTime: new Date(now).toISOString(), startedAt, dueAt, source, stages },
     locationStatus: !isInTransit ? 'NOT_IN_TRANSIT' : freshPoint ? 'LIVE' : lastPoint ? 'STALE' : 'UNAVAILABLE',
     locationStale: !!lastPoint && !freshPoint,

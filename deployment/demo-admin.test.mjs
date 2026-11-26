@@ -1,3 +1,4 @@
+import { checkoutBrowserFixture, checkoutFetch } from '../src/tests/checkoutBrowserFixture.mjs';
 import assert from 'node:assert/strict';
 import crypto from 'node:crypto';
 import fs from 'node:fs';
@@ -64,7 +65,7 @@ async function stopDemo() {
 }
 
 async function api(endpoint, { method = 'GET', token, guestToken, idempotency, body, expected = 200 } = {}) {
-  const response = await fetch(origin + endpoint, {
+  const response = await checkoutFetch(origin + endpoint, {
     method,
     headers: {
       Cookie: gatewayCookie,
@@ -259,6 +260,13 @@ async function verifyUnifiedNoChargeCheckout() {
   const checkout = { method: 'POST', idempotency: crypto.randomUUID(), body: {} };
   await api(endpoint, { ...checkout, idempotency: 'bad-key', expected: 400 });
   const { order, guestAccessToken, trackingPath } = await createAndObserveSubaOrder(endpoint, checkout, suba, kennedy);
+  const separateBrowser = checkoutBrowserFixture();
+  const other = await separateBrowser(origin + endpoint, {
+    method: 'POST', body: '{}',
+    headers: { Cookie:gatewayCookie, Origin:origin, 'Content-Type':'application/json', 'Idempotency-Key':checkout.idempotency },
+  });
+  assert.equal(other.status,409);
+  assert.equal((await other.json()).guestAccessToken,undefined);
   assert.equal(order.demoCustomerCheckout, true);
   assert.equal(order.payment.cashToCollect, 0);
   assert.equal(order.fulfillmentStatus, 'PENDIENTE_CONFIRMACION');

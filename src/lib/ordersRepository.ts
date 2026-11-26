@@ -1,3 +1,4 @@
+import { sameCheckoutAttempt } from './checkoutAttempt';
 import {FulfillmentStorage} from './fulfillmentStorage';
 import {newDispatchState, type DispatchState} from '../types/dispatch';
 import { makeWarehouseAssignment } from './warehouseAssignment';
@@ -365,10 +366,16 @@ export class OrdersRepository {
   // CREACIÓN DE PEDIDO CON RESERVA ATÓMICA
   // ==========================================
 
-  public createOrder(orderData: Order, catalogProducts?: Product[], warehouse?: Store): { success: boolean; order?: Order; error?: string } {
-    if(orderData.creationRequestId) {
-      const prior=this.orders.find(o=>o.creationRequestId===orderData.creationRequestId);
-      if(prior) return prior.creationRequestFingerprint===orderData.creationRequestFingerprint ? {success:true,order:prior} : {success:false,error:'La solicitud ya fue utilizada con otros datos.'};
+  public createOrder(orderData: Order, catalogProducts?: Product[], warehouse?: Store): { success: boolean; order?: Order; error?: string; code?: string } {
+    if (orderData.creationRequestId) {
+      const prior = this.getOrderByCreationRequest(orderData.creationRequestId);
+      if (prior) {
+        const sameBinding = prior.checkoutAttemptVerifier || orderData.checkoutAttemptVerifier
+          ? sameCheckoutAttempt(prior, orderData.checkoutAttemptVerifier) : true;
+        const sameIntent = sameBinding && prior.creationRequestFingerprint === orderData.creationRequestFingerprint &&
+          prior.customerAccountId === orderData.customerAccountId;
+        return sameIntent ? { success: true, order: prior } : { success: false, code:'CHECKOUT_REVIEW_REQUIRED', error: 'La solicitud ya fue utilizada con otros datos.' };
+      }
     }
     // 1. Validar que no exista un pedido con el mismo ID
     if (this.orders.some(o => o.id === orderData.id)) {

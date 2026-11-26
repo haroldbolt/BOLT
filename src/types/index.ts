@@ -354,6 +354,7 @@ export interface Order {
   warehouse?: WarehouseAssignmentEvent['store'];
   creationRequestId?: string;
   creationRequestFingerprint?: string;
+  checkoutAttemptVerifier?: string;
   id: string;
   orderNumber: string;
   createdAt: string;
